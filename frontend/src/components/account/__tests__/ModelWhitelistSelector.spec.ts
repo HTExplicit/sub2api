@@ -31,6 +31,9 @@ vi.mock('vue-i18n', async () => {
         if (key === 'admin.accounts.modelMappingConflict') {
           return `Model mapping conflict: ${params?.from} → ${params?.to}`
         }
+        if (params && key.startsWith('admin.accounts.syncUpstreamPicker.')) {
+          return `${key} ${JSON.stringify(params)}`
+        }
         return params?.count ? `${key} ${params.count}` : key
       }
     })
@@ -85,13 +88,18 @@ function mountSelector(props: Record<string, unknown> = {}) {
     },
     global: {
       stubs: {
-        ModelIcon: true
+        ModelIcon: true,
+        // The upstream picker is a BaseDialog: render it in place and without a transition so it can be queried.
+        Teleport: true,
+        Transition: true
       }
     }
   })
 }
 
-function findModelRow(wrapper: ReturnType<typeof mountSelector>, modelId: string) {
+type SelectorWrapper = ReturnType<typeof mountSelector>
+
+function findModelRow(wrapper: SelectorWrapper, modelId: string) {
   const row = wrapper
     .findAll('[data-testid="model-option"]')
     .find(candidate => candidate.attributes('data-model-id') === modelId)
@@ -101,6 +109,68 @@ function findModelRow(wrapper: ReturnType<typeof mountSelector>, modelId: string
   }
 
   return row
+}
+
+function findPicker(wrapper: SelectorWrapper) {
+  return wrapper.find('[data-testid="upstream-model-picker"]')
+}
+
+function pickerRows(wrapper: SelectorWrapper) {
+  return wrapper.findAll('[data-testid="upstream-picker-row"]')
+}
+
+function pickerRowIds(wrapper: SelectorWrapper) {
+  return pickerRows(wrapper).map(row => row.attributes('data-model-id'))
+}
+
+function checkedPickerRowIds(wrapper: SelectorWrapper) {
+  return pickerRows(wrapper)
+    .filter(row => row.attributes('data-checked') === 'true')
+    .map(row => row.attributes('data-model-id'))
+}
+
+function findPickerRow(wrapper: SelectorWrapper, modelId: string) {
+  const row = pickerRows(wrapper).find(candidate => candidate.attributes('data-model-id') === modelId)
+  if (!row) {
+    throw new Error(`Picker row not found: ${modelId}`)
+  }
+  return row
+}
+
+function pickerText(wrapper: SelectorWrapper, testId: string) {
+  return wrapper.get(`[data-testid="${testId}"]`).text()
+}
+
+async function openPicker(wrapper: SelectorWrapper) {
+  await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+  await flushPromises()
+  expect(findPicker(wrapper).exists()).toBe(true)
+}
+
+async function confirmPicker(wrapper: SelectorWrapper) {
+  await wrapper.get('[data-testid="upstream-picker-confirm"]').trigger('click')
+}
+
+async function setPickerFilter(wrapper: SelectorWrapper, filter: string) {
+  const option = wrapper
+    .findAll('[data-testid="upstream-picker-filter-option"]')
+    .find(candidate => candidate.attributes('data-filter') === filter)
+  if (!option) {
+    throw new Error(`Picker filter not found: ${filter}`)
+  }
+  await option.trigger('click')
+}
+
+// Upstream returns one model twice, one padded and a blank; the whitelist holds one of them and one it lacks.
+const pickerWhitelist = ['zz-legacy', 'kept-model']
+function pickerFixture(): SyncUpstreamModelsResult {
+  return {
+    models: [' model-10 ', 'model-2', 'kept-model', '', 'model-2'],
+    metadata: {
+      'model-2': { id: 'model-2', display_name: 'Model Two', context_window: 200_000, max_output_tokens: 64_000 },
+      'kept-model': { id: 'kept-model', display_name: 'kept-model', context_window: 1_050_000 }
+    }
+  }
 }
 
 describe('ModelWhitelistSelector', () => {
@@ -203,7 +273,7 @@ describe('ModelWhitelistSelector', () => {
     wrapper.unmount()
   })
 
-  it('calls the saved-account sync once and adds each new exact ID while preserving manual IDs', async () => {
+  it('calls the saved-account sync once and applies the picked exact IDs, manual ones kept when checked, on confirm', async () => {
     let resolve!: (result: SyncUpstreamModelsResult) => void
     syncUpstreamModels.mockReturnValue(new Promise(result => { resolve = result }))
     const result: SyncUpstreamModelsResult = {
@@ -218,13 +288,23 @@ describe('ModelWhitelistSelector', () => {
     expect(syncUpstreamModels).toHaveBeenCalledOnce()
     expect(syncUpstreamModels).toHaveBeenCalledWith(46)
     expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
+    expect(findPicker(wrapper).exists()).toBe(false)
 
     resolve(result)
     await flushPromises()
 
+    // The sync opens the picker; neither the whitelist nor the synced result reaches the form before confirm.
+    expect(pickerRowIds(wrapper)).toEqual(['manual-model', 'New.Exact-ID', 'user-only-model'])
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    await findPickerRow(wrapper, 'user-only-model').trigger('click')
+    await confirmPicker(wrapper)
+
     expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
     expect(wrapper.emitted('update:modelValue')).toEqual([[['manual-model', 'user-only-model', 'New.Exact-ID']]])
     expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
+    expect(findPicker(wrapper).exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -237,12 +317,14 @@ describe('ModelWhitelistSelector', () => {
     })
 
     expect(wrapper.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
-    await flushPromises()
+    await openPicker(wrapper)
 
     expect(syncUpstreamModels).toHaveBeenCalledOnce()
     expect(syncUpstreamModels).toHaveBeenCalledWith(91)
-    expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol', 'oauth-model']]])
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    // The whitelist entry the upstream did not return starts unchecked, so confirming as offered drops it.
+    await confirmPicker(wrapper)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['oauth-model']]])
     wrapper.unmount()
   })
 
@@ -350,7 +432,7 @@ describe('ModelWhitelistSelector', () => {
     expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
   })
 
-  it('warns when model IDs sync but capability metadata is incomplete', async () => {
+  it('shows incomplete capability metadata inside the picker instead of a toast', async () => {
     syncUpstreamModels.mockResolvedValue({
       models: ['x-preview-f-free'],
       warnings: [{
@@ -366,12 +448,18 @@ describe('ModelWhitelistSelector', () => {
     await syncButton!.trigger('click')
     await flushPromises()
 
+    expect(pickerText(wrapper, 'upstream-picker-metadata-notice')).toBe('admin.accounts.syncUpstreamModelsMetadataIncomplete')
+    expect(showWarning).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    await confirmPicker(wrapper)
     expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
-    expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataIncomplete')
-    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncUpstreamPicker.updated {"added":1,"removed":0}')
+    expect(showWarning).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
-  it('shows success and a partial warning when some capabilities were saved', async () => {
+  it('shows partial capability metadata inside the picker and the whitelist change on confirm', async () => {
     syncUpstreamModels.mockResolvedValue({
       models: ['gpt-6-astra', 'gpt-image-2'],
       warnings: [
@@ -381,18 +469,7 @@ describe('ModelWhitelistSelector', () => {
         }
       ]
     })
-    const wrapper = mount(ModelWhitelistSelector, {
-      props: {
-        modelValue: [],
-        platform: 'openai',
-        accountId: 46
-      },
-      global: {
-        stubs: {
-          ModelIcon: true
-        }
-      }
-    })
+    const wrapper = mountSelector({ accountId: 46 })
 
     const syncButton = wrapper
       .findAll('button')
@@ -401,9 +478,12 @@ describe('ModelWhitelistSelector', () => {
     await syncButton!.trigger('click')
     await flushPromises()
 
+    expect(pickerText(wrapper, 'upstream-picker-metadata-notice')).toBe('admin.accounts.syncUpstreamModelsMetadataPartial')
+    await confirmPicker(wrapper)
     expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-6-astra', 'gpt-image-2']]])
-    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsSuccess 2')
-    expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataPartial')
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncUpstreamPicker.updated {"added":2,"removed":0}')
+    expect(showWarning).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('reports a successful preview so account creation can persist metadata', async () => {
@@ -433,6 +513,8 @@ describe('ModelWhitelistSelector', () => {
     await flushPromises()
 
     expect(syncUpstreamModelsPreview).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
+    await confirmPicker(wrapper)
     expect(wrapper.emitted('upstream-synced')).toEqual([[{
       models: ['x-preview-f-free'],
       metadata: { 'x-preview-f-free': { id: 'x-preview-f-free', reasoning: true, supported_reasoning_levels: ['low', 'high', 'max'] } }
@@ -452,6 +534,7 @@ describe('ModelWhitelistSelector', () => {
     const wrapper = mountSelector({ accountId: 46 })
     await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!.trigger('click')
     await flushPromises()
+    await confirmPicker(wrapper)
     expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
     wrapper.unmount()
 
@@ -467,6 +550,7 @@ describe('ModelWhitelistSelector', () => {
     const wrapper = mountSelector({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://a.example/v1', api_key: 'key-a' } })
     await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!.trigger('click')
     await flushPromises()
+    await confirmPicker(wrapper)
     await wrapper.get('div.cursor-pointer').trigger('click')
     expect(wrapper.text()).toContain('provider-a-only')
     await wrapper.setProps({ syncedModels: undefined, syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://b.example/v1', api_key: 'key-b' } })
@@ -482,6 +566,7 @@ describe('ModelWhitelistSelector', () => {
     await wrapper.setProps({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://b.example/v1', api_key: 'key-b' } })
     resolve({ models: ['stale-provider-a-model'] })
     await flushPromises()
+    expect(findPicker(wrapper).exists()).toBe(false)
     expect(wrapper.emitted('upstream-synced')).toBeUndefined()
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(showSuccess).not.toHaveBeenCalled()
@@ -509,6 +594,7 @@ describe('ModelWhitelistSelector', () => {
     await flushPromises()
     expect(syncUpstreamModels).toHaveBeenCalledOnce()
     expect(syncUpstreamModels).toHaveBeenCalledWith(42)
+    expect(findPicker(wrapper).exists()).toBe(false)
     expect(wrapper.emitted('upstream-synced')).toBeUndefined()
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(showSuccess).not.toHaveBeenCalled()
@@ -544,9 +630,240 @@ describe('ModelWhitelistSelector', () => {
     const result = { models: ['new-model'], capacity_rows: [capacityRow()] }
     resolve(result)
     await flushPromises()
+    expect(pickerRowIds(wrapper)).toEqual(['new-model'])
+    await confirmPicker(wrapper)
     expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
     expect(wrapper.emitted('update:modelValue')).toEqual([[['new-model']]])
     expect(wrapper.props('capacityDrafts')).toEqual({ 'gpt-5.6-sol': '1M' })
+    wrapper.unmount()
+  })
+
+  it('opens the picker sorted by ID with upstream models checked and whitelist-only entries unchecked', async () => {
+    syncUpstreamModels.mockResolvedValue(pickerFixture())
+    const wrapper = mountSelector({ modelValue: pickerWhitelist, accountId: 7 })
+    await openPicker(wrapper)
+
+    expect(pickerRowIds(wrapper)).toEqual(['kept-model', 'model-2', 'model-10', 'zz-legacy'])
+    expect(checkedPickerRowIds(wrapper)).toEqual(['kept-model', 'model-2', 'model-10'])
+    const tags = (modelId: string) => findPickerRow(wrapper, modelId).findAll('.badge').map(tag => tag.attributes('data-testid'))
+    expect(tags('kept-model')).toEqual([])
+    expect(tags('model-2')).toEqual(['upstream-picker-tag-new'])
+    expect(tags('model-10')).toEqual(['upstream-picker-tag-new'])
+    expect(tags('zz-legacy')).toEqual(['upstream-picker-tag-missing'])
+    expect(findPickerRow(wrapper, 'model-2').get('[data-testid="upstream-picker-details"]').text()).toBe(
+      'Model Two · admin.accounts.syncUpstreamPicker.contextWindow {"value":"200K"} · admin.accounts.syncUpstreamPicker.maxOutput {"value":"64K"}'
+    )
+    // A display name equal to the ID is not repeated.
+    expect(findPickerRow(wrapper, 'kept-model').get('[data-testid="upstream-picker-details"]').text()).toBe(
+      'admin.accounts.syncUpstreamPicker.contextWindow {"value":"1.05M"}'
+    )
+    expect(findPickerRow(wrapper, 'zz-legacy').find('[data-testid="upstream-picker-details"]').exists()).toBe(false)
+    expect(pickerText(wrapper, 'upstream-picker-counter')).toBe('admin.accounts.syncUpstreamPicker.selectedCount {"selected":3,"total":4}')
+    expect(pickerText(wrapper, 'upstream-picker-summary')).toBe('admin.accounts.syncUpstreamPicker.summary {"added":2,"removed":1}')
+    expect(wrapper.find('[data-testid="upstream-picker-configured-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-picker-metadata-notice"]').exists()).toBe(false)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
+    expect(showSuccess).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('checks every row with 全选 whatever the search and the status filter show', async () => {
+    syncUpstreamModels.mockResolvedValue(pickerFixture())
+    const wrapper = mountSelector({ modelValue: pickerWhitelist, accountId: 7 })
+    await openPicker(wrapper)
+    await setPickerFilter(wrapper, 'new')
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('10')
+    expect(pickerRowIds(wrapper)).toEqual(['model-10'])
+
+    await wrapper.get('[data-testid="upstream-picker-select-all"]').trigger('click')
+
+    expect(pickerText(wrapper, 'upstream-picker-counter')).toBe('admin.accounts.syncUpstreamPicker.selectedCount {"selected":4,"total":4}')
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('')
+    await setPickerFilter(wrapper, 'all')
+    expect(checkedPickerRowIds(wrapper)).toEqual(['kept-model', 'model-2', 'model-10', 'zz-legacy'])
+    wrapper.unmount()
+  })
+
+  it('inverts every row with 反选, including the rows the search hides', async () => {
+    syncUpstreamModels.mockResolvedValue(pickerFixture())
+    const wrapper = mountSelector({ modelValue: pickerWhitelist, accountId: 7 })
+    await openPicker(wrapper)
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('model-2')
+    expect(pickerRowIds(wrapper)).toEqual(['model-2'])
+
+    await wrapper.get('[data-testid="upstream-picker-invert"]').trigger('click')
+
+    expect(pickerText(wrapper, 'upstream-picker-counter')).toBe('admin.accounts.syncUpstreamPicker.selectedCount {"selected":1,"total":4}')
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('')
+    expect(checkedPickerRowIds(wrapper)).toEqual(['zz-legacy'])
+    await wrapper.get('[data-testid="upstream-picker-invert"]').trigger('click')
+    expect(checkedPickerRowIds(wrapper)).toEqual(['kept-model', 'model-2', 'model-10'])
+    wrapper.unmount()
+  })
+
+  it('combines the status filter with a case-insensitive search on the ID and the display name', async () => {
+    syncUpstreamModels.mockResolvedValue(pickerFixture())
+    const wrapper = mountSelector({ modelValue: pickerWhitelist, accountId: 7 })
+    await openPicker(wrapper)
+    expect(wrapper.findAll('[data-testid="upstream-picker-filter-option"]').map(option => option.text())).toEqual([
+      'admin.accounts.syncUpstreamPicker.filters.all 4',
+      'admin.accounts.syncUpstreamPicker.filters.checked 3',
+      'admin.accounts.syncUpstreamPicker.filters.unchecked 1',
+      'admin.accounts.syncUpstreamPicker.filters.new 2',
+      'admin.accounts.syncUpstreamPicker.filters.missing 1'
+    ])
+
+    await setPickerFilter(wrapper, 'new')
+    expect(pickerRowIds(wrapper)).toEqual(['model-2', 'model-10'])
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('TWO')
+    expect(pickerRowIds(wrapper)).toEqual(['model-2'])
+    await setPickerFilter(wrapper, 'missing')
+    expect(pickerRowIds(wrapper)).toEqual([])
+    expect(pickerText(wrapper, 'upstream-picker-empty')).toBe('admin.accounts.noMatchingModels')
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('')
+    expect(pickerRowIds(wrapper)).toEqual(['zz-legacy'])
+
+    await setPickerFilter(wrapper, 'checked')
+    expect(pickerRowIds(wrapper)).toEqual(['kept-model', 'model-2', 'model-10'])
+    await findPickerRow(wrapper, 'model-2').trigger('click')
+    expect(pickerRowIds(wrapper)).toEqual(['kept-model', 'model-10'])
+    await setPickerFilter(wrapper, 'unchecked')
+    expect(pickerRowIds(wrapper)).toEqual(['model-2', 'zz-legacy'])
+    expect(wrapper.findAll('[data-testid="upstream-picker-filter-option"]').map(option => option.attributes('aria-checked')))
+      .toEqual(['false', 'false', 'true', 'false', 'false'])
+    await wrapper.get('[data-testid="upstream-picker-filter"]').trigger('keydown', { key: 'ArrowLeft' })
+    expect(pickerRowIds(wrapper)).toEqual(['kept-model', 'model-10'])
+
+    // Copying an ID does not toggle its row.
+    await findPickerRow(wrapper, 'kept-model').get('[data-testid="upstream-picker-copy"]').trigger('click')
+    expect(copyToClipboard).toHaveBeenCalledWith('kept-model')
+    expect(findPickerRow(wrapper, 'kept-model').attributes('data-checked')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('confirms whitelist entries in their own order, then newly checked models in list order', async () => {
+    const result: SyncUpstreamModelsResult = { models: ['zeta-kept', 'beta-new', 'alpha-kept', 'alpha-new'] }
+    syncUpstreamModels.mockResolvedValue(result)
+    const wrapper = mountSelector({ modelValue: ['zeta-kept', 'alpha-kept', 'gone-model'], accountId: 7 })
+    await openPicker(wrapper)
+    expect(pickerRowIds(wrapper)).toEqual(['alpha-kept', 'alpha-new', 'beta-new', 'gone-model', 'zeta-kept'])
+
+    await findPickerRow(wrapper, 'alpha-kept').trigger('click')
+    const betaCheckbox = findPickerRow(wrapper, 'beta-new').get('[data-testid="upstream-picker-checkbox"]')
+    await betaCheckbox.trigger('click')
+    expect(findPickerRow(wrapper, 'beta-new').attributes('data-checked')).toBe('false')
+    await betaCheckbox.trigger('click')
+    expect(pickerText(wrapper, 'upstream-picker-summary')).toBe('admin.accounts.syncUpstreamPicker.summary {"added":2,"removed":2}')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    await confirmPicker(wrapper)
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['zeta-kept', 'alpha-new', 'beta-new']]])
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncUpstreamPicker.updated {"added":2,"removed":2}')
+    expect(showInfo).not.toHaveBeenCalled()
+    expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
+    expect(findPicker(wrapper).exists()).toBe(false)
+    // A confirmed result keeps its models available as candidates.
+    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
+    expect(findModelRow(wrapper, 'beta-new').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps Confirm disabled with a hint while no model is checked', async () => {
+    syncUpstreamModels.mockResolvedValue(pickerFixture())
+    const wrapper = mountSelector({ modelValue: pickerWhitelist, accountId: 7 })
+    await openPicker(wrapper)
+    const confirmButton = wrapper.get('[data-testid="upstream-picker-confirm"]')
+    expect(confirmButton.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="upstream-picker-empty-hint"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="upstream-picker-select-all"]').trigger('click')
+    await wrapper.get('[data-testid="upstream-picker-invert"]').trigger('click')
+
+    expect(checkedPickerRowIds(wrapper)).toEqual([])
+    expect(confirmButton.attributes('disabled')).toBeDefined()
+    expect(pickerText(wrapper, 'upstream-picker-empty-hint')).toBe('admin.accounts.syncUpstreamPicker.emptySelectionHint')
+    await confirmButton.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(findPicker(wrapper).exists()).toBe(true)
+
+    await findPickerRow(wrapper, 'zz-legacy').trigger('click')
+    expect(confirmButton.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="upstream-picker-empty-hint"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('cancels from the button, the header close or Escape without touching the whitelist or the candidates', async () => {
+    syncUpstreamModels.mockImplementation(async () => ({ models: ['upstream-only-model', 'gpt-5.6-sol'] }))
+    const wrapper = mountSelector({ modelValue: ['gpt-5.6-sol'], accountId: 7 })
+
+    await openPicker(wrapper)
+    await findPickerRow(wrapper, 'gpt-5.6-sol').trigger('click')
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('upstream')
+    await wrapper.get('[data-testid="upstream-picker-cancel"]').trigger('click')
+    expect(findPicker(wrapper).exists()).toBe(false)
+
+    // Every open starts again from the result and the current whitelist.
+    await openPicker(wrapper)
+    expect((wrapper.get('[data-testid="upstream-picker-search"]').element as HTMLInputElement).value).toBe('')
+    expect(checkedPickerRowIds(wrapper)).toEqual(['gpt-5.6-sol', 'upstream-only-model'])
+    await wrapper.get('button[aria-label="Close modal"]').trigger('click')
+    expect(findPicker(wrapper).exists()).toBe(false)
+
+    await openPicker(wrapper)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(findPicker(wrapper).exists()).toBe(false)
+
+    expect(syncUpstreamModels).toHaveBeenCalledTimes(3)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showInfo).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-option"][data-model-id="upstream-only-model"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('explains a configured model list and reports an unchanged whitelist on confirm', async () => {
+    syncUpstreamModelsPreview.mockResolvedValue({ models: ['b-model', 'a-model'], model_list_source: 'configured' })
+    const wrapper = mountSelector({
+      modelValue: ['b-model', 'a-model'],
+      syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://a.example/v1', api_key: 'key-a' }
+    })
+    await openPicker(wrapper)
+
+    expect(pickerText(wrapper, 'upstream-picker-configured-notice')).toBe('admin.accounts.syncUpstreamPicker.configuredSource')
+    expect(wrapper.findAll('.badge')).toHaveLength(0)
+    await confirmPicker(wrapper)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['b-model', 'a-model']]])
+    expect(showInfo).toHaveBeenCalledWith('admin.accounts.syncUpstreamPicker.unchanged')
+    expect(showSuccess).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('closes an open picker unapplied when the sync source changes, and never submits a form', async () => {
+    syncUpstreamModelsPreview.mockResolvedValue({ models: ['provider-a-only'] })
+    const wrapper = mountSelector({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://a.example/v1', api_key: 'key-a' } })
+    await openPicker(wrapper)
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    wrapper.get('[data-testid="upstream-picker-search"]').element.dispatchEvent(enter)
+    await flushPromises()
+    expect(enter.defaultPrevented).toBe(true)
+    expect(findPicker(wrapper).exists()).toBe(true)
+    const buttons = [
+      ...findPicker(wrapper).findAll('button'),
+      ...wrapper.get('[data-testid="upstream-picker-footer"]').findAll('button')
+    ]
+    expect(buttons.length).toBeGreaterThan(0)
+    expect(buttons.filter(button => button.attributes('type') !== 'button')).toEqual([])
+
+    await wrapper.setProps({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://b.example/v1', api_key: 'key-b' } })
+    expect(findPicker(wrapper).exists()).toBe(false)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
     wrapper.unmount()
   })
 

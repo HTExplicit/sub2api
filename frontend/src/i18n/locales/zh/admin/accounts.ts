@@ -1182,6 +1182,32 @@ export default {accounts: {
       syncUpstreamModelsError: '同步上游模型失败：{message}',
       syncUpstreamModelsMetadataIncomplete: '模型 ID 已同步，但未能更新任何能力元数据。',
       syncUpstreamModelsMetadataPartial: '已更新部分模型的能力元数据；其余模型能力仍不完整。',
+      syncUpstreamPicker: {
+        title: '选择白名单模型',
+        searchPlaceholder: '搜索模型 ID 或名称',
+        selectAll: '全选',
+        invert: '反选',
+        filterLabel: '按状态筛选',
+        filters: {
+          all: '全部',
+          checked: '已勾选',
+          unchecked: '未勾选',
+          new: '新增',
+          missing: '上游未返回'
+        },
+        tags: {
+          new: '新增',
+          missing: '上游未返回'
+        },
+        selectedCount: '已选 {selected} / 共 {total}',
+        contextWindow: '上下文 {value}',
+        maxOutput: '最大输出 {value}',
+        summary: '将新增 {added} 个，移除 {removed} 个',
+        emptySelectionHint: '至少勾选一个模型；白名单为空等于不限制模型',
+        configuredSource: '上游不支持列出模型，以下为账号当前已配置的模型',
+        updated: '白名单已更新：新增 {added} 个，移除 {removed} 个',
+        unchanged: '白名单没有变化'
+      },
       clearAllModels: '清除所有模型',
       customModelName: '自定义模型名称',
       enterCustomModelName: '输入自定义模型名称',
