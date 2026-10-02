@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/testextensions"
 	"github.com/gin-gonic/gin"
@@ -134,4 +135,49 @@ func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
 	require.Error(t, err)
 	_, err = ordinaryAccountTestPlan(&service.Account{ID: 42}, []map[string]any{{"id": "same"}, {"id": "same"}})
 	require.Error(t, err)
+}
+
+func TestAccountTestModelsCarryReasoningOnEveryPlatform(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	read := func(account *service.Account, suffix string) json.RawMessage {
+		h := &AccountHandler{adminService: testPlanAdmin{account: account}}
+		router := gin.New()
+		router.GET("/accounts/:id/models", h.GetAvailableModels)
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/accounts/42/models"+suffix, nil))
+		require.Equal(t, http.StatusOK, out.Code, out.Body.String())
+		var body struct {
+			Data json.RawMessage `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(out.Body.Bytes(), &body))
+		return body.Data
+	}
+
+	anthropic := &service.Account{ID: 42, Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"model_mapping": map[string]any{"opus": "claude-opus-4-7", "haiku": "claude-haiku-4-5-20251001"}}}
+	var plan accountTestPlanView
+	require.NoError(t, json.Unmarshal(read(anthropic, "?view=account-test-plan-v1"), &plan))
+	rows := make(map[string]map[string]any, len(plan.Models))
+	for _, row := range plan.Models {
+		id, _ := row["id"].(string)
+		rows[id] = row
+	}
+	require.Equal(t, []any{"low", "medium", "high", "xhigh", "max"}, rows["opus"]["reasoning_efforts"])
+	require.Equal(t, "high", rows["opus"]["default_reasoning_effort"])
+	require.Contains(t, rows, "haiku")
+	require.NotContains(t, rows["haiku"], "reasoning_efforts")
+	require.NotContains(t, rows["haiku"], "default_reasoning_effort")
+	var raw []map[string]any
+	require.NoError(t, json.Unmarshal(read(anthropic, ""), &raw))
+	require.ElementsMatch(t, plan.Models, raw, "the raw list carries the same rows")
+
+	// OpenAI rows keep the openai.Model reasoning fields they had before.
+	openAI := &service.Account{ID: 42, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+		Credentials: map[string]any{"model_mapping": map[string]any{"friendly": "gpt-6-astra"}}}
+	levels, defaultLevel := service.AccountTestReasoningOptions(openAI, "friendly")
+	require.NotEmpty(t, levels)
+	var openAIRows []openai.Model
+	require.NoError(t, json.Unmarshal(read(openAI, ""), &openAIRows))
+	require.Equal(t, []openai.Model{{ID: "friendly", Object: "model", Type: "model", DisplayName: "friendly",
+		ReasoningEfforts: levels, DefaultReasoningEffort: defaultLevel}}, openAIRows)
 }

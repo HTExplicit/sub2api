@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1564,7 +1565,7 @@ type upstreamModelCapabilityEntry struct {
 	upstreamModelEntry
 	DisplayName              string                     `json:"display_name"`
 	Description              string                     `json:"description"`
-	Reasoning                *bool                      `json:"reasoning"`
+	Reasoning                json.RawMessage            `json:"reasoning"`
 	DefaultReasoningLevel    string                     `json:"default_reasoning_level"`
 	SupportedReasoningLevels []json.RawMessage          `json:"supported_reasoning_levels"`
 	ReasoningOptions         []modelsDevReasoningOption `json:"reasoning_options"`
@@ -1639,11 +1640,19 @@ func extractUpstreamModelRawEntries(body []byte) ([]json.RawMessage, error) {
 }
 
 func upstreamMetadataFromCapabilityEntry(modelID string, entry upstreamModelCapabilityEntry) UpstreamModelMetadata {
+	reasoning, declaredLevels, declaredDefault := upstreamReasoningCapability(entry.Reasoning)
 	levels := reasoningLevelsFromRawEntries(entry.SupportedReasoningLevels)
 	if len(levels) == 0 {
 		levels = reasoningLevelsFromModelsDevOptions(entry.ReasoningOptions)
 	}
-	reasoning := entry.Reasoning
+	// A level list defaults to its first entry; the reasoning object's efforts
+	// default only to its declared default_effort.
+	listedDefault := ""
+	if len(levels) > 0 {
+		listedDefault = levels[0]
+	} else {
+		levels = declaredLevels
+	}
 	if reasoning == nil && len(levels) > 0 {
 		inferred := len(levels) != 1 || levels[0] != "none"
 		reasoning = &inferred
@@ -1664,8 +1673,11 @@ func upstreamMetadataFromCapabilityEntry(modelID string, entry upstreamModelCapa
 		maxOutputTokens = entry.Limit.Output
 	}
 	defaultReasoningLevel := normalizeReasoningLevel(entry.DefaultReasoningLevel)
-	if defaultReasoningLevel == "" && len(levels) > 0 {
-		defaultReasoningLevel = levels[0]
+	if defaultReasoningLevel == "" {
+		defaultReasoningLevel = declaredDefault
+	}
+	if defaultReasoningLevel == "" {
+		defaultReasoningLevel = listedDefault
 	}
 	displayName := strings.TrimSpace(entry.DisplayName)
 	if displayName == "" && strings.TrimSpace(entry.Name) != "" && strings.TrimSpace(entry.Name) != modelID {
@@ -1683,6 +1695,47 @@ func upstreamMetadataFromCapabilityEntry(modelID string, entry upstreamModelCapa
 		MaxContextWindow:         entry.MaxContextWindow,
 		MaxOutputTokens:          maxOutputTokens,
 	}
+}
+
+// upstreamReasoningCapability reads a catalog entry's "reasoning" field. A
+// boolean states the capability. An OpenRouter object, e.g.
+// {"mandatory":false,"default_enabled":true,"supported_efforts":["high","low"],
+// "default_effort":"high"}, lists the efforts and states reasoning only when
+// it is mandatory, enabled by default or offers an effort other than "none".
+// Anything else leaves the capability unknown, never false.
+func upstreamReasoningCapability(raw json.RawMessage) (*bool, []string, string) {
+	if len(raw) == 0 {
+		return nil, nil, ""
+	}
+	// A mistyped value still leaves the pointer allocated as false, so only a
+	// successful decode (true, false or null) states the capability.
+	var flag *bool
+	if json.Unmarshal(raw, &flag) == nil {
+		return flag, nil, ""
+	}
+	var declared struct {
+		Mandatory        bool     `json:"mandatory"`
+		DefaultEnabled   bool     `json:"default_enabled"`
+		SupportedEfforts []string `json:"supported_efforts"`
+		DefaultEffort    string   `json:"default_effort"`
+	}
+	if json.Unmarshal(raw, &declared) != nil {
+		return nil, nil, ""
+	}
+	levels := normalizeReasoningLevels(declared.SupportedEfforts)
+	// OpenRouter lists efforts deepest first; level lists run lightest first.
+	slices.SortFunc(levels, func(a, b string) int {
+		return slices.Index(reasoningLevelOrder, a) - slices.Index(reasoningLevelOrder, b)
+	})
+	defaultLevel := normalizeReasoningLevel(declared.DefaultEffort)
+	enabled := declared.Mandatory || declared.DefaultEnabled
+	for _, level := range levels {
+		enabled = enabled || level != "none"
+	}
+	if !enabled {
+		return nil, levels, defaultLevel
+	}
+	return &enabled, levels, defaultLevel
 }
 
 func reasoningLevelsFromRawEntries(entries []json.RawMessage) []string {
@@ -1719,6 +1772,10 @@ func normalizeReasoningLevels(levels []string) []string {
 	}
 	return normalized
 }
+
+// reasoningLevelOrder ranks the levels normalizeReasoningLevel returns, from
+// the lightest to the deepest.
+var reasoningLevelOrder = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
 
 func normalizeReasoningLevel(level string) string {
 	level = strings.ToLower(strings.TrimSpace(level))

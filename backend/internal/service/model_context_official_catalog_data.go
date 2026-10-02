@@ -53,6 +53,10 @@ const (
 	doubaoUnitsBasis      = "跨官方页面单位推导：模型表默认回答 4k，官方 API 的 max_tokens 默认值 4096，据此按 k=1024 归一；1024k=1048576，256k=262144，224k=229376。不是上下文原文直接整数证据。"
 )
 
+// Opus 5.5 and Sonnet 5.5 both read "Context window 1M tokens" and "Max output
+// 128K tokens" on https://platform.claude.com/docs/en/about-claude/models/overview.
+const claude55CapacityVerifiedAt = "2026-10-02"
+
 func codexModelContextCapacityReference(window, maximum int64) *ModelContextCapacityReference {
 	return &ModelContextCapacityReference{
 		Product: "codex_subscription", SourceURL: gptContextCapacityReferenceSource,
@@ -226,6 +230,22 @@ var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
 	},
 
 	// Claude API: ordinary Messages limits, excluding Batch-only beta output caps.
+	{
+		ModelID: "claude-opus-5-5", Provider: "anthropic", Product: "messages_api",
+		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1000000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
+		SourceURL:            "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+		SourceURLs:           []string{claudeContextSource, claudeIntegerSource, claudeOutputSource},
+		VerifiedAt:           claude55CapacityVerifiedAt, OriginalText: "1M; 128K",
+		NormalizationBasis: claudeUnitsBasis,
+	},
+	{
+		ModelID: "claude-sonnet-5-5", Provider: "anthropic", Product: "messages_api",
+		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1000000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
+		SourceURL:            "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+		SourceURLs:           []string{claudeContextSource, claudeIntegerSource, claudeOutputSource},
+		VerifiedAt:           claude55CapacityVerifiedAt, OriginalText: "1M; 128K",
+		NormalizationBasis: claudeUnitsBasis,
+	},
 	{
 		ModelID: "claude-fable-5-1", Provider: "anthropic", Product: "messages_api",
 		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1000000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},

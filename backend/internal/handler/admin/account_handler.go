@@ -2874,8 +2874,19 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	response.Success(c, models)
 }
 
-// accountTestModels lists the models the single-account test can select.
-func (h *AccountHandler) accountTestModels(ctx context.Context, account *service.Account) (any, error) {
+// accountTestModels lists the models the single-account test can select, each
+// row stating the reasoning efforts the test transmits for it. Both the raw
+// model list and the test plan view are built from these rows.
+func (h *AccountHandler) accountTestModels(ctx context.Context, account *service.Account) ([]map[string]any, error) {
+	catalog, err := h.accountTestCatalog(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	return accountTestReasoningRows(account, catalog)
+}
+
+// accountTestCatalog lists the platform's selectable test models.
+func (h *AccountHandler) accountTestCatalog(ctx context.Context, account *service.Account) (any, error) {
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
 		return h.openAIAccountTestModels(ctx, account)
@@ -3016,15 +3027,7 @@ func (h *AccountHandler) accountTestModels(ctx context.Context, account *service
 // openAIAccountTestModels selects request-side model IDs from this account's
 // saved configuration. Discovery enumerates unrestricted accounts and wildcard
 // candidates; it is not an availability gate for explicitly configured models.
-func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) (result []openai.Model, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			return
-		}
-		for i := range result {
-			result[i].ReasoningEfforts, result[i].DefaultReasoningEffort = service.AccountTestReasoningOptions(account, result[i].ID)
-		}
-	}()
+func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) ([]openai.Model, error) {
 	mapping := account.GetModelMapping()
 	if account.IsOpenAIPassthroughEnabled() || len(mapping) == 0 {
 		return h.discoverOpenAIAccountTestModels(ctx, account)

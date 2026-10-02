@@ -249,10 +249,10 @@ func PrepareBedrockRequestBodyWithTokens(body []byte, modelID string, betaTokens
 	// 参考 litellm: _convert_output_format_to_inline_schema()
 	body = convertOutputFormatToInlineSchema(body)
 
-	// InvokeModel accepts output_config.effort for Sonnet 5.5. Keep just that
-	// field; output_config.format has already been inlined above, and older
-	// models retain the existing output_config stripping behavior.
-	if claude.IsSonnet55(modelID) {
+	// Keep just output_config.effort where InvokeModel accepts it;
+	// output_config.format has already been inlined above, and older models
+	// retain the existing output_config stripping behavior.
+	if bedrockKeepsOutputConfigEffort(modelID) {
 		if effort := gjson.GetBytes(body, "output_config.effort"); effort.Exists() {
 			body, err = sjson.SetRawBytes(body, "output_config", []byte(`{"effort":`+effort.Raw+`}`))
 		} else {
@@ -280,6 +280,13 @@ func PrepareBedrockRequestBodyWithTokens(body []byte, modelID string, betaTokens
 	}
 
 	return body, nil
+}
+
+// bedrockKeepsOutputConfigEffort reports whether Bedrock InvokeModel accepts
+// output_config.effort for a model. Request preparation removes output_config
+// for every other model, so no effort reaches them.
+func bedrockKeepsOutputConfigEffort(modelID string) bool {
+	return claude.IsSonnet55(modelID)
 }
 
 // ResolveBedrockBetaTokens computes the final Bedrock beta token list before policy filtering.

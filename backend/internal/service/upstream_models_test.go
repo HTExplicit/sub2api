@@ -732,6 +732,40 @@ func TestSyncUpstreamModelCatalogPersistsExplicitNonReasoningCapability(t *testi
 	require.NotNil(t, repo.updates)
 }
 
+// Scenario: OpenRouter 以对象声明 reasoning，档位按从轻到重保存，默认档只取
+// default_effort；其他类型保持未知，而不是 false。
+func TestExtractUpstreamModelCatalogReadsReasoningObject(t *testing.T) {
+	_, metadata, err := extractUpstreamModelCatalog([]byte(`{"data":[
+		{"id":"openai/gpt-5.5","name":"GPT-5.5","reasoning":{"mandatory":false,"default_enabled":true,"supported_efforts":["xhigh","high","medium","low","none"],"default_effort":"medium"}},
+		{"id":"efforts-only","name":"Efforts Only","reasoning":{"mandatory":true,"supported_efforts":["max","xhigh","high","medium","low"]}},
+		{"id":"listed","name":"Listed","supported_reasoning_levels":["low","high"]},
+		{"id":"deepseek/deepseek-v3.2","name":"DeepSeek V3.2","reasoning":{"mandatory":false,"default_enabled":false}},
+		{"id":"flag-on","name":"Flag On","reasoning":true},
+		{"id":"flag-off","name":"Flag Off","reasoning":false},
+		{"id":"text","name":"Text","reasoning":"yes"}
+	]}`), false)
+	require.NoError(t, err)
+	openRouter := metadata["openai/gpt-5.5"]
+	require.NotNil(t, openRouter.Reasoning)
+	require.True(t, *openRouter.Reasoning)
+	require.Equal(t, []string{"none", "low", "medium", "high", "xhigh"}, openRouter.SupportedReasoningLevels)
+	require.Equal(t, "medium", openRouter.DefaultReasoningLevel)
+	effortsOnly := metadata["efforts-only"]
+	require.NotNil(t, effortsOnly.Reasoning)
+	require.True(t, *effortsOnly.Reasoning)
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsOnly.SupportedReasoningLevels)
+	require.Empty(t, effortsOnly.DefaultReasoningLevel, "no default is derived from the effort order")
+	require.Equal(t, "low", metadata["listed"].DefaultReasoningLevel, "a level list still defaults to its first entry")
+	require.Contains(t, metadata, "deepseek/deepseek-v3.2")
+	require.Nil(t, metadata["deepseek/deepseek-v3.2"].Reasoning)
+	require.NotNil(t, metadata["flag-on"].Reasoning)
+	require.True(t, *metadata["flag-on"].Reasoning)
+	require.NotNil(t, metadata["flag-off"].Reasoning)
+	require.False(t, *metadata["flag-off"].Reasoning)
+	require.Contains(t, metadata, "text")
+	require.Nil(t, metadata["text"].Reasoning)
+}
+
 func TestSyncUpstreamModelCatalogClassifiesSnapshotPersistenceFailureAsInternal(t *testing.T) {
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
