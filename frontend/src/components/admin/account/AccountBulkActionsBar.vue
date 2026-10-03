@@ -76,7 +76,7 @@
     </div>
   </div>
   <BaseDialog :show="promptBindingOpen" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingOpen = false">
-    <AccountSystemPromptBinding v-if="promptBindingOpen" :account-ids="selectedIds" @changed="promptBindingOpen = false" />
+    <AccountSystemPromptBinding v-if="promptBindingOpen" :account-ids="selectedIds" :takers="promptTakers" @changed="promptBindingOpen = false" />
   </BaseDialog>
 </template>
 
@@ -84,10 +84,13 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import { systemPromptBindingLimit } from '@/utils/systemPromptBinding'
+import { systemPromptBindingLimit, takesSystemPrompt } from '@/utils/systemPromptBinding'
+import type { Account } from '@/types'
 
 const props = defineProps<{
   selectedIds: number[]
+  // The selected accounts the list holds; selectedIds can also name accounts it has not loaded.
+  selectedAccounts: Pick<Account, 'platform'>[]
   totalResults: number
   selectingAll: boolean
   allResultsSelected: boolean
@@ -114,5 +117,12 @@ defineEmits([
 const { t } = useI18n()
 const AccountSystemPromptBinding = defineAsyncComponent(() => import('./AccountSystemPromptBinding.vue'))
 const promptBindingOpen = ref(false)
-const promptBindingAvailable = computed(() => props.selectedIds.length > 0 && props.selectedIds.length <= systemPromptBindingLimit)
+// 系统提示词 is offered while the selection can hold an account that takes a prompt: not when every selected account is
+// loaded and none of them takes one, as the row menu offers none for such an account. A selection with accounts the
+// list has not loaded keeps it, and the binding request skips the accounts that take none.
+const promptTakers = computed(() => props.selectedAccounts.filter(account => takesSystemPrompt(account.platform)).length)
+const promptBindingAvailable = computed(() => {
+  const selected = props.selectedIds.length
+  return selected > 0 && selected <= systemPromptBindingLimit && (promptTakers.value > 0 || props.selectedAccounts.length < selected)
+})
 </script>
