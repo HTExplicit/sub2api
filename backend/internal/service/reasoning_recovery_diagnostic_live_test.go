@@ -1,4 +1,4 @@
-//go:build reasoning_fidelity && reasoning_replay_diagnostic
+//go:build reasoning_fidelity && reasoning_recovery_diagnostic
 
 package service_test
 
@@ -27,22 +27,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const replayDiagnosticRunID = "reasoning-replay-recovery-20260907"
-const replayDiagnosticMaxAttempts = 16
+const recoveryDiagnosticRunID = "reasoning-replay-recovery-20260907"
+const recoveryDiagnosticMaxAttempts = 16
 
-type replayDiagnosticBootstrap struct {
+type recoveryDiagnosticBootstrap struct {
 	SchemaVersion int            `json:"schema_version"`
 	RunID         string         `json:"run_id"`
 	ConfigMode    string         `json:"config_mode"`
 	SourceSHA     string         `json:"source_sha"`
 	Source        fidelitySource `json:"source"`
 }
-type replayDiagnosticCase struct {
+type recoveryDiagnosticCase struct {
 	ID                     int
 	Model, Effort, Fixture string
-	Chat, Stream           bool
 }
-type replayDiagnosticAttempt struct {
+type recoveryDiagnosticAttempt struct {
 	Type               string         `json:"type"`
 	CaseID             int            `json:"case_id"`
 	Slot               int            `json:"slot"`
@@ -64,7 +63,7 @@ type replayDiagnosticAttempt struct {
 	ResponseOutputSHA  string         `json:"response_output_sha256,omitempty"`
 	EncryptedInputSent int            `json:"encrypted_input_sent"`
 }
-type replayDiagnosticResult struct {
+type recoveryDiagnosticResult struct {
 	Type                       string `json:"type"`
 	CaseID                     int    `json:"case_id"`
 	Model                      string `json:"model"`
@@ -82,32 +81,28 @@ type replayDiagnosticResult struct {
 	ReasoningConfigPreserved   bool   `json:"reasoning_config_preserved"`
 	ResponseModelMatchesSent   bool   `json:"response_model_matches_sent"`
 	EncryptedReasoningComplete bool   `json:"encrypted_reasoning_complete"`
-	ReplayHits                 int    `json:"replay_hits"`
-	ReplayStored               int    `json:"replay_stored"`
-	ReplayFieldsPreserved      *bool  `json:"replay_fields_preserved"`
 	RecoveryObserved           bool   `json:"recovery_observed"`
 	NegativeCacheObserved      bool   `json:"negative_cache_observed"`
 	OldCipherRemoved           *bool  `json:"old_cipher_removed"`
 	NewCipherPreserved         *bool  `json:"new_cipher_preserved"`
 }
-type replayDiagnosticExchange struct {
-	result        replayDiagnosticResult
+type recoveryDiagnosticExchange struct {
+	result        recoveryDiagnosticResult
 	raw           fidelityResponse
-	chat          replayDiagnosticChat
 	request, sent []byte
-	attempts      []replayDiagnosticRecord
+	attempts      []recoveryDiagnosticRecord
 }
-type replayDiagnosticRecord struct {
-	result   replayDiagnosticAttempt
+type recoveryDiagnosticRecord struct {
+	result   recoveryDiagnosticAttempt
 	body     []byte
 	response fidelityResponse
 }
-type replayDiagnosticHarness struct {
-	boot                 replayDiagnosticBootstrap
+type recoveryDiagnosticHarness struct {
+	boot                 recoveryDiagnosticBootstrap
 	input                *bufio.Reader
 	output               *json.Encoder
 	gateway              *service.OpenAIGatewayService
-	upstream             *replayDiagnosticUpstream
+	upstream             *recoveryDiagnosticUpstream
 	ctx                  context.Context
 	accountHash, stopped string
 	firstSend            time.Time
@@ -116,8 +111,8 @@ type replayDiagnosticHarness struct {
 
 // A compiled binary is inert unless invoked by the reviewed broker. Neither
 // ordinary go test nor preflight is authorized to issue a POST.
-func TestReasoningReplayDiagnosticLive(t *testing.T) {
-	if os.Getenv("SUB2API_REASONING_REPLAY_LIVE") != "1" {
+func TestReasoningRecoveryDiagnosticLive(t *testing.T) {
+	if os.Getenv("SUB2API_REASONING_RECOVERY_LIVE") != "1" {
 		t.Skip("explicit controlled runner opt-in required")
 	}
 	out := os.Stdout
@@ -139,13 +134,13 @@ func TestReasoningReplayDiagnosticLive(t *testing.T) {
 			t.Fail()
 		}
 	}()
-	if err = replayDiagnosticRun(bufio.NewReaderSize(os.Stdin, 64<<10), encoder); err != nil {
+	if err = recoveryDiagnosticRun(bufio.NewReaderSize(os.Stdin, 64<<10), encoder); err != nil {
 		_ = encoder.Encode(map[string]any{"type": "summary", "status": "harness_failed", "error_class": err.Error()})
 		t.Fail()
 	}
 }
-func replayDiagnosticValidateBootstrap(boot replayDiagnosticBootstrap) error {
-	if boot.SchemaVersion != 1 || boot.RunID != replayDiagnosticRunID || boot.ConfigMode != "production_env" ||
+func recoveryDiagnosticValidateBootstrap(boot recoveryDiagnosticBootstrap) error {
+	if boot.SchemaVersion != 1 || boot.RunID != recoveryDiagnosticRunID || boot.ConfigMode != "production_env" ||
 		len(boot.SourceSHA) != 40 || strings.Trim(boot.SourceSHA, "0123456789abcdef") != "" ||
 		boot.Source.Account.ID != 15522 || boot.Source.UserID != 920000015522 {
 		return errors.New("invalid_bootstrap_contract")
@@ -153,36 +148,36 @@ func replayDiagnosticValidateBootstrap(boot replayDiagnosticBootstrap) error {
 	legacy := fidelityBootstrap{SchemaVersion: 1, Phase: "after", RunID: boot.RunID, ConfigMode: boot.ConfigMode, Source: boot.Source}
 	return fidelityValidateBootstrap(legacy)
 }
-func replayDiagnosticRun(input *bufio.Reader, output *json.Encoder) error {
-	var boot replayDiagnosticBootstrap
+func recoveryDiagnosticRun(input *bufio.Reader, output *json.Encoder) error {
+	var boot recoveryDiagnosticBootstrap
 	if err := fidelityReadJSON(input, &boot); err != nil {
 		return errors.New("invalid_bootstrap")
 	}
-	if err := replayDiagnosticValidateBootstrap(boot); err != nil {
+	if err := recoveryDiagnosticValidateBootstrap(boot); err != nil {
 		return err
 	}
-	if expected := os.Getenv("REASONING_REPLAY_SOURCE_SHA"); expected != "" && expected != boot.SourceSHA {
+	if expected := os.Getenv("REASONING_RECOVERY_SOURCE_SHA"); expected != "" && expected != boot.SourceSHA {
 		return errors.New("invalid_bootstrap_contract")
 	}
 	cfg, err := config.LoadForBootstrap()
 	if err != nil {
 		return errors.New("production_config_load_failed")
 	}
-	h := &replayDiagnosticHarness{boot: boot, input: input, output: output, ctx: context.Background()}
+	h := &recoveryDiagnosticHarness{boot: boot, input: input, output: output, ctx: context.Background()}
 	h.accountHash = fidelityHashJSON(&h.boot.Source.Account)
-	u := &replayDiagnosticUpstream{h: h, inner: repository.NewHTTPUpstream(cfg), used: make(map[int]bool)}
+	u := &recoveryDiagnosticUpstream{h: h, inner: repository.NewHTTPUpstream(cfg), used: make(map[int]bool)}
 	h.upstream = u
 	h.gateway, err = service.ReasoningFidelityGatewayForTest(cfg, u, boot.Source.SystemPrompts, boot.Source.Settings)
 	if err != nil {
 		return errors.New("unsupported_source_policy")
 	}
-	service.ReasoningReplayDiagnosticAttach(h.gateway)
+	service.ReasoningRecoveryDiagnosticAttach(h.gateway)
 	probe := fidelityRequestBody("gpt-5.6-sol", "xhigh", fidelitySinglePrompt, false)
 	probe, err = fidelityPrepareIngressBody(probe, boot.Source)
 	if err != nil {
 		return errors.New("source_group_policy_rejected")
 	}
-	c, _ := h.newContext(h.ctx, probe, replayDiagnosticCase{Model: "gpt-5.6-sol", Effort: "xhigh"})
+	c, _ := h.newContext(h.ctx, probe, recoveryDiagnosticCase{Model: "gpt-5.6-sol", Effort: "xhigh"})
 	req, err := service.ReasoningFidelityDirectRequestForTest(c.Request.Context(), h.gateway, c, &h.boot.Source.Account, probe)
 	if err != nil {
 		return errors.New("source_endpoint_validation_failed")
@@ -200,7 +195,7 @@ func replayDiagnosticRun(input *bufio.Reader, output *json.Encoder) error {
 		u.proxy = h.boot.Source.Account.Proxy.URL()
 	}
 	_ = output.Encode(map[string]any{"type": "ready", "source_fingerprint": boot.Source.Fingerprint, "endpoint_sha256": fidelityHash([]byte(u.endpoint)), "attempts": 0})
-	if os.Getenv("SUB2API_REASONING_REPLAY_VALIDATE_ONLY") == "1" {
+	if os.Getenv("SUB2API_REASONING_RECOVERY_VALIDATE_ONLY") == "1" {
 		return output.Encode(map[string]any{"type": "summary", "status": "validated", "attempts": 0})
 	}
 	h.run()
@@ -210,78 +205,53 @@ func replayDiagnosticRun(input *bufio.Reader, output *json.Encoder) error {
 	}
 	return output.Encode(map[string]any{"type": "summary", "status": status, "attempts": u.attempts, "results_count": h.results, "blocked_retries": u.blocked})
 }
-func (h *replayDiagnosticHarness) newContext(ctx context.Context, body []byte, fixture replayDiagnosticCase) (*gin.Context, *httptest.ResponseRecorder) {
+func (h *recoveryDiagnosticHarness) newContext(ctx context.Context, body []byte, fixture recoveryDiagnosticCase) (*gin.Context, *httptest.ResponseRecorder) {
 	record := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(record)
-	path := "/v1/responses"
-	if fixture.Chat {
-		path = "/v1/chat/completions"
-	}
-	c.Request = httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)).WithContext(ctx)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body)).WithContext(ctx)
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("Accept", "text/event-stream")
-	c.Request.Header.Set("User-Agent", "sub2api-reasoning-replay-diagnostic/1")
+	c.Request.Header.Set("User-Agent", "sub2api-reasoning-recovery-diagnostic/1")
 	c.Request.Header.Set("X-Client-Request-Id", fidelityNewID())
 	service.ReasoningFidelityContextForTest(ctx, c, &h.boot.Source.Group, h.boot.Source.FastPolicy, h.boot.Source.UserID, fixture.Effort)
-	service.ReasoningReplayDiagnosticTenant(c, &h.boot.Source.Group)
+	service.ReasoningRecoveryDiagnosticTenant(c, &h.boot.Source.Group)
 	return c, record
 }
-func (h *replayDiagnosticHarness) run() {
+func (h *recoveryDiagnosticHarness) run() {
 	for index, model := range []string{"gpt-5.6-sol", "gpt-6-astra"} {
 		base := index * 8
 		effort := []string{"xhigh", "max"}[index]
-		fixture := replayDiagnosticCase{ID: base + 1, Model: model, Effort: effort, Fixture: "native_single", Stream: true}
-		single := h.runCase(fixture, fidelityRequestBody(model, effort, fidelitySinglePrompt, false), nil, "", nil)
-		for mode, stream := range []bool{true, false} {
-			label := "chat_stream_"
-			if !stream {
-				label = "chat_nonstream_"
-			}
-			firstCase := replayDiagnosticCase{ID: base + 2 + mode*2, Model: model, Effort: effort, Fixture: label + "first", Chat: true, Stream: stream}
-			firstBody := replayDiagnosticChatBody(model, effort, stream)
-			first := h.runCase(firstCase, firstBody, nil, "", nil)
-			finalCase := firstCase
-			finalCase.ID++
-			finalCase.Fixture = label + "final"
-			next, ok := replayDiagnosticChatContinuation(firstBody, first.chat)
-			if !ok {
-				h.skip(finalCase, "not_covered")
-				continue
-			}
-			h.runCase(finalCase, next, first.raw.Output, "", nil)
-		}
-		recoveryCase := replayDiagnosticCase{ID: base + 6, Model: model, Effort: effort, Fixture: "invalid_cipher", Stream: true}
-		invalid, oldCipher, ok := replayDiagnosticInvalidBody(single)
+		fixture := recoveryDiagnosticCase{ID: base + 1, Model: model, Effort: effort, Fixture: "native_single"}
+		single := h.runCase(fixture, fidelityRequestBody(model, effort, fidelitySinglePrompt, false), "", nil)
+		recoveryCase := recoveryDiagnosticCase{ID: base + 6, Model: model, Effort: effort, Fixture: "invalid_cipher"}
+		invalid, oldCipher, ok := recoveryDiagnosticInvalidBody(single)
 		if !ok {
 			h.skip(recoveryCase, "not_covered")
-			h.skip(replayDiagnosticCase{ID: base + 8, Model: model, Effort: effort, Fixture: "negative_cache", Stream: true}, "not_covered")
+			h.skip(recoveryDiagnosticCase{ID: base + 8, Model: model, Effort: effort, Fixture: "negative_cache"}, "not_covered")
 			continue
 		}
-		recovered := h.runCase(recoveryCase, invalid, nil, oldCipher, nil)
+		recovered := h.runCase(recoveryCase, invalid, oldCipher, nil)
 		negativeCase := recoveryCase
 		negativeCase.ID = base + 8
 		negativeCase.Fixture = "negative_cache"
-		next, newCiphers, ok := replayDiagnosticNegativeBody(invalid, recovered)
+		next, newCiphers, ok := recoveryDiagnosticNegativeBody(invalid, recovered)
 		if !ok {
 			h.skip(negativeCase, "not_covered")
 			continue
 		}
-		h.runCase(negativeCase, next, nil, oldCipher, newCiphers)
+		h.runCase(negativeCase, next, oldCipher, newCiphers)
 	}
 }
-func (h *replayDiagnosticHarness) skip(f replayDiagnosticCase, status string) replayDiagnosticExchange {
-	r := replayDiagnosticResult{Type: "case_result", CaseID: f.ID, Model: f.Model, Effort: f.Effort, Fixture: f.Fixture, Status: status, Attempts: h.upstream.attempts, FixtureSHA: replayDiagnosticFixtureHash(f.Fixture)}
+func (h *recoveryDiagnosticHarness) skip(f recoveryDiagnosticCase, status string) recoveryDiagnosticExchange {
+	r := recoveryDiagnosticResult{Type: "case_result", CaseID: f.ID, Model: f.Model, Effort: f.Effort, Fixture: f.Fixture, Status: status, Attempts: h.upstream.attempts, FixtureSHA: recoveryDiagnosticFixtureHash()}
 	h.results++
 	_ = h.output.Encode(r)
-	return replayDiagnosticExchange{result: r}
+	return recoveryDiagnosticExchange{result: r}
 }
-func replayDiagnosticFixtureHash(fixture string) string {
-	if strings.HasPrefix(fixture, "chat_") {
-		return fidelityHash([]byte(fidelityOrdersPrompt + "\n" + fidelityOrdersResult))
-	}
+func recoveryDiagnosticFixtureHash() string {
 	return fidelityHash([]byte(fidelitySinglePrompt))
 }
-func (h *replayDiagnosticHarness) runCase(f replayDiagnosticCase, body []byte, expected []json.RawMessage, oldCipher string, newCiphers []string) replayDiagnosticExchange {
+func (h *recoveryDiagnosticHarness) runCase(f recoveryDiagnosticCase, body []byte, oldCipher string, newCiphers []string) recoveryDiagnosticExchange {
 	if h.stopped != "" {
 		return h.skip(f, "batch_stopped")
 	}
@@ -290,12 +260,9 @@ func (h *replayDiagnosticHarness) runCase(f replayDiagnosticCase, body []byte, e
 		return h.skip(f, "batch_stopped")
 	}
 	original := append([]byte(nil), body...)
-	if !f.Chat {
-		var err error
-		body, err = fidelityPrepareIngressBody(body, h.boot.Source)
-		if err != nil {
-			return h.skip(f, "unsupported_source_policy")
-		}
+	body, err := fidelityPrepareIngressBody(body, h.boot.Source)
+	if err != nil {
+		return h.skip(f, "unsupported_source_policy")
 	}
 	ctx, cancel := context.WithTimeout(h.ctx, fidelityRequestTimeout)
 	defer cancel()
@@ -308,31 +275,14 @@ func (h *replayDiagnosticHarness) runCase(f replayDiagnosticCase, body []byte, e
 	u.lastError = ""
 	attemptsBefore, blockedBefore := u.attempts, u.blocked
 	started := time.Now()
-	var err error
-	if f.Chat {
-		_, err = h.gateway.ForwardAsChatCompletions(c.Request.Context(), c, &h.boot.Source.Account, body, "", h.boot.Source.ChannelModels[f.Model])
-	} else {
-		_, err = h.gateway.Forward(c.Request.Context(), c, &h.boot.Source.Account, body)
-	}
-	e := replayDiagnosticExchange{request: original, attempts: append([]replayDiagnosticRecord(nil), u.records...)}
-	text := ""
-	if f.Chat {
-		e.chat = replayDiagnosticParseChat(writer.Body.Bytes(), writer.Header().Get("Content-Type"), writer.Code)
-		text = e.chat.Text
-	} else {
-		e.raw = fidelityParseResponse(writer.Body.Bytes(), writer.Header().Get("Content-Type"), writer.Code)
-		text = e.raw.Text
-	}
+	_, err = h.gateway.Forward(c.Request.Context(), c, &h.boot.Source.Account, body)
+	e := recoveryDiagnosticExchange{request: original, attempts: append([]recoveryDiagnosticRecord(nil), u.records...)}
+	e.raw = fidelityParseResponse(writer.Body.Bytes(), writer.Header().Get("Content-Type"), writer.Code)
+	text := e.raw.Text
 	if len(u.records) > 0 {
 		e.sent = append([]byte(nil), u.records[len(u.records)-1].body...)
-		if f.Chat {
-			e.raw = u.records[len(u.records)-1].response
-		}
 	}
 	status := e.raw.Status
-	if f.Chat {
-		status = e.chat.Status
-	}
 	if status == "" {
 		status = "no_response"
 	}
@@ -342,16 +292,12 @@ func (h *replayDiagnosticHarness) runCase(f replayDiagnosticCase, body []byte, e
 	if u.blocked > blockedBefore {
 		status = "retry_blocked"
 	}
-	r := replayDiagnosticResult{Type: "case_result", CaseID: f.ID, Model: f.Model, Effort: f.Effort, Fixture: f.Fixture, Status: status, Attempted: u.attempts > attemptsBefore, AttemptsUsed: u.attempts - attemptsBefore, Attempts: u.attempts, BlockedRetries: u.blocked - blockedBefore, DurationMS: time.Since(started).Milliseconds(), FixtureSHA: replayDiagnosticFixtureHash(f.Fixture), EncryptedReasoningComplete: e.raw.ReasoningComplete}
+	r := recoveryDiagnosticResult{Type: "case_result", CaseID: f.ID, Model: f.Model, Effort: f.Effort, Fixture: f.Fixture, Status: status, Attempted: u.attempts > attemptsBefore, AttemptsUsed: u.attempts - attemptsBefore, Attempts: u.attempts, BlockedRetries: u.blocked - blockedBefore, DurationMS: time.Since(started).Milliseconds(), FixtureSHA: recoveryDiagnosticFixtureHash(), EncryptedReasoningComplete: e.raw.ReasoningComplete}
 	if text != "" {
 		r.AnswerSHA = fidelityHash([]byte(text))
 	}
-	if status == "completed" && !strings.HasSuffix(f.Fixture, "_first") {
-		kind := "single"
-		if f.Chat {
-			kind = "tool_final"
-		}
-		correct := fidelityScore(kind, text)
+	if status == "completed" {
+		correct := fidelityScore("single", text)
 		r.Correct = &correct
 	}
 	var sent map[string]json.RawMessage
@@ -364,21 +310,16 @@ func (h *replayDiagnosticHarness) runCase(f replayDiagnosticCase, body []byte, e
 	var sentModel string
 	_ = json.Unmarshal(sent["model"], &sentModel)
 	r.ResponseModelMatchesSent = e.raw.Model != "" && e.raw.Model == sentModel
-	r.ReplayHits, r.ReplayStored = service.ReasoningReplayDiagnosticObserve(c)
-	if expected != nil {
-		preserved := replayDiagnosticContainsItems(sent["input"], expected)
-		r.ReplayFieldsPreserved = &preserved
-	}
-	r.RecoveryObserved = f.Fixture == "invalid_cipher" && len(u.records) == 2 && replayDiagnosticSignatureCode(u.records[0].result.ErrorCode)
+	r.RecoveryObserved = f.Fixture == "invalid_cipher" && len(u.records) == 2 && recoveryDiagnosticSignatureCode(u.records[0].result.ErrorCode)
 	r.NegativeCacheObserved = f.Fixture == "negative_cache" && len(u.records) == 1 && writer.Header().Get("X-Sub2API-Reasoning-Recovery") == "rejected_history_skipped"
 	if oldCipher != "" && len(e.sent) > 0 {
-		removed := !replayDiagnosticHasCipher(sent["input"], oldCipher)
+		removed := !recoveryDiagnosticHasCipher(sent["input"], oldCipher)
 		r.OldCipherRemoved = &removed
 	}
 	if len(newCiphers) > 0 {
 		preserved := true
 		for _, cipher := range newCiphers {
-			preserved = preserved && replayDiagnosticHasCipher(sent["input"], cipher)
+			preserved = preserved && recoveryDiagnosticHasCipher(sent["input"], cipher)
 		}
 		r.NewCipherPreserved = &preserved
 	}
@@ -388,23 +329,7 @@ func (h *replayDiagnosticHarness) runCase(f replayDiagnosticCase, body []byte, e
 	return e
 }
 
-func replayDiagnosticContainsItems(input json.RawMessage, items []json.RawMessage) bool {
-	var list []json.RawMessage
-	if json.Unmarshal(input, &list) != nil || len(items) == 0 {
-		return false
-	}
-	for start := 0; start+len(items) <= len(list); start++ {
-		match := true
-		for i, item := range items {
-			match = match && fidelityJSONEqual(item, list[start+i])
-		}
-		if match {
-			return true
-		}
-	}
-	return false
-}
-func replayDiagnosticHasCipher(input json.RawMessage, cipher string) bool {
+func recoveryDiagnosticHasCipher(input json.RawMessage, cipher string) bool {
 	var items []map[string]json.RawMessage
 	_ = json.Unmarshal(input, &items)
 	for _, item := range items {
@@ -416,7 +341,7 @@ func replayDiagnosticHasCipher(input json.RawMessage, cipher string) bool {
 	}
 	return false
 }
-func replayDiagnosticInvalidBody(e replayDiagnosticExchange) ([]byte, string, bool) {
+func recoveryDiagnosticInvalidBody(e recoveryDiagnosticExchange) ([]byte, string, bool) {
 	if e.result.Status != "completed" || !e.raw.ReasoningComplete || e.raw.HasTool || e.raw.HasRefusal {
 		return nil, "", false
 	}
@@ -486,7 +411,7 @@ func replayDiagnosticInvalidBody(e replayDiagnosticExchange) ([]byte, string, bo
 	body, err := json.Marshal(request)
 	return body, bad, err == nil
 }
-func replayDiagnosticNegativeBody(invalid []byte, recovered replayDiagnosticExchange) ([]byte, []string, bool) {
+func recoveryDiagnosticNegativeBody(invalid []byte, recovered recoveryDiagnosticExchange) ([]byte, []string, bool) {
 	if !recovered.result.RecoveryObserved || recovered.result.Status != "completed" || recovered.raw.HasTool || recovered.raw.HasRefusal {
 		return nil, nil, false
 	}
@@ -520,38 +445,38 @@ func replayDiagnosticNegativeBody(invalid []byte, recovered replayDiagnosticExch
 	return raw, ciphers, err == nil
 }
 
-type replayDiagnosticUpstream struct {
-	h                                             *replayDiagnosticHarness
+type recoveryDiagnosticUpstream struct {
+	h                                             *recoveryDiagnosticHarness
 	inner                                         service.HTTPUpstream
-	fixture                                       replayDiagnosticCase
+	fixture                                       recoveryDiagnosticCase
 	activeContext                                 context.Context
 	endpoint, authorizationHash, proxy, lastError string
 	attempts, blocked, caseSent                   int
 	used                                          map[int]bool
-	records                                       []replayDiagnosticRecord
+	records                                       []recoveryDiagnosticRecord
 }
 
-func (u *replayDiagnosticUpstream) Do(req *http.Request, proxy string, id int64, concurrency int) (*http.Response, error) {
+func (u *recoveryDiagnosticUpstream) Do(req *http.Request, proxy string, id int64, concurrency int) (*http.Response, error) {
 	return u.send(req, proxy, id, concurrency, nil)
 }
-func (u *replayDiagnosticUpstream) DoWithTLS(req *http.Request, proxy string, id int64, concurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+func (u *recoveryDiagnosticUpstream) DoWithTLS(req *http.Request, proxy string, id int64, concurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 	return u.send(req, proxy, id, concurrency, profile)
 }
-func replayDiagnosticSignatureCode(code string) bool {
+func recoveryDiagnosticSignatureCode(code string) bool {
 	return code == "thinking_signature_invalid" || code == "invalid_encrypted_content"
 }
-func (u *replayDiagnosticUpstream) send(req *http.Request, proxy string, id int64, concurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+func (u *recoveryDiagnosticUpstream) send(req *http.Request, proxy string, id int64, concurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 	fail := func(code string) (*http.Response, error) { u.lastError = code; return nil, errors.New(code) }
 	slot := u.fixture.ID + u.caseSent
 	max := 1
 	if u.fixture.ID == 6 || u.fixture.ID == 14 {
 		max = 2
 	}
-	if u.caseSent >= max || u.used[slot] || u.caseSent == 1 && (len(u.records) != 1 || !replayDiagnosticSignatureCode(u.records[0].result.ErrorCode)) {
+	if u.caseSent >= max || u.used[slot] || u.caseSent == 1 && (len(u.records) != 1 || !recoveryDiagnosticSignatureCode(u.records[0].result.ErrorCode)) {
 		u.blocked++
 		return fail("slot_retry_blocked")
 	}
-	if u.attempts >= replayDiagnosticMaxAttempts {
+	if u.attempts >= recoveryDiagnosticMaxAttempts {
 		return fail("attempt_budget_exhausted")
 	}
 	if u.h.stopped != "" {
@@ -641,12 +566,12 @@ func (u *replayDiagnosticUpstream) send(req *http.Request, proxy string, id int6
 		return fail("empty_upstream_response")
 	}
 	code, contentType := resp.StatusCode, resp.Header.Get("Content-Type")
-	resp.Body = &replayDiagnosticCapture{ReadCloser: resp.Body, cleanup: cleanup, finish: func(data []byte) { u.record(slot, body, data, contentType, code, started, "") }}
+	resp.Body = &recoveryDiagnosticCapture{ReadCloser: resp.Body, cleanup: cleanup, finish: func(data []byte) { u.record(slot, body, data, contentType, code, started, "") }}
 	return resp, nil
 }
-func (u *replayDiagnosticUpstream) record(slot int, body, data []byte, contentType string, status int, started time.Time, class string) {
+func (u *recoveryDiagnosticUpstream) record(slot int, body, data []byte, contentType string, status int, started time.Time, class string) {
 	parsed := fidelityParseResponse(data, contentType, status)
-	r := replayDiagnosticAttempt{Type: "attempt_result", CaseID: u.fixture.ID, Slot: slot, Model: u.fixture.Model, Effort: u.fixture.Effort, Fixture: u.fixture.Fixture, Status: parsed.Status, ErrorClass: parsed.ErrorClass, ErrorCode: replayDiagnosticErrorCode(data, contentType), Attempts: u.attempts, DurationMS: time.Since(started).Milliseconds(), HTTPStatus: status, Usage: parsed.Usage, SentBodySHA: fidelityHash(body)}
+	r := recoveryDiagnosticAttempt{Type: "attempt_result", CaseID: u.fixture.ID, Slot: slot, Model: u.fixture.Model, Effort: u.fixture.Effort, Fixture: u.fixture.Fixture, Status: parsed.Status, ErrorClass: parsed.ErrorClass, ErrorCode: recoveryDiagnosticErrorCode(data, contentType), Attempts: u.attempts, DurationMS: time.Since(started).Milliseconds(), HTTPStatus: status, Usage: parsed.Usage, SentBodySHA: fidelityHash(body)}
 	if class != "" {
 		r.Status = "request_failed"
 		r.ErrorClass = class
@@ -663,7 +588,7 @@ func (u *replayDiagnosticUpstream) record(slot int, body, data []byte, contentTy
 	if len(parsed.Output) > 0 {
 		r.ResponseOutputSHA = fidelityHashJSON(parsed.Output)
 	}
-	u.records = append(u.records, replayDiagnosticRecord{result: r, body: append([]byte(nil), body...), response: parsed})
+	u.records = append(u.records, recoveryDiagnosticRecord{result: r, body: append([]byte(nil), body...), response: parsed})
 	if status == 401 || status == 403 || parsed.ErrorClass == "auth" {
 		u.h.stopped = "authentication_stopped"
 	}
@@ -672,11 +597,11 @@ func (u *replayDiagnosticUpstream) record(slot int, body, data []byte, contentTy
 	}
 	_ = u.h.output.Encode(r)
 }
-func replayDiagnosticErrorCode(body []byte, contentType string) string {
+func recoveryDiagnosticErrorCode(body []byte, contentType string) string {
 	physical := bytes.ReplaceAll(bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n")), []byte("\r"), []byte("\n"))
 	framed := bytes.HasPrefix(physical, []byte("data:")) || bytes.HasPrefix(physical, []byte("event:")) || bytes.Contains(physical, []byte("\ndata:")) || bytes.Contains(physical, []byte("\nevent:"))
 	if !strings.Contains(contentType, "text/event-stream") && !framed {
-		return service.ReasoningReplayDiagnosticRejectionCode(body)
+		return service.ReasoningRecoveryDiagnosticRejectionCode(body)
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(body))
 	scanner.Buffer(make([]byte, 4096), fidelityMaxBody)
@@ -701,7 +626,7 @@ func replayDiagnosticErrorCode(body []byte, contentType string) string {
 			case "response.completed", "response.incomplete", "response.cancelled", "response.canceled":
 				found = ""
 			case "response.failed", "response.done", "error":
-				found = service.ReasoningReplayDiagnosticRejectionCode(payload)
+				found = service.ReasoningRecoveryDiagnosticRejectionCode(payload)
 			}
 		}
 		data = nil
@@ -731,7 +656,7 @@ func replayDiagnosticErrorCode(body []byte, contentType string) string {
 	return found
 }
 
-type replayDiagnosticCapture struct {
+type recoveryDiagnosticCapture struct {
 	io.ReadCloser
 	mu      sync.Mutex
 	raw     []byte
@@ -740,7 +665,7 @@ type replayDiagnosticCapture struct {
 	finish  func([]byte)
 }
 
-func (c *replayDiagnosticCapture) Read(p []byte) (int, error) {
+func (c *recoveryDiagnosticCapture) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -752,7 +677,7 @@ func (c *replayDiagnosticCapture) Read(p []byte) (int, error) {
 	}
 	return n, err
 }
-func (c *replayDiagnosticCapture) Close() error {
+func (c *recoveryDiagnosticCapture) Close() error {
 	err := c.ReadCloser.Close()
 	c.once.Do(func() { c.cleanup(); c.mu.Lock(); raw := append([]byte(nil), c.raw...); c.mu.Unlock(); c.finish(raw) })
 	return err

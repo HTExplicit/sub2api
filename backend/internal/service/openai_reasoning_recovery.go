@@ -57,7 +57,6 @@ type openAIReasoningRecoveryState struct {
 	retryBody     []byte
 	retryUsed     bool
 	stopRecorded  bool
-	onRejected    func([]string)
 	retryCleanups []func()
 
 	diagnosticIncoming       []byte
@@ -103,12 +102,6 @@ func (r *openAIReasoningRecoveryState) Close() {
 		cleanup()
 	}
 	r.retryCleanups = nil
-}
-
-func (r *openAIReasoningRecoveryState) SetRejectedCallback(fn func([]string)) {
-	if r != nil {
-		r.onRejected = fn
-	}
 }
 
 func (r *openAIReasoningRecoveryState) RecoveryAttempt() bool { return r != nil && r.retryUsed }
@@ -181,7 +174,7 @@ func markOpenAIReasoningFailureTerminalForwarded(c *gin.Context) {
 	}
 }
 
-// buildOpenAIReasoningScope is shared by positive replay and rejection memory.
+// buildOpenAIReasoningScope identifies the source whose rejections are remembered.
 // Credentials and route identity enter only a digest; neither is stored or logged.
 func buildOpenAIReasoningScope(c *gin.Context, account *Account, req *http.Request, wireBody []byte) (OpenAIReasoningCacheScope, error) {
 	if c == nil || account == nil || req == nil || req.URL == nil {
@@ -235,8 +228,8 @@ func openAIReasoningDigest(b []byte) string {
 }
 
 // PrepareRequest is called at the actual HTTP send boundary, after all normal
-// transformations and any positive replay. Recovery compares the entire final
-// body and source, so a later builder cannot silently remap or reinject state.
+// transformations. Recovery compares the entire final body and source, so a
+// later builder cannot silently remap or reinject state.
 func (r *openAIReasoningRecoveryState) PrepareRequest(req *http.Request, body []byte, proxyURL string) (*http.Request, []byte, error) {
 	if r != nil && r.enabled {
 		enabled, err := openAIReasoningPolicyEnabled(r.ctx, r.account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
@@ -585,9 +578,6 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	r.retryUsed = true
 	r.retryBody = bytes.Clone(stripped)
 	r.diagnosticState = "retry_prepared"
-	if r.onRejected != nil {
-		r.onRejected(append([]string(nil), hashes...))
-	}
 	if r.store != nil && r.scope.ScopeHash != "" {
 		_ = r.budget.Do(r.ctx, func(ioCtx context.Context) error {
 			return r.store.PutOpenAIRejectedReasoning(ioCtx, r.scope, hashes)

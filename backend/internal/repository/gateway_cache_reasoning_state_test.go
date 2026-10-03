@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -18,6 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// One stored rejection is charged its payload ("<rejected ms>:<expires ms>",
+// 13 digits each) plus its id ("<scope hash>:<cipher hash>").
+const reasoningStateTestEntryBytes = 13 + 1 + 13 + 64 + 1 + 64
+
 func newReasoningStateTestCache(t *testing.T) (*gatewayCache, *miniredis.Miniredis) {
 	t.Helper()
 	server := miniredis.RunT(t)
@@ -30,130 +33,61 @@ func reasoningStateTestScope() service.OpenAIReasoningCacheScope {
 	return service.OpenAIReasoningCacheScope{ScopeHash: strings.Repeat("a", 64), TenantHash: strings.Repeat("b", 64)}
 }
 
-func reasoningStateTestBatch() service.OpenAIReasoningBatch {
-	return service.OpenAIReasoningBatch{
-		Output: []json.RawMessage{
-			json.RawMessage(`{"type":"reasoning","id":"rs_fixture","status":"completed","summary":[],"encrypted_content":"synthetic-cipher","future":{"kept":true}}`),
-			json.RawMessage(`{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"loading"}]}`),
-			json.RawMessage(`{"type":"function_call","call_id":"call_fixture","name":"load_orders","arguments":"{}","status":"completed"}`),
-		},
-		Projection:      json.RawMessage(`{"role":"assistant","content":"loading","tool_calls":[{"id":"call_fixture","type":"function","function":{"name":"load_orders","arguments":"{}"}}]}`),
-		InputPrefixHash: strings.Repeat("c", 64),
-	}
-}
-
-func TestGatewayCacheReasoningStateRoundTripIsolationAndCAS(t *testing.T) {
-	cache, _ := newReasoningStateTestCache(t)
-	scope, key, ctx := reasoningStateTestScope(), strings.Repeat("d", 64), context.Background()
-	batch := reasoningStateTestBatch()
-	put, err := cache.PutOpenAIReasoningBatch(ctx, scope, key, batch)
-	require.NoError(t, err)
-	require.True(t, put)
-	values, err := cache.GetOpenAIReasoningBatches(ctx, scope, []string{key, strings.Repeat("e", 64)})
-	require.NoError(t, err)
-	require.Len(t, values, 1)
-	stored := values[key]
-	require.Len(t, stored.Output, len(batch.Output))
-	for index := range batch.Output {
-		require.JSONEq(t, string(batch.Output[index]), string(stored.Output[index]))
-	}
-	require.JSONEq(t, string(batch.Projection), string(stored.Projection))
-	require.Equal(t, batch.InputPrefixHash, stored.InputPrefixHash)
-	require.True(t, service.IsOpenAIReasoningCacheDigest(stored.PayloadHash))
-
-	other := scope
-	other.ScopeHash = strings.Repeat("f", 64)
-	missing, err := cache.GetOpenAIReasoningBatches(ctx, other, []string{key})
-	require.NoError(t, err)
-	require.Empty(t, missing)
-	other = scope
-	other.TenantHash = strings.Repeat("f", 64)
-	missing, err = cache.GetOpenAIReasoningBatches(ctx, other, []string{key})
-	require.NoError(t, err)
-	require.Empty(t, missing)
-	deleted, err := cache.DeleteOpenAIReasoningBatchIfMatch(ctx, other, key, stored.PayloadHash)
-	require.NoError(t, err)
-	require.False(t, deleted)
-
-	batch.Output[0] = json.RawMessage(`{"type":"reasoning","summary":[],"encrypted_content":"new-synthetic-cipher"}`)
-	put, err = cache.PutOpenAIReasoningBatch(ctx, scope, key, batch)
-	require.NoError(t, err)
-	require.True(t, put)
-	deleted, err = cache.DeleteOpenAIReasoningBatchIfMatch(ctx, scope, key, stored.PayloadHash)
-	require.NoError(t, err)
-	require.False(t, deleted)
-	values, err = cache.GetOpenAIReasoningBatches(ctx, scope, []string{key})
-	require.NoError(t, err)
-	require.NotEqual(t, stored.PayloadHash, values[key].PayloadHash)
-	deleted, err = cache.DeleteOpenAIReasoningBatchIfMatch(ctx, scope, key, values[key].PayloadHash)
-	require.NoError(t, err)
-	require.True(t, deleted)
-	values, err = cache.GetOpenAIReasoningBatches(ctx, scope, []string{key})
-	require.NoError(t, err)
-	require.Empty(t, values)
-}
-
-func TestGatewayCacheReasoningStateHardTTLAndNegativeSeparation(t *testing.T) {
+func TestGatewayCacheReasoningStateHardTTLAndIsolation(t *testing.T) {
 	cache, server := newReasoningStateTestCache(t)
 	scope, key, ctx := reasoningStateTestScope(), strings.Repeat("d", 64), context.Background()
-	put, err := cache.PutOpenAIReasoningBatch(ctx, scope, key, reasoningStateTestBatch())
-	require.NoError(t, err)
-	require.True(t, put)
 	require.NoError(t, cache.PutOpenAIRejectedReasoning(ctx, scope, []string{key}))
-	positiveKey := reasoningBatchPrefix + "entry:" + scope.ScopeHash + ":" + key
-	negativeKey := rejectedReasoningPrefix + "entry:" + scope.ScopeHash + ":" + key
-	require.Equal(t, 24*time.Hour, server.TTL(positiveKey))
-	require.Equal(t, 24*time.Hour, server.TTL(negativeKey))
+	entryKey := rejectedReasoningPrefix + "entry:" + scope.ScopeHash + ":" + key
+	require.Equal(t, 24*time.Hour, server.TTL(entryKey))
 
 	server.FastForward(23 * time.Hour)
-	positive, err := cache.GetOpenAIReasoningBatches(ctx, scope, []string{key})
+	rejected, err := cache.GetOpenAIRejectedReasoning(ctx, scope, []string{key, strings.Repeat("e", 64)})
 	require.NoError(t, err)
-	require.Len(t, positive, 1)
-	negative, err := cache.GetOpenAIRejectedReasoning(ctx, scope, []string{key, strings.Repeat("e", 64)})
-	require.NoError(t, err)
-	require.Len(t, negative, 1)
-	require.Equal(t, 24*time.Hour, negative[key].ExpiresAt.Sub(negative[key].RejectedAt))
-	require.Equal(t, time.Hour, server.TTL(positiveKey))
-	require.Equal(t, time.Hour, server.TTL(negativeKey))
+	require.Len(t, rejected, 1)
+	require.Equal(t, 24*time.Hour, rejected[key].ExpiresAt.Sub(rejected[key].RejectedAt))
+	require.Equal(t, time.Hour, server.TTL(entryKey), "a lookup must not extend the rejection")
 	other := scope
 	other.ScopeHash = strings.Repeat("f", 64)
 	none, err := cache.GetOpenAIRejectedReasoning(ctx, other, []string{key})
 	require.NoError(t, err)
 	require.Empty(t, none)
+	other = scope
+	other.TenantHash = strings.Repeat("f", 64)
+	none, err = cache.GetOpenAIRejectedReasoning(ctx, other, []string{key})
+	require.NoError(t, err)
+	require.Empty(t, none)
 
-	// Only another real rejection write renews the negative evidence. Positive
-	// state remains on its original hard deadline, in its separate namespace.
+	// Only another real rejection write renews the evidence.
 	require.NoError(t, cache.PutOpenAIRejectedReasoning(ctx, scope, []string{key}))
-	require.Equal(t, 24*time.Hour, server.TTL(negativeKey))
-	require.Equal(t, time.Hour, server.TTL(positiveKey))
+	require.Equal(t, 24*time.Hour, server.TTL(entryKey))
 	server.FastForward(time.Hour + time.Millisecond)
-	positive, err = cache.GetOpenAIReasoningBatches(ctx, scope, []string{key})
+	rejected, err = cache.GetOpenAIRejectedReasoning(ctx, scope, []string{key})
 	require.NoError(t, err)
-	require.Empty(t, positive)
-	negative, err = cache.GetOpenAIRejectedReasoning(ctx, scope, []string{key})
-	require.NoError(t, err)
-	require.Len(t, negative, 1)
+	require.Len(t, rejected, 1)
 	server.FastForward(23 * time.Hour)
-	negative, err = cache.GetOpenAIRejectedReasoning(ctx, scope, []string{key})
+	rejected, err = cache.GetOpenAIRejectedReasoning(ctx, scope, []string{key})
 	require.NoError(t, err)
-	require.Empty(t, negative)
+	require.Empty(t, rejected)
 }
 
 func TestGatewayCacheReasoningStateBoundedAtomicLRU(t *testing.T) {
 	cache, server := newReasoningStateTestCache(t)
 	ctx, scope := context.Background(), reasoningStateTestScope()
 	other := service.OpenAIReasoningCacheScope{ScopeHash: strings.Repeat("c", 64), TenantHash: strings.Repeat("d", 64)}
-	limits := reasoningStateLimits{bytes: 12, entries: 3, tenantBytes: 8, entryBytes: 8}
+	const unit = reasoningStateTestEntryBytes
+	limits := reasoningStateLimits{bytes: 3 * unit, entries: 3, tenantBytes: 2 * unit, entryBytes: unit}
 	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	put := func(owner service.OpenAIReasoningCacheScope, key string) {
 		t.Helper()
 		clock = clock.Add(time.Millisecond)
 		server.SetTime(clock)
-		args := reasoningStateArguments(reasoningBatchPrefix, "put", owner, limits)
-		args = append(args, owner.ScopeHash+":"+key, "1234", key)
-		result, err := cache.runReasoningState(ctx, reasoningBatchPrefix, args)
+		args := append(rejectedReasoningArguments("put", owner, limits), owner.ScopeHash+":"+key)
+		result, err := cache.runRejectedReasoning(ctx, args)
 		require.NoError(t, err)
 		require.Equal(t, int64(1), result)
+	}
+	entry := func(owner service.OpenAIReasoningCacheScope, key string) string {
+		return rejectedReasoningPrefix + "entry:" + owner.ScopeHash + ":" + key
 	}
 	first, second, third, fourth, fifth := strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64), strings.Repeat("5", 64)
 	put(scope, first)
@@ -161,84 +95,46 @@ func TestGatewayCacheReasoningStateBoundedAtomicLRU(t *testing.T) {
 	put(other, third)
 	clock = clock.Add(time.Millisecond)
 	server.SetTime(clock)
-	_, err := cache.getReasoningState(ctx, reasoningBatchPrefix, scope, []string{first}, limits)
+	_, err := cache.runRejectedReasoning(ctx, append(rejectedReasoningArguments("get", scope, limits), scope.ScopeHash+":"+first))
 	require.NoError(t, err)
-	put(scope, fourth) // Per-key 8-byte bound evicts second, not the touched first.
-	require.True(t, server.Exists(reasoningBatchPrefix+"entry:"+scope.ScopeHash+":"+first))
-	require.False(t, server.Exists(reasoningBatchPrefix+"entry:"+scope.ScopeHash+":"+second))
-	put(other, fifth) // Global 12-byte bound evicts the oldest third.
-	require.False(t, server.Exists(reasoningBatchPrefix+"entry:"+other.ScopeHash+":"+third))
-	require.Equal(t, "12", server.HGet(reasoningBatchPrefix+"totals", "_global"))
-	require.Equal(t, "8", server.HGet(reasoningBatchPrefix+"totals", scope.TenantHash))
-	require.Equal(t, "4", server.HGet(reasoningBatchPrefix+"totals", other.TenantHash))
-	count, err := cache.rdb.ZCard(ctx, reasoningBatchPrefix+"lru").Result()
+	put(scope, fourth) // The per-key bound of two entries evicts second, not the touched first.
+	require.True(t, server.Exists(entry(scope, first)))
+	require.False(t, server.Exists(entry(scope, second)))
+	put(other, fifth) // The global bound of three entries evicts the oldest third.
+	require.False(t, server.Exists(entry(other, third)))
+	require.Equal(t, strconv.Itoa(3*unit), server.HGet(rejectedReasoningPrefix+"totals", "_global"))
+	require.Equal(t, strconv.Itoa(2*unit), server.HGet(rejectedReasoningPrefix+"totals", scope.TenantHash))
+	require.Equal(t, strconv.Itoa(unit), server.HGet(rejectedReasoningPrefix+"totals", other.TenantHash))
+	count, err := cache.rdb.ZCard(ctx, rejectedReasoningPrefix+"lru").Result()
 	require.NoError(t, err)
 	require.Equal(t, int64(3), count)
 
 	// Refuse an oversized incoming record without deleting an existing one.
-	args := reasoningStateArguments(reasoningBatchPrefix, "put", scope, limits)
-	args = append(args, scope.ScopeHash+":"+first, strings.Repeat("x", 9), first)
-	result, err := cache.runReasoningState(ctx, reasoningBatchPrefix, args)
+	stored := server.HGet(entry(scope, first), "payload")
+	oversized := limits
+	oversized.entryBytes = unit - 1
+	result, err := cache.runRejectedReasoning(ctx, append(rejectedReasoningArguments("put", scope, oversized), scope.ScopeHash+":"+first))
 	require.NoError(t, err)
 	require.Equal(t, int64(0), result)
-	require.Equal(t, "1234", server.HGet(reasoningBatchPrefix+"entry:"+scope.ScopeHash+":"+first, "payload"))
+	require.Equal(t, stored, server.HGet(entry(scope, first), "payload"))
 
 	// Lower entry limit independently from bytes to exercise the count gate.
-	limits.entries, limits.bytes, limits.tenantBytes = 2, 100, 100
+	limits.entries, limits.bytes, limits.tenantBytes = 2, 100*unit, 100*unit
 	put(scope, strings.Repeat("6", 64))
-	count, err = cache.rdb.ZCard(ctx, reasoningBatchPrefix+"lru").Result()
+	count, err = cache.rdb.ZCard(ctx, rejectedReasoningPrefix+"lru").Result()
 	require.NoError(t, err)
 	require.Equal(t, int64(2), count)
 }
 
-func TestGatewayCacheReasoningStateBatchValidation(t *testing.T) {
-	cache, server := newReasoningStateTestCache(t)
-	scope, key := reasoningStateTestScope(), strings.Repeat("d", 64)
-	cases := map[string]func(*service.OpenAIReasoningBatch){
-		"prefix missing": func(batch *service.OpenAIReasoningBatch) { batch.InputPrefixHash = "" },
-		"unknown item": func(batch *service.OpenAIReasoningBatch) {
-			batch.Output = append(batch.Output, json.RawMessage(`{"type":"custom_tool_call"}`))
-		},
-		"incomplete": func(batch *service.OpenAIReasoningBatch) {
-			batch.Output[0] = json.RawMessage(`{"type":"reasoning","status":"incomplete"}`)
-		},
-		"too many items": func(batch *service.OpenAIReasoningBatch) {
-			for len(batch.Output) <= service.OpenAIReasoningBatchMaxItems {
-				batch.Output = append(batch.Output, json.RawMessage(`{"type":"reasoning","summary":[]}`))
-			}
-		},
-		"too many calls": func(batch *service.OpenAIReasoningBatch) {
-			batch.Output = nil
-			for range service.OpenAIReasoningBatchMaxCalls + 1 {
-				batch.Output = append(batch.Output, json.RawMessage(`{"type":"function_call","status":"completed"}`))
-			}
-		},
-		"too many bytes": func(batch *service.OpenAIReasoningBatch) {
-			batch.Projection = json.RawMessage(strconv.Quote(strings.Repeat("x", service.OpenAIReasoningBatchMaxBytes)))
-		},
-	}
-	for name, mutate := range cases {
-		t.Run(name, func(t *testing.T) {
-			batch := reasoningStateTestBatch()
-			mutate(&batch)
-			put, err := cache.PutOpenAIReasoningBatch(context.Background(), scope, key, batch)
-			require.ErrorIs(t, err, service.ErrOpenAIReasoningCacheInput)
-			require.False(t, put)
-		})
-	}
-	require.Empty(t, server.Keys())
-}
-
-func TestGatewayCacheReasoningStateNegativeBoundAndDigestOnly(t *testing.T) {
+func TestGatewayCacheReasoningStateBoundAndDigestOnly(t *testing.T) {
 	cache, server := newReasoningStateTestCache(t)
 	scope, ctx := reasoningStateTestScope(), context.Background()
 	limits := reasoningStateLimits{bytes: 350, entries: 2, tenantBytes: 350, entryBytes: 256}
-	args := reasoningStateArguments(rejectedReasoningPrefix, "put", scope, limits)
+	args := rejectedReasoningArguments("put", scope, limits)
 	for _, digit := range []string{"1", "2", "3"} {
-		key := strings.Repeat(digit, 64)
-		args = append(args, scope.ScopeHash+":"+key, "", key)
+		args = append(args, scope.ScopeHash+":"+strings.Repeat(digit, 64))
 	}
-	_, err := cache.runReasoningState(ctx, rejectedReasoningPrefix, args)
+	_, err := cache.runRejectedReasoning(ctx, args)
 	require.NoError(t, err)
 	count, err := cache.rdb.ZCard(ctx, rejectedReasoningPrefix+"lru").Result()
 	require.NoError(t, err)
@@ -248,6 +144,7 @@ func TestGatewayCacheReasoningStateNegativeBoundAndDigestOnly(t *testing.T) {
 	require.LessOrEqual(t, total, 350)
 	for _, key := range server.Keys() {
 		require.True(t, strings.HasPrefix(key, rejectedReasoningPrefix))
+		require.Positive(t, server.TTL(key), "every key of the rejection memory expires")
 		if strings.Contains(key, ":entry:") {
 			require.Regexp(t, `^\d+:\d+$`, server.HGet(key, "payload"))
 		}
@@ -257,23 +154,22 @@ func TestGatewayCacheReasoningStateNegativeBoundAndDigestOnly(t *testing.T) {
 func TestGatewayCacheReasoningStateConcurrentCapacity(t *testing.T) {
 	cache, server := newReasoningStateTestCache(t)
 	scope, ctx := reasoningStateTestScope(), context.Background()
-	limits := reasoningStateLimits{bytes: 16, entries: 4, tenantBytes: 8, entryBytes: 8}
+	const unit = reasoningStateTestEntryBytes
+	limits := reasoningStateLimits{bytes: 4 * unit, entries: 4, tenantBytes: 2 * unit, entryBytes: unit}
 	results := make(chan error, 8)
 	for index := range cap(results) {
 		go func() {
-			key := reasoningPayloadDigest([]byte(strconv.Itoa(index)))
-			args := reasoningStateArguments(reasoningBatchPrefix, "put", scope, limits)
-			args = append(args, scope.ScopeHash+":"+key, "1234", key)
-			_, err := cache.runReasoningState(ctx, reasoningBatchPrefix, args)
+			key := strings.Repeat(strconv.Itoa(index), 64)
+			_, err := cache.runRejectedReasoning(ctx, append(rejectedReasoningArguments("put", scope, limits), scope.ScopeHash+":"+key))
 			results <- err
 		}()
 	}
 	for range cap(results) {
 		require.NoError(t, <-results)
 	}
-	require.Equal(t, "8", server.HGet(reasoningBatchPrefix+"totals", "_global"))
-	require.Equal(t, "8", server.HGet(reasoningBatchPrefix+"totals", scope.TenantHash))
-	count, err := cache.rdb.ZCard(ctx, reasoningBatchPrefix+"lru").Result()
+	require.Equal(t, strconv.Itoa(2*unit), server.HGet(rejectedReasoningPrefix+"totals", "_global"))
+	require.Equal(t, strconv.Itoa(2*unit), server.HGet(rejectedReasoningPrefix+"totals", scope.TenantHash))
+	count, err := cache.rdb.ZCard(ctx, rejectedReasoningPrefix+"lru").Result()
 	require.NoError(t, err)
 	require.Equal(t, int64(2), count)
 }
@@ -308,7 +204,7 @@ func TestGatewayCacheReasoningStateBlockedTransportBudget(t *testing.T) {
 		}
 	}))
 	err := budget.Do(context.Background(), func(ctx context.Context) error {
-		_, err := cache.GetOpenAIReasoningBatches(ctx, reasoningStateTestScope(), []string{strings.Repeat("d", 64)})
+		_, err := cache.GetOpenAIRejectedReasoning(ctx, reasoningStateTestScope(), []string{strings.Repeat("d", 64)})
 		return err
 	})
 	require.Error(t, err)

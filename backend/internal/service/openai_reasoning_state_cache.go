@@ -18,12 +18,6 @@ import (
 const (
 	OpenAIReasoningStateTTL              = 24 * time.Hour
 	OpenAIReasoningStateIOBudget         = 100 * time.Millisecond
-	OpenAIReasoningBatchMaxBytes         = 256 << 10
-	OpenAIReasoningBatchMaxItems         = 64
-	OpenAIReasoningBatchMaxCalls         = 32
-	OpenAIReasoningBatchTotalMaxBytes    = 64 << 20
-	OpenAIReasoningBatchTotalMaxEntries  = 8192
-	OpenAIReasoningBatchTenantMaxBytes   = 8 << 20
 	OpenAIRejectedReasoningMaxBytes      = 8 << 20
 	OpenAIRejectedReasoningMaxEntries    = 32768
 	OpenAIReasoningStateMaxLookupEntries = 64
@@ -171,17 +165,6 @@ func IsOpenAIReasoningCacheDigest(value string) bool {
 	return true
 }
 
-// OpenAIReasoningBatch is one complete, reversible Chat assistant projection.
-// Output retains the original item sequence, including unknown subfields.
-// InputPrefixHash proves the actual upstream prefix after earlier replay. No
-// full input history is stored. PayloadHash is the CAS version returned by Get.
-type OpenAIReasoningBatch struct {
-	Output          []json.RawMessage `json:"output"`
-	Projection      json.RawMessage   `json:"projection"`
-	InputPrefixHash string            `json:"input_prefix_hash"`
-	PayloadHash     string            `json:"-"`
-}
-
 type OpenAIRejectedReasoning struct {
 	RejectedAt time.Time
 	ExpiresAt  time.Time
@@ -191,9 +174,6 @@ type OpenAIRejectedReasoning struct {
 // but unrelated cache adapters and their mocks need not grow new methods. Cache
 // errors mean unavailable, never evidence that any history should be erased.
 type OpenAIReasoningStateStore interface {
-	GetOpenAIReasoningBatches(ctx context.Context, scope OpenAIReasoningCacheScope, keys []string) (map[string]OpenAIReasoningBatch, error)
-	PutOpenAIReasoningBatch(ctx context.Context, scope OpenAIReasoningCacheScope, key string, batch OpenAIReasoningBatch) (bool, error)
-	DeleteOpenAIReasoningBatchIfMatch(ctx context.Context, scope OpenAIReasoningCacheScope, key, payloadHash string) (bool, error)
 	GetOpenAIRejectedReasoning(ctx context.Context, scope OpenAIReasoningCacheScope, cipherHashes []string) (map[string]OpenAIRejectedReasoning, error)
 	// Put is only for a real structured rejection. Get never refreshes this TTL.
 	PutOpenAIRejectedReasoning(ctx context.Context, scope OpenAIReasoningCacheScope, cipherHashes []string) error
@@ -208,7 +188,7 @@ func (s *OpenAIGatewayService) openAIReasoningStateStore() OpenAIReasoningStateS
 }
 
 // OpenAIReasoningCacheBudget charges only I/O time, not model generation time.
-// Replay, rejection lookup, invalidation, and write-back share this one budget.
+// The rejection lookup and the rejection write share this one budget.
 // Callbacks must respect the derived context and must not start detached work.
 type OpenAIReasoningCacheBudget struct {
 	mu        sync.Mutex

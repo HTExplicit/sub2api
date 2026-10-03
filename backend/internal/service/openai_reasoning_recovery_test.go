@@ -86,19 +86,12 @@ func TestOpenAIReasoningRecoveryStrictErrorsAndScope(t *testing.T) {
 func TestOpenAIReasoningRecoveryPreservesEveryNonCipherField(t *testing.T) {
 	state, _, rec := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryFixture)
 	before := bytes.Clone(state.wire)
-	callbackCalls := 0
-	state.SetRejectedCallback(func(hashes []string) {
-		callbackCalls++
-		require.Equal(t, []string{openAIReasoningDigest([]byte("opaque-old"))}, hashes)
-	})
 	payload := []byte(`{"type":"response.failed","response":{"error":{"code":"invalid_encrypted_content","param":"input.1.encrypted_content"},"usage":{"input_tokens":3,"output_tokens":2}}}`)
 	signal := openAIReasoningRecoverySignal(state.c, payload, false)
 	require.Error(t, signal)
 	require.False(t, state.RecoveryAttempt(), "SSE signal must be pure before authoritative terminal")
-	require.Zero(t, callbackCalls)
 	after, retry := state.TryRecoverError(signal)
 	require.True(t, retry)
-	require.Equal(t, 1, callbackCalls)
 	require.Equal(t, before, state.wire)
 	require.False(t, gjson.GetBytes(after, "input.1.encrypted_content").Exists())
 	for _, path := range []string{"model", "reasoning", "store", "input.0", "input.1.id", "input.1.phase", "input.1.summary", "input.1.unknown", "input.2", "input.3"} {
@@ -194,14 +187,20 @@ func TestOpenAIReasoningRecoveryRetryPreservesContextAndIdentity(t *testing.T) {
 	}
 }
 
+// reasoningRecoveryMemoryStore is the rejection memory of one test. Embedding a
+// GatewayCache lets a forwarding test install it as the service cache.
 type reasoningRecoveryMemoryStore struct {
-	OpenAIReasoningStateStore
+	GatewayCache
 	values map[string]OpenAIRejectedReasoning
+	gets   int
 	puts   int
 	fail   bool
 }
 
+var _ OpenAIReasoningStateStore = (*reasoningRecoveryMemoryStore)(nil)
+
 func (m *reasoningRecoveryMemoryStore) GetOpenAIRejectedReasoning(_ context.Context, scope OpenAIReasoningCacheScope, hashes []string) (map[string]OpenAIRejectedReasoning, error) {
+	m.gets++
 	if m.fail {
 		return nil, errors.New("cache unavailable")
 	}

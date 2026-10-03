@@ -1389,12 +1389,6 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
-	return s.buildUpstreamRequestPrepared(ctx, c, account, body, token, isStream, promptCacheKey, isCodexCLI, true)
-}
-
-// Replay preparation needs the real endpoint and auth identity, but retains a
-// clean request. Only the final build applies the system prompt.
-func (s *OpenAIGatewayService) buildUpstreamRequestPrepared(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool, includePrompt bool) (*http.Request, error) {
 	// Determine target URL based on account type
 	var targetURL string
 	switch account.Type {
@@ -1430,13 +1424,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestPrepared(ctx context.Context,
 		return nil, fmt.Errorf("normalize compatible Responses reasoning summary: %w", err)
 	}
 
-	// Callers that already applied the system prompt still get the final-wire
-	// prompt_cache_key option; finalizeResponsesForSend covers both otherwise.
-	if includePrompt {
-		body, err = s.finalizeResponsesForSend(c, account, body)
-	} else {
-		body, err = applyOpenAIAPIKeyPromptCacheKeyMode(c, account, body)
-	}
+	body, err = s.finalizeResponsesForSend(c, account, body)
 	if err != nil {
 		return nil, err
 	}

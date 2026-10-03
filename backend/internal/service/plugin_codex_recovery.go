@@ -3,19 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"slices"
 
 	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/tidwall/gjson"
 )
-
-func readOpenAIReplayRules(ctx context.Context) (extensionv1.ReplayRules, error) {
-	rules := codexrecovery.ReplayPolicy()
-	slices.Sort(rules.ChatFields)
-	slices.Sort(rules.OutputKinds)
-	return rules, nil
-}
 
 func openAIReasoningPolicyEnabled(ctx context.Context, account *Account, key string) (bool, error) {
 	if account == nil || !account.supportsOpenAIReasoningPolicies() {

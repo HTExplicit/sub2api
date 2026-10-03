@@ -36,8 +36,8 @@ jobs:
         run: bash .github/scripts/test_agent_protocol.sh
       - name: Native domain and retirement contracts
         run: bash .github/scripts/test_native_domains.sh
-      - name: Reasoning replay and recovery contracts
-        run: bash .github/scripts/test_reasoning_replay.sh
+      - name: Reasoning recovery contracts
+        run: bash .github/scripts/test_reasoning_recovery.sh
       - name: Model context capacity contracts
         run: bash .github/scripts/test_model_context_capacity.sh
       - name: Service tests

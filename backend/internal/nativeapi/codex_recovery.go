@@ -40,15 +40,6 @@ type RecoverySetting struct {
 	Value      bool `json:"value"`
 }
 
-type ReplayRules struct {
-	Version               string   `json:"version"`
-	Enabled               bool     `json:"enabled"`
-	MaxToolCalls          int      `json:"max_tool_calls"`
-	AllowOmittedReasoning bool     `json:"allow_omitted_reasoning"`
-	ChatFields            []string `json:"chat_fields"`
-	OutputKinds           []string `json:"output_kinds"`
-}
-
 // A structured request-state rejection must stay request-scoped even when an
 // optional recovery plugin is absent. This validates protocol framing only;
 // the plugin separately decides recovery eligibility and rewrite selection.
