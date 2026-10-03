@@ -1133,6 +1133,18 @@ export default {
         peakMultiplier: 'Peak multiplier',
         multiplierHint: 'Applies to token billing multiplier; image tokens in token billing are also affected. 0 means peak token requests are billed at 0x.'
       },
+      profitControl: {
+        enable: 'Enable profit control',
+        enabledHint: 'Scheduling only admits accounts whose account multiplier ≤ the request\'s effective downstream multiplier × (1 − min margin − safety buffer). Account multipliers may be maintained manually or synchronized from probes; existing ordering, stickiness and breakers keep working among qualified accounts. Image/video scheduling is not covered yet.',
+        disabledHint: 'When disabled, scheduling does no profit filtering: accounts whose account multiplier exceeds the downstream multiplier can still be selected, which may produce loss-making requests.',
+        minMargin: 'Min gross margin (%)',
+        minMarginHint: 'Percent input, e.g. 30 means 30%; stored as a decimal on the backend',
+        safetyBuffer: 'Safety buffer (%)',
+        safetyBufferHint: 'Added to min margin and deducted from the downstream multiplier; defaults to 0',
+        marginRangeError: 'Min gross margin must be between 0 and 99.99',
+        bufferRangeError: 'Safety buffer must be between 0 and 99.99',
+        sumTooHigh: 'Min gross margin plus safety buffer must be less than 100%, otherwise every account would be excluded'
+      },
       modelAllowlist: {
         title: 'Model Allowlist',
         hint: 'When enabled, models outside the allowlist are rejected with 404 model_not_found, and model listing endpoints only show allowlisted models. Entries support exact model IDs and * wildcards anywhere (e.g., gpt-*-codex). Note: Claude Code probes with haiku-family models for titles/summaries and /messages/count_tokens is also allowlist-controlled, so make sure the small models you need are selected too.',
@@ -1258,15 +1270,6 @@ export default {
         hint: 'Forces service_tier=priority on OpenAI requests in this group. The global Fast/Flex policy can still filter or block it. New requests update immediately after saving; existing WebSocket sessions must reconnect.',
         free: 'Free Fast',
         freeHint: 'Fast requests in this group still use the priority tier, but customers are charged the equivalent Standard price.'
-      },
-      retiredProfitControl: {
-        title: 'Profit control (retired, read-only, no effect)',
-        hint: 'Profit control has been removed. These are the stored legacy values; they cannot be changed and do not affect billing or scheduling.',
-        enabled: 'Enabled',
-        minMargin: 'Minimum margin',
-        safetyBuffer: 'Safety buffer',
-        on: 'On',
-        off: 'Off'
       },
       invalidRequestFallback: {
         title: 'Invalid Request Fallback Group',

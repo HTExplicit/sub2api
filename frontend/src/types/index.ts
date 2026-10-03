@@ -628,9 +628,9 @@ export interface Group {
 export interface AdminGroup extends Group {
   force_openai_fast: boolean
   free_openai_fast: boolean
-  // Deprecated read-only compatibility fields: model_pricing is always empty; the profit_* values are the
-  // stored legacy values (retired: writes are rejected and nothing reads them at runtime).
   model_pricing: import('@/api/admin/channels').ChannelModelPricing[]
+  // 分组利润控制（openai/anthropic/gemini/grok/antigravity 分组可启用；margin/buffer 为小数存储）。
+  // 仅管理员可见：与 rate_multiplier 相乘即可反推上游成本上限，不得下放到 Group。
   profit_control_enabled: boolean
   profit_min_margin: number
   profit_safety_buffer: number
@@ -827,6 +827,10 @@ export interface CreateGroupRequest {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
+  // 分组利润控制（五个 token 平台；margin/buffer 为小数）
+  profit_control_enabled?: boolean
+  profit_min_margin?: number
+  profit_safety_buffer?: number
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -889,6 +893,10 @@ export interface UpdateGroupRequest {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
+  // 分组利润控制（五个 token 平台；margin/buffer 为小数）
+  profit_control_enabled?: boolean
+  profit_min_margin?: number
+  profit_safety_buffer?: number
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
