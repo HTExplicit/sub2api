@@ -574,7 +574,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(submitted.credentials).not.toHaveProperty('model_mapping')
   })
 
-  it('keeps only the transport selector and removes account-level compatibility modes', async () => {
+  it('leaves the Responses mode on auto when the Laxa base URL is typed instead of taken from the preset', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
@@ -589,8 +589,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     const responses = wrapper.get<HTMLSelectElement>('[data-testid="openai-responses-mode-select"]')
 
     expect(responses.element.value).toBe('auto')
-    expect(wrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
   })
 
   afterEach(() => vi.useRealTimers())

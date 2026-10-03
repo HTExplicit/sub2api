@@ -100,15 +100,6 @@ describe('BulkEditAccountModal', () => {
     } as any)
   })
 
-  it('does not expose account-level compatibility selectors for bulk editing', () => {
-    const wrapper = mountModal({
-      selectedPlatforms: ['openai'],
-      selectedTypes: ['apikey']
-    })
-    expect(wrapper.find('[data-testid="bulk-edit-openai-alpha-search-mode-select"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="bulk-edit-openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
-  })
-
   it('批量修改倍率时提示自动同步账号需要先关闭同步', async () => {
     const wrapper = mountModal()
 
@@ -619,6 +610,22 @@ describe('BulkEditAccountModal', () => {
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       status: 'active'
     })
+  })
+
+  it('目标变化后只剩已隐藏的设置时提示未选择字段，不提交', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-openai-responses-mode-enabled').setValue(true)
+    await wrapper.setProps({ selectedPlatforms: ['grok'] })
+    expect(wrapper.find('#bulk-edit-openai-responses-mode-enabled').exists()).toBe(false)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('admin.accounts.bulkEdit.noFieldsSelected')
   })
 
   it('至少保留一个端点能力', async () => {

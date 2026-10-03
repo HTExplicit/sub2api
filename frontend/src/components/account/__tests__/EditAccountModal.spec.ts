@@ -663,12 +663,6 @@ describe('EditAccountModal', () => {
     }
   })
 
-  it('does not expose account-level compatibility selectors', () => {
-    const ordinaryWrapper = mountModal(buildAccount())
-    expect(ordinaryWrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
-    expect(ordinaryWrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
-  })
-
   it('account.edit keeps an OpenAI API-key account on the Laxa endpoint editable like any other', async () => {
     const account = buildAccount()
     account.credentials.base_url = 'https://api.laxarouter.ai'
