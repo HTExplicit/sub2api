@@ -75,15 +75,27 @@
           {{ t('admin.accounts.openai.testMode') }}
         </label>
         <Select
-          v-model="testMode"
+          :model-value="testMode"
           :options="openAITestModeOptions"
           :disabled="status === 'connecting'"
+          @update:model-value="selectOpenAITestMode"
         />
       </div>
 
       <AccountTestReasoningSelect v-if="supportsTextPrompt" v-model="reasoningEffort"
-        :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :account="account" :disabled="status === 'connecting'" @validity="reasoningValid = $event" />
-      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :account="account" :disabled="status === 'connecting'" @validity="textPromptPolicyValid = $event" />
+        :model="selectedTestModel" :account="account" :disabled="status === 'connecting'" @validity="reasoningValid = $event" />
+      <!-- Quality check: the fixed question replaces the editable prompt. -->
+      <details
+        v-if="isQualityMode"
+        class="rounded-lg border border-line bg-raised px-3 py-2 text-sm"
+        data-test="quality-question"
+      >
+        <summary class="cursor-pointer select-none font-medium text-gray-700 dark:text-gray-300">
+          {{ t('admin.accounts.qualityCheck.questionSummary', { answer: CANDY_QUALITY_ANSWER }) }}
+        </summary>
+        <div class="mt-2 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-gray-600 dark:text-gray-300" data-test="quality-question-text">{{ CANDY_QUALITY_PROMPT }}</div>
+      </details>
+      <AccountTextTestPrompt v-else-if="supportsTextPrompt" v-model="textPrompt" :account="account" :disabled="status === 'connecting'" @validity="textPromptPolicyValid = $event" />
       <div v-else-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
           v-model="testPrompt"
@@ -99,6 +111,10 @@
         class="text-xs text-gray-500 dark:text-gray-400"
       >
         {{ promptInputHint }}
+      </p>
+      <!-- The question is a text prompt; an image model cannot answer it. -->
+      <p v-if="isQualityMode && !supportsTextPrompt" class="text-xs text-amber-700 dark:text-amber-400" data-test="quality-text-model-only">
+        {{ t('admin.accounts.qualityCheck.textModelOnly') }}
       </p>
 
       <!-- Optional media uploads for real generation / transcription -->
@@ -225,6 +241,39 @@
         >
           <Icon name="link" size="sm" :stroke-width="2" />
         </button>
+      </div>
+
+      <!-- Quality check verdict: a hint for this dialog only, never stored or used for scheduling. -->
+      <div
+        v-if="qualityVerdict"
+        class="space-y-2 rounded-xl border border-line bg-raised p-3 text-sm"
+        data-test="quality-verdict"
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('admin.accounts.qualityCheck.verdictLabel') }}</span>
+          <span :class="['rounded-full px-2.5 py-0.5 text-xs font-semibold', qualityVerdictBadge.class]" data-test="quality-verdict-kind">{{ qualityVerdictBadge.text }}</span>
+          <span v-if="qualityReasonText" class="text-xs text-gray-500 dark:text-gray-400" data-test="quality-verdict-reason">{{ qualityReasonText }}</span>
+        </div>
+        <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+          <template v-if="qualityVerdict.finalNumber !== null">
+            <dt class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.qualityCheck.finalAnswer') }}</dt>
+            <dd class="font-mono text-gray-900 dark:text-gray-100" data-test="quality-final-answer">{{ qualityVerdict.finalNumber }}</dd>
+          </template>
+          <dt class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.qualityCheck.reasoningTokens') }}</dt>
+          <dd class="font-mono text-gray-900 dark:text-gray-100" data-test="quality-reasoning-tokens">{{ qualityVerdict.reasoningTokens ?? t('admin.accounts.qualityCheck.notReported') }}</dd>
+          <dt class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.qualityCheck.declaredModel') }}</dt>
+          <dd class="break-all text-gray-900 dark:text-gray-100" data-test="quality-declared-model">
+            <span class="font-mono">{{ qualityDeclaredModelText }}</span>
+            <span
+              v-if="qualityVerdict.modelMatches !== null"
+              :class="['ml-2', qualityVerdict.modelMatches ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400']"
+            >{{ qualityVerdict.modelMatches ? t('admin.accounts.qualityCheck.modelMatches') : t('admin.accounts.qualityCheck.modelDiffers', { model: qualityVerdict.requestedModel }) }}</span>
+          </dd>
+        </dl>
+        <p v-if="qualityVerdict.reasoningTokensSuspect" class="text-xs text-amber-700 dark:text-amber-400" data-test="quality-reasoning-hint">
+          {{ t('admin.accounts.qualityCheck.reasoningTokensHint', { tokens: CANDY_QUALITY_SUSPECT_REASONING_TOKENS }) }}
+        </p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.qualityCheck.note') }}</p>
       </div>
 
       <div v-if="generatedImages.length > 0" class="space-y-2">
@@ -387,6 +436,14 @@ import { buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
 import { validateAccountTestPlan, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
+import {
+  CANDY_QUALITY_ANSWER,
+  CANDY_QUALITY_PROMPT,
+  CANDY_QUALITY_SUSPECT_REASONING_TOKENS,
+  judgeCandyQualityRun,
+  type CandyQualityOutcome,
+  type CandyQualityRun
+} from '@/utils/accountQualityCheck'
 import type { Account, AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 const { t } = useI18n()
@@ -436,7 +493,11 @@ const generatedImages = ref<PreviewMedia[]>([])
 const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
-const testMode = ref<'default' | 'compact'>('default')
+type OpenAITestMode = 'default' | 'compact' | 'quality'
+const testMode = ref<OpenAITestMode>('default')
+// The quality check run of the current stream; the verdict is never stored.
+type QualityRunState = Omit<CandyQualityRun, 'outcome'> & { outcome: CandyQualityOutcome | 'pending' }
+const qualityRun = ref<QualityRunState | null>(null)
 const reasoningEffort = ref('')
 const reasoningValid = ref(true)
 const effectiveReasoningEffort = computed(() => {
@@ -455,10 +516,32 @@ const isOpenAIAccount = computed(() =>
   (currentModelPlan.value?.wire_platform || props.account?.platform) === 'openai'
 )
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
+// The quality check is offered to OpenAI OAuth accounts only.
+const isOpenAIOAuthAccount = computed(() =>
+  isOpenAIAccount.value && props.account?.platform === 'openai' && props.account?.type === 'oauth'
+)
+const isQualityMode = computed(() => testMode.value === 'quality' && isOpenAIOAuthAccount.value)
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
-  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') }
+  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') },
+  ...(isOpenAIOAuthAccount.value ? [{ value: 'quality', label: t('admin.accounts.openai.testModeQuality') }] : [])
 ])
+// Entering the quality check selects high effort when the model offers it
+// (the administrator can still change it); leaving restores the effort chosen
+// before entering.
+let effortBeforeQuality: string | null = null
+const selectOpenAITestMode = (value: string | number | boolean | null) => {
+  const mode: OpenAITestMode = value === 'compact' ? 'compact' : value === 'quality' && isOpenAIOAuthAccount.value ? 'quality' : 'default'
+  if (mode === testMode.value) return
+  if (mode === 'quality') {
+    effortBeforeQuality = reasoningEffort.value
+    if (selectedTestModel.value?.reasoning_efforts?.includes('high')) reasoningEffort.value = 'high'
+  } else if (effortBeforeQuality !== null) {
+    reasoningEffort.value = effortBeforeQuality
+    effortBeforeQuality = null
+  }
+  testMode.value = mode
+}
 const grokTestModeOptions = computed(() => [
   { value: 'text', label: t('admin.accounts.grok.testModeText') },
   { value: 'image', label: t('admin.accounts.grok.testModeImage') },
@@ -499,6 +582,7 @@ const showModelSelect = computed(() => {
 })
 
 const modelOptionsForMode = computed(() => accountTestModelsForMode(currentModelPlan.value, isGrokAccount.value ? grokTestMode.value : undefined))
+const selectedTestModel = computed(() => modelOptionsForMode.value.find(model => model.id === selectedModelId.value))
 
 const supportsTextPrompt = computed(() => testMode.value !== 'compact' && !supportsImageTest.value && (!isGrokAccount.value || grokTestMode.value === 'text'))
 const supportsPromptInput = computed(() => {
@@ -675,15 +759,51 @@ const testModeSummary = computed(() => {
         return t('admin.accounts.grok.textTestMode')
     }
   }
+  if (isQualityMode.value) return t('admin.accounts.openai.testModeQuality')
   if (supportsImageTest.value) return t('admin.accounts.imageTestMode')
   return t('admin.accounts.testPrompt')
+})
+
+const qualityVerdict = computed(() => {
+  const run = qualityRun.value
+  if (!run || run.outcome === 'pending' || (status.value !== 'success' && status.value !== 'error')) return null
+  return judgeCandyQualityRun({ ...run, outcome: run.outcome })
+})
+const qualityVerdictBadge = computed(() => {
+  switch (qualityVerdict.value?.kind) {
+    case 'normal':
+      return { text: t('admin.accounts.qualityCheck.verdictNormal'), class: 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400' }
+    case 'suspect':
+      return { text: t('admin.accounts.qualityCheck.verdictSuspect'), class: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400' }
+    default:
+      return { text: t('admin.accounts.qualityCheck.verdictUndetermined'), class: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' }
+  }
+})
+// The upstream_model event arrives only on the success path, so a failed test
+// says nothing about whether the upstream declared a model.
+const qualityDeclaredModelText = computed(() => qualityVerdict.value?.declaredModel ||
+  (status.value === 'success' ? t('admin.accounts.qualityCheck.notDeclared') : t('admin.accounts.qualityCheck.declaredModelUnavailable')))
+const qualityReasonText = computed(() => {
+  switch (qualityVerdict.value?.reason) {
+    case 'failed':
+      return t('admin.accounts.qualityCheck.reasonFailed')
+    case 'incomplete':
+      return t('admin.accounts.qualityCheck.reasonIncomplete')
+    case 'no_number':
+      return t('admin.accounts.qualityCheck.reasonNoNumber')
+    default:
+      return ''
+  }
 })
 
 const canStartTest = computed(() => {
 	if (!accountViewOperation.available.value) return false
 	if (!props.show || !currentModelPlan.value || loadingModels.value) return false
 	if (effectiveReasoningEffort.value && !reasoningValid.value) return false
-  if (supportsTextPrompt.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
+  // The quality check sends its fixed question, not the saved custom prompt,
+  // and only to a text model.
+  if (isQualityMode.value && !supportsTextPrompt.value) return false
+  if (supportsTextPrompt.value && !isQualityMode.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
   if (status.value === 'connecting') return false
   if (isGrokAccount.value) {
     if (
@@ -731,6 +851,7 @@ watch(
       abortStream()
       mediaTestPrompt.value = ''
       testMode.value = 'default'
+      effortBeforeQuality = null
       reasoningEffort.value = ''
       grokTestMode.value = 'text'
       resetState()
@@ -807,6 +928,7 @@ const resetState = () => {
   generatedAudios.value = []
   generatedVideos.value = []
   previewImageUrl.value = ''
+  qualityRun.value = null
 }
 
 const handleClose = () => {
@@ -846,6 +968,10 @@ const startTest = async () => {
 
   resetState()
   status.value = 'connecting'
+  const qualityCheck = isQualityMode.value && supportsTextPrompt.value
+  if (qualityCheck) {
+    qualityRun.value = { answer: '', outcome: 'pending', reasoningTokens: null, requestedModel: selectedModelId.value, declaredModel: '' }
+  }
   addLine(t('admin.accounts.startingTestForAccount', { name: props.account.name }), 'text-blue-400')
   addLine(t('admin.accounts.testAccountTypeLabel', { type: props.account.type }), 'text-gray-400')
   if (isGrokAccount.value) {
@@ -874,11 +1000,12 @@ const startTest = async () => {
       reasoning_effort?: string
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
-      prompt: supportsPromptInput.value ? testPrompt.value : ''
+      prompt: qualityCheck ? CANDY_QUALITY_PROMPT : supportsPromptInput.value ? testPrompt.value : ''
     }
     if (supportsTextPrompt.value && effectiveReasoningEffort.value) requestBody.reasoning_effort = effectiveReasoningEffort.value
     if (isOpenAIAccount.value) {
-      requestBody.mode = testMode.value
+      // The quality check is an ordinary text test on the server.
+      requestBody.mode = testMode.value === 'compact' ? 'compact' : 'default'
     }
     if (isGrokAccount.value) {
       // Always send explicit Grok mode. search/tts/stt/realtime are standalone
@@ -956,6 +1083,11 @@ const startTest = async () => {
         }
       }
     }
+    // The stream ended without test_complete or error: the test did not complete.
+    if (status.value === 'connecting') {
+      handleEvent({ type: 'error', error: t('admin.accounts.testStreamEnded') })
+      if (qualityRun.value) qualityRun.value.outcome = 'incomplete'
+    }
   } catch (error: unknown) {
     if (!isCurrentStream()) return
     if (isCancel(error) || (error instanceof DOMException && error.name === 'AbortError')) {
@@ -963,6 +1095,7 @@ const startTest = async () => {
       return
     }
     status.value = 'error'
+    if (qualityRun.value?.outcome === 'pending') qualityRun.value.outcome = 'failed'
     const msg = error instanceof Error ? error.message : t('common.unknownError')
     errorMessage.value = msg
     addLine(t('admin.accounts.errorPrefix', { message: msg }), 'text-red-400')
@@ -980,19 +1113,24 @@ const handleEvent = (event: {
   text?: string
   data?: unknown
   model?: string
+  upstream_model?: string
   success?: boolean
   output_limited?: boolean
+  reasoning_tokens?: number
   error?: string
   image_url?: string
   audio_url?: string
   video_url?: string
   mime_type?: string
 }) => {
+  const quality = qualityRun.value
   switch (event.type) {
     case 'test_start':
       addLine(t('admin.accounts.connectedToApi'), 'text-green-400')
       if (event.model) {
         addLine(t('admin.accounts.usingModel', { model: event.model }), 'text-cyan-400')
+        // The model the test actually requested upstream (after account mapping).
+        if (quality) quality.requestedModel = event.model
       }
       addLine(
         isGrokAccount.value
@@ -1021,8 +1159,13 @@ const handleEvent = (event: {
     case 'content':
       if (event.text) {
         streamingContent.value += event.text
+        if (quality) quality.answer += event.text
         scrollToBottom()
       }
+      break
+
+    case 'upstream_model':
+      if (quality && event.upstream_model) quality.declaredModel = event.upstream_model
       break
 
     case 'image':
@@ -1072,6 +1215,10 @@ const handleEvent = (event: {
         addLine(streamingContent.value, 'text-green-300')
         streamingContent.value = ''
       }
+      if (quality) {
+        quality.reasoningTokens = typeof event.reasoning_tokens === 'number' ? event.reasoning_tokens : null
+        quality.outcome = !event.success ? 'failed' : event.output_limited ? 'incomplete' : 'completed'
+      }
       if (event.success) {
         status.value = 'success'
         if (event.output_limited) addLine(t('admin.accounts.testOutputLimited'), 'text-cyan-300')
@@ -1082,6 +1229,7 @@ const handleEvent = (event: {
       break
 
     case 'error':
+      if (quality) quality.outcome = 'failed'
       status.value = 'error'
       errorMessage.value = event.error || t('common.unknownError')
       if (streamingContent.value) {

@@ -97,6 +97,40 @@ func TestAccountConnectionStreamContract(t *testing.T) {
 	}
 }
 
+func TestAccountConnectionStreamReportsOpenAIReasoningTokens(t *testing.T) {
+	frame := func(data string) string { return "data: " + data + "\n\n" }
+	run := func(account *Account, wire string) (string, map[string]TestEvent) {
+		c, recorder := newTestContext()
+		require.NoError(t, (&AccountTestService{}).processConnectionStream(c, strings.NewReader(wire), "responses", account))
+		events := map[string]TestEvent{}
+		for _, line := range strings.Split(recorder.Body.String(), "\n") {
+			if strings.HasPrefix(line, "data: ") {
+				var event TestEvent
+				require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event))
+				events[event.Type] = event
+			}
+		}
+		return recorder.Body.String(), events
+	}
+	wire := frame(`{"type":"response.created","response":{"model":"gpt-6-astra","usage":null}}`) +
+		frame(`{"type":"response.output_text.delta","delta":"最少需要取出 21 颗。"}`) +
+		frame(`{"type":"response.completed","response":{"status":"completed","model":"gpt-6-astra","usage":{"input_tokens":40,"output_tokens":900,"output_tokens_details":{"reasoning_tokens":516}}}}`)
+
+	_, events := run(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}, wire)
+	require.Equal(t, "gpt-6-astra", events["upstream_model"].UpstreamModel)
+	require.True(t, events["test_complete"].Success)
+	require.NotNil(t, events["test_complete"].ReasoningTokens)
+	require.Equal(t, 516, *events["test_complete"].ReasoningTokens)
+
+	// Other platforms and streams without usage keep the previous event shape.
+	body, _ := run(&Account{Platform: PlatformGrok, Type: AccountTypeOAuth}, wire)
+	require.NotContains(t, body, "reasoning_tokens")
+	body, events = run(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+		frame(`{"type":"response.output_text.delta","delta":"OK"}`)+frame(`{"type":"response.completed","response":{"status":"completed"}}`))
+	require.True(t, events["test_complete"].Success)
+	require.NotContains(t, body, "reasoning_tokens")
+}
+
 func TestAccountJobTerminalAndRetryContract(t *testing.T) {
 	require.Equal(t, AccountJobStatusFailed, AccountJobTerminalStatus(false, "cancel_check_failed", 1, 0, 0))
 	require.Equal(t, AccountJobStatusCanceled, AccountJobTerminalStatus(true, "", 1, 1, 2))
