@@ -22,10 +22,13 @@ const openAIRuntimeBreakerHalfOpenRetention = 5 * time.Minute
 
 type gatewayCache struct {
 	rdb *redis.Client
+	// reasoningStateRDB serves only the rejected-cipher memory; see
+	// newReasoningStateClient.
+	reasoningStateRDB *redis.Client
 }
 
 func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
-	return &gatewayCache{rdb: rdb}
+	return &gatewayCache{rdb: rdb, reasoningStateRDB: newReasoningStateClient(rdb)}
 }
 
 // buildSessionKey 构建 session key，包含 groupID 实现分组隔离

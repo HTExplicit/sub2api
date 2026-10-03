@@ -24,9 +24,21 @@ const reasoningStateTestEntryBytes = 13 + 1 + 13 + 64 + 1 + 64
 func newReasoningStateTestCache(t *testing.T) (*gatewayCache, *miniredis.Miniredis) {
 	t.Helper()
 	server := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	t.Cleanup(func() { _ = client.Close() })
-	return &gatewayCache{rdb: client}, server
+	return newReasoningStateTestCacheWith(t, &redis.Options{Addr: server.Addr()}), server
+}
+
+// The cache is built as production builds it: the rejection memory gets its own
+// client derived from the shared one.
+func newReasoningStateTestCacheWith(t *testing.T, options *redis.Options) *gatewayCache {
+	t.Helper()
+	client := redis.NewClient(options)
+	cache, ok := NewGatewayCache(client).(*gatewayCache)
+	require.True(t, ok)
+	t.Cleanup(func() {
+		_ = cache.reasoningStateRDB.Close()
+		_ = client.Close()
+	})
+	return cache
 }
 
 func reasoningStateTestScope() service.OpenAIReasoningCacheScope {
@@ -174,20 +186,18 @@ func TestGatewayCacheReasoningStateConcurrentCapacity(t *testing.T) {
 	require.Equal(t, int64(2), count)
 }
 
-// The rejection memory runs on the shared client's connection pool: operations
-// that follow each other reuse one connection instead of dialing.
-func TestGatewayCacheReasoningStateSharesTheConnectionPool(t *testing.T) {
+// The rejection memory keeps its connections: operations that follow each other
+// reuse one connection instead of dialing.
+func TestGatewayCacheReasoningStateReusesItsConnection(t *testing.T) {
 	server := miniredis.RunT(t)
 	var dials atomic.Int32
-	client := redis.NewClient(&redis.Options{
+	cache := newReasoningStateTestCacheWith(t, &redis.Options{
 		Addr: server.Addr(),
 		Dialer: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			dials.Add(1)
 			return (&net.Dialer{}).DialContext(ctx, network, addr)
 		},
 	})
-	t.Cleanup(func() { _ = client.Close() })
-	cache := &gatewayCache{rdb: client}
 	scope, key, ctx := reasoningStateTestScope(), strings.Repeat("d", 64), context.Background()
 	for range 3 {
 		require.NoError(t, cache.PutOpenAIRejectedReasoning(ctx, scope, []string{key}))
@@ -196,28 +206,51 @@ func TestGatewayCacheReasoningStateSharesTheConnectionPool(t *testing.T) {
 		require.Len(t, rejected, 1)
 	}
 	require.Equal(t, int32(1), dials.Load())
-	require.NoError(t, client.Ping(ctx).Err(), "the shared client stays open")
-	require.Equal(t, int32(1), dials.Load())
 }
 
-// A Redis that accepts the request and never answers costs the request no more
-// than its I/O budget. The bound belongs to the operation: the shared client
-// keeps its own timeouts.
+// reasoningStateDeadlineConn reports every deadline the client sets on its socket.
+type reasoningStateDeadlineConn struct {
+	net.Conn
+	record func(time.Time)
+}
+
+func (c reasoningStateDeadlineConn) SetDeadline(deadline time.Time) error {
+	c.record(deadline)
+	return c.Conn.SetDeadline(deadline)
+}
+
+func (c reasoningStateDeadlineConn) SetReadDeadline(deadline time.Time) error {
+	c.record(deadline)
+	return c.Conn.SetReadDeadline(deadline)
+}
+
+func (c reasoningStateDeadlineConn) SetWriteDeadline(deadline time.Time) error {
+	c.record(deadline)
+	return c.Conn.SetWriteDeadline(deadline)
+}
+
+// A Redis that is slow to connect and then never answers costs the request no
+// more than its I/O budget: no write or read gets a deadline later than the
+// budget's own, although acquiring the connection already spent part of it.
+// The bound belongs to the rejection memory's client: the shared client keeps
+// its options.
 func TestGatewayCacheReasoningStateBlockedTransportBudget(t *testing.T) {
-	client := redis.NewClient(&redis.Options{
+	var socketDeadlines []time.Time
+	cache := newReasoningStateTestCacheWith(t, &redis.Options{
 		Addr: "synthetic.invalid:6379",
 		Dialer: func(context.Context, string, string) (net.Conn, error) {
+			time.Sleep(20 * time.Millisecond)
 			local, peer := net.Pipe()
 			go func() {
 				defer func() { _ = peer.Close() }()
 				_, _ = io.Copy(io.Discard, peer) // Accept writes, never send a reply.
 			}()
-			return local, nil
+			return reasoningStateDeadlineConn{Conn: local, record: func(deadline time.Time) {
+				socketDeadlines = append(socketDeadlines, deadline)
+			}}, nil
 		},
 	})
-	t.Cleanup(func() { _ = client.Close() })
-	sharedOptions := *client.Options()
-	cache := &gatewayCache{rdb: client}
+	sharedOptions := *cache.rdb.Options()
 	budget := service.NewOpenAIReasoningCacheBudget()
 	started := time.Now()
 	require.NoError(t, budget.Do(context.Background(), func(ctx context.Context) error {
@@ -228,46 +261,48 @@ func TestGatewayCacheReasoningStateBlockedTransportBudget(t *testing.T) {
 			return ctx.Err()
 		}
 	}))
+	var budgetDeadline time.Time
 	err := budget.Do(context.Background(), func(ctx context.Context) error {
+		budgetDeadline, _ = ctx.Deadline()
 		_, err := cache.GetOpenAIRejectedReasoning(ctx, reasoningStateTestScope(), []string{strings.Repeat("d", 64)})
 		return err
 	})
 	require.Error(t, err)
 	require.LessOrEqual(t, time.Since(started), service.OpenAIReasoningStateIOBudget+50*time.Millisecond)
+	require.NotEmpty(t, socketDeadlines, "the exchange started inside the budget")
+	for _, deadline := range socketDeadlines {
+		require.False(t, deadline.After(budgetDeadline), "a write or read may not outlast the budget")
+	}
 	require.ErrorIs(t, budget.Do(context.Background(), func(context.Context) error { return nil }), service.ErrOpenAIReasoningCacheBudget,
 		"a spent budget starts no further cache I/O for the request")
-	options := client.Options()
+	options := cache.rdb.Options()
 	require.Equal(t, sharedOptions.ContextTimeoutEnabled, options.ContextTimeoutEnabled, "shared Redis options must remain unchanged")
-	require.Equal(t, sharedOptions.ReadTimeout, options.ReadTimeout)
-	require.Equal(t, sharedOptions.WriteTimeout, options.WriteTimeout)
+	require.Equal(t, sharedOptions.MaxRetries, options.MaxRetries)
+	require.Equal(t, sharedOptions.DialerRetries, options.DialerRetries)
+	require.Equal(t, sharedOptions.MinIdleConns, options.MinIdleConns)
 }
 
-// An unreachable Redis fails the operation inside the same budget, and a request
-// that is already cancelled starts no Redis work.
-func TestGatewayCacheReasoningStateUnreachableRedisFailsWithinBudget(t *testing.T) {
-	unreachable := func() (*gatewayCache, *atomic.Int32) {
-		dials := new(atomic.Int32)
-		client := redis.NewClient(&redis.Options{
-			Addr: "synthetic.invalid:6379",
-			Dialer: func(context.Context, string, string) (net.Conn, error) {
-				dials.Add(1)
-				return nil, errors.New("synthetic cache unavailable")
-			},
-		})
-		t.Cleanup(func() { _ = client.Close() })
-		return &gatewayCache{rdb: client}, dials
-	}
-	cache, dials := unreachable()
+// An unreachable Redis fails the operation at the first refused dial: nothing
+// is retried and nothing waits for the budget to run out. A request that is
+// already cancelled starts no Redis work.
+func TestGatewayCacheReasoningStateRefusedDialFailsAtOnce(t *testing.T) {
+	var dials atomic.Int32
+	cache := newReasoningStateTestCacheWith(t, &redis.Options{
+		Addr: "synthetic.invalid:6379",
+		Dialer: func(context.Context, string, string) (net.Conn, error) {
+			dials.Add(1)
+			return nil, errors.New("synthetic cache unavailable")
+		},
+	})
 	started := time.Now()
 	_, err := cache.GetOpenAIRejectedReasoning(context.Background(), reasoningStateTestScope(), []string{strings.Repeat("d", 64)})
 	require.Error(t, err)
-	require.LessOrEqual(t, time.Since(started), service.OpenAIReasoningStateIOBudget+50*time.Millisecond)
-	require.Positive(t, dials.Load())
+	require.Less(t, time.Since(started), service.OpenAIReasoningStateIOBudget)
+	require.Equal(t, int32(1), dials.Load())
 
-	cache, dials = unreachable()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err = cache.GetOpenAIRejectedReasoning(ctx, reasoningStateTestScope(), []string{strings.Repeat("d", 64)})
 	require.ErrorIs(t, err, context.Canceled)
-	require.Zero(t, dials.Load())
+	require.Equal(t, int32(1), dials.Load())
 }

@@ -206,8 +206,32 @@ func (c *gatewayCache) PutOpenAIRejectedReasoning(ctx context.Context, scope ser
 	return err
 }
 
+// newReasoningStateClient builds the client the rejected-cipher memory runs on,
+// once for the gateway cache, which keeps it for the life of the process. The
+// shared client does not apply a context deadline to socket reads and writes
+// (ContextTimeoutEnabled is off): on it every write and read gets a timeout of
+// its own, counted from the moment it starts. This client applies the context
+// deadline, so every write and read of an operation ends at the operation's
+// deadline however long the connection took to acquire. It sends a command
+// once and dials once, so an unreachable Redis fails at the refused dial. It
+// opens connections on demand and keeps them for the next operation. The
+// shared options are copied, never changed.
+func newReasoningStateClient(shared *redis.Client) *redis.Client {
+	if shared == nil {
+		return nil
+	}
+	opts := *shared.Options()
+	opts.ContextTimeoutEnabled = true
+	opts.MaxRetries = -1
+	opts.DialerRetries = 1
+	opts.MinIdleConns = 0
+	// The shared client's notification processor holds that client's handlers.
+	opts.PushNotificationProcessor = nil
+	return redis.NewClient(&opts)
+}
+
 func (c *gatewayCache) runRejectedReasoning(ctx context.Context, args []any) (any, error) {
-	if c == nil || c.rdb == nil {
+	if c == nil || c.reasoningStateRDB == nil {
 		return nil, errors.New("reasoning state cache unavailable")
 	}
 	if err := ctx.Err(); err != nil {
@@ -217,16 +241,5 @@ func (c *gatewayCache) runRejectedReasoning(ctx context.Context, args []any) (an
 	// too; never inherit the ordinary multi-second Redis defaults for this cache.
 	ioCtx, cancel := context.WithTimeout(ctx, service.OpenAIReasoningStateIOBudget)
 	defer cancel()
-	deadline, _ := ioCtx.Deadline()
-	timeout := time.Until(deadline)
-	if timeout <= 0 {
-		return nil, context.DeadlineExceeded
-	}
-	// The shared client does not apply a context deadline to socket reads and
-	// writes (ContextTimeoutEnabled is off). WithTimeout returns a view of it
-	// that keeps the shared connection pool and uses the remaining budget as its
-	// read and write timeout: the operation pays no dial and the shared options
-	// stay untouched. Waiting for a pooled connection, a new dial and a retry
-	// backoff end with ioCtx.
-	return rejectedReasoningScript.Run(ioCtx, c.rdb.WithTimeout(timeout), rejectedReasoningKeys(), args...).Result()
+	return rejectedReasoningScript.Run(ioCtx, c.reasoningStateRDB, rejectedReasoningKeys(), args...).Result()
 }
