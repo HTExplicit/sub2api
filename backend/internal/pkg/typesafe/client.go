@@ -66,21 +66,32 @@ const MaxSystemOneResponseBytes = 4 << 20
 
 var ErrSystemOneResponseTooLarge = errors.New("typesafe response exceeds size limit")
 
+// SystemOneResponseError is a response DecodeSystemOneResponse read but did not
+// accept. Error and Unwrap give the bare reason. Body is what was read of the
+// response, for the caller's own record; it is never part of the message.
+type SystemOneResponseError struct {
+	Err  error
+	Body []byte
+}
+
+func (e *SystemOneResponseError) Error() string { return e.Err.Error() }
+func (e *SystemOneResponseError) Unwrap() error { return e.Err }
+
 func DecodeSystemOneResponse(r io.Reader) (*SystemOneResponse, error) {
 	body, err := io.ReadAll(io.LimitReader(r, MaxSystemOneResponseBytes+1))
 	if err != nil {
-		return nil, errors.New("typesafe invalid response")
+		return nil, &SystemOneResponseError{Err: errors.New("typesafe invalid response"), Body: body}
 	}
 	// A truncated body would otherwise surface as a misleading "invalid JSON".
 	if len(body) > MaxSystemOneResponseBytes {
-		return nil, ErrSystemOneResponseTooLarge
+		return nil, &SystemOneResponseError{Err: ErrSystemOneResponseTooLarge, Body: body}
 	}
 	if !json.Valid(body) {
-		return nil, errors.New("typesafe invalid response")
+		return nil, &SystemOneResponseError{Err: errors.New("typesafe invalid response"), Body: body}
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
-		return nil, errors.New("typesafe invalid response")
+		return nil, &SystemOneResponseError{Err: errors.New("typesafe invalid response"), Body: body}
 	}
 	// The upstream already answered (and charged); an unexpected model or usage
 	// shape must not discard the answer, so both are decoded leniently.

@@ -329,6 +329,48 @@ func TestForwardSystemOneUnhandledStatusDoesNotFailOver(t *testing.T) {
 	require.Zero(t, repo.errorCalls)
 }
 
+// Downstream contract: the client never receives the upstream body of a failed
+// System One request, so the Ops record keeps it, bounded by
+// gateway.log_upstream_error_body[_max_bytes] like every other forward path.
+func TestForwardSystemOneOpsRecordKeepsUpstreamBody(t *testing.T) {
+	const maxBytes = 24
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		logBody bool
+		kind    string
+	}{
+		{"request error", http.StatusBadRequest, `{"detail":"bad question","hint":"see the docs"}`, true, "http_error"},
+		{"failover", http.StatusServiceUnavailable, `upstream outage page without any JSON`, true, "failover"},
+		{"success status the gateway cannot relay", http.StatusOK, `<html>not a System One answer</html>`, true, "response_error"},
+		{"body logging off", http.StatusBadRequest, `{"detail":"bad question","hint":"see the docs"}`, false, "http_error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newSystemOneTestService(newSystemOneStatusUpstream(tc.status, tc.body))
+			svc.cfg.Gateway.LogUpstreamErrorBody = tc.logBody
+			svc.cfg.Gateway.LogUpstreamErrorBodyMaxBytes = maxBytes
+			account := &Account{ID: 28, Platform: PlatformTypeSafe, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "http://typesafe.test", "api_key": "ts-secret"}}
+			c := newSystemOneTestContext()
+
+			_, err := svc.ForwardSystemOne(context.Background(), c, account, []byte(`{}`))
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), tc.body[:maxBytes])
+
+			want := ""
+			if tc.logBody {
+				want = tc.body[:maxBytes]
+			}
+			events := systemOneOpsEvents(t, c)
+			require.Len(t, events, 1)
+			require.Equal(t, tc.kind, events[0].Kind)
+			require.Equal(t, want, events[0].Detail)
+			require.Equal(t, want, events[0].UpstreamResponseBody)
+			require.Equal(t, want, c.GetString(OpsUpstreamErrorDetailKey))
+		})
+	}
+}
+
 func TestForwardSystemOneNormalizesResponseContentType(t *testing.T) {
 	for _, tc := range []struct{ upstream, want string }{
 		{"application/json; charset=utf-8", "application/json; charset=utf-8"},

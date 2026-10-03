@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/gin-gonic/gin"
 )
@@ -68,9 +69,15 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 	decoded, err := typesafe.DecodeSystemOneResponse(resp.Body)
 	if err != nil {
 		// The upstream accepted (and may have charged) this request but the
-		// gateway cannot relay it; keep an ops trail for reconciliation.
-		setOpsUpstreamError(c, resp.StatusCode, err.Error(), "")
-		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		// gateway cannot relay it; keep an ops trail for reconciliation,
+		// including the body that was not relayed.
+		var rejected *typesafe.SystemOneResponseError
+		upstreamDetail := ""
+		if errors.As(err, &rejected) {
+			upstreamDetail = s.upstreamErrorDetail(rejected.Body)
+		}
+		setOpsUpstreamError(c, resp.StatusCode, err.Error(), upstreamDetail)
+		event := OpsUpstreamErrorEvent{
 			Passthrough:        true,
 			ProxyID:            opsUpstreamProxyID(account),
 			ProxyName:          opsUpstreamProxyName(account),
@@ -82,7 +89,9 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 			UpstreamURL:        upstreamURL,
 			Kind:               "response_error",
 			Message:            err.Error(),
-		})
+		}
+		event.Detail, event.UpstreamResponseBody = upstreamDetail, upstreamDetail
+		appendOpsUpstreamError(c, event)
 		return nil, err
 	}
 	return &SystemOneForwardResult{
@@ -121,7 +130,22 @@ func IsSystemOneRequestErrorStatus(status int) bool {
 func (s *GatewayService) handleSystemOneErrorResponse(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, upstreamURL string) error {
 	respBody, _ := s.readUpstreamErrorBody(resp)
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
-	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, "")
+	// The client response never carries the upstream body, so the
+	// administrator-facing record keeps it the way handleErrorResponse does:
+	// bounded in the Ops record and in the service log, both under
+	// gateway.log_upstream_error_body.
+	upstreamDetail := s.upstreamErrorDetail(respBody)
+	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
+	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		logger.LegacyPrintf("service.gateway",
+			"Upstream error %d (account=%d platform=%s type=%s): %s",
+			resp.StatusCode,
+			account.ID,
+			account.Platform,
+			account.Type,
+			truncateForLog(respBody, s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes),
+		)
+	}
 	event := OpsUpstreamErrorEvent{
 		Passthrough:        true,
 		ProxyID:            opsUpstreamProxyID(account),
@@ -135,6 +159,7 @@ func (s *GatewayService) handleSystemOneErrorResponse(ctx context.Context, c *gi
 		Kind:               "http_error",
 		Message:            upstreamMsg,
 	}
+	event.Detail, event.UpstreamResponseBody = upstreamDetail, upstreamDetail
 
 	if IsSystemOneRequestErrorStatus(resp.StatusCode) {
 		appendOpsUpstreamError(c, event)
@@ -165,6 +190,21 @@ func (s *GatewayService) handleSystemOneErrorResponse(ctx context.Context, c *gi
 		failoverErr.NextAccountAction = NextAccountRetry
 	}
 	return failoverErr
+}
+
+// upstreamErrorDetail bounds an upstream body for the Ops record exactly like
+// handleErrorResponse (gateway.log_upstream_error_body[_max_bytes]). The System
+// One events are passthrough, so they carry it as the detail and as the
+// upstream response body.
+func (s *GatewayService) upstreamErrorDetail(body []byte) string {
+	if s == nil || s.cfg == nil || !s.cfg.Gateway.LogUpstreamErrorBody {
+		return ""
+	}
+	maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+	if maxBytes <= 0 {
+		maxBytes = 2048
+	}
+	return truncateString(string(body), maxBytes)
 }
 
 // systemOneResponseContentType keeps the upstream JSON media type (and its
