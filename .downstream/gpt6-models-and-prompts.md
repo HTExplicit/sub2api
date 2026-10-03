@@ -34,7 +34,12 @@ ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流�
 
 账号绑定存于 `accounts.extra.system_prompt`（`inherit`、`off`、`custom` + `prompt_id`，缺省为继承）。账号编辑、行菜单和批量栏（≤1000 个）通过 `PUT /api/v1/admin/system-prompts/bindings` 写入，普通账号编辑保留该键。继承的账号使用站点默认；全局开关关闭时一律不注入。
 
-绑定只属于请求有注入点的平台，即 `service.SystemPromptPlatforms` 的十个平台（下表四种最终协议）。TypeSafe 只走 System One，请求没有 system / instructions 字段，转发时原样发送，所以它的账号不注入、不计入使用统计：账号编辑和行菜单不提供该入口，绑定接口跳过这类账号并返回实际写入的账号数，迁移 `268_purge_system_prompt_bindings_without_insertion_point.sql` 删除它们已存的绑定。
+绑定只属于请求有注入点的平台，即 `service.SystemPromptPlatforms` 的十个平台（下表四种最终协议）。TypeSafe 只走 System One，请求没有 system / instructions 字段，转发时原样发送，所以它的账号不注入、不计入使用统计、不持有绑定：
+
+- 账号编辑和行菜单不提供该入口；批量栏在选中的账号都已加载且都不可注入时也不提供。选中的是一组 ID，可以包含其他页、全部结果或导入结果里未加载的账号，这类选择保留入口，批量弹窗提示 TypeSafe 账号会被跳过。
+- 绑定接口跳过这类账号并返回实际写入的账号数。
+- 创建账号（数据导入、复制账号同此路径）时丢弃这类账号带入的 `extra.system_prompt`；批量编辑和 extra 合并接口在任何平台都不写该键，已有账号的绑定只由绑定接口写入。
+- 迁移 `268_purge_system_prompt_bindings_without_insertion_point.sql` 一次性删除它们已存的绑定。
 
 请求路径只读内存快照（保存即替换，60 秒后台刷新以同步多实例）和调度账号自带的绑定，不查询数据库；配置不可用时不注入并告警，不向客户端返回错误。每个最终协议只注入一次：
 
