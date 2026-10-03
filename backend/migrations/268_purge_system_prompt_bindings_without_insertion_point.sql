@@ -11,11 +11,13 @@
 -- Such a row could still hold a binding. The binding endpoint wrote it to every
 -- selected account whatever its platform (service/system_prompt.go SetBindings
 -- before this release, reached from the account edit dialog, the row menu and
--- the bulk bar), and 259 turned a stored prompt_skills "off" into
--- {"mode": "off"} on any platform. It never changed a request. This release
--- writes no binding to these accounts, offers no control for them and leaves
--- them out of the counts of the system prompts page, so the stored value is
--- removed here once instead of being ignored in code.
+-- the bulk bar); account creation (data import and duplicate included), bulk
+-- update and the extra merge stored a given key as it was
+-- (service/admin_account.go before this release); and 259 turned a stored
+-- prompt_skills "off" into {"mode": "off"} on any platform. It never changed a
+-- request. This release writes no binding to these accounts, offers no control
+-- for them and leaves them out of the counts of the system prompts page, so the
+-- stored value is removed here once instead of being ignored in code.
 --
 -- Only the system_prompt key of those rows goes, soft-deleted rows included.
 -- The system_prompts setting, every other extra key and every account on the

@@ -32,3 +32,32 @@ func TestSystemPromptSetBindingsSkipsAccountsWithoutInsertionPoint(t *testing.T)
 	require.Zero(t, updated)
 	require.Empty(t, repo.bulkUpdateIDs)
 }
+
+// Besides the binding endpoint only account creation stores a binding, and only
+// for an account that can take a prompt: data import and duplicate create from
+// a stored extra. The key-level writers of extra store none on any platform.
+func TestSystemPromptBindingHasNoOtherWriter(t *testing.T) {
+	binding := map[string]any{"mode": SystemPromptModeOff}
+	given := func() map[string]any {
+		return map[string]any{AccountExtraSystemPromptKey: binding, "ordinary_setting": true}
+	}
+	created := func(platform string) map[string]any {
+		account, err := buildAccountForCreate(&CreateAccountInput{
+			Name: "imported", Platform: platform, Type: AccountTypeAPIKey,
+			Credentials: map[string]any{"api_key": "key"},
+		}, given())
+		require.NoError(t, err)
+		return account.Extra
+	}
+	require.Equal(t, given(), created(PlatformAnthropic))
+	require.Equal(t, map[string]any{"ordinary_setting": true}, created(PlatformTypeSafe))
+
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{1: {ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}}}
+	svc := &adminServiceImpl{accountRepo: repo}
+	require.NoError(t, svc.UpdateAccountExtra(context.Background(), 1, given()))
+	require.Equal(t, []map[string]any{{"ordinary_setting": true}}, repo.updates[1])
+	_, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{AccountIDs: []int64{1}, Extra: given()})
+	require.NoError(t, err)
+	require.Len(t, repo.bulkUpdates, 1)
+	require.Equal(t, map[string]any{"ordinary_setting": true}, repo.bulkUpdates[0].Extra)
+}

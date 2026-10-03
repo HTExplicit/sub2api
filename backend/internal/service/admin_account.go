@@ -484,6 +484,11 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Status:      StatusActive,
 		Schedulable: true,
 	}
+	// A binding given with a new account (data import, duplicate) is stored
+	// only where a request can use it.
+	if !AccountTakesSystemPrompt(account) {
+		delete(account.Extra, AccountExtraSystemPromptKey)
+	}
 	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
 		return nil, err
 	}
@@ -1040,6 +1045,8 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, UpstreamModelMetadataExtraKey)
 	delete(updates, OpenCodeGoUsageAutoRefreshExtraKey)
 	delete(updates, OpenCodeGoUsageSnapshotExtraKey)
+	// System prompt bindings are written only by the binding endpoint.
+	delete(updates, AccountExtraSystemPromptKey)
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -1077,6 +1084,8 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, UpstreamModelMetadataExtraKey)
 	delete(input.Extra, OpenCodeGoUsageAutoRefreshExtraKey)
 	delete(input.Extra, OpenCodeGoUsageSnapshotExtraKey)
+	// System prompt bindings are written only by the binding endpoint.
+	delete(input.Extra, AccountExtraSystemPromptKey)
 
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)

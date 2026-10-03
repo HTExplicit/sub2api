@@ -30,7 +30,11 @@ import (
 const SettingKeySystemPrompts = "system_prompts"
 
 // AccountExtraSystemPromptKey stores an account's SystemPromptBinding.
-// A missing or invalid value means inherit.
+// A missing or invalid value means inherit. Only an account that can take a
+// prompt holds the key. On an existing account SetBindings is its only writer:
+// an account edit keeps the stored value and the key-level writers of extra
+// (bulk update, UpdateAccountExtra) drop the key. Account creation keeps a
+// given binding for such an account alone.
 const AccountExtraSystemPromptKey = "system_prompt"
 
 const (
