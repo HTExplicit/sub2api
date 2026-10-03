@@ -651,6 +651,7 @@ export default {accounts: {
         reasonFailed: '测试未成功完成',
         reasonIncomplete: '回答未完整结束',
         reasonNoNumber: '未找到最终答案数字',
+        reasonModelDiffers: '上游声明的模型与请求模型不一致',
         finalAnswer: '最终答案',
         reasoningTokens: '推理 token 数',
         notReported: '未提供',
@@ -660,7 +661,7 @@ export default {accounts: {
         modelMatches: '与请求模型一致',
         modelDiffers: '与请求模型 {model} 不一致',
         reasoningTokensHint: '推理 token 恰为 {tokens}：我们的记录中这种回答全部答错',
-        note: '初判只看最终答案数字，仅供参考，不影响调度。'
+        note: '初判看最终答案数字和上游声明的模型，仅供参考，不影响调度。'
       },
       usageWindow: {
         statsTitle: '5小时窗口用量统计',

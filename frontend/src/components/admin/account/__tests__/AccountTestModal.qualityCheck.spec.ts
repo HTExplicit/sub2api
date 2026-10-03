@@ -201,6 +201,19 @@ describe('AccountTestModal quality check', () => {
       .toContain('admin.accounts.qualityCheck.modelDiffers {"model":"gpt-6-astra"}')
   })
 
+  it('suspects degradation when another model answered, even with the right answer', async () => {
+    const modal = await runQualityCheck([
+      { type: 'test_start', model: 'gpt-6-astra' },
+      { type: 'content', text: '答案是 **21 个**。' },
+      { type: 'upstream_model', upstream_model: 'gpt-6-mini' },
+      { type: 'test_complete', success: true, reasoning_tokens: 3712 }
+    ])
+    const card = modal.get('[data-test="quality-verdict"]')
+    expect(card.get('[data-test="quality-verdict-kind"]').text()).toBe('admin.accounts.qualityCheck.verdictSuspect')
+    expect(card.get('[data-test="quality-verdict-reason"]').text()).toBe('admin.accounts.qualityCheck.reasonModelDiffers')
+    expect(card.get('[data-test="quality-final-answer"]').text()).toBe('21')
+  })
+
   // A failed test never reaches the upstream_model event, so it cannot say the
   // upstream declared no model.
   it.each([

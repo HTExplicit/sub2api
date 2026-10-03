@@ -181,12 +181,16 @@ export interface CandyQualityVerdict {
 
 export function judgeCandyQualityRun(run: CandyQualityRun): CandyQualityVerdict {
   const finalNumber = run.outcome === 'completed' ? extractFinalAnswerNumber(run.answer) : null
-  const reason: CandyQualityUndeterminedReason | null =
-    run.outcome !== 'completed' ? run.outcome : finalNumber === null ? 'no_number' : null
   const requestedModel = run.requestedModel.trim()
   const declaredModel = run.declaredModel.trim()
+  // Another model answered: suspect whatever the answer says. A failed test never
+  // learns the declared model, so this cannot apply to it.
+  const modelDiffers = declaredModel !== '' && declaredModel !== requestedModel
+  const reason: CandyQualityUndeterminedReason | null = modelDiffers
+    ? null
+    : run.outcome !== 'completed' ? run.outcome : finalNumber === null ? 'no_number' : null
   return {
-    kind: reason ? 'undetermined' : finalNumber === CANDY_QUALITY_ANSWER ? 'normal' : 'suspect',
+    kind: modelDiffers ? 'suspect' : reason ? 'undetermined' : finalNumber === CANDY_QUALITY_ANSWER ? 'normal' : 'suspect',
     reason,
     finalNumber,
     reasoningTokens: run.reasoningTokens,

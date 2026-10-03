@@ -159,6 +159,12 @@ describe('judgeCandyQualityRun', () => {
     expect(judgeCandyQualityRun(input)).toMatchObject({ kind: 'undetermined', reason, finalNumber: null })
   })
 
+  it('suspects degradation when another model answered, whatever the answer', () => {
+    expect(judgeCandyQualityRun(run({ declaredModel: 'gpt-6-mini' }))).toMatchObject({ kind: 'suspect', reason: null, finalNumber: 21, modelMatches: false })
+    expect(judgeCandyQualityRun(run({ declaredModel: 'gpt-6-mini', answer: '这道题需要考虑最坏情况。' }))).toMatchObject({ kind: 'suspect', reason: null, finalNumber: null })
+    expect(judgeCandyQualityRun(run({ declaredModel: 'gpt-6-mini', outcome: 'incomplete' }))).toMatchObject({ kind: 'suspect', reason: null })
+  })
+
   it('compares the declared model with the requested model', () => {
     expect(judgeCandyQualityRun(run({ declaredModel: 'gpt-6-mini' })).modelMatches).toBe(false)
     expect(judgeCandyQualityRun(run({ declaredModel: '' })).modelMatches).toBeNull()

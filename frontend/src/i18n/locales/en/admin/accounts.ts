@@ -1887,6 +1887,7 @@ export default {accounts: {
         reasonFailed: 'The test did not finish successfully',
         reasonIncomplete: 'The answer did not finish',
         reasonNoNumber: 'No final answer number found',
+        reasonModelDiffers: 'The upstream declared a different model than requested',
         finalAnswer: 'Final answer',
         reasoningTokens: 'Reasoning tokens',
         notReported: 'Not reported',
@@ -1896,7 +1897,7 @@ export default {accounts: {
         modelMatches: 'Matches the requested model',
         modelDiffers: 'Differs from the requested model {model}',
         reasoningTokensHint: 'Exactly {tokens} reasoning tokens: every such answer in our records was wrong',
-        note: 'The first verdict only looks at the final number; it is a hint and does not affect scheduling.'
+        note: 'The first verdict looks at the final number and the model the upstream declared; it is a hint and does not affect scheduling.'
       },
       usageWindow: {
         statsTitle: '5-Hour Window Usage Statistics',

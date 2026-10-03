@@ -785,6 +785,9 @@ const qualityVerdictBadge = computed(() => {
 const qualityDeclaredModelText = computed(() => qualityVerdict.value?.declaredModel ||
   (status.value === 'success' ? t('admin.accounts.qualityCheck.notDeclared') : t('admin.accounts.qualityCheck.declaredModelUnavailable')))
 const qualityReasonText = computed(() => {
+  if (qualityVerdict.value?.kind === 'suspect' && qualityVerdict.value.modelMatches === false) {
+    return t('admin.accounts.qualityCheck.reasonModelDiffers')
+  }
   switch (qualityVerdict.value?.reason) {
     case 'failed':
       return t('admin.accounts.qualityCheck.reasonFailed')
