@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -61,14 +62,17 @@ func TestTypeSafeAccountTestSendsNativeSystemOneRequest(t *testing.T) {
 }
 
 func TestTypeSafeAccountTestMarksRejectedKey(t *testing.T) {
+	// Downstream contract: the connection test shows the whole upstream body,
+	// however long, exactly as it was received.
+	body := `{"detail":"invalid key ` + strings.Repeat("x", 3000) + `"}`
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
-			svc, repo, _, c, rec := newTypeSafeAccountTestFixture(t, status, `{"detail":"invalid key"}`)
+			svc, repo, _, c, rec := newTypeSafeAccountTestFixture(t, status, body)
 			require.Error(t, svc.TestAccountConnection(c, 31, "", "", AccountTestModeDefault))
 			require.Equal(t, 1, repo.errorCalls)
 			responseText, errMsg, _ := parseTestSSEOutput(rec.Body.String())
 			require.Empty(t, responseText)
-			require.Contains(t, errMsg, "API returned")
+			require.Equal(t, fmt.Sprintf("API returned %d: %s", status, body), errMsg)
 		})
 	}
 }

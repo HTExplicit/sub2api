@@ -21,6 +21,8 @@ const (
 // System One request. TypeSafe accounts never speak the Claude protocol, so
 // they must not fall through to testClaudeAccountConnection (which would send
 // the key to /v1/messages and could misclassify the account).
+// Like every connection test downstream, a failure reports the upstream text
+// as it is: the transport error and the whole response body.
 func (s *AccountTestService) testTypeSafeAccountConnection(c *gin.Context, account *Account, prompt string) error {
 	ctx := c.Request.Context()
 	if account.Type != AccountTypeAPIKey {
@@ -71,13 +73,13 @@ func (s *AccountTestService) testTypeSafeAccountConnection(c *gin.Context, accou
 	}
 	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", sanitizeUpstreamErrorMessage(err.Error())))
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, truncateString(string(body), typeSafeTestMaxPreviewBytes))
+		body, _ := io.ReadAll(resp.Body)
+		errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))
 		// 401/403 表示 API Key 无效或被上游拒绝，标记为 error 状态。
 		if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)

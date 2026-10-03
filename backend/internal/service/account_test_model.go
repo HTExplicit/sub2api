@@ -8,6 +8,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 )
 
 // PickConnectionTestModel chooses the model of a connection test that does not
@@ -64,6 +65,9 @@ func connectionTestDefaultModels(account *Account) []string {
 		return []string{grokDefaultResponsesModel}
 	case account.Platform == PlatformAntigravity:
 		return []string{defaultAntigravityTestModel}
+	case account.IsTypeSafe():
+		// The System One probe always sends this model.
+		return []string{typesafe.JevLatestModel}
 	default:
 		return claudeConnectionTestModels
 	}
