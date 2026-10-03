@@ -44,7 +44,7 @@ grant 与 trial header 在 handler 开始时移入私有执行上下文，不转
 
 账本存于 `sub2api_plugin_state`：plugin key `codexrip.codex-runtime`，namespace `codex-routing-private`，key `quality-run.<run_id>`。新记录显式保存 `model`、`reasoning_effort` 和凭据主体 `owner_identity`；账本不保存 grant、Key、题面、Cookie 或 STATE 值。
 
-路由资格诊断时期写入的旧记录（无 `model`）按 `gpt-6-astra`/`high` 显示且只读：GET 和 close 仍可用，同一 `run_id` 不能再创建、恢复或发送（409，需换用新 run id）。旧记录的 `scope`、`qualification`、`route_generation`、`route_runtime_generation` 及旧 attempt 字段在重写（如 close）时原样保留；视图只对旧记录只读显示 `route_generation`、`route_expires_at` 和 `connection_fingerprint`，旧 attempt 可能带 `acquire`/`verify` 阶段。关闭旧记录不再清理其遗留的私有 Cookie 状态。
+路由资格诊断时期写入的旧记录（无 `model`）按 `gpt-6-astra`/`high` 显示且只读：GET 和 close 仍可用，同一 `run_id` 不能再创建、恢复或发送（409，需换用新 run id）。旧记录的 `scope`、`qualification`、`route_generation`、`route_runtime_generation` 及旧 attempt 字段在重写（如 close）时原样保留；视图只对旧记录只读显示 `route_generation`、`route_expires_at` 和 `connection_fingerprint`，旧 attempt 可能带 `acquire`/`verify` 阶段。旧记录引用的路由 bundle 与 Cookie 状态（`bundle.*`、`clock.*`、`seen.*`）已由迁移 263 删除，账本本身原样保留。
 
 ## 运维执行器
 

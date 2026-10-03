@@ -45,19 +45,11 @@
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <p data-test="item-name" class="whitespace-pre-wrap break-words text-sm font-medium text-ink">{{ itemLabel(item) }}</p>
-              <p v-if="typeof item.metadata.model_id === 'string' && item.metadata.model_id" class="mt-1 break-all text-xs text-muted">{{ item.metadata.model_id }}</p>
-              <p v-if="typeof item.metadata.label === 'string' && item.metadata.label" class="mt-1 whitespace-pre-wrap break-words text-xs text-muted">{{ item.metadata.label }}</p>
             </div>
             <span class="shrink-0 text-xs" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
           </div>
           <p v-if="typeof item.metadata.message === 'string'" class="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'">{{ item.metadata.message }}</p>
           <p v-if="item.error_message && item.error_message !== item.metadata.message" data-test="item-error" class="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'"><span v-if="item.error_code" class="mr-1 font-mono text-muted">[{{ item.error_code }}]</span>{{ item.error_message }}</p>
-          <dl v-if="resultFacts(item).length" class="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted">
-            <template v-for="(fact, index) in resultFacts(item)" :key="index">
-              <dt>{{ fact.label[locale || 'zh'] || fact.label.zh || fact.label.en }}</dt>
-              <dd class="max-h-40 overflow-y-auto whitespace-pre-wrap break-all">{{ fact.timestamp ? formatDateTime(fact.value) : fact.value }}</dd>
-            </template>
-          </dl>
           <dl v-if="metadataEntries(item).length" data-test="item-metadata" class="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted">
             <template v-for="entry in metadataEntries(item)" :key="entry.key">
               <dt class="font-mono">{{ entry.key }}</dt>
@@ -92,26 +84,21 @@ import Icon from '@/components/icons/Icon.vue'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { list as listAccounts } from '@/api/admin/accounts'
 import type { AccountJobItem, DuplicateReviewMetadata } from '@/api/admin/accountJobs'
-import { formatDateTime } from '@/utils/format'
 import { extractApiErrorMessage } from '@/utils/apiError'
 const emit = defineEmits<{ close: [] }>()
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const store = useAccountJobsStore()
 const job = computed(() => store.currentJob)
 const terminal = computed(() => !!job.value && isTerminalAccountJob(job.value))
 const progress = computed(() => job.value?.target_count ? Math.min(100, Math.round(job.value.processed_count / job.value.target_count * 100)) : 0)
 const busy = ref(false), error = ref(''), retryExpired = ref(false), survivorID = ref<number | null>(null), confirmMerge = ref(false)
 const names = ref<Record<number, string>>({})
-type ResultFact = { label: Record<string, string>; value: string; timestamp?: boolean }
-function resultFacts(item: AccountJobItem): ResultFact[] {
-  return Array.isArray(item.metadata.facts) ? item.metadata.facts.filter((fact): fact is ResultFact => !!fact && typeof fact === 'object' && typeof fact.value === 'string' && !!fact.label && typeof fact.label === 'object') : []
-}
 // Every stored metadata key is shown; only values already rendered above
-// (name, label, model, message and facts) are not repeated, and result_keys is
-// the server's list of keys a result added (used to seed retries).
+// (name and message) are not repeated, and result_keys is the server's list of
+// keys a result added (used to seed retries).
 function metadataEntries(item: AccountJobItem): Array<{ key: string; value: string }> {
   return Object.entries(item.metadata || {})
-    .filter(([key, value]) => !((['name', 'label', 'model_id', 'message'].includes(key) && typeof value === 'string') || (key === 'facts' && Array.isArray(value)) || (key === 'result_keys' && Array.isArray(value))))
+    .filter(([key, value]) => !((['name', 'message'].includes(key) && typeof value === 'string') || (key === 'result_keys' && Array.isArray(value))))
     .map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }))
 }
 let nameVersion = 0

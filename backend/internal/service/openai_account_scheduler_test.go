@@ -4091,7 +4091,7 @@ func TestSelectAccountWithSchedulerServesOAuthAccountsWithoutRouteQualification(
 				ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
 				Concurrency: 1, GroupIDs: []int64{groupID},
 				Credentials: map[string]any{"access_token": "scheduler-token", "chatgpt_account_id": "scheduler-principal", "model_mapping": map[string]any{"gpt-6-astra": "gpt-6-astra"}},
-				Extra: map[string]any{NativeCodexAccountProjectionKey: map[string]any{NativeCodexPluginKey: map[string]any{
+				Extra: map[string]any{"plugin_account_projections": map[string]any{NativeCodexPluginKey: map[string]any{
 					"identity": "dormant", "scheduling": map[string]any{"gpt-6-astra": map[string]any{"model": "gpt-6-astra", "effect": "deny"}},
 				}}},
 			}

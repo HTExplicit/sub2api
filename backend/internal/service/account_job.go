@@ -300,8 +300,8 @@ func (s *AccountJobService) decorateRetryEligibility(ctx context.Context, job *A
 		return
 	}
 	if !validAccountJobKind(job.Kind) {
-		// A retired kind (route acquisition, renewal stop, legacy extension
-		// operation) still lists, but it has no executor to retry with.
+		// A kind this version has no executor for (a row written by another
+		// version) still lists, but it cannot be retried.
 		job.RetryUnavailableReason = "kind_unsupported"
 		return
 	}
