@@ -50,7 +50,8 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 }
 
 // ProvideOpenAIGatewayService keeps the existing constructor signature used by
-// tests while wiring the system prompt service into the production gateway.
+// tests while wiring the system prompt service and the reasoning recovery
+// switch into the production gateway.
 func ProvideOpenAIGatewayService(
 	accountRepo AccountRepository,
 	usageLogRepo UsageLogRepository,
@@ -75,6 +76,7 @@ func ProvideOpenAIGatewayService(
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	systemPrompts *SystemPromptService,
+	reasoningRecovery *ReasoningRecoveryService,
 ) *OpenAIGatewayService {
 	svc := NewOpenAIGatewayService(
 		accountRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo,
@@ -84,6 +86,7 @@ func ProvideOpenAIGatewayService(
 		channelService, balanceNotifyService, settingService, userPlatformQuotaRepo,
 	)
 	svc.SetSystemPromptService(systemPrompts)
+	svc.SetReasoningRecoveryService(reasoningRecovery)
 	return svc
 }
 
@@ -1026,6 +1029,7 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	ProvideGatewayService,
 	ProvideSystemPromptService,
+	ProvideReasoningRecoveryService,
 	ProvideOpenAIGatewayService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,

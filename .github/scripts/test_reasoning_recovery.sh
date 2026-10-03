@@ -5,6 +5,6 @@ cd "$(dirname "$0")/../.."
 # Offline contracts only. The live diagnostic entry point is excluded
 # explicitly; this gate cannot consume account credentials or model requests.
 go -C backend test -p=1 -tags unit ./internal/pkg/apicompat ./internal/repository ./internal/service ./internal/handler/admin \
-  -run 'Test(OpenAIReasoning|OpenAIHTTPTerminal|GatewayCacheReasoningState|SchedulerCacheReasoningPolicy|ResponsesReasoningConfiguration)' -count=1
+  -run 'Test(OpenAIReasoning|OpenAIHTTPTerminal|GatewayCacheReasoningState|ResponsesReasoningConfiguration|ReasoningRecovery)' -count=1
 go -C backend test -p=1 -tags reasoning_fidelity,reasoning_recovery_diagnostic ./internal/service \
   -run '^TestReasoningRecoveryDiagnosticControl$' -count=1

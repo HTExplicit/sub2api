@@ -245,10 +245,10 @@ func TestOpenAIGatewayService_Forward_HTTPIngressInvalidEncryptedContentIsTermin
 			"base_url": wsFallbackServer.URL,
 		},
 		Extra: map[string]any{
-			"responses_websockets_v2_enabled":               true,
-			OpenAIReasoningSignatureRecoveryEnabledExtraKey: false,
+			"responses_websockets_v2_enabled": true,
 		},
 	}
+	svc.SetReasoningRecoveryService(newReasoningRecoverySwitchForTest(false))
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)

@@ -2,7 +2,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"hash/fnv"
@@ -116,11 +115,6 @@ type AccountManagementTag struct {
 type OpenAIEndpointCapability string
 
 const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
-
-const (
-	OpenAIChatReasoningReplayEnabledExtraKey        = "openai_chat_reasoning_replay_enabled"
-	OpenAIReasoningSignatureRecoveryEnabledExtraKey = "openai_reasoning_signature_recovery_enabled"
-)
 
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
@@ -2169,25 +2163,10 @@ func (a *Account) IsOveragesEnabled() bool {
 	return false
 }
 
-// IsOpenAIChatReasoningReplayEnabled reports the account policy for replaying
-// completed tool reasoning on Chat-to-Responses routes. Endpoint eligibility is
-// checked by the caller; enabling this policy does not change the selected route.
-func (a *Account) IsOpenAIChatReasoningReplayEnabled() bool {
-	return a.isOpenAIReasoningPolicyEnabled(OpenAIChatReasoningReplayEnabledExtraKey)
-}
-
-// IsOpenAIReasoningSignatureRecoveryEnabled reports the account policy for the
-// bounded HTTP reasoning-signature recovery, including the passthrough exception.
-func (a *Account) IsOpenAIReasoningSignatureRecoveryEnabled() bool {
-	return a.isOpenAIReasoningPolicyEnabled(OpenAIReasoningSignatureRecoveryEnabledExtraKey)
-}
-
-func (a *Account) isOpenAIReasoningPolicyEnabled(key string) bool {
-	enabled, err := openAIReasoningPolicyEnabled(context.Background(), a, key)
-	return err == nil && enabled
-}
-
-func (a *Account) supportsOpenAIReasoningPolicies() bool {
+// supportsOpenAIReasoningRecovery reports whether the bounded HTTP
+// reasoning-signature recovery applies to this kind of account, including
+// passthrough accounts. Whether it runs is the global switch.
+func (a *Account) supportsOpenAIReasoningRecovery() bool {
 	if a == nil || !a.IsOpenAI() {
 		return false
 	}

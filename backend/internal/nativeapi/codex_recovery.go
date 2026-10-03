@@ -1,7 +1,8 @@
 package nativeapi
 
-// Recovery receives protocol shape and item indices. Neither ciphertext,
-// prompt history, credentials nor complete upstream errors cross this boundary.
+// The recovery policy decides on protocol shape and item indices. Neither
+// ciphertext, prompt history, credentials nor complete upstream errors are part
+// of its inputs.
 type RecoveryEnvelope struct {
 	ValidJSON      bool    `json:"valid_json"`
 	Statuses       []int   `json:"statuses"`
@@ -34,15 +35,9 @@ type RecoverySelection struct {
 	Reason  string `json:"reason"`
 }
 
-type RecoverySetting struct {
-	Configured bool `json:"configured"`
-	Valid      bool `json:"valid"`
-	Value      bool `json:"value"`
-}
-
-// A structured request-state rejection must stay request-scoped even when an
-// optional recovery plugin is absent. This validates protocol framing only;
-// the plugin separately decides recovery eligibility and rewrite selection.
+// A structured request-state rejection must stay request-scoped even when
+// recovery is switched off. This validates protocol framing only; the recovery
+// policy separately decides recovery eligibility and rewrite selection.
 func ValidReasoningRejectionEnvelope(in RecoveryEnvelope) bool {
 	if !in.ValidJSON || !in.ParamValid || in.Code == nil {
 		return false

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 
 	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
@@ -9,15 +8,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func openAIReasoningPolicyEnabled(ctx context.Context, account *Account, key string) (bool, error) {
-	if account == nil || !account.supportsOpenAIReasoningPolicies() {
-		return false, nil
-	}
-	raw, configured := account.Extra[key]
-	value, valid := raw.(bool)
-	return codexrecovery.Enabled(extensionv1.RecoverySetting{Configured: configured, Valid: valid, Value: value}), nil
-}
-
+// openAIRecoveryEnvelope reduces an upstream error payload to the protocol
+// shape the recovery policy decides on.
 func openAIRecoveryEnvelope(payload []byte) extensionv1.RecoveryEnvelope {
 	var envelope extensionv1.RecoveryEnvelope
 	if _, err := canonicalReasoningCacheJSON(payload); err != nil {
@@ -50,12 +42,9 @@ func openAIRecoveryEnvelope(payload []byte) extensionv1.RecoveryEnvelope {
 	return envelope
 }
 
-func readOpenAIRecoveryRejection(ctx context.Context, payload []byte) (openAIReasoningRejection, bool, error) {
-	result := codexrecovery.Rejection(openAIRecoveryEnvelope(payload))
-	return openAIReasoningRejection{result.Code, result.Param}, result.Recognized, nil
-}
-
-func selectOpenAIRecoveryIndices(ctx context.Context, body []byte, param string) (extensionv1.RecoverySelection, error) {
+// selectOpenAIRecoveryIndices asks the recovery policy which reasoning items of
+// the sent body may lose their ciphertext for the rejection's param.
+func selectOpenAIRecoveryIndices(body []byte, param string) extensionv1.RecoverySelection {
 	query := extensionv1.RecoverySelectionQuery{Param: param}
 	if _, err := canonicalReasoningCacheJSON(body); err == nil {
 		query.BodyValid = true
@@ -70,5 +59,5 @@ func selectOpenAIRecoveryIndices(ctx context.Context, body []byte, param string)
 			query.EncryptedFields = countOpenAIEncryptedFields(parsed)
 		}
 	}
-	return codexrecovery.Select(query), nil
+	return codexrecovery.Select(query)
 }

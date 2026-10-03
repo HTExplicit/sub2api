@@ -153,6 +153,10 @@ func TestSystemPromptAuditRoutesHaveStableActionsAndKeepPromptBodies(t *testing.
 	require.Contains(t, auditVerbatimBodyRoutes, "PUT /api/v1/admin/system-prompts")
 }
 
+func TestReasoningRecoveryAuditRouteHasStableAction(t *testing.T) {
+	require.Equal(t, "admin.reasoning_recovery.update", auditActionOverrides["PUT /api/v1/admin/reasoning-recovery"])
+}
+
 // Administrators review what a system prompt save changed, so the audit row
 // keeps the submitted body verbatim. Extra fields remain the allowlisted flags.
 func TestSystemPromptConfigAuditStoresPromptBodiesVerbatim(t *testing.T) {

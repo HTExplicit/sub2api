@@ -55,9 +55,3 @@ func Select(in extensionv1.RecoverySelectionQuery) extensionv1.RecoverySelection
 	}
 	return extensionv1.RecoverySelection{Indices: append([]int(nil), in.CipherIndices...), Reason: "recovery_not_dispatched"}
 }
-
-// Enabled reports an account's reasoning policy setting: on unless it is
-// configured to anything but true.
-func Enabled(in extensionv1.RecoverySetting) bool {
-	return !in.Configured || (in.Valid && in.Value)
-}

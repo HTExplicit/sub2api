@@ -387,37 +387,6 @@ func ValidateOpenAILongContextBillingExtra(platform string, extra map[string]any
 	return nil
 }
 
-// ValidateOpenAIReasoningPolicyExtra validates only newly supplied policy values.
-// Defaults are read-time behavior; no default value is persisted or coerced here.
-func ValidateOpenAIReasoningPolicyExtra(extra map[string]any) error {
-	for _, key := range [...]string{OpenAIChatReasoningReplayEnabledExtraKey, OpenAIReasoningSignatureRecoveryEnabledExtraKey} {
-		if raw, exists := extra[key]; exists {
-			if _, valid := raw.(bool); !valid {
-				return infraerrors.BadRequest("OPENAI_REASONING_POLICY_INVALID", key+" must be a boolean")
-			}
-		}
-	}
-	return nil
-}
-
-func preserveOmittedOpenAIReasoningPolicyExtra(current, incoming map[string]any) map[string]any {
-	normalized := maps.Clone(incoming)
-	for _, key := range [...]string{OpenAIChatReasoningReplayEnabledExtraKey, OpenAIReasoningSignatureRecoveryEnabledExtraKey} {
-		if _, provided := incoming[key]; provided {
-			continue
-		}
-		if value, exists := current[key]; exists {
-			if normalized == nil {
-				normalized = make(map[string]any, 2)
-			}
-			// Preserve even legacy malformed values: omission must not silently
-			// turn a fail-closed policy into the enabled default.
-			normalized[key] = value
-		}
-	}
-	return normalized
-}
-
 func normalizeOpenAILongContextBillingExtra(platform string, extra map[string]any) (map[string]any, error) {
 	if platform != PlatformOpenAI {
 		return extra, nil
@@ -547,9 +516,6 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
 	NormalizeAccountCredentialBaseURLs(input.Credentials)
-	if err := ValidateOpenAIReasoningPolicyExtra(input.Extra); err != nil {
-		return nil, err
-	}
 	if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
 		return nil, err
 	}
@@ -661,9 +627,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
-		if err := ValidateOpenAIReasoningPolicyExtra(input.Extra); err != nil {
-			return nil, err
-		}
 		if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
 			return nil, err
 		}
@@ -678,7 +641,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err := ValidateUpstreamRequestIDHeaderExtra(normalizedExtra); err != nil {
 			return nil, err
 		}
-		normalizedExtra = preserveOmittedOpenAIReasoningPolicyExtra(account.Extra, normalizedExtra)
 	}
 	previousProbeIdentity := upstreamBillingProbeIdentity(account)
 	previousOllamaUsageIdentity := ollamaCloudUsageIdentity(account)
@@ -1030,9 +992,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键
 // （如 model_rate_limits / passive_usage_* 等）。
 func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
-	if err := ValidateOpenAIReasoningPolicyExtra(updates); err != nil {
-		return err
-	}
 	updates = sanitizedCodexFingerprintExtraUpdates(updates)
 	updates = stripOpenAIAutoResetCreditManagedExtra(updates, true)
 	delete(updates, UpstreamBillingProbeEnabledExtraKey)
@@ -1065,9 +1024,6 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
-	if err := ValidateOpenAIReasoningPolicyExtra(input.Extra); err != nil {
-		return nil, err
-	}
 	if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
 		return nil, err
 	}
