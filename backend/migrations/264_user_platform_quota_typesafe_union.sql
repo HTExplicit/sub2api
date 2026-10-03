@@ -6,13 +6,16 @@
 -- files that re-create the quota CHECK without `typesafe`
 -- (241_minimax_cindy_platform_quota_compat, 251, 260). A new database therefore
 -- ended at 260's ten platforms, while a database already past 260 applies
--- upstream's 241 last and keeps eleven. With `typesafe` missing, a default
--- TypeSafe quota makes the multi-row quota snapshot of a new user violate the
--- CHECK, and that user ends up with no platform quota at all.
+-- upstream's 241 last and keeps its list: the eleven platforms and the `cindy`
+-- value the downstream copy of that file carries for databases that have not
+-- reached 260. With `typesafe` missing, a default TypeSafe quota makes the
+-- multi-row quota snapshot of a new user violate the CHECK, and that user ends
+-- up with no platform quota at all.
 --
--- This file states the union once more at the tail, so both paths end with the
--- same eleven platforms (service.AllowedQuotaPlatforms). The composite route
--- CHECK needs nothing: no downstream file re-creates it after upstream's 241.
+-- This file states the union once more at the tail, so every path ends with the
+-- same eleven platforms (service.AllowedQuotaPlatforms) and without the retired
+-- `cindy` value. The composite route CHECK needs nothing: no downstream file
+-- re-creates it after upstream's 241.
 --
 -- Only the CHECK changes; no quota row is written. 260 removed every `cindy`
 -- row together with that value, so each existing row already satisfies the new
