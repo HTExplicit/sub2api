@@ -37,6 +37,7 @@ import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import pluginsAPI from './plugins'
 import systemPromptsAPI from './systemPrompts'
+import reasoningRecoveryAPI from './reasoningRecovery'
 import accountJobsAPI from './accountJobs'
 
 /**
@@ -77,6 +78,7 @@ export const adminAPI = {
   audit: auditAPI,
   plugins: pluginsAPI,
   systemPrompts: systemPromptsAPI,
+  reasoningRecovery: reasoningRecoveryAPI,
   accountJobs: accountJobsAPI
 }
 
@@ -115,6 +117,7 @@ export {
   auditAPI,
   pluginsAPI,
   systemPromptsAPI,
+  reasoningRecoveryAPI,
   accountJobsAPI
 }
 
@@ -129,3 +132,4 @@ export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest 
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
 export type { PluginInstallation, PluginCompatibility, PluginUISession, PluginTestResult } from './plugins'
 export type { SystemPrompt, SystemPromptBinding, SystemPromptConfig, SystemPromptState } from './systemPrompts'
+export type { ReasoningRecoveryConfig } from './reasoningRecovery'

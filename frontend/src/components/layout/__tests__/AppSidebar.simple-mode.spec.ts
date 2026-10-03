@@ -109,14 +109,14 @@ describe('AppSidebar simple mode extensions', () => {
   it('renders admin extensions and Image Studio for an admin in simple mode', async () => {
     const wrapper = await renderSidebar({ admin: true, imageStudio: true })
 
-    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime', '/image-studio'])
+    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime', '/admin/reasoning-recovery', '/image-studio'])
     expect(wrapper.text()).not.toContain('nav.myAccount')
   })
 
   it('keeps admin extensions visible while hiding Image Studio when its flag is disabled', async () => {
     const wrapper = await renderSidebar({ admin: true, imageStudio: false })
 
-    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime'])
+    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime', '/admin/reasoning-recovery'])
     wrapper.unmount()
   })
 })

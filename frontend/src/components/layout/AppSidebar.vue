@@ -838,6 +838,7 @@ function buildExtensionNavItems(includeAdmin: boolean): NavItem[] {
   if (includeAdmin) {
     items.push({ path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon })
     items.push({ path: '/admin/codex-runtime', label: t('nav.codexRuntime'), icon: PluginIcon })
+    items.push({ path: '/admin/reasoning-recovery', label: t('nav.reasoningRecovery'), icon: ShieldIcon })
   }
   items.push({ path: '/image-studio', label: t('nav.imageStudio'), icon: BatchImageIcon, featureFlag: flagImageStudio })
   return items

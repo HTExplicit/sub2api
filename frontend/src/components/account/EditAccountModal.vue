@@ -1937,13 +1937,6 @@
         </div>
       </div>
 
-      <OpenAIReasoningPolicyFields
-        v-if="isOpenAIReasoningPolicyApplicable(account)"
-        v-model="openAIReasoningPolicy"
-        v-model:selected="openAIReasoningPolicySelected"
-        id-prefix="edit-openai-reasoning"
-      />
-
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -3235,14 +3228,6 @@ import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
 import Toggle from '@/components/common/Toggle.vue'
-import OpenAIReasoningPolicyFields from './OpenAIReasoningPolicyFields.vue'
-import {
-  applyOpenAIReasoningPolicyEdits,
-  defaultOpenAIReasoningPolicy,
-  emptyOpenAIReasoningPolicySelection,
-  isOpenAIReasoningPolicyApplicable,
-  readOpenAIReasoningPolicy
-} from '@/utils/openaiReasoningPolicy'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
@@ -3687,8 +3672,6 @@ const grokOAuthBaseUrl = ref('')
 // Grok Free OAuth accounts use client-tool prompt caching by default. Keep an
 // explicit false in the account extra as the opt-out signal.
 const grokClientToolCacheEnabled = ref(true)
-const openAIReasoningPolicy = ref(defaultOpenAIReasoningPolicy())
-const openAIReasoningPolicySelected = ref(emptyOpenAIReasoningPolicySelection())
 const isGrokOAuthAccount = computed(
   () => props.account?.platform === 'grok' && props.account?.type === 'oauth'
 )
@@ -4282,8 +4265,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     upstreamBillingAutoProbeEnabled.value && extra?.upstream_billing_rate_sync_enabled === true
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
-  openAIReasoningPolicy.value = readOpenAIReasoningPolicy(extra)
-  openAIReasoningPolicySelected.value = emptyOpenAIReasoningPolicySelection()
   openaiPassthroughEnabled.value = false
   openaiFlattenNamespacesEnabled.value = false
   openAILongContextBillingEnabled.value = false
@@ -6013,14 +5994,6 @@ const handleSubmit = async () => {
         delete newExtra.upstream_request_id_header
       }
       updatePayload.extra = newExtra
-    }
-
-    if (isOpenAIReasoningPolicyApplicable(props.account)) {
-      updatePayload.extra = applyOpenAIReasoningPolicyEdits(
-        (updatePayload.extra as Record<string, unknown> | undefined) ?? props.account.extra,
-        openAIReasoningPolicy.value,
-        openAIReasoningPolicySelected.value
-      )
     }
 
     if (updatePayload.extra) {

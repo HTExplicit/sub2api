@@ -3183,13 +3183,6 @@
         </div>
       </div>
 
-      <OpenAIReasoningPolicyFields
-        v-if="isOpenAIReasoningPolicyApplicable(form)"
-        v-model="openAIReasoningPolicy"
-        v-model:selected="openAIReasoningPolicySelected"
-        id-prefix="create-openai-reasoning"
-      />
-
       <!-- OpenAI Codex namespace 工具摊平（兼容开关，仅 OAuth） -->
       <div
         v-if="form.platform === 'openai' && form.type === 'oauth'"
@@ -4048,13 +4041,6 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import ModelContextCapacityField from '@/components/account/ModelContextCapacityField.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import Toggle from '@/components/common/Toggle.vue'
-import OpenAIReasoningPolicyFields from './OpenAIReasoningPolicyFields.vue'
-import {
-  applyOpenAIReasoningPolicyEdits,
-  defaultOpenAIReasoningPolicy,
-  emptyOpenAIReasoningPolicySelection,
-  isOpenAIReasoningPolicyApplicable
-} from '@/utils/openaiReasoningPolicy'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
@@ -4570,8 +4556,6 @@ const applyGrokOAuthUpstreamConfig = (credentials: Record<string, unknown>) => {
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
-const openAIReasoningPolicy = ref(defaultOpenAIReasoningPolicy())
-const openAIReasoningPolicySelected = ref(emptyOpenAIReasoningPolicySelection())
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
@@ -5068,8 +5052,6 @@ watch(
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAppServerEnabled.value = false
     }
-    openAIReasoningPolicy.value = defaultOpenAIReasoningPolicy()
-    openAIReasoningPolicySelected.value = emptyOpenAIReasoningPolicySelection()
     if (newPlatform !== 'anthropic') {
       anthropicPassthroughEnabled.value = false
       anthropicAPIKeyAuthScheme.value = 'x_api_key'
@@ -5582,8 +5564,6 @@ const resetForm = () => {
   interceptWarmupRequests.value = false
   autoPauseOnExpired.value = true
   openaiPassthroughEnabled.value = false
-  openAIReasoningPolicy.value = defaultOpenAIReasoningPolicy()
-  openAIReasoningPolicySelected.value = emptyOpenAIReasoningPolicySelection()
   openaiFlattenNamespacesEnabled.value = false
   openAILongContextBillingEnabled.value = false
   openAILongContextBillingTouched.value = false
@@ -5655,7 +5635,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     return base
   }
 
-  const extra = applyOpenAIReasoningPolicyEdits(base, openAIReasoningPolicy.value, openAIReasoningPolicySelected.value)
+  const extra: Record<string, unknown> = { ...(base || {}) }
   if (accountCategory.value === 'oauth-based') {
     extra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
     extra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)

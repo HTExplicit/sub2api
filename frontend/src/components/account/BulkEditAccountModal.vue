@@ -31,14 +31,6 @@
         </p>
       </div>
 
-      <OpenAIReasoningPolicyFields
-        v-if="allOpenAIReasoningPolicyCapable"
-        v-model="openAIReasoningPolicy"
-        v-model:selected="openAIReasoningPolicySelected"
-        id-prefix="bulk-openai-reasoning"
-        bulk
-      />
-
       <!-- OpenAI passthrough -->
       <div
         v-if="allOpenAIPassthroughCapable"
@@ -1528,13 +1520,6 @@ import {
   resolveOpenAIWSModeHintKey
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
-import OpenAIReasoningPolicyFields from './OpenAIReasoningPolicyFields.vue'
-import {
-  applyOpenAIReasoningPolicyEdits,
-  defaultOpenAIReasoningPolicy,
-  emptyOpenAIReasoningPolicySelection,
-  isOpenAIReasoningPolicyApplicable
-} from '@/utils/openaiReasoningPolicy'
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1577,13 +1562,6 @@ const allTargetsGrok = computed(
     targetSelectedPlatforms.value.every((p) => p === 'grok')
 )
 const isMixedPlatform = computed(() => targetSelectedPlatforms.value.length > 1)
-const allOpenAIReasoningPolicyCapable = computed(() =>
-  targetSelectedPlatforms.value.length > 0 &&
-  targetSelectedTypes.value.length > 0 &&
-  targetSelectedPlatforms.value.every(platform =>
-    targetSelectedTypes.value.every(type => isOpenAIReasoningPolicyApplicable({ platform, type }))
-  )
-)
 
 const allOpenAIPassthroughCapable = computed(() => {
   return (
@@ -1724,8 +1702,6 @@ const rateMultiplier = ref(1)
 const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 const openaiPassthroughEnabled = ref(false)
-const openAIReasoningPolicy = ref(defaultOpenAIReasoningPolicy())
-const openAIReasoningPolicySelected = ref(emptyOpenAIReasoningPolicySelection())
 // Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
@@ -2017,13 +1993,6 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (allOpenAIReasoningPolicyCapable.value &&
-      (openAIReasoningPolicySelected.value.chatReplay || openAIReasoningPolicySelected.value.signatureRecovery)) {
-    updates.extra = applyOpenAIReasoningPolicyEdits(
-      ensureExtra(), openAIReasoningPolicy.value, openAIReasoningPolicySelected.value
-    )
-  }
-
   // 同时校验可见性：勾选后又改了目标筛选条件时，不应把该键写到非 OAuth 账号上
   if (enableOpenAIFlattenNamespaces.value && allOpenAIOAuthOnly.value) {
     const extra = ensureExtra()
@@ -2240,8 +2209,6 @@ const handleSubmit = async () => {
   }
 
   const hasAnyFieldEnabled =
-    (allOpenAIReasoningPolicyCapable.value &&
-      (openAIReasoningPolicySelected.value.chatReplay || openAIReasoningPolicySelected.value.signatureRecovery)) ||
     enableBaseUrl.value ||
     enableOpenAIPassthrough.value ||
     enableOpenAIFlattenNamespaces.value ||
@@ -2400,8 +2367,6 @@ watch(
       // Reset all values
       baseUrl.value = ''
       openaiPassthroughEnabled.value = false
-      openAIReasoningPolicy.value = defaultOpenAIReasoningPolicy()
-      openAIReasoningPolicySelected.value = emptyOpenAIReasoningPolicySelection()
       openaiFlattenNamespacesEnabled.value = false
       openAILongContextBillingEnabled.value = false
       openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']

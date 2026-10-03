@@ -2384,7 +2384,7 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
 /* end public */
 
 /* settings: 系统设置 (every tab, its sub-panels and dialogs), 系统提示词 (the library and the per-account binding
- * views), Codex 运行设置 and 插件管理. Owner: wave 2 P3 (the settings page agent).
+ * views), Codex 运行设置, 推理恢复 and 插件管理. Owner: wave 2 P3 (the settings page agent).
  *
  * Source: the reference console's settings language (artifacts/tmp/ui-el/ref/console/REF-CONSOLE.md §5, §8.3-§8.5,
  * §8.11, §8.16 and its public recipes: Modal, ConnectModal, DemoBanner, PromoField, TopUpModal, Toggle, AddChoice)
@@ -2398,6 +2398,8 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  * Template hooks (one attribute each, upstream markup otherwise unchanged):
  *   views/admin/SettingsView.vue:3                    data-ui="settings"       (page root)
  *   views/admin/SystemPromptsView.vue:3               data-ui="system-prompts" (page root, fork view)
+ *   views/admin/ReasoningRecoveryView.vue:3           data-ui="reasoning-recovery" (page root, fork view; it shares
+ *                                                     the 系统提示词 rules for the head, the card and the switch line)
  *   components/admin/codex/CodexRuntimeSettings.vue:2 data-ui="codex-runtime"  (page root, fork component)
  *   views/admin/PluginsView.vue:3                     data-ui="plugins"        (page root)
  *   views/admin/BackupView.vue:291                    data-ui="r2-guide"       (the R2 guide dialog's outer layer)
@@ -2415,7 +2417,7 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  * Selectors start with html.flat-theme and one of those roots; the theme switched off renders upstream. */
 
 /* ================================================================== settings · 0 metrics */
-html.flat-theme :is([data-ui~="settings"], [data-ui~="system-prompts"], [data-ui~="codex-runtime"], [data-ui~="plugins"]) {
+html.flat-theme :is([data-ui~="settings"], [data-ui~="system-prompts"], [data-ui~="reasoning-recovery"], [data-ui~="codex-runtime"], [data-ui~="plugins"]) {
   /* the reference Modal's header (px 18, py 14) and body (px 18, py 16) insets */
   --set-px: 1.125rem;
   --set-head-py: 0.875rem;
@@ -2439,14 +2441,14 @@ html.flat-theme [data-ui~="settings"] > form > div:not([class]) > [class~="space
   margin-top: var(--ui-shell-gap);
 }
 
-/* The centred narrow pages (settings max-w-6xl, the prompt library max-w-5xl) start at the content gutter like every
-   console page of the reference, under the header row's title; their maximum width stays (long forms keep a readable
-   measure; the space on the right of a wide screen is canvas). */
-html.flat-theme :is([data-ui~="settings"], [data-ui~="system-prompts"])[class~="mx-auto"] {
+/* The centred narrow pages (settings max-w-6xl; the prompt library and 推理恢复 max-w-5xl) start at the content gutter
+   like every console page of the reference, under the header row's title; their maximum width stays (long forms keep
+   a readable measure; the space on the right of a wide screen is canvas). */
+html.flat-theme :is([data-ui~="settings"], [data-ui~="system-prompts"], [data-ui~="reasoning-recovery"])[class~="mx-auto"] {
   margin-inline: 0;
 }
 
-html.flat-theme [data-ui~="system-prompts"][class~="px-1"] {
+html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"])[class~="px-1"] {
   padding-inline: 0;
 }
 
@@ -3034,11 +3036,12 @@ html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"] > tabl
 /* ================================================================== 7 · page heads of the fork pages and plugins */
 
 /* 7.1 The page's own heading repeats the header row's title word for word (系统提示词 in Chinese — its route title is
-   not translated —, Codex 运行设置, 插件管理), and the plugins intro repeats the header's description word for word.
-   From 1024px, where the header row shows both, they are kept for assistive technology only; below that the header
-   hides its title and description and the page's own stay. */
+   not translated —, 推理恢复, Codex 运行设置, 插件管理), and the plugins intro repeats the header's description word for
+   word. From 1024px, where the header row shows both, they are kept for assistive technology only; below that the
+   header hides its title and description and the page's own stay. */
 @media (min-width: 1024px) {
   html.flat-theme:lang(zh) [data-ui~="system-prompts"] > header h1,
+  html.flat-theme [data-ui~="reasoning-recovery"] > header h1,
   html.flat-theme [data-ui~="codex-runtime"] > h2:first-child,
   html.flat-theme [data-ui~="plugins"] > section:first-child h2,
   html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p {
@@ -3053,7 +3056,7 @@ html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"] > tabl
 
 /* 7.2 The intro under the title: the reference's page intro (13px on a relaxed line, muted, 780px at most); a
    wrapped intro keeps more than one character on its last line. */
-html.flat-theme [data-ui~="system-prompts"] > header p,
+html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > header p,
 html.flat-theme [data-ui~="codex-runtime"] > h2:first-child + p,
 html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p {
   max-width: 48.75rem;
@@ -3085,20 +3088,23 @@ html.flat-theme :is([data-ui~="system-prompts"] > header h1, [data-ui~="codex-ru
 
 /* ================================================================== 8 · 系统提示词 (SystemPromptsView, fork) */
 
+/* 推理恢复 (ReasoningRecoveryView, fork) is the same page with one card: a head, then a switch line over its notes.
+   8.1 and the switch title and note sizes of 8.2 cover both roots. */
+
 /* 8.1 Rhythm: the head, the switch section and the library sit one block gap apart (the reference's 12). The head
    is an intro line with its actions, no rule under it; each section is a section card (surface, structural line,
    radius 8, 16 x 18). */
-html.flat-theme [data-ui~="system-prompts"] > :not([hidden]) ~ :not([hidden]) {
+html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > :not([hidden]) ~ :not([hidden]) {
   margin-top: var(--ui-shell-gap);
 }
 
-html.flat-theme [data-ui~="system-prompts"] > header {
+html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > header {
   align-items: flex-end;
   border-bottom: 0;
   padding-bottom: 0;
 }
 
-html.flat-theme [data-ui~="system-prompts"] > section {
+html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > section {
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   background-color: rgb(var(--ui-surface));
@@ -3107,7 +3113,7 @@ html.flat-theme [data-ui~="system-prompts"] > section {
 
 /* 8.2 The switch line (switch, title, hint on one row) and the default prompt: title 13 / 600 ink, hint 12 muted;
    the field label is the mono label; the usage line in ink-soft with its figures tabular; the notes 12 muted. */
-html.flat-theme [data-ui~="system-prompts"] > section:first-of-type > label:first-child > span[class~="font-medium"] {
+html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > section:first-of-type > label:first-child > span[class~="font-medium"] {
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -3145,7 +3151,7 @@ html.flat-theme [data-ui~="system-prompts"] [data-test="system-prompts-usage"] {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="system-prompts"] > section > p[class~="text-xs"] {
+html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > section > p[class~="text-xs"] {
   font-size: 0.75rem;
   line-height: 1.125rem;
 }
