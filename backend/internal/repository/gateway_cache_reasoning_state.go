@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -220,25 +219,14 @@ func (c *gatewayCache) runRejectedReasoning(ctx context.Context, args []any) (an
 	defer cancel()
 	deadline, _ := ioCtx.Deadline()
 	timeout := time.Until(deadline)
-	// WithTimeout alone inherits ContextTimeoutEnabled=false from the shared
-	// production client. Use one bounded, promptly closed connection instead of
-	// changing global Redis options or starting detached timeout goroutines.
-	opts := *c.rdb.Options()
-	opts.ContextTimeoutEnabled = true
-	opts.MaxRetries = -1
-	opts.DialerRetries = 1
-	opts.DialerRetryTimeout = time.Nanosecond
-	// MaxActiveConns is the actual connection bound. The logical size of two
-	// avoids go-redis launching its background redial loop after the first dial
-	// failure; this one-operation pool is closed immediately instead.
-	opts.PoolSize, opts.MaxActiveConns, opts.MaxIdleConns = 2, 1, 1
-	opts.MinIdleConns, opts.MaxConcurrentDials = 0, 1
-	opts.DialTimeout, opts.ReadTimeout, opts.WriteTimeout, opts.PoolTimeout = timeout, timeout, timeout, timeout
-	dial := opts.Dialer
-	opts.Dialer = func(_ context.Context, network, addr string) (net.Conn, error) {
-		return dial(ioCtx, network, addr)
+	if timeout <= 0 {
+		return nil, context.DeadlineExceeded
 	}
-	client := redis.NewClient(&opts)
-	defer func() { _ = client.Close() }()
-	return rejectedReasoningScript.Run(ioCtx, client, rejectedReasoningKeys(), args...).Result()
+	// The shared client does not apply a context deadline to socket reads and
+	// writes (ContextTimeoutEnabled is off). WithTimeout returns a view of it
+	// that keeps the shared connection pool and uses the remaining budget as its
+	// read and write timeout: the operation pays no dial and the shared options
+	// stay untouched. Waiting for a pooled connection, a new dial and a retry
+	// backoff end with ioCtx.
+	return rejectedReasoningScript.Run(ioCtx, c.rdb.WithTimeout(timeout), rejectedReasoningKeys(), args...).Result()
 }
