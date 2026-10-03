@@ -90,7 +90,6 @@ function mountView() {
         Pagination: { emits: ['update:page'], template: '<button data-test="page-two" @click="$emit(\'update:page\', 2)">next</button>' },
         BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' },
         ConfirmDialog: true,
-        ExtensionSlot: true,
         AccountFolderBar: true,
         AccountActionMenu: true,
         AccountDetailsDrawer: true,

@@ -35,8 +35,6 @@ type openAIWSHTTPBridgeToolState struct {
 // upstream response. It never enters the shared native-WS session state store.
 type openAIWSHTTPBridgeTurnState struct {
 	accountID int64
-	identity  string
-	turnID    string
 	value     string
 }
 
@@ -568,12 +566,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	applyBridgeOwnedTurnState := func(req *http.Request) {
 		if account.Platform != PlatformGrok && len(bridgeStates) > 0 {
 			state := bridgeStates[0]
-			ownerMatches := state.accountID > 0 && state.accountID == account.ID
-			if account.IsOpenAIOAuthLike() {
-				ownerMatches = ownerMatches && state.identity == CodexCredentialOwnerIdentity(account) &&
-					state.turnID != "" && state.turnID == codexLogicalTurnID(c)
-			}
-			if ownerMatches && strings.TrimSpace(state.value) != "" {
+			if state.accountID > 0 && state.accountID == account.ID && strings.TrimSpace(state.value) != "" {
 				// The general HTTP builder strips unproven client-supplied state.
 				// This value is independently proven by the owning bridge, so carry
 				// it without publishing shared provenance for other connections.
@@ -594,7 +587,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		c.Set("openai_passthrough", true)
 		c.Set("openai_ws_http_bridge", true)
 	}
-	upstreamReq = upstreamReq.WithContext(context.WithValue(upstreamReq.Context(), codexWireIngressKey{}, "ws"))
 
 	// Bridge turns have no PrepareRequest: compare the frame the bridge received
 	// with the plaintext body just built, before zstd in doOpenAICodexUpstream.
@@ -749,7 +741,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			UpstreamTerminalEvent:         upstreamTerminalEvent,
 			UpstreamTerminalStatus:        upstreamTerminalStatus,
 			ResponseHeaders:               cloneHeader(resp.Header),
-			ClientDisconnect:              clientDisconnected,
 			Duration:                      time.Since(turnStart),
 			FirstTokenMs:                  firstTokenMs,
 		}

@@ -292,6 +292,11 @@ func ProvideOpenAITokenProvider(
 }
 
 // ProvidePluginManager preserves account-directory wiring when regenerating Wire.
+func ProvidePluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *config.Config, hostInfo PluginHostInfo, kvStore PluginKVStore, gateway *OpenAIGatewayService) *PluginManager {
+	manager := NewPluginManager(repo, encryptor, cfg, hostInfo, kvStore)
+	manager.SetAccountDirectory(gateway)
+	return manager
+}
 
 // ProvideOpenAIQuotaService wires the OpenAI quota query/reset service.
 // It depends on the OpenAI token provider for refreshed access tokens and the
@@ -928,9 +933,9 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 // ProvideSettingService wires SettingService with group reader and proxy repo.
 func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config, _ *NativeFeatureBootstrap) (*SettingService, error) {
 	svc := NewSettingService(settingRepo, cfg)
-	// Image tool and observability switches are read by package-level gates
-	// before Image Studio and the gateway start.
-	for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadAdminObservabilityConfig} {
+	// Image tool, observability and Codex request compression switches are read
+	// by package-level gates before Image Studio and the gateway start.
+	for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig} {
 		if err := load(context.Background()); err != nil {
 			return nil, err
 		}
@@ -998,7 +1003,6 @@ func ProvideAPIKeyService(
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	ProvideNativeFeatureBootstrap,
-	ProvideNativeCodexRuntime,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,

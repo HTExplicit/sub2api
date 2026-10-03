@@ -201,6 +201,19 @@ describe('AccountTestModal quality check', () => {
       .toContain('admin.accounts.qualityCheck.modelDiffers {"model":"gpt-6-astra"}')
   })
 
+  it('suspects degradation when another model answered, even with the right answer', async () => {
+    const modal = await runQualityCheck([
+      { type: 'test_start', model: 'gpt-6-astra' },
+      { type: 'content', text: '答案是 **21 个**。' },
+      { type: 'upstream_model', upstream_model: 'gpt-6-mini' },
+      { type: 'test_complete', success: true, reasoning_tokens: 3712 }
+    ])
+    const card = modal.get('[data-test="quality-verdict"]')
+    expect(card.get('[data-test="quality-verdict-kind"]').text()).toBe('admin.accounts.qualityCheck.verdictSuspect')
+    expect(card.get('[data-test="quality-verdict-reason"]').text()).toBe('admin.accounts.qualityCheck.reasonModelDiffers')
+    expect(card.get('[data-test="quality-final-answer"]').text()).toBe('21')
+  })
+
   // A failed test never reaches the upstream_model event, so it cannot say the
   // upstream declared no model.
   it.each([
@@ -236,5 +249,22 @@ describe('AccountTestModal quality check', () => {
     await flushPromises()
     expect(wrapper!.text()).toContain('admin.accounts.testCompleted')
     expect(wrapper!.find('[data-test="quality-verdict"]').exists()).toBe(false)
+  })
+
+  it.each([
+    ['gpt-6-luna', true],
+    ['gpt-6-astra', false]
+  ])('says so only when an ordinary test is answered by another model (%s)', async (declared, mismatch) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(stream([
+      { type: 'test_start', model: 'gpt-6-astra' },
+      { type: 'content', text: 'OK' },
+      { type: 'upstream_model', upstream_model: declared },
+      { type: 'test_complete', success: true }
+    ])))
+    await open()
+    await start().trigger('click')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('admin.accounts.testCompleted')
+    expect(wrapper!.text().includes(`admin.accounts.batchTest.upstreamResponse: ${declared}（admin.accounts.batchTest.modelMismatch）`)).toBe(mismatch)
   })
 })

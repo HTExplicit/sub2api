@@ -1468,9 +1468,6 @@ export interface AccountConsoleFilterState {
 // operations still use Account from /admin/accounts/:id.
 export type AccountListItem = Omit<Account, 'groups'>
 
-// The non-secret identity fields an account-scoped control needs (e.g. the account test prompt and reasoning pickers).
-export type AccountSelectionIdentity = Pick<Account, 'id' | 'platform' | 'type' | 'parent_account_id'> & Partial<Pick<Account, 'status'>>
-
 export interface AccountSchedulerGroupScore {
   group_id?: number | null
   group_name?: string

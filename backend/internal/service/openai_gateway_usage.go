@@ -20,9 +20,6 @@ import (
 
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
-	// Captured from the authenticated diagnostic context before async billing.
-	// Accounting is unchanged; diagnostic success cannot recover account health.
-	CodexQuality       bool
 	Result             *OpenAIForwardResult
 	APIKey             *APIKey
 	User               *User
@@ -157,7 +154,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result == nil {
 		return errors.New("openai usage result is nil")
 	}
-	s.observeOpenAIUsageAccountHealth(ctx, input)
+	if s.rateLimitService != nil && input.Account != nil && input.Account.Platform == PlatformOpenAI {
+		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
+	}
 
 	apiKey := input.APIKey
 	user := input.User
@@ -1178,23 +1177,13 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 		return
 	}
 
-	qualityObservation := IsCodexQualityRequest(ctx)
 	go func() {
 		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil && !qualityObservation {
+		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil {
 			notifyOpenAIAutoReset(accountID)
 		}
 	}()
-}
-
-func (s *OpenAIGatewayService) observeOpenAIUsageAccountHealth(ctx context.Context, input *OpenAIRecordUsageInput) {
-	if input.CodexQuality {
-		return
-	}
-	if s.rateLimitService != nil && input.Account != nil && input.Account.Platform == PlatformOpenAI {
-		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
-	}
 }
 
 func (s *OpenAIGatewayService) UpdateCodexUsageSnapshotFromHeaders(ctx context.Context, accountID int64, headers http.Header) {

@@ -111,7 +111,6 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         self.assertEqual(len(commands), 2)
         for command in commands:
             selector = command[command.index("-run") + 1] if "-run" in command else r"^Test"
-            skipped = command[command.index("-skip") + 1] if "-skip" in command else r"(?!)"
             packages = [arg for arg in command if arg.startswith("./")]
             self.assertTrue(packages)
             for package in packages:
@@ -126,9 +125,8 @@ class UpstreamAutomationContractTest(unittest.TestCase):
                     if build and re.search(r"\b(integration|windows)\b", build.group(1)):
                         continue
                     names.extend(re.findall(r"(?m)^func (Test\w+)\(", source))
-                selected = [name for name in names if re.search(selector, name) and not re.search(skipped, name)]
+                selected = [name for name in names if re.search(selector, name)]
                 self.assertTrue(selected, f"{package}: {selector} selected no unit tests")
-        self.assertIn("-race ./internal/codexruntime/core -run '^TestModuleServesTransportPlanFromItsConfiguration$'", verify)
 
     def test_bot_chain_is_explicit_and_does_not_overwrite_manual_resolutions(self):
         self.assertIn("upstream_tag:", self.sync)

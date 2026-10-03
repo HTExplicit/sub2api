@@ -165,8 +165,6 @@ func accountJobHTTPError(err error) error {
 		return infraerrors.Conflict("ACCOUNT_JOB_NOT_RETRYABLE", "account job has no failed items to retry")
 	case errors.Is(err, service.ErrAccountJobInvalidMetadata):
 		return infraerrors.BadRequest("ACCOUNT_JOB_METADATA_REJECTED", "account job metadata must not contain credentials")
-	case errors.Is(err, service.ErrAccountJobPluginUnavailable):
-		return infraerrors.ServiceUnavailable("ACCOUNT_JOB_PLUGIN_UNAVAILABLE", "account job plugin is unavailable or has changed")
 	default:
 		return err
 	}
@@ -195,7 +193,7 @@ func (h *AccountHandler) replayAccountJob(c *gin.Context, kind string, payload a
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		response.ErrorFrom(c, service.ErrAccountViewInvalid)
+		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_JOB_PAYLOAD_INVALID", "invalid account job payload"))
 		return true
 	}
 	job, replayed, err := h.accountJobs.ReplaySubmission(c.Request.Context(), actorID, kind, c.GetHeader("Idempotency-Key"), raw)

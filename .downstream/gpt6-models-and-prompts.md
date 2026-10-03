@@ -1,6 +1,6 @@
-# GPT-6 模型、Codex 出站与提示词
+# GPT-6 模型、Codex 运行与提示词
 
-官方基线见 [upstream-base](upstream-base)。内置提示词能力在宿主内原生运行，随宿主交付；第三方插件框架独立保留。GPT-6 Sol/Luna 的定价与识别沿用官方实现，Codex 出站指纹与模型守卫、指令模板、实时容量和日期快照约定见下文。
+官方基线见 [upstream-base](upstream-base)。内置提示词能力在宿主内原生运行，随宿主交付；第三方插件框架独立保留。GPT-6 Sol/Luna 的定价与识别沿用官方实现，指令模板、实时容量和日期快照约定见下文。
 
 ## 模型同步与容量
 
@@ -24,19 +24,9 @@ API Key 使用完整 Responses。OAuth 目录保留实际 Lite 与上下文字�
 
 两款型号有独立价卡及严格大于 272,000 输入的长请求倍率，保留人工定价。未知 GPT-6 名称不套 Astra 身份或价格。固定来源与指令摘要见 [官方提取记录](../backend/internal/pkg/openai/gpt6_codex_reference.json)。
 
-## Codex 出站指纹与模型守卫
+## Codex 流式响应
 
-Codex 路由采集（打票：采集与复验探针、Cookie 路由资格、连接租约、调度与请求路由门控）已删除。OpenAI OAuth 账号的调度和转发不再需要路由资格，经账号普通代理与传输发送。客户端 WS 入站经 HTTP bridge 的条件恢复为官方 v0.2.11 行为（例如 Grok 账号或插件管理器接管 OAuth 时强制 bridge）；GPT-6 不再因路由资格被强制改走 HTTP bridge。
-
-- 模型声明守卫：OAuth 账号发往 `chatgpt.com/backend-api/codex/responses`（不含 compact）的 HTTP 请求，在普通转发、透传（含 WS 的 HTTP bridge）、Messages 和账号测试路径上，要求 200 响应声明的模型等于请求模型，否则以模型错配失败；首输出前的错配不写入下游。API Key 账号、compact 和原生 WS 帧不经此守卫。
-- 原生 turn-state 在同一轮固定首次值，下一轮或换账号清除。
-- ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流式响应发送 `Content-Type`。宿主对声明接受 SSE 的 200 响应补回 `text/event-stream`，模型守卫对无类型响应按 SSE 帧识别。
-
-账号详情右栏的“Codex 出站指纹”读取配置和已经记录的出站事实，刷新不会发模型请求。页面展示配置来源、profile、UA、版本和身份收敛方式，以及最近实际出站的入站与上游传输、请求压缩、TLS/ALPN、账号代理、STATE 和身份字段一致性。新建账号采用官方 Windows CLI 0.156.0 的应用层参照；已有配置保留，可显式选择新版参照，设备种子和手动 UA 覆盖不被重置。
-
-本机官方 CLI 通过隔离合成认证、本地可信证书和受控 HTTP/WS 端点取得参照。生产 Go TLS 的实际值与参照分开展示；未捕获生产 ClientHello 时不宣称 JA3/JA4 相同。Bearer 和代理密码不进入这些页面或通用诊断。
-
-管理员接口位于 `/api/v1/admin/accounts/:id/codex-fingerprint`，profile 选择使用其 `/profile` 子路径和账号版本 CAS。
+ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流式响应发送 `Content-Type`。宿主对声明接受 SSE 的 200 响应补回 `text/event-stream`。
 
 ## 系统提示词
 
@@ -61,7 +51,7 @@ Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `ena
 
 ## Codex 运行设置
 
-侧栏“Codex 运行设置”（`/admin/codex-runtime`）只保留“压缩 Codex Responses 请求体”开关和保存（沿用 TOTP 二次验证），对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约见 [native domains](native-domains.md)。
+侧栏“Codex 运行设置”（`/admin/codex-runtime`）有一个开关“压缩 Codex Responses 请求体”：开启时 OAuth 账号发往 ChatGPT Codex 后端的流式 `/responses` 请求体以 zstd 压缩发送，compact、models 等其他请求保持明文。保存沿用 TOTP 二次验证，对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约与未保存时的默认值见 [native domains](native-domains.md)。
 
 ## 账号连接测试与批量测试
 

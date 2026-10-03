@@ -1,9 +1,7 @@
 package profile
 
 import (
-	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -12,56 +10,42 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
-func Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if err := ctx.Err(); err != nil {
-		return extensionv1.Result{}, err
+// ErrInvalidVersion reports a Codex client version that cannot be written into
+// a User-Agent.
+var ErrInvalidVersion = errors.New("invalid identity version")
+
+// codexClientVersionPattern allows the two official forms, 0.146.0 and
+// 0.147.0-alpha.4.
+var codexClientVersionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.]+)?$`)
+
+// Derive returns the client identity of a fingerprint seed.
+func Derive(seed string) extensionv1.CodexClientProfile {
+	return extensionv1.CodexClientProfile(deriveCodexClientIdentity(seed))
+}
+
+// Valid reports whether an identity passes the schema check.
+func Valid(profile extensionv1.CodexClientProfile) bool {
+	return codexClientIdentity(profile).valid()
+}
+
+// UserAgent returns the Codex TUI User-Agent of an identity at a client
+// version. An identity that fails the schema check, or a malformed version, is
+// an error: neither may be written into an outbound header.
+func UserAgent(profile extensionv1.CodexClientProfile, version string) (string, error) {
+	identity := codexClientIdentity(profile)
+	if !identity.valid() {
+		return "", errors.New("invalid identity profile")
 	}
-	if in.Capability != extensionv1.CapabilityRequest || len(in.Payload) > 8192 {
-		return extensionv1.Result{}, errors.New("invalid Codex identity request")
+	if len(version) > 64 || !codexClientVersionPattern.MatchString(version) {
+		return "", ErrInvalidVersion
 	}
-	var query extensionv1.CodexIdentityQuery
-	if json.Unmarshal(in.Payload, &query) != nil {
-		return extensionv1.Result{}, errors.New("invalid Codex identity query")
-	}
-	result := extensionv1.CodexIdentityResult{DefaultFingerprintMode: "device"}
-	switch in.Operation {
-	case "codex.identity.available":
-		result.Valid = true
-	case "codex.identity.derive":
-		if query.Seed == "" || len(query.Seed) > 1024 {
-			return extensionv1.Result{}, errors.New("invalid identity seed")
-		}
-		identity := capturedCodexClientIdentity()
-		if query.Preset == "legacy" {
-			identity = deriveCodexClientIdentity(query.Seed)
-		}
-		result.Profile, result.Valid = extensionv1.CodexClientProfile(identity), true
-	case "codex.identity.validate":
-		result.Valid = codexClientIdentity(query.Profile).valid()
-	case "codex.identity.plan":
-		identity := codexClientIdentity(query.Profile)
-		if !identity.valid() && query.Seed != "" && len(query.Seed) <= 1024 {
-			identity = deriveCodexClientIdentity(query.Seed)
-		}
-		if identity.valid() {
-			if len(query.Version) > 64 || !regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.]+)?$`).MatchString(query.Version) {
-				return extensionv1.Result{}, errors.New("invalid identity version")
-			}
-			result.Profile, result.Valid = extensionv1.CodexClientProfile(identity), true
-			result.UserAgent, result.Sandbox = identity.UserAgent(query.Version), identity.Sandbox
-		}
-	case "codex.identity.agent":
-		if !codexClientIdentity(query.Profile).valid() || len(query.Version) > 64 || !regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.]+)?$`).MatchString(query.Version) {
-			return extensionv1.Result{}, errors.New("invalid identity agent")
-		}
-		result.UserAgent = codexClientIdentity(query.Profile).UserAgent(query.Version)
-	case "codex.identity.sandbox":
-		result.Sandbox = codexSandboxForUserAgent(query.UserAgent)
-	default:
-		return extensionv1.Result{}, errors.New("unknown Codex identity operation")
-	}
-	raw, err := json.Marshal(result)
-	return extensionv1.Result{Payload: raw}, err
+	return identity.UserAgent(version), nil
+}
+
+// SandboxForUserAgent returns the sandbox tag that belongs to the operating
+// system a User-Agent declares, or "" when the User-Agent declares none.
+func SandboxForUserAgent(userAgent string) string {
+	return codexSandboxForUserAgent(userAgent)
 }
 
 const codexClientIdentitySchemaVersion = 1
@@ -97,9 +81,6 @@ var (
 // windows_sandbox=Windows、seccomp=Ubuntu），版本/架构/终端形态受限且不含空白或
 // CR/LF。持久化值或外部写入的坏值一律视为缺失并重新按种子派生，避免脏值进入 UA。
 func (id codexClientIdentity) valid() bool {
-	if id.Version == 2 {
-		return id == capturedCodexClientIdentity() || (id.GeneratedAt != "" && func() bool { id.GeneratedAt = ""; return id == capturedCodexClientIdentity() }())
-	}
 	if id.Version != codexClientIdentitySchemaVersion {
 		return false
 	}
@@ -151,9 +132,6 @@ func codexSandboxForUserAgent(userAgent string) string {
 // 首段版本、尾部括号组版本与 version 头必须同源（codex-rs 三处都取同一个
 // CARGO_PKG_VERSION）。
 func (id codexClientIdentity) UserAgent(version string) string {
-	if id.Version == 2 {
-		return "codex_exec/0.156.0 (Windows 10.0.26220; x86_64) dumb (codex_exec; 0.156.0)"
-	}
 	version = strings.TrimSpace(version)
 	return fmt.Sprintf("%s/%s (%s %s; %s) %s (%s; %s)",
 		codexTUIOriginator, version, id.OSType, id.OSVersion, id.Arch, id.Terminal, codexTUIOriginator, version)
@@ -162,12 +140,6 @@ func (id codexClientIdentity) UserAgent(version string) string {
 // codexTUIOriginator 是交互式 Codex TUI 的 originator（app-server initialize 的
 // clientInfo.name，codex-rs tui/src/lib.rs）。
 const codexTUIOriginator = "codex-tui"
-
-// This is a reference-derived application profile, not a claim that the
-// gateway's Go transport was captured from the native client.
-func capturedCodexClientIdentity() codexClientIdentity {
-	return codexClientIdentity{Version: 2, Source: "reference_derived_windows_cli", Originator: "codex_exec", ClientVersion: "0.156.0", OSType: "Windows", OSVersion: "10.0.26220", Arch: "x86_64", Terminal: "dumb", Sandbox: "windows_sandbox"}
-}
 
 // deriveCodexClientIdentity 从种子确定性派生一份自洽身份。分布按真实 TUI 用户
 // 的大致构成加权：macOS 60%（arm64 为主），Windows 25%，Ubuntu 15%；终端与

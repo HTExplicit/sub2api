@@ -3,8 +3,7 @@
 // reply. The verdict is a hint for the administrator only; it is never stored
 // and never affects scheduling.
 
-// Canonical candy question: PROMPT in the ops script
-// scripts/invoke-codex-quality-acceptance.py, byte for byte.
+// Canonical candy question, byte for byte.
 // UTF-8 SHA-256: 05cc85bbee16e9152990a2ceb3163dea65e3ad3baff188ccbc8a570295f5a7a7
 export const CANDY_QUALITY_PROMPT = [
   '在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）',
@@ -17,8 +16,8 @@ export const CANDY_QUALITY_PROMPT = [
 
 export const CANDY_QUALITY_ANSWER = 21
 
-// Every recorded answer with exactly this many reasoning tokens was wrong.
-// It is shown as a hint and never changes the verdict by itself.
+// Answers given with exactly this many reasoning tokens were observed to be
+// wrong. It is shown as a hint and never changes the verdict by itself.
 export const CANDY_QUALITY_SUSPECT_REASONING_TOKENS = 516
 
 // Presentation only: markdown emphasis, LaTeX delimiters and \text{} wrappers
@@ -182,12 +181,16 @@ export interface CandyQualityVerdict {
 
 export function judgeCandyQualityRun(run: CandyQualityRun): CandyQualityVerdict {
   const finalNumber = run.outcome === 'completed' ? extractFinalAnswerNumber(run.answer) : null
-  const reason: CandyQualityUndeterminedReason | null =
-    run.outcome !== 'completed' ? run.outcome : finalNumber === null ? 'no_number' : null
   const requestedModel = run.requestedModel.trim()
   const declaredModel = run.declaredModel.trim()
+  // Another model answered: suspect whatever the answer says. A failed test never
+  // learns the declared model, so this cannot apply to it.
+  const modelDiffers = declaredModel !== '' && declaredModel !== requestedModel
+  const reason: CandyQualityUndeterminedReason | null = modelDiffers
+    ? null
+    : run.outcome !== 'completed' ? run.outcome : finalNumber === null ? 'no_number' : null
   return {
-    kind: reason ? 'undetermined' : finalNumber === CANDY_QUALITY_ANSWER ? 'normal' : 'suspect',
+    kind: modelDiffers ? 'suspect' : reason ? 'undetermined' : finalNumber === CANDY_QUALITY_ANSWER ? 'normal' : 'suspect',
     reason,
     finalNumber,
     reasoningTokens: run.reasoningTokens,

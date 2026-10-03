@@ -137,7 +137,6 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 		Body:       io.NopCloser(strings.NewReader(alphaSearchResponsesSSE("search result"))),
 	}}
 	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
-	service.cfg.Gateway.OpenAICodexRequestZstd = true
 	account := &Account{
 		ID:          43,
 		Platform:    PlatformOpenAI,
@@ -151,7 +150,8 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 		},
 	}
 
-	result, err := service.ForwardAlphaSearch(withCodexTransportFixture(context.Background(), true), c, account, body)
+	enableCodexRequestZstd(t)
+	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)

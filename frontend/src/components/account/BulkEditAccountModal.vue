@@ -2140,7 +2140,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     // Create/Edit 那两个表单可以删键，是因为它们提交完整 extra 对象、后端整体
     // SetExtra 覆盖；批量接口只合并增量键，两种持久化语义不能共用同一套写法。
     //
-    // 读取侧的缺失键由后端/插件决定默认值，因此显式 off 必须落键才能真正关闭收敛；
+    // 读取侧对缺失键默认 device，因此显式 off 必须落键才能真正关闭收敛；
     // ShouldEnsureCodexFingerprintSeedForExtraUpdates 只在显式 device/session/full
     // 时要种子，off 不会触发。
     //

@@ -18,7 +18,7 @@ var FirstPartyNativePluginKeys = []string{
 }
 
 // These records describe the retired installation, not an enabled native plugin.
-// Ciphertext and package bytes remain in their original columns.
+// Ciphertext and package bytes are not copied into them.
 type NativeRetirementBinding struct {
 	ID             int64  `json:"id"`
 	Capability     string `json:"capability"`
@@ -37,7 +37,6 @@ type NativeRetirementPlugin struct {
 	Bootstrap         json.RawMessage           `json:"bootstrap,omitempty"`
 	ConfigEncrypted   string                    `json:"-"`
 	Manifest          json.RawMessage           `json:"-"`
-	NativeCreated     bool                      `json:"native_created,omitempty"`
 }
 
 type NativeRetirementSnapshot struct {
@@ -295,17 +294,6 @@ func nativeCapabilityScopeKnown(key, capability, platform, accountType string) b
 		return global && (capability == "extensions.admin.v1" || capability == "extensions.request.v1")
 	case "codexrip.prompt-skills":
 		return (global && capability == "extensions.admin.v1") || (capability == "extensions.request.v1" && platform == PlatformOpenAI && accountType == "*")
-	case "codexrip.codex-runtime":
-		if platform != PlatformOpenAI {
-			return false
-		}
-		if capability == "extensions.recovery.v1" {
-			return accountType == "*"
-		}
-		if accountType != AccountTypeOAuth && accountType != AccountTypeSetupToken {
-			return false
-		}
-		return capability == "extensions.admin.v1" || capability == "extensions.credentials.v1" || capability == "extensions.jobs.v1" || capability == "extensions.request.v1" || capability == "extensions.scheduling.v1"
 	}
 	return false
 }

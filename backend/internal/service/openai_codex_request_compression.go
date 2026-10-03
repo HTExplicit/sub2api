@@ -2,7 +2,6 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -57,6 +57,26 @@ func compressCodexRequestBodyZstd(src []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// codexRequestZstd 是「Codex 运行设置」压缩开关的进程级快照：网关转发、账号测试与用量探针
+// 都向 /backend-api/codex/responses 发 OAuth POST，必须用同一套压缩策略出站，而后两者拿不到
+// 网关服务。由 SettingService 在启动加载和后台保存时发布。
+var codexRequestZstd atomic.Bool
+
+// SetCodexRequestZstdEnabled 发布压缩开关的当前值。
+func SetCodexRequestZstdEnabled(enabled bool) {
+	codexRequestZstd.Store(enabled)
+}
+
+// isCodexStreamingResponsesRequest 判断请求是否是官方客户端会压缩的那一类：
+// POST 到 ChatGPT 后端 /backend-api/codex/responses（不含 /compact）。
+func isCodexStreamingResponsesRequest(req *http.Request) bool {
+	if req == nil || req.URL == nil || req.Method != http.MethodPost {
+		return false
+	}
+	path := strings.TrimSuffix(req.URL.Path, "/")
+	return strings.HasSuffix(path, "/codex/responses")
+}
+
 // prepareOpenAICodexWireRequest 返回真正发往上游的请求。满足条件时返回一个请求体已
 // zstd 压缩、Content-Encoding/Content-Length 已改写的克隆；其余情况原样返回。
 //
@@ -64,20 +84,17 @@ func compressCodexRequestBodyZstd(src []byte) ([]byte, error) {
 // 不可重放请求（GetBody 已被 PrepareRequest 清空）只能读取 Body，读取成功后用同一份明文
 // 重新填充。读取失败时绝不把已读出的前缀当作完整请求发送：可重放请求退回原请求明文发送，
 // 不可重放请求显式返回错误（该请求本就无法完整发出）。编码失败一律退回明文。
-func (s *OpenAIGatewayService) prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.Request, error) {
-	return prepareCodexTransport(req, account)
-}
-
-// prepareOpenAICodexWireRequestUngated executes an approved encoding plan. Body
-// ownership, complete reads, replayability and wire framing remain host IO.
-func prepareOpenAICodexWireRequestUngated(req *http.Request, account *Account) (*http.Request, error) {
-	if account == nil || !account.IsOpenAIOAuthLike() {
+func prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.Request, error) {
+	if !codexRequestZstd.Load() || account == nil || !account.IsOpenAIOAuthLike() {
 		return req, nil
 	}
-	if req == nil || req.Body == nil || req.Body == http.NoBody {
+	if !isCodexStreamingResponsesRequest(req) || req.Body == nil || req.Body == http.NoBody {
 		return req, nil
 	}
 	if strings.TrimSpace(req.Header.Get("Content-Encoding")) != "" {
+		return req, nil
+	}
+	if contentType := strings.ToLower(req.Header.Get("Content-Type")); contentType != "" && !strings.Contains(contentType, "json") {
 		return req, nil
 	}
 	var raw []byte
@@ -110,14 +127,7 @@ func prepareOpenAICodexWireRequestUngated(req *http.Request, account *Account) (
 		slog.Debug("codex_request_zstd_skipped", "reason", "encode", "error", err)
 		return req, nil
 	}
-	// The zstd body is opaque to final-outbound diagnostics, so only this copy
-	// carries the plaintext identity-field observation. Unrewritten requests stay
-	// the caller's object and are inspected directly by observeCodexWire.
-	ctx := req.Context()
-	if _, ok := ctx.Value(codexIdentityBodyKey{}).(codexIdentityBodyObservation); !ok {
-		ctx = context.WithValue(ctx, codexIdentityBodyKey{}, inspectCodexIdentityBody(req))
-	}
-	wire := req.Clone(ctx)
+	wire := req.Clone(req.Context())
 	wire.Body = io.NopCloser(bytes.NewReader(compressed))
 	wire.ContentLength = int64(len(compressed))
 	wire.Header.Set("Content-Encoding", "zstd")
@@ -134,28 +144,9 @@ func prepareOpenAICodexWireRequestUngated(req *http.Request, account *Account) (
 // doOpenAICodexUpstream 是 OpenAI 网关所有 Responses 端点 POST 的统一发送入口：先按上述
 // 规则生成线上请求（满足条件时压缩），再交给 httpUpstream。读取失败作为传输错误返回。
 func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account *Account, proxyURL string) (*http.Response, error) {
-	wire, err := s.prepareOpenAICodexWireRequest(req, account)
+	wire, err := prepareOpenAICodexWireRequest(req, account)
 	if err != nil {
 		return nil, err
 	}
-	// A quality diagnosis send takes this same ordinary path. Its persistent
-	// budget is reserved from the final wire request before any upstream IO;
-	// its raw observation then sits inside the model guard.
-	quality := IsCodexQualityRequest(wire.Context())
-	if quality {
-		if err := reserveCodexQualitySend(wire, account); err != nil {
-			return nil, err
-		}
-	}
-	response, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
-	if quality {
-		s.observeCodexQualityBusinessResponse(wire, response, err)
-	}
-	if err == nil && isCodexCredentialOwner(account) {
-		s.observeCodexWire(wire.Context(), account, wire, response, "http")
-		if !quality {
-			s.guardCodexResponseModel(wire, account, response)
-		}
-	}
-	return response, err
+	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
 }

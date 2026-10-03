@@ -32,7 +32,6 @@ type Application struct {
 	AccountJobs   *service.AccountJobRuntime
 	ImageStudio   *service.ImageStudioRuntime
 	CodexIdentity *service.CodexClientIdentityBackfillService
-	CodexRuntime  *service.NativeCodexRuntime
 	Cleanup       func()
 }
 
@@ -64,7 +63,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "CodexIdentity", "CodexRuntime", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "CodexIdentity", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -146,7 +145,6 @@ func provideCleanup(
 	accountJobs *service.AccountJobRuntime,
 	imageStudioRuntime *service.ImageStudioRuntime,
 	pluginManager *service.PluginManager,
-	codexRuntime *service.NativeCodexRuntime,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -469,11 +467,6 @@ func provideCleanup(
 			}
 		}
 
-		if codexRuntime != nil {
-			if err := codexRuntime.Stop(ctx); err != nil {
-				log.Printf("[Cleanup] native Codex runtime did not stop cleanly")
-			}
-		}
 		runParallel(parallelSteps)
 		if pluginManager != nil {
 			pluginManager.Stop()

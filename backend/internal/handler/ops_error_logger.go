@@ -37,10 +37,6 @@ const (
 	opsUpstreamModelKey          = service.OpsUpstreamModelKey
 	opsRequestTypeKey            = "ops_request_type"
 	opsDedicatedEntryEnqueuedKey = "ops_dedicated_entry_enqueued"
-	// opsLocalErrorDetailKey keeps the concrete reason of a local rejection
-	// whose client response is a fixed sentence. Only the stored Ops message
-	// reads it; classification and error filters use the client message.
-	opsLocalErrorDetailKey = "ops_local_error_detail"
 
 	// 错误过滤匹配常量 — shouldSkipOpsErrorLog 和错误分类共用
 	opsErrContextCanceled            = "context canceled"
@@ -488,36 +484,6 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 		}
 		c.Request = c.Request.WithContext(ctx)
 	}
-}
-
-// setOpsLocalErrorDetail records, for administrators only, why a local check
-// rejected a request whose client response stays a fixed sentence.
-func setOpsLocalErrorDetail(c *gin.Context, detail string) {
-	if c == nil {
-		return
-	}
-	if detail = strings.TrimSpace(detail); detail != "" {
-		c.Set(opsLocalErrorDetailKey, truncateString(detail, 2048))
-	}
-}
-
-// applyOpsLocalErrorDetail stores the local reason in upstream_error_detail,
-// prefixed "local:". It runs after classification, and error_message keeps the
-// client's sentence: the user error view returns error_message and error_body
-// but never upstream_error_detail.
-func applyOpsLocalErrorDetail(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
-	if c == nil || entry == nil {
-		return
-	}
-	detail := strings.TrimSpace(c.GetString(opsLocalErrorDetailKey))
-	if detail == "" {
-		return
-	}
-	local := "local: " + detail
-	if entry.UpstreamErrorDetail != nil && strings.TrimSpace(*entry.UpstreamErrorDetail) != "" {
-		local += "\n" + *entry.UpstreamErrorDetail
-	}
-	entry.UpstreamErrorDetail = &local
 }
 
 // attachOpsRefusalRecoveryEvidence puts the evidence of HTTP refusal rewrites
@@ -1345,7 +1311,6 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			}
 		}
 		suppressOpsUpstreamAttributionForLocalModelConfiguration(c, entry)
-		applyOpsLocalErrorDetail(c, entry)
 		attachOpsRefusalRecoveryEvidence(c, entry)
 
 		if apiKey != nil {

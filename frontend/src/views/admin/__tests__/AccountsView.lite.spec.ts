@@ -116,7 +116,6 @@ function mountView(props: Record<string, unknown> = {}, stubActionMenu = true) {
         DataTable: DataTableStub,
         AccountTableActions: { template: '<div><slot name="after" /></div>' },
         AccountTableFilters: true,
-        ExtensionWidget: true,
         AccountBulkActionsBar: true,
         AccountCardGrid: true,
         Pagination: true,

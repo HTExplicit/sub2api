@@ -1135,7 +1135,7 @@ func TestForwardAsAnthropic_KeepsInboundHyphenSessionHeaderOverCacheKeyFallback(
 	require.Empty(t, upstream.requests[0].Header.Get("conversation_id"))
 }
 
-func TestForwardAsAnthropic_ReusesOAuthCodexTurnStateOnlyWithinExplicitTurn(t *testing.T) {
+func TestForwardAsAnthropic_ReusesOAuthCodexTurnState(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -1144,7 +1144,6 @@ func TestForwardAsAnthropic_ReusesOAuthCodexTurnStateOnlyWithinExplicitTurn(t *t
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
 		firstResp,
 		openAICompatSSECompletedResponse("resp_oauth_second", "gpt-5.4"),
-		openAICompatSSECompletedResponse("resp_oauth_next_turn", "gpt-5.4"),
 	}}
 	svc := &OpenAIGatewayService{
 		httpUpstream: upstream,
@@ -1167,7 +1166,6 @@ func TestForwardAsAnthropic_ReusesOAuthCodexTurnStateOnlyWithinExplicitTurn(t *t
 	firstCtx, _ := gin.CreateTestContext(firstRec)
 	firstCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(firstBody))
 	firstCtx.Request.Header.Set("Content-Type", "application/json")
-	firstCtx.Request.Header.Set(openAIWSTurnMetadataHeader, `{"turn_id":"first-turn"}`)
 
 	firstResult, err := svc.ForwardAsAnthropic(context.Background(), firstCtx, account, firstBody, "stable-cache-key", "gpt-5.4")
 	require.NoError(t, err)
@@ -1175,13 +1173,11 @@ func TestForwardAsAnthropic_ReusesOAuthCodexTurnStateOnlyWithinExplicitTurn(t *t
 	require.Empty(t, upstream.requests[0].Header.Get("x-codex-turn-state"))
 	requireOpenAIMessagesCodexIdentity(t, upstream.requests[0], resolveCodexOutboundIdentityForAccount(account, "").userAgent, openai.CodexDefaultOriginator)
 
-	// A subsequent request for the same explicit turn may carry its first STATE.
-	secondBody := firstBody
+	secondBody := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}],"stream":false}`)
 	secondRec := httptest.NewRecorder()
 	secondCtx, _ := gin.CreateTestContext(secondRec)
 	secondCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(secondBody))
 	secondCtx.Request.Header.Set("Content-Type", "application/json")
-	secondCtx.Request.Header.Set(openAIWSTurnMetadataHeader, `{"turn_id":"first-turn"}`)
 
 	secondResult, err := svc.ForwardAsAnthropic(context.Background(), secondCtx, account, secondBody, "stable-cache-key", "gpt-5.4")
 	require.NoError(t, err)
@@ -1192,19 +1188,6 @@ func TestForwardAsAnthropic_ReusesOAuthCodexTurnStateOnlyWithinExplicitTurn(t *t
 	requireOpenAIMessagesCodexIdentity(t, upstream.requests[1], resolveCodexOutboundIdentityForAccount(account, "").userAgent, openai.CodexDefaultOriginator)
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
-
-	nextBody := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}],"stream":false}`)
-	nextRec := httptest.NewRecorder()
-	nextCtx, _ := gin.CreateTestContext(nextRec)
-	nextCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(nextBody))
-	nextCtx.Request.Header.Set("Content-Type", "application/json")
-	nextCtx.Request.Header.Set(openAIWSTurnMetadataHeader, `{"turn_id":"next-turn"}`)
-	nextResult, err := svc.ForwardAsAnthropic(context.Background(), nextCtx, account, nextBody, "stable-cache-key", "gpt-5.4")
-	require.NoError(t, err)
-	require.NotNil(t, nextResult)
-	require.Len(t, upstream.requests, 3)
-	require.Equal(t, upstream.requests[1].Header.Get("session-id"), upstream.requests[2].Header.Get("session-id"))
-	require.Empty(t, upstream.requests[2].Header.Get("x-codex-turn-state"), "a new explicit turn must not inherit the prior turn's STATE")
 }
 
 func TestForwardAsAnthropic_OAuthRestoresCodexIdentityHeaders(t *testing.T) {
@@ -1258,7 +1241,7 @@ func TestForwardAsAnthropic_OAuthRestoresCodexIdentityHeaders(t *testing.T) {
 	}
 }
 
-func TestForwardAsAnthropic_OAuthDigestFallbackKeepsSessionWithoutUnprovenTurnState(t *testing.T) {
+func TestForwardAsAnthropic_OAuthDigestFallbackReusesTurnStateWithoutExplicitKey(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -1309,7 +1292,7 @@ func TestForwardAsAnthropic_OAuthDigestFallbackKeepsSessionWithoutUnprovenTurnSt
 	require.NoError(t, err)
 	require.NotNil(t, secondResult)
 	require.Equal(t, firstSessionID, upstream.requests[1].Header.Get("session-id"))
-	require.Empty(t, upstream.requests[1].Header.Get("x-codex-turn-state"), "the digest preserves a session, not proof of a shared logical turn")
+	require.Equal(t, "turn_state_digest_first", upstream.requests[1].Header.Get("x-codex-turn-state"))
 	require.Empty(t, upstream.requests[1].Header.Get("conversation_id"))
 	requireOpenAIMessagesCodexIdentity(t, upstream.requests[1], resolveCodexOutboundIdentityForAccount(account, "").userAgent, openai.CodexDefaultOriginator)
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").Exists())
@@ -1367,7 +1350,7 @@ func TestForwardAsAnthropic_OAuthMetadataSessionSurvivesDigestPrefixRewrite(t *t
 	require.NoError(t, err)
 	require.NotNil(t, secondResult)
 	require.Equal(t, firstSessionID, upstream.requests[1].Header.Get("session-id"))
-	require.Empty(t, upstream.requests[1].Header.Get("x-codex-turn-state"), "metadata preserves session identity but does not establish a shared logical turn")
+	require.Equal(t, "turn_state_metadata_first", upstream.requests[1].Header.Get("x-codex-turn-state"))
 	require.Empty(t, upstream.requests[1].Header.Get("conversation_id"))
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
@@ -1424,7 +1407,7 @@ func TestForwardAsAnthropic_OAuthMetadataSessionSurvivesChangingCacheControlAnch
 	require.NoError(t, err)
 	require.NotNil(t, secondResult)
 	require.Equal(t, firstSessionID, upstream.requests[1].Header.Get("session-id"))
-	require.Empty(t, upstream.requests[1].Header.Get("x-codex-turn-state"), "a stable metadata session does not carry STATE into a new user turn")
+	require.Equal(t, "turn_state_cache_anchor_first", upstream.requests[1].Header.Get("x-codex-turn-state"))
 	require.Empty(t, upstream.requests[1].Header.Get("conversation_id"))
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())

@@ -112,7 +112,6 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		nil, // accountJobRuntime
 		nil, // imageStudioRuntime
 		nil, // pluginManager
-		nil, // nativeCodexRuntime
 	)
 }
 

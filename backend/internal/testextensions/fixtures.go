@@ -5,11 +5,7 @@ package testextensions
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
-
-	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
-	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
 	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
@@ -18,21 +14,7 @@ import (
 
 type operations struct{}
 
-func (operations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if in.Capability == extensionv1.CapabilityRecovery {
-		return codexrecovery.Invoke(ctx, in)
-	}
-	if strings.HasPrefix(in.Operation, "codex.identity.") {
-		return codexprofile.Invoke(ctx, in)
-	}
-	if in.Operation == "codex.transport.plan" {
-		var query extensionv1.CodexTransportQuery
-		if err := json.Unmarshal(in.Payload, &query); err != nil {
-			return extensionv1.Result{}, err
-		}
-		raw, err := json.Marshal(codexprofile.TransportPlan(query, false))
-		return extensionv1.Result{Payload: raw}, err
-	}
+func (operations) InvokeOperation(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)
 	}

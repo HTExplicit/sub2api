@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/google/uuid"
 )
@@ -276,6 +278,25 @@ func pairCodexIdentityHeaders(h http.Header) {
 func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) codexOutboundIdentity {
 	identity, _ := resolveCodexOutboundIdentityForAccountContext(context.Background(), account, overrideUA)
 	return identity
+}
+
+// resolveCodexOutboundIdentityForAccountContext 与 resolveCodexOutboundIdentityForAccount 同语义，
+// 并把唯一的失败原因交还调用方：生效版本号无法写进该账号身份的 User-Agent 时返回错误，
+// 调用方必须让本次发送失败，而不是退回全局规范身份出站。
+func resolveCodexOutboundIdentityForAccountContext(_ context.Context, account *Account, overrideUA string) (codexOutboundIdentity, error) {
+	canonical := resolveCodexOutboundIdentity(overrideUA)
+	if overrideUA != "" {
+		return canonical, nil
+	}
+	identity, ok := account.CodexClientIdentity()
+	if !ok {
+		return canonical, nil
+	}
+	userAgent, err := codexprofile.UserAgent(extensionv1.CodexClientProfile(identity), canonical.version)
+	if err != nil {
+		return codexOutboundIdentity{}, err
+	}
+	return codexOutboundIdentity{userAgent: userAgent, originator: codexTUIOriginator, version: canonical.version}, nil
 }
 
 // enforceCodexIdentityHeadersForAccount 与 enforceCodexIdentityHeadersWithUA 语义相同，

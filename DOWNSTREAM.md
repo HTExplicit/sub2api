@@ -22,22 +22,12 @@ semantics. A late select-all response cannot replace a newer manual selection.
 Invalid nonempty ID lists cannot fall back to all filter results.
 
 Folder/tag filters, explicit field clearing and untouched-field preservation
-remain supported. Old jobs retain actor, encrypted payload, expiry and frozen
-item targets. An old filter-only job without a saved target fails rather than
-selecting a fresh set of accounts.
+remain supported. A bulk-update item without a saved target account fails with
+`target_missing` rather than selecting a fresh set of accounts.
 
-Codex route acquisition has been removed: the route harvest and verification
-probes, Cookie-routing qualification, connection leases, the scheduler and
-request route gates, and their admin endpoints, settings and job kinds. OpenAI
-OAuth accounts are scheduled without route qualification and send through their
-ordinary proxy and transport. An OAuth Codex `/responses` reply over HTTP that
-declares a different model than the request is still rejected. The Codex
-runtime setting keeps only request compression. Migration 263 deletes the data
-the feature wrote, old jobs of the retired kinds included; quality ledgers and
-the observed outbound requests stay, without stored Cookie values (see
-[native domains](.downstream/native-domains.md)). Quality diagnostics bind an
-explicit model and reasoning effort and send through the account's ordinary
-path; see [quality diagnostics](.downstream/codex-quality-diagnostics.md).
+The Codex runtime setting is one switch, request body compression for the
+streaming `/responses` turns of OpenAI OAuth accounts; its contract is in
+[native domains](.downstream/native-domains.md).
 
 ## Official behavior and downstream contracts
 
