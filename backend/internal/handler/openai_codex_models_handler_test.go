@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -601,6 +602,61 @@ func TestCodexModelsHonorsAccountSwitchLimit(t *testing.T) {
 	if body := recorder.Body.String(); !strings.Contains(body, "upstream error 504") {
 		t.Fatalf("body does not preserve the limit-ending upstream error: %s", body)
 	}
+}
+
+func TestCodexModelsIgnoresGroupProfitControl(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	overThreshold := 0.8
+	repo := codexModelsFailoverAccountRepo{accounts: []service.Account{
+		{
+			ID:             1,
+			Name:           "over-threshold",
+			Platform:       service.PlatformOpenAI,
+			Type:           service.AccountTypeAPIKey,
+			Status:         service.StatusActive,
+			Schedulable:    true,
+			Concurrency:    1,
+			RateMultiplier: &overThreshold,
+			Credentials: map[string]any{
+				"api_key":  "sk-test",
+				"base_url": "https://upstream.example/v1",
+			},
+		},
+	}}
+	upstream := &codexModelsFailoverHTTPUpstream{firstBody: `{"models":[{"slug":"gpt-5.6-sol"}]}`}
+	gatewayService := service.NewOpenAIGatewayService(
+		repo,
+		nil, nil, nil, nil, nil, nil, &config.Config{RunMode: config.RunModeSimple}, nil, nil, nil, nil, nil,
+		upstream,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	handler := &OpenAIGatewayHandler{gatewayService: gatewayService}
+	group := &service.Group{
+		ID:                   46,
+		Platform:             service.PlatformOpenAI,
+		Status:               service.StatusActive,
+		Hydrated:             true,
+		RateMultiplier:       1,
+		ProfitControlEnabled: true,
+		ProfitMinMargin:      0.5,
+	}
+	// The auth middleware puts the hydrated group into the request context,
+	// which is where the profit gate reads its configuration.
+	requestCtx := context.WithValue(context.Background(), ctxkey.Group, group)
+	gatedCtx, _ := gatewayService.WithOpenAIRequestPricingContext(requestCtx, &group.ID)
+	vetoed, _ := service.OpenAIProfitControlVeto(gatedCtx, &repo.accounts[0])
+	require.True(t, vetoed, "the group's profit gate must reject the only account")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.144.0", nil).WithContext(requestCtx)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{GroupID: &group.ID, Group: group})
+
+	handler.CodexModels(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, []int64{1}, upstream.calls())
+	requireCompleteCodexModelsHandlerResponse(t, recorder, "gpt-5.6-sol")
 }
 
 func newCodexModelsFailoverTestHandler(firstStatus int) (*OpenAIGatewayHandler, *codexModelsFailoverHTTPUpstream, int64) {
