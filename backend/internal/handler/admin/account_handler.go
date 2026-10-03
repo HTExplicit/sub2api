@@ -70,7 +70,6 @@ type AccountHandler struct {
 	ollamaCloudUsage        *service.OllamaCloudUsageService
 	trafficObserver         *service.AccountTrafficObserver
 	accountJobs             *service.AccountJobService
-	codexGateway            *service.OpenAIGatewayService
 
 	cfg               *config.Config
 	opencodeGoUsage   *service.OpenCodeGoUsageService
@@ -94,11 +93,6 @@ func (h *AccountHandler) SetAccountTrafficObserver(observer *service.AccountTraf
 
 func (h *AccountHandler) SetOpenCodeGoUsageService(usage *service.OpenCodeGoUsageService) {
 	h.opencodeGoUsage = usage
-}
-
-// SetCodexGateway attaches the gateway that serves the Codex account views.
-func (h *AccountHandler) SetCodexGateway(gateway *service.OpenAIGatewayService) {
-	h.codexGateway = gateway
 }
 
 // NewAccountHandler creates a new admin account handler

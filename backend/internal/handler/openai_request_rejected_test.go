@@ -4,11 +4,9 @@ package handler
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
-	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -153,44 +151,4 @@ func TestOpenAIGatewayHandler_CompactRequestRejectedBeforeKeepaliveUsesJSON(t *t
 	require.Equal(t, "invalid_request_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Equal(t, service.OpenAIRequestRejectedCode, gjson.GetBytes(rec.Body.Bytes(), "error.code").String())
 	require.NotContains(t, rec.Body.String(), "event:")
-}
-
-// The admission reason names users, groups, API keys and proxies: the client
-// keeps the fixed sentence and status, the Ops record carries the reason.
-func TestOpenAIGatewayHandlerResponses_CodexQualityAdmissionReasonOnlyInOps(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	setupOpsErrorLogTestQueue(t, 2)
-	handler := newOpenAIResponsesFailoverTestHandler(t, &openAIResponsesGenericBadRequestUpstream{})
-	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	groupID := int64(3131)
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-			ID: 99, GroupID: &groupID,
-			Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
-			User:  &service.User{ID: 100},
-		})
-		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 100})
-		c.Next()
-	})
-	router.Use(OpsErrorLoggerMiddleware(ops))
-	router.POST("/v1/responses", handler.Responses)
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.1","stream":true,"input":"hello"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(service.CodexQualityGrantHeader, "not-a-grant")
-	req.Header.Set(service.CodexQualityTrialHeader, "not-a-trial")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusConflict, rec.Code)
-	require.JSONEq(t, `{"error":{"type":"codex_quality_unavailable","message":"Codex quality run unavailable"}}`, rec.Body.String())
-	require.Equal(t, int64(1), OpsErrorLogQueueLength())
-	job := <-opsErrorLogQueue
-	require.Equal(t, http.StatusConflict, job.entry.StatusCode)
-	require.Equal(t, "Codex quality run unavailable", job.entry.ErrorMessage, "users can read error_message in their error-request view")
-	require.NotNil(t, job.entry.UpstreamErrorDetail)
-	require.True(t, strings.HasPrefix(*job.entry.UpstreamErrorDetail, "local: "+service.ErrCodexQualityUnavailable.Error()+": "),
-		"the admin-only detail names the concrete admission reason: %s", *job.entry.UpstreamErrorDetail)
-	require.Contains(t, *job.entry.UpstreamErrorDetail, service.CodexQualityGrantHeader)
 }

@@ -77,9 +77,6 @@
           <AccountTaxonomyEditor :account-id="account.id" :folder-id="account.management_folder?.id" :tag-ids="(account.tags || []).map(tag => tag.id)"
             :folders="folders" :tags="tags" @changed="refreshTaxonomyAccount" />
 
-          <CodexFingerprintPanel v-if="account.platform === 'openai' && ['oauth', 'setup-token'].includes(account.type) && account.parent_account_id == null"
-            :account-id="account.id" />
-
           <section class="border-b border-gray-100 px-4 py-4 dark:border-dark-700 sm:px-5">
             <h3 class="mb-3 text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">{{ t('admin.accounts.capacityAndUsage') }}</h3>
             <div class="flex items-start justify-between gap-4">
@@ -155,7 +152,6 @@ import { provideAccountViewContext, useAccountViewOperation } from '@/composable
 import { accountAPIForView } from '@/api/admin/accounts'
 import AccountTaxonomyEditor from './AccountTaxonomyEditor.vue'
 import AccountLastUpstreamError from './AccountLastUpstreamError.vue'
-import CodexFingerprintPanel from './CodexFingerprintPanel.vue'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'

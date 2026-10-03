@@ -30,30 +30,6 @@ func resolveOpenAIForwardModelContext(_ context.Context, account *Account, reque
 	return resolveOpenAIForwardModel(account, requestedModel, messagesDispatchMappedModel), nil
 }
 
-func resolveOpenAIForwardMappedModelsContext(ctx context.Context, account *Account, requestedModel string, requireCompact bool) (billingModel, upstreamModel string, err error) {
-	requestedModel = strings.TrimSpace(requestedModel)
-	if account != nil && account.IsOpenAIPassthroughEnabled() {
-		billingModel = requestedModel
-	} else if account != nil {
-		billingModel, err = resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
-		if err != nil {
-			return "", "", err
-		}
-		billingModel = strings.TrimSpace(billingModel)
-	}
-	if billingModel == "" {
-		billingModel = requestedModel
-	}
-	upstreamModel, err = resolveOpenAIAccountUpstreamModelForRequestContext(ctx, account, requestedModel, requireCompact)
-	if err != nil {
-		return "", "", err
-	}
-	if strings.TrimSpace(upstreamModel) == "" {
-		upstreamModel = billingModel
-	}
-	return billingModel, upstreamModel, nil
-}
-
 // openAIOAuthForeignModelPrefixes 列出明确属于其他厂商家族的模型名前缀。
 // Codex 上游不可能服务这些模型：转发阶段 normalizeOpenAIModelForUpstream
 // 对未知模型原样透传，上游必然返回不可重试的 400。

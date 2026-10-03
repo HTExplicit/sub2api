@@ -35,7 +35,7 @@ type testPlanOperations struct {
 	contexts  []any
 }
 
-func (f *testPlanOperations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+func (f *testPlanOperations) InvokeOperation(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 	f.calls = append(f.calls, in)
 	f.contexts = append(f.contexts, ctx.Value(testPlanOuterKey{}))
 	if f.rejectAll {

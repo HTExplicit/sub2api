@@ -165,10 +165,9 @@ var auditBodyOmittedRoutes = map[string]struct{}{
 
 // auditVerbatimBodyRoutes store the request body exactly as received, up to
 // the capture limit, without key-level redaction: administrators review the
-// full system prompt library and the Codex runtime settings they submitted.
+// full system prompt library they submitted.
 var auditVerbatimBodyRoutes = map[string]struct{}{
-	"PUT /api/v1/admin/system-prompts":         {},
-	"PUT /api/v1/admin/settings/codex-runtime": {},
+	"PUT /api/v1/admin/system-prompts": {},
 }
 
 // NewAuditLogMiddleware 创建审计中间件。

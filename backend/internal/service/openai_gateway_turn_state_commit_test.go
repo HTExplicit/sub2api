@@ -14,9 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The seed follows the destination: API-key accounts keep the per-session
-// provenance key, Codex OAuth state is additionally scoped to the turn.
-func newOpenAITurnStateCommitContext(t *testing.T, writer gin.ResponseWriter, destination ...*Account) (*gin.Context, string) {
+func newOpenAITurnStateCommitContext(t *testing.T, writer gin.ResponseWriter) (*gin.Context, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	if writer == nil {
@@ -27,9 +25,8 @@ func newOpenAITurnStateCommitContext(t *testing.T, writer gin.ResponseWriter, de
 	c, _ := gin.CreateTestContext(writer)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	c.Request.Header.Set("session_id", "sess-http-commit")
-	c.Request.Header.Set(openAIWSTurnMetadataHeader, `{"turn_id":"turn-fixture"}`)
 	c.Set("api_key", &APIKey{ID: 801})
-	return c, openAICodexTurnStateSeed(c, destination...)
+	return c, openAICodexTurnStateSeed(c)
 }
 
 func seedOpenAITurnStateOrigin(svc *OpenAIGatewayService, seed string, accountID int64) {
@@ -125,7 +122,7 @@ func TestOpenAINonStreamingTurnStateCommitsOnlyAfterDownstreamWrite(t *testing.T
 	failedRecorder := httptest.NewRecorder()
 	failedBase, _ := gin.CreateTestContext(failedRecorder)
 	failedWriter := &failingGinWriter{ResponseWriter: failedBase.Writer, failAfter: 0}
-	failedContext, seed := newOpenAITurnStateCommitContext(t, failedWriter, accountB)
+	failedContext, seed := newOpenAITurnStateCommitContext(t, failedWriter)
 	seedOpenAITurnStateOrigin(svc, seed, 301)
 
 	_, err := svc.handleNonStreamingResponse(
@@ -135,7 +132,7 @@ func TestOpenAINonStreamingTurnStateCommitsOnlyAfterDownstreamWrite(t *testing.T
 	require.ErrorContains(t, err, "write downstream OpenAI response")
 	requireOpenAITurnStateOrigin(t, svc, seed, 301)
 
-	successContext, successSeed := newOpenAITurnStateCommitContext(t, nil, accountB)
+	successContext, successSeed := newOpenAITurnStateCommitContext(t, nil)
 	require.Equal(t, seed, successSeed)
 	_, err = svc.handleNonStreamingResponse(
 		context.Background(), openAITurnStateJSONResponse("state-B"), successContext,
@@ -145,7 +142,7 @@ func TestOpenAINonStreamingTurnStateCommitsOnlyAfterDownstreamWrite(t *testing.T
 	require.Equal(t, "state-B", successContext.Writer.Header().Get(openAICodexTurnStateHeader))
 	requireOpenAITurnStateOrigin(t, svc, seed, accountB.ID)
 
-	noStateContext, noStateSeed := newOpenAITurnStateCommitContext(t, nil, accountB)
+	noStateContext, noStateSeed := newOpenAITurnStateCommitContext(t, nil)
 	require.Equal(t, seed, noStateSeed)
 	_, err = svc.handleNonStreamingResponse(
 		context.Background(), openAITurnStateJSONResponse(""), noStateContext,
@@ -168,7 +165,7 @@ func TestOpenAIPassthroughTurnStateUsesTheSameDownstreamCommitBoundary(t *testin
 		failedRecorder := httptest.NewRecorder()
 		failedBase, _ := gin.CreateTestContext(failedRecorder)
 		failedWriter := &failingGinWriter{ResponseWriter: failedBase.Writer, failAfter: 0}
-		failedContext, seed := newOpenAITurnStateCommitContext(t, failedWriter, accountB)
+		failedContext, seed := newOpenAITurnStateCommitContext(t, failedWriter)
 		seedOpenAITurnStateOrigin(svc, seed, 401)
 
 		_, err := svc.handleStreamingResponsePassthrough(
@@ -178,7 +175,7 @@ func TestOpenAIPassthroughTurnStateUsesTheSameDownstreamCommitBoundary(t *testin
 		require.NoError(t, err)
 		requireOpenAITurnStateOrigin(t, svc, seed, 401)
 
-		successContext, successSeed := newOpenAITurnStateCommitContext(t, nil, accountB)
+		successContext, successSeed := newOpenAITurnStateCommitContext(t, nil)
 		require.Equal(t, seed, successSeed)
 		_, err = svc.handleStreamingResponsePassthrough(
 			context.Background(), openAITurnStateStreamingResponse("state-B"), successContext,
@@ -192,7 +189,7 @@ func TestOpenAIPassthroughTurnStateUsesTheSameDownstreamCommitBoundary(t *testin
 		failedRecorder := httptest.NewRecorder()
 		failedBase, _ := gin.CreateTestContext(failedRecorder)
 		failedWriter := &failingGinWriter{ResponseWriter: failedBase.Writer, failAfter: 0}
-		failedContext, seed := newOpenAITurnStateCommitContext(t, failedWriter, accountB)
+		failedContext, seed := newOpenAITurnStateCommitContext(t, failedWriter)
 		seedOpenAITurnStateOrigin(svc, seed, 403)
 
 		_, err := svc.handleNonStreamingResponsePassthrough(
@@ -202,7 +199,7 @@ func TestOpenAIPassthroughTurnStateUsesTheSameDownstreamCommitBoundary(t *testin
 		require.ErrorContains(t, err, "write downstream OpenAI passthrough response")
 		requireOpenAITurnStateOrigin(t, svc, seed, 403)
 
-		successContext, successSeed := newOpenAITurnStateCommitContext(t, nil, accountB)
+		successContext, successSeed := newOpenAITurnStateCommitContext(t, nil)
 		require.Equal(t, seed, successSeed)
 		_, err = svc.handleNonStreamingResponsePassthrough(
 			context.Background(), openAITurnStateJSONResponse("state-B"), successContext,

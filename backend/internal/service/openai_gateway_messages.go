@@ -33,8 +33,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	stageCodexLogicalTurn(c, body)
-	c.Set(openAICompatTurnStateCommittedContextKey, false)
 	// 工具 Schema 清洗必须先于所有分流：下游每条路径（原生 Anthropic 直通、
 	// Chat Completions 转换、Responses 转换）都会把 tools 原样带给上游，而
 	// xAI / Moonshot 等严格校验方会因 input_schema 里的 required:null 或
@@ -151,8 +149,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	compatContinuationDisabled := compatContinuationEnabled &&
 		s.isOpenAICompatSessionContinuationDisabled(ctx, c, account, compatSessionSeed)
 	compatTurnState := ""
-	// Keep OAuth history for prompt caching. Opaque turn state is independently
-	// scoped to an explicit logical turn; a cache/session key cannot extend it.
+	// ChatGPT/Codex credentials rely on session_id + x-codex-turn-state; trimming to a
+	// sliding 12-message window makes the cached prefix stall at system/tools.
+	// Keep full replay there so upstream prompt caching can grow turn by turn.
 	if compatReplayGuardEnabled && !account.UsesOpenAICodexProtocol() && previousResponseID == "" && !compatContinuationDisabled {
 		compatReplayTrimmed = applyAnthropicCompatFullReplayGuard(&anthropicReq)
 	}
@@ -413,7 +412,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
 		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
 	}
-	upstreamReq = withCodexExpectedModel(upstreamReq, upstreamModel)
 
 	// 7. Send request
 	proxyURL := ""
@@ -519,6 +517,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		s.updateGrokUsageFromResponse(withGrokTeamRateLimitModel(ctx, upstreamModel), account, resp.Header, resp.StatusCode)
 	}
 
+	if account.UsesOpenAICodexProtocol() && compatSessionSeed != "" {
+		if turnState := strings.TrimSpace(resp.Header.Get("x-codex-turn-state")); turnState != "" {
+			s.bindOpenAICompatSessionTurnState(ctx, c, account, compatSessionSeed, turnState)
+		}
+	}
+
 	// 9. Handle normal response
 	// Upstream is always streaming; choose response format based on client preference.
 	var result *OpenAIForwardResult
@@ -541,10 +545,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
 	if handleErr == nil && result != nil {
-		if account.UsesOpenAICodexProtocol() && compatSessionSeed != "" && !result.ClientDisconnect &&
-			c.GetBool(openAICompatTurnStateCommittedContextKey) && c.Request.Context().Err() == nil {
-			s.bindOpenAICompatSessionTurnState(ctx, c, account, compatSessionSeed, extractOpenAICodexTurnState(resp.Header))
-		}
 		if compatContinuationEnabled && compatSessionSeed != "" && result.ResponseID != "" {
 			s.bindOpenAICompatSessionResponseID(ctx, c, account, compatSessionSeed, result.ResponseID)
 		}
@@ -688,20 +688,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
 	c.Header("Content-Type", "application/json; charset=utf-8")
-	if account != nil && account.IsOpenAIOAuthLike() {
-		responseBody, err := json.Marshal(anthropicResp)
-		if err != nil {
-			return nil, err
-		}
-		if err := writeOpenAIHTTPResponseData(c, http.StatusOK, "application/json; charset=utf-8", responseBody); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(finalResponse.Status) == "completed" {
-			c.Set(openAICompatTurnStateCommittedContextKey, true)
-		}
-	} else {
-		c.JSON(http.StatusOK, anthropicResp)
-	}
+	c.JSON(http.StatusOK, anthropicResp)
 
 	result := &OpenAIForwardResult{
 		RequestID:                     requestID,
@@ -996,7 +983,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	var usage OpenAIUsage
 	responseID := ""
 	terminalEventType := ""
-	completedTurn := false
 	var firstTokenMs *int
 	firstChunk := true
 	clientDisconnected := false
@@ -1090,7 +1076,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if isTerminalEvent {
 			terminalEventType = eventType
-			completedTurn = eventType == "response.completed" && event.Response != nil && event.Response.Status == "completed"
 			if event.Response != nil {
 				if id := strings.TrimSpace(event.Response.ID); id != "" {
 					responseID = id
@@ -1225,9 +1210,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			if !clientDisconnected {
 				c.Writer.Flush()
 			}
-		}
-		if completedTurn && clientOutputStarted && !clientDisconnected {
-			c.Set(openAICompatTurnStateCommittedContextKey, true)
 		}
 		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, terminalEventType, clientDisconnected)
 		return resultWithUsage(), nil

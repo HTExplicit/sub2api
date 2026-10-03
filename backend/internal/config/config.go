@@ -1016,7 +1016,8 @@ type GatewayConfig struct {
 	// OpenAICodexRequestZstd: 对 OpenAI OAuth-like 账号发往 ChatGPT 后端的流式 /responses 请求体
 	// 做 zstd（level 3）压缩并带 Content-Encoding: zstd，与官方 Codex 客户端一致；compact 等其他
 	// 请求不压缩。默认开启；出现兼容问题时置 false 回退为明文 JSON。零值为关闭，手工构造的
-	// Config 不会意外压缩。
+	// Config 不会意外压缩。管理后台「Codex 运行设置」保存过开关后以保存值为准，本项只在
+	// 未保存时生效。
 	OpenAICodexRequestZstd bool `mapstructure:"openai_codex_request_zstd"`
 	// OpenAIRequestIntegrityMode: off|observe|enforce。对 OpenAI OAuth-like 账号，把客户端 /responses
 	// 请求体与最终出站明文请求体（zstd 之前）按语义字段比较（model/input/instructions/reasoning/tools/

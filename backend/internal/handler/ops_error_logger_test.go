@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -591,49 +590,6 @@ func TestOpsErrorLoggerMiddleware_StreamFailureGatewaySentenceKeepsUpstreamMessa
 	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, job.entry.ErrorMessage)
 	require.NotNil(t, job.entry.UpstreamErrorMessage)
 	require.Equal(t, "Previous response with id 'resp_1' not found.", *job.entry.UpstreamErrorMessage)
-}
-
-// A local rejection keeps the client's sentence in error_message; the reason
-// sits in upstream_error_detail, which the user error view never returns.
-func TestOpsErrorLoggerMiddleware_LocalErrorDetailStaysAdminOnly(t *testing.T) {
-	setupOpsErrorLogTestQueue(t, 2)
-	gin.SetMode(gin.TestMode)
-
-	const reason = "quality run r1 belongs to API key 7 of user 8 in group 9"
-	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	router := gin.New()
-	router.Use(OpsErrorLoggerMiddleware(ops))
-	router.POST("/v1/responses", func(c *gin.Context) {
-		setOpsLocalErrorDetail(c, reason)
-		c.JSON(http.StatusConflict, gin.H{"error": gin.H{"type": "codex_quality_unavailable", "message": "Codex quality run unavailable"}})
-	})
-
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
-
-	require.JSONEq(t, `{"error":{"type":"codex_quality_unavailable","message":"Codex quality run unavailable"}}`, recorder.Body.String())
-	require.Equal(t, int64(1), OpsErrorLogQueueLength())
-	job := <-opsErrorLogQueue
-	require.Equal(t, "Codex quality run unavailable", job.entry.ErrorMessage)
-	require.NotEqual(t, "upstream", job.entry.ErrorPhase)
-	require.Nil(t, job.entry.UpstreamErrorMessage)
-	require.NotNil(t, job.entry.UpstreamErrorDetail)
-	require.Equal(t, "local: "+reason, *job.entry.UpstreamErrorDetail)
-
-	stored := &service.OpsErrorLogDetail{
-		OpsErrorLog: service.OpsErrorLog{
-			Phase:      job.entry.ErrorPhase,
-			Type:       job.entry.ErrorType,
-			StatusCode: job.entry.StatusCode,
-			Message:    job.entry.ErrorMessage,
-		},
-		ErrorBody:           job.entry.ErrorBody,
-		UpstreamErrorDetail: *job.entry.UpstreamErrorDetail,
-	}
-	userView, err := json.Marshal(service.ToUserErrorRequestDetail(stored))
-	require.NoError(t, err)
-	require.NotContains(t, string(userView), "API key 7")
-	require.Contains(t, string(userView), "Codex quality run unavailable")
 }
 
 // A refusal the gateway rewrote or retried away is evidence, not an upstream

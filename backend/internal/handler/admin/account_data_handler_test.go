@@ -327,25 +327,3 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.Len(t, adminSvc.createdAccounts, 1)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
 }
-
-// The backup keeps every stored extra key, Codex ticket material included.
-func TestExportDataKeepsCodexTicketMaterial(t *testing.T) {
-	router, adminSvc := setupAccountDataRouter()
-	extra := map[string]any{
-		"codex_turn_ticket:gpt-6-astra": map[string]any{"state": "private-ticket-blob", "length": 292},
-		"codex_harvest_proxy_url":       "http://user:legacy-proxy-secret@proxy.example.com:8080",
-		"ordinary":                      "retained",
-	}
-	adminSvc.accounts = []service.Account{{ID: 21, Name: "account", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Credentials: map[string]any{"access_token": "backup-token"}, Extra: extra}}
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/data?include_proxies=false", nil))
-	require.Equal(t, http.StatusOK, rec.Code)
-	var resp dataResponse
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Len(t, resp.Data.Accounts, 1)
-	require.Equal(t, "retained", resp.Data.Accounts[0].Extra["ordinary"])
-	require.Equal(t, "http://user:legacy-proxy-secret@proxy.example.com:8080", resp.Data.Accounts[0].Extra["codex_harvest_proxy_url"])
-	require.Contains(t, resp.Data.Accounts[0].Extra, "codex_turn_ticket:gpt-6-astra")
-	require.Equal(t, "backup-token", resp.Data.Accounts[0].Credentials["access_token"])
-	require.Contains(t, rec.Body.String(), "private-ticket-blob")
-}

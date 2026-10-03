@@ -71,7 +71,7 @@ func (s *OpenAIGatewayService) commitOpenAIHTTPResponseTurnState(
 ) {
 	if headerApplied {
 		if strings.TrimSpace(staged.Get(openAICodexTurnStateHeader)) != "" && (account == nil || account.ID <= 0) {
-			s.clearOpenAICodexTurnStateProvenance(c, account)
+			s.clearOpenAICodexTurnStateProvenance(c)
 			return
 		}
 		s.noteStagedOpenAICodexTurnStateCommitted(c, account, staged)
@@ -79,7 +79,7 @@ func (s *OpenAIGatewayService) commitOpenAIHTTPResponseTurnState(
 	}
 	// A successful body after an account-neutral header commit did not deliver
 	// the new state. Clear the previous owner so the next echo fails closed.
-	s.clearOpenAICodexTurnStateProvenance(c, account)
+	s.clearOpenAICodexTurnStateProvenance(c)
 }
 
 func writeOpenAIHTTPResponseData(c *gin.Context, statusCode int, contentType string, body []byte) error {
@@ -132,7 +132,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	// 客户端会在同回合的后续请求中回带（openai_codex_turn_state.go）。
 	// OpenAI 首个语义输出前只暂存，溯源在 applyAttemptResponseHeaders 真正提交时记录。
 	if stageFirstOutput {
-		stageOpenAICodexTurnState(&attemptResponseHeaders, s.codexTurnStateResponseHeaders(c, account, resp.Header))
+		stageOpenAICodexTurnState(&attemptResponseHeaders, resp.Header)
 	} else {
 		s.relayOpenAICodexTurnState(c, account, resp.Header)
 	}
@@ -182,7 +182,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		// Headers may already have been committed by an account-neutral keepalive.
 		// In that case the staged state was not delivered; invalidate any previous
 		// owner instead of claiming the client received the new account's blob.
-		s.clearOpenAICodexTurnStateProvenance(c, account)
+		s.clearOpenAICodexTurnStateProvenance(c)
 	}
 
 	w := c.Writer
@@ -518,7 +518,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			terminalEventType = "response.failed"
 		}
 		if sawTerminalEvent && !sawFailedEvent && terminalResponseErr == nil {
-			s.clearOpenAIProxyStreamDisconnect(account, ctx)
+			s.clearOpenAIProxyStreamDisconnect(account)
 		}
 		if !sawTerminalEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted) && !eventShouldFlush {
 			return resultWithUsage(), s.newOpenAIStreamFailoverError(
@@ -535,7 +535,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if !sawTerminalEvent {
 			s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "stream_error", nil, "OpenAI stream ended before an authoritative terminal event")
 			if openAIStreamClientOutputStarted(c, clientOutputStarted) && !clientDisconnected {
-				s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID, ctx)
+				s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 			}
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
@@ -557,17 +557,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
 		if scanErr == nil {
 			return nil, nil, false
-		}
-		if errors.Is(scanErr, ErrCodexModelMismatch) {
-			// The model guard stopped a reply that declared another model.
-			// Never turn this into an automatic replay, especially after output.
-			if account != nil && account.IsOpenAIOAuthLike() {
-				s.clearOpenAICodexTurnStateProvenance(c, account)
-			}
-			if openAIStreamClientOutputStarted(c, clientOutputStarted) {
-				sendErrorEvent("upstream_model_mismatch", "upstream_model_mismatch")
-			}
-			return resultWithUsage(), ErrCodexModelMismatch, true
 		}
 		if errors.Is(scanErr, errOpenAIFirstOutputScannerLimit) && !firstOutputProgressObserved {
 			logger.LegacyPrintf("service.openai_gateway", "SSE token exceeded guarded first-output limit: account=%d limit=%d error=%v", account.ID, openAIFirstOutputStageMaxBytes+openAIFirstOutputScannerFramingAllowance, scanErr)
@@ -615,7 +604,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
-		s.recordOpenAIProxyStreamDisconnect(account, scanErr, upstreamRequestID, ctx)
+		s.recordOpenAIProxyStreamDisconnect(account, scanErr, upstreamRequestID)
 		code, message := classifyOpenAIUpstreamStreamReadError(scanErr)
 		sendErrorEvent(code, message)
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
@@ -1648,9 +1637,6 @@ func extractOpenAIResponseIDFromJSONBytes(body []byte) string {
 }
 
 func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *gin.Context, account *Account, responseID string) {
-	if IsCodexQualityRequest(ctx) {
-		return
-	}
 	if s == nil || account == nil || account.ID <= 0 {
 		return
 	}
@@ -1883,7 +1869,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// Codex 协议要求 /responses/compact JSON 响应携带 x-codex-turn-state
 	// （codex-api/src/endpoint/compact.rs 从响应头捕获）。先暂存，只有 body
 	// 真正写成功后才更新该会话的铸造账号。
-	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, s.codexTurnStateResponseHeaders(c, account, resp.Header))
+	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, resp.Header)
 
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -2185,7 +2171,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	if terminalErr == nil {
 		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, usage, terminalType, false)
 	}
-	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, s.codexTurnStateResponseHeaders(c, account, resp.Header))
+	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, resp.Header)
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {

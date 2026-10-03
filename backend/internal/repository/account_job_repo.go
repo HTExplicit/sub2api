@@ -148,9 +148,7 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 		if err != nil {
 			return nil, false, err
 		}
-		oldOwner, _ := service.AccountJobPluginExecution(job.Metadata)
-		newOwner, _ := service.AccountJobPluginExecution(params.Metadata)
-		if job.RequestHash != params.RequestHash || oldOwner.ID != newOwner.ID || !service.AccountJobViewIdentityEqual(job.Metadata, params.Metadata) {
+		if job.RequestHash != params.RequestHash {
 			return nil, false, service.ErrAccountJobIdempotencyConflict
 		}
 		if err = tx.Commit(); err != nil {

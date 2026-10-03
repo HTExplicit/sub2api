@@ -26,11 +26,9 @@ export async function stabilizeAccountOperationKey(config: OperationConfig): Pro
   const actor = currentAccountOperationActor()
   if (actor === null) return
   const epoch = session
-  // 仅用于浏览器内重试键分区；服务端权限仍由真实认证和插件绑定校验决定。
+  // 仅用于浏览器内重试键分区；服务端权限仍由真实认证决定。
   const payload = JSON.stringify([
     actor, config.method, url, config.baseURL ?? '',
-    config.headers.get('X-Sub2API-Plugin') ?? null,
-    config.headers.get('X-Sub2API-Plugin-Package') ?? null,
     typeof config.data === 'string' ? config.data : JSON.stringify(config.data),
   ])
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))

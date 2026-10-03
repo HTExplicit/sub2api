@@ -9,14 +9,13 @@
   </label>
 </template>
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AccountAvailableModel, AccountSelectionIdentity } from '@/types'
+import type { AccountAvailableModel } from '@/types'
 import { isAccountTestReasoningValid } from '@/utils/accountTestModels'
-const props = defineProps<{ modelValue: string; model?: AccountAvailableModel; account?: AccountSelectionIdentity | null; disabled?: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [value: string]; validity: [valid: boolean] }>()
+const props = defineProps<{ modelValue: string; model?: AccountAvailableModel; disabled?: boolean }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const { t } = useI18n()
 const levels = computed(() => props.model?.reasoning_efforts || [])
 const valid = computed(() => isAccountTestReasoningValid(props.model, props.modelValue))
-watch(valid, value => emit('validity', value), { immediate: true })
 </script>

@@ -1,9 +1,6 @@
 package recovery
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"regexp"
 	"strconv"
 
@@ -64,40 +61,8 @@ func Select(in extensionv1.RecoverySelectionQuery) extensionv1.RecoverySelection
 	return extensionv1.RecoverySelection{Indices: append([]int(nil), in.CipherIndices...), Reason: "recovery_not_dispatched"}
 }
 
-func Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if err := ctx.Err(); err != nil {
-		return extensionv1.Result{}, err
-	}
-	if in.Capability != extensionv1.CapabilityRecovery {
-		return extensionv1.Result{}, errors.New("unsupported recovery capability")
-	}
-	var value any
-	switch in.Operation {
-	case "codex.replay.rules":
-		value = ReplayPolicy()
-	case "codex.recovery.available":
-		value = true
-	case "codex.recovery.enabled":
-		var input extensionv1.RecoverySetting
-		if json.Unmarshal(in.Payload, &input) != nil {
-			return extensionv1.Result{}, errors.New("invalid recovery setting")
-		}
-		value = !input.Configured || (input.Valid && input.Value)
-	case "codex.recovery.rejection":
-		var input extensionv1.RecoveryEnvelope
-		if json.Unmarshal(in.Payload, &input) != nil {
-			return extensionv1.Result{}, errors.New("invalid recovery envelope")
-		}
-		value = Rejection(input)
-	case "codex.recovery.select":
-		var input extensionv1.RecoverySelectionQuery
-		if json.Unmarshal(in.Payload, &input) != nil {
-			return extensionv1.Result{}, errors.New("invalid recovery selection")
-		}
-		value = Select(input)
-	default:
-		return extensionv1.Result{}, errors.New("unknown recovery operation")
-	}
-	raw, err := json.Marshal(value)
-	return extensionv1.Result{Payload: raw}, err
+// Enabled reports an account's reasoning policy setting: on unless it is
+// configured to anything but true.
+func Enabled(in extensionv1.RecoverySetting) bool {
+	return !in.Configured || (in.Valid && in.Value)
 }

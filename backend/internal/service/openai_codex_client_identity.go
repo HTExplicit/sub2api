@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
@@ -17,8 +17,6 @@ import (
 // 所有出站请求（HTTP / 透传 / WS 握手 / 探针 / token 刷新）共用，使上游看到的
 // 是同一台设备上运行的同一个真实 Codex TUI，而不是多个用户各自的客户端。
 const CodexClientIdentityExtraKey = "codex_client_identity"
-
-const codexClientIdentitySchemaVersion = 1 // legacy persisted representation remains valid
 
 type codexClientIdentity extensionv1.CodexClientProfile
 
@@ -34,51 +32,25 @@ const (
 )
 
 func (id codexClientIdentity) valid() bool {
-	return id.validForAccountContext(context.Background(), nil)
+	return codexprofile.Valid(extensionv1.CodexClientProfile(id))
 }
 
-func (id codexClientIdentity) validForAccountContext(ctx context.Context, account *Account) bool {
-	result, err := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.validate", extensionv1.CodexIdentityQuery{Profile: extensionv1.CodexClientProfile(id)})
-	return err == nil && result.Valid
-}
-
+// UserAgent 返回该身份在给定版本号下的 Codex TUI User-Agent；身份或版本号不合法时返回空串。
 func (id codexClientIdentity) UserAgent(version string) string {
-	return id.userAgentForAccountContext(context.Background(), nil, version)
-}
-
-func (id codexClientIdentity) userAgentForAccountContext(ctx context.Context, account *Account, version string) string {
-	result, _ := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.agent", extensionv1.CodexIdentityQuery{Profile: extensionv1.CodexClientProfile(id), Version: version})
-	return result.UserAgent
+	userAgent, _ := codexprofile.UserAgent(extensionv1.CodexClientProfile(id), version)
+	return userAgent
 }
 
 func codexSandboxForUserAgent(userAgent string) string {
-	return codexSandboxForUserAgentForAccountContext(context.Background(), nil, userAgent)
-}
-
-func codexSandboxForUserAgentForAccountContext(ctx context.Context, account *Account, userAgent string) string {
-	result, _ := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.sandbox", extensionv1.CodexIdentityQuery{UserAgent: userAgent})
-	return result.Sandbox
+	return codexprofile.SandboxForUserAgent(userAgent)
 }
 
 func deriveCodexClientIdentity(seed string) codexClientIdentity {
-	return deriveCodexClientIdentityForAccountContext(context.Background(), nil, seed)
-}
-
-func deriveCodexClientIdentityForAccountContext(ctx context.Context, account *Account, seed string) codexClientIdentity {
-	preset := "captured_windows_cli"
-	if account != nil && account.ID > 0 {
-		preset = "legacy"
-	}
-	result, _ := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed, Preset: preset})
-	return codexClientIdentity(result.Profile)
+	return codexClientIdentity(codexprofile.Derive(seed))
 }
 
 // codexClientIdentityFromExtra 读取持久化身份；缺失、非对象或字段不全时返回 false。
 func codexClientIdentityFromExtra(extra map[string]any) (codexClientIdentity, bool) {
-	return codexClientIdentityFromExtraContext(context.Background(), nil, extra)
-}
-
-func codexClientIdentityFromExtraContext(ctx context.Context, account *Account, extra map[string]any) (codexClientIdentity, bool) {
 	if extra == nil {
 		return codexClientIdentity{}, false
 	}
@@ -104,7 +76,7 @@ func codexClientIdentityFromExtraContext(ctx context.Context, account *Account, 
 		encoded = data
 	}
 	var id codexClientIdentity
-	if err := json.Unmarshal(encoded, &id); err != nil || !id.validForAccountContext(ctx, account) {
+	if err := json.Unmarshal(encoded, &id); err != nil || !id.valid() {
 		return codexClientIdentity{}, false
 	}
 	return id, true
@@ -126,40 +98,29 @@ func codexClientIdentitySeed(account *Account) string {
 // CodexClientIdentity 返回账号的 Codex 客户端身份。仅 OpenAI OAuth-like 账号有身份：
 // 优先读持久化值，缺失时按种子即时派生（派生确定性，落库前后结果一致）。
 func (a *Account) CodexClientIdentity() (codexClientIdentity, bool) {
-	return a.codexClientIdentityContext(context.Background())
-}
-
-func (a *Account) codexClientIdentityContext(ctx context.Context) (codexClientIdentity, bool) {
 	if a == nil || !a.IsOpenAIOAuthLike() {
 		return codexClientIdentity{}, false
 	}
-	if available, err := codexIdentityPolicyAvailable(ctx, a.Type, a.ID); err != nil || !available {
-		return codexClientIdentity{}, false
-	}
-	if id, ok := codexClientIdentityFromExtraContext(ctx, a, a.Extra); ok {
+	if id, ok := codexClientIdentityFromExtra(a.Extra); ok {
 		return id, true
 	}
 	seed := codexClientIdentitySeed(a)
 	if seed == "" {
 		return codexClientIdentity{}, false
 	}
-	identity := deriveCodexClientIdentityForAccountContext(ctx, a, seed)
-	return identity, identity.Version == codexClientIdentitySchemaVersion || identity.Version == 2
+	return deriveCodexClientIdentity(seed), true
 }
 
 // codexClientIdentityExtraValue 把身份编码为可直接写入 extra 的 map。
 func codexClientIdentityExtraValue(id codexClientIdentity, now time.Time) map[string]any {
 	return map[string]any{
-		"source":         id.Source,
-		"originator":     id.Originator,
-		"client_version": id.ClientVersion,
-		"v":              id.Version,
-		"os_type":        id.OSType,
-		"os_version":     id.OSVersion,
-		"arch":           id.Arch,
-		"terminal":       id.Terminal,
-		"sandbox":        id.Sandbox,
-		"generated_at":   now.UTC().Format(time.RFC3339),
+		"v":            id.Version,
+		"os_type":      id.OSType,
+		"os_version":   id.OSVersion,
+		"arch":         id.Arch,
+		"terminal":     id.Terminal,
+		"sandbox":      id.Sandbox,
+		"generated_at": now.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -167,18 +128,10 @@ func codexClientIdentityExtraValue(id codexClientIdentity, now time.Time) map[st
 // 只对 OpenAI OAuth-like 账号生效；种子取 extra 中的 codex_fingerprint_seed，
 // 调用方需先确保种子已就位（prepareCodexFingerprintExtraFor* 负责）。
 func ensureCodexClientIdentityExtra(platform, accountType string, extra map[string]any, now time.Time) map[string]any {
-	// Creation has a known type but no persisted ID. Do not invent a rollout key.
-	return ensureCodexClientIdentityExtraForAccount(&Account{Platform: platform, Type: accountType}, extra, now)
-}
-
-func ensureCodexClientIdentityExtraForAccount(account *Account, extra map[string]any, now time.Time) map[string]any {
-	if account == nil || !account.IsOpenAIOAuthLike() {
+	if platform != PlatformOpenAI || (accountType != AccountTypeOAuth && accountType != AccountTypeSetupToken) {
 		return extra
 	}
-	if available, err := codexIdentityPolicyAvailable(context.Background(), account.Type, account.ID); err != nil || !available {
-		return extra
-	}
-	if _, ok := codexClientIdentityFromExtraContext(context.Background(), account, extra); ok {
+	if _, ok := codexClientIdentityFromExtra(extra); ok {
 		return extra
 	}
 	seed, ok := codexFingerprintSeed(extra)
@@ -188,11 +141,7 @@ func ensureCodexClientIdentityExtraForAccount(account *Account, extra map[string
 	if extra == nil {
 		extra = make(map[string]any, 1)
 	}
-	identity := deriveCodexClientIdentityForAccountContext(context.Background(), account, seed)
-	if identity.Version != codexClientIdentitySchemaVersion && identity.Version != 2 {
-		return extra
-	}
-	extra[CodexClientIdentityExtraKey] = codexClientIdentityExtraValue(identity, now)
+	extra[CodexClientIdentityExtraKey] = codexClientIdentityExtraValue(deriveCodexClientIdentity(seed), now)
 	return extra
 }
 
@@ -277,51 +226,25 @@ func (s *CodexClientIdentityBackfillService) RunOnce(ctx context.Context) (int, 
 		if !account.IsOpenAIOAuthLike() {
 			continue
 		}
-		if available, err := codexIdentityPolicyAvailable(ctx, account.Type, account.ID); err != nil {
-			return updated, failed, err
-		} else if !available {
+		if _, ok := codexClientIdentityFromExtra(account.Extra); ok {
 			continue
 		}
-		// The background scan may skip inapplicable accounts, but its policy
-		// lease and write must stay scoped to each actual applicable account.
-		if err := func() error {
-			bound, release, err := bindNativeCodexContext(ctx, account.Platform, account.Type, extensionv1.Invocation{
-				Capability: extensionv1.CapabilityRequest, Operation: "codex.identity.derive", AccountID: account.ID,
-			})
-			if errors.Is(err, ErrNativeCodexPolicyDisabled) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			defer release()
-			if _, ok := codexClientIdentityFromExtraContext(bound, account, account.Extra); ok {
-				return nil
-			}
-			seed := codexClientIdentitySeed(account)
-			if seed == "" {
-				return nil
-			}
-			if err := bound.Err(); err != nil {
-				return err
-			}
-			result, err := invokeCodexIdentityPolicyForAccount(bound, account, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed, Preset: "legacy"})
-			if err != nil {
-				return err
-			}
-			value := codexClientIdentityExtraValue(codexClientIdentity(result.Profile), s.now())
-			applied, err := writer.UpdateExtraIfRevision(bound, account.ID, account.UpdatedAt, map[string]any{CodexClientIdentityExtraKey: value})
-			if err != nil {
-				failed++
-				slog.Warn("codex_client_identity_backfill_account_failed", "account_id", account.ID, "error", err)
-				return nil
-			}
-			if applied {
-				updated++
-			}
-			return nil
-		}(); err != nil {
+		seed := codexClientIdentitySeed(account)
+		if seed == "" {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
 			return updated, failed, err
+		}
+		value := codexClientIdentityExtraValue(deriveCodexClientIdentity(seed), s.now())
+		applied, err := writer.UpdateExtraIfRevision(ctx, account.ID, account.UpdatedAt, map[string]any{CodexClientIdentityExtraKey: value})
+		if err != nil {
+			failed++
+			slog.Warn("codex_client_identity_backfill_account_failed", "account_id", account.ID, "error", err)
+			continue
+		}
+		if applied {
+			updated++
 		}
 	}
 	return updated, failed, nil

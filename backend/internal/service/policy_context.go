@@ -5,10 +5,9 @@ import "context"
 type policyCancellationSignalsKey struct{}
 
 // Policy cancellation is independent from a client disconnect. Upstream IO
-// may detach from that disconnect, but must still stop on native policy replacement.
+// may detach from that disconnect, but must still stop when a policy signal fires.
 func detachPolicyContext(parent context.Context) (context.Context, context.CancelFunc) {
 	signals, _ := parent.Value(policyCancellationSignalsKey{}).([]context.Context)
-	signals = append(append([]context.Context(nil), signals...), nativeCodexPolicySignals(parent)...)
 	if len(signals) == 0 {
 		return context.WithoutCancel(parent), func() {}
 	}

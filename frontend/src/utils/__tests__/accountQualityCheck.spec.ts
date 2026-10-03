@@ -9,15 +9,15 @@ import {
 } from '../accountQualityCheck'
 
 describe('candy quality question', () => {
-  it('is the canonical acceptance prompt byte for byte', () => {
+  it('is the canonical question byte for byte', () => {
     expect(createHash('sha256').update(CANDY_QUALITY_PROMPT, 'utf8').digest('hex'))
       .toBe('05cc85bbee16e9152990a2ceb3163dea65e3ad3baff188ccbc8a570295f5a7a7')
     expect(CANDY_QUALITY_ANSWER).toBe(21)
   })
 })
 
-// Chinese answers are excerpts of answers recorded by the quality acceptance
-// runs; English answers follow the same shapes.
+// Chinese answers are excerpts of real model answers to the question; English
+// answers follow the same shapes.
 const finalNumberCases: Array<[string, string, number | null]> = [
   ['zh: concludes 21, then discusses a hypothetical 29 (答案会是)', String.raw`**最少取出 \(21\) 个**，这里利用了题目给出的条件：可以靠手感辨别形状，从而按形状选择糖果。
 

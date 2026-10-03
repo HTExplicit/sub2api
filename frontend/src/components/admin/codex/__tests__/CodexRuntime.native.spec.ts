@@ -3,11 +3,11 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import CodexRuntimeSettings from '../CodexRuntimeSettings.vue'
 import CodexContinuationDiagnostics from '../CodexContinuationDiagnostics.vue'
 
-const { get, post, put, stepUpRun } = vi.hoisted(() => ({
-  get: vi.fn(), post: vi.fn(), put: vi.fn(),
+const { get, put, stepUpRun } = vi.hoisted(() => ({
+  get: vi.fn(), put: vi.fn(),
   stepUpRun: vi.fn(async (action: () => Promise<unknown>) => action())
 }))
-vi.mock('@/api/client', () => ({ apiClient: { get, post, put } }))
+vi.mock('@/api/client', () => ({ apiClient: { get, put } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
 vi.mock('@/composables/useStepUp', () => ({ useStepUp: () => ({ run: stepUpRun }), isStepUpCancelled: () => false }))
 vi.mock('vue-i18n', async () => ({
@@ -25,29 +25,24 @@ function deferred<T>() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  get.mockReset().mockResolvedValue({ data: {} })
-  post.mockReset()
+  get.mockReset().mockResolvedValue({ data: { request_zstd: true } })
   put.mockReset().mockImplementation(async (_url: string, value: unknown) => ({ data: value }))
 })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()) })
 
 describe('native Codex controls', () => {
-  it('reads request compression, tolerates other keys and saves only request_zstd through step-up', async () => {
-    get.mockResolvedValue({ data: { request_zstd: true, enabled: true, proxy_url: 'host:1080', models: ['model-a'], fail_closed: true, routing_schema: 2 } })
+  it('reads request compression and saves request_zstd through step-up', async () => {
+    get.mockResolvedValue({ data: { request_zstd: false } })
     const wrapper = mount(CodexRuntimeSettings, { global }); wrappers.push(wrapper)
     await flushPromises()
-    expect(get).toHaveBeenCalledWith('/admin/settings/codex-runtime', { rawPluginConfig: true })
+    expect(get).toHaveBeenCalledWith('/admin/settings/codex-runtime')
     expect(wrapper.get('h2').text()).toBe('Codex runtime settings')
-    expect((wrapper.get('[data-test="codex-compression"]').element as HTMLInputElement).checked).toBe(true)
-    expect(wrapper.findAll('input')).toHaveLength(1)
-    expect(wrapper.find('textarea').exists()).toBe(false)
-    expect(wrapper.find('select').exists()).toBe(false)
-    await wrapper.get('[data-test="codex-compression"]').setValue(false)
+    expect((wrapper.get('[data-test="codex-compression"]').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('[data-test="codex-compression"]').setValue(true)
     await wrapper.get('[data-test="codex-save"]').trigger('click')
     await flushPromises()
     expect(put).toHaveBeenCalledTimes(1)
-    expect(put).toHaveBeenCalledWith('/admin/settings/codex-runtime', { request_zstd: false }, { rawPluginConfig: true })
-    expect(post).not.toHaveBeenCalled()
+    expect(put).toHaveBeenCalledWith('/admin/settings/codex-runtime', { request_zstd: true })
     expect(stepUpRun).toHaveBeenCalledTimes(1)
     expect(wrapper.get('[role="status"]').text()).toContain('Settings saved')
   })
@@ -57,9 +52,10 @@ describe('native Codex controls', () => {
     put.mockReturnValueOnce(pendingSave.promise)
     const wrapper = mount(CodexRuntimeSettings, { global }); wrappers.push(wrapper)
     await flushPromises()
+    expect((wrapper.get('[data-test="codex-compression"]').element as HTMLInputElement).checked).toBe(true)
     await wrapper.get('[data-test="codex-save"]').trigger('click')
     await flushPromises()
-    expect(put).toHaveBeenCalledWith('/admin/settings/codex-runtime', { request_zstd: true }, { rawPluginConfig: true })
+    expect(put).toHaveBeenCalledWith('/admin/settings/codex-runtime', { request_zstd: true })
     await wrapper.get('[data-test="codex-compression"]').setValue(false)
     pendingSave.resolve({ data: { request_zstd: true } })
     await flushPromises()

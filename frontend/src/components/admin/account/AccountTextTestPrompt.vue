@@ -11,15 +11,13 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, useId, watch } from 'vue'
+import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AccountSelectionIdentity } from '@/types'
 import { ACCOUNT_TEST_PROMPT_LIMIT } from '@/composables/useAccountTestPrompt'
-const props = defineProps<{ modelValue: string; account?: AccountSelectionIdentity | null; disabled?: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [value: string]; validity: [valid: boolean] }>()
+const props = defineProps<{ modelValue: string; disabled?: boolean }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const { t } = useI18n()
 const id = useId()
 const length = computed(() => Array.from(props.modelValue).length)
 const valid = computed(() => length.value <= ACCOUNT_TEST_PROMPT_LIMIT)
-watch(valid, value => emit('validity', value), { immediate: true })
 </script>

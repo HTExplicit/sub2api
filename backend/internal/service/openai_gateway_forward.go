@@ -19,7 +19,6 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
-	stageCodexLogicalTurn(c, body)
 	diagnosticIncomingBody := body
 	// Snapshot the client body for the request integrity check before any
 	// rewrite; re-staged on every entry so a failover never reuses a stale copy.
@@ -426,10 +425,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	isCompactRequest := compactPath
 	requestedModel := reqModel
-	billingModel, upstreamModel, modelPolicyErr := resolveOpenAIForwardMappedModelsContext(ctx, account, requestedModel, isCompactRequest)
-	if modelPolicyErr != nil {
-		return nil, modelPolicyErr
-	}
+	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, requestedModel, isCompactRequest)
 	if isCompactRequest {
 		if compactModel := s.resolveOpenAICompactFallbackModel(account, requestedModel); compactModel != "" {
 			upstreamModel = compactModel
@@ -440,7 +436,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	instructions := gjson.GetBytes(body, "instructions")
 	instructionsEmpty := !instructions.Exists() || instructions.Type != gjson.String || strings.TrimSpace(instructions.String()) == ""
-	if instructionsEmpty && account.UsesOpenAICodexProtocol() && !responsesLite && !compatMessagesBridge && !nativeCNResponses {
+	if instructionsEmpty && account.UsesOpenAICodexProtocol() && !compatMessagesBridge && !nativeCNResponses {
 		markPatchSet("instructions", defaultCodexSynthInstructions(upstreamModel))
 	}
 	if billingModel != requestedModel {
@@ -560,7 +556,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			codexResult = applyCodexOAuthTransformWithOptions(decoded, codexOAuthTransformOptions{
 				IsCodexCLI:                          isCodexCLI,
 				IsCompact:                           isCompactRequest,
-				SkipDefaultInstructions:             responsesLite,
 				OmitPromotedSystemMessagesFromInput: omitPromotedSystemMessages,
 			})
 		}
@@ -1480,11 +1475,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestPrepared(ctx context.Context,
 	}
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站——异账号 blob 与本账号的（指纹收敛后）出站身份自相矛盾。
-	if _, staged := c.Get(codexLogicalTurnContextKey); !staged {
-		stageCodexLogicalTurn(c, body)
-	}
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
-	req = withCodexExpectedModel(req, codexRequestBodyModel(body))
 	if account.UsesOpenAICodexProtocol() {
 		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// 真实 Codex 只发送连字符形式的 session-id / thread-id；下划线形式的
@@ -1560,7 +1551,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestPrepared(ctx context.Context,
 	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
 		return nil, err
 	}
-	return withCodexDownstreamContext(req, c), nil
+	return req, nil
 }
 
 // codexIdentityOverrideUA 返回账号级显式配置的出站 User-Agent，供强制统一身份时作为覆写来源。

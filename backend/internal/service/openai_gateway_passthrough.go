@@ -165,8 +165,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {
-		lite := isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) || isOpenAIResponsesLiteWebSocketPayload(body)
-		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(reqModel, body); rejectReason != "" && !lite {
+		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(reqModel, body); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
 			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
 			logOpenAIPassthroughInstructionsRejected(ctx, c, account, reqModel, rejectReason, body)
@@ -178,7 +177,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			})
 			return nil, fmt.Errorf("openai passthrough rejected before upstream: %s", rejectReason)
 		}
-		if !lite && isOpenAICodexModel(reqModel) && !gjson.GetBytes(body, "instructions").Exists() {
+		if isOpenAICodexModel(reqModel) && !gjson.GetBytes(body, "instructions").Exists() {
 			nextBody, setErr := sjson.SetBytes(body, "instructions", defaultCodexSynthInstructions(reqModel))
 			if setErr != nil {
 				return nil, fmt.Errorf("set passthrough codex instructions: %w", setErr)
@@ -725,13 +724,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站（openai_codex_turn_state.go）。
-	if c != nil {
-		if _, staged := c.Get(codexLogicalTurnContextKey); !staged {
-			stageCodexLogicalTurn(c, body)
-		}
-	}
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
-	req = withCodexExpectedModel(req, codexRequestBodyModel(body))
 
 	// 覆盖入站鉴权残留，并注入上游认证
 	req.Header.Del("authorization")
@@ -838,7 +831,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
 		return nil, err
 	}
-	return withCodexDownstreamContext(req, c), nil
+	return req, nil
 }
 
 func stripOpenAILegacyResponsesBeta(headers http.Header) {
@@ -2037,7 +2030,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	}
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	var stagedTurnState http.Header
-	stageOpenAICodexTurnState(&stagedTurnState, s.codexTurnStateResponseHeaders(c, account, resp.Header))
+	stageOpenAICodexTurnState(&stagedTurnState, resp.Header)
 	// Keep turn-state private until an actual downstream write. Merely receiving
 	// upstream headers must not move provenance to an attempt the client never saw.
 	c.Writer.Header().Del(openAICodexTurnStateHeader)
@@ -2539,7 +2532,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					ms := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &ms
 				}
-				s.clearOpenAIProxyStreamDisconnect(account, ctx)
+				s.clearOpenAIProxyStreamDisconnect(account)
 				recordOpenAIRefusalRecovery(ctx, c, account, "sse", false, refusalEarlyEmitted, openAIRefusalActionRewritten, refusalStream.evidence())
 				return resultWithUsage(), nil
 			case openAIRefusalStreamHold:
@@ -2616,7 +2609,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
 		}
-		s.recordOpenAIProxyStreamDisconnect(account, err, upstreamRequestID, ctx)
+		s.recordOpenAIProxyStreamDisconnect(account, err, upstreamRequestID)
 		logger.LegacyPrintf("service.openai_gateway",
 			"[OpenAI passthrough] 流读取异常中断: account=%d request_id=%s err=%v",
 			account.ID,
@@ -2645,14 +2638,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", resp.StatusCode)
 		}
 		s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "stream_error", nil, "OpenAI stream ended before an authoritative terminal event")
-		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID, ctx)
+		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
 	}
 	if terminalEventType != "response.completed" && terminalEventType != "response.done" {
 		return resultWithUsage(), fmt.Errorf("upstream response terminated with %s", terminalEventType)
 	}
 	if sawTerminalEvent && !sawFailedEvent {
-		s.clearOpenAIProxyStreamDisconnect(account, ctx)
+		s.clearOpenAIProxyStreamDisconnect(account)
 	}
 	logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, terminalEventType, clientDisconnected)
 
@@ -2734,7 +2727,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, s.codexTurnStateResponseHeaders(c, account, resp.Header))
+	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, resp.Header)
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -2886,7 +2879,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	if terminalErr == nil {
 		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, usage, terminalType, false)
 	}
-	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, s.codexTurnStateResponseHeaders(c, account, resp.Header))
+	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, resp.Header)
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {

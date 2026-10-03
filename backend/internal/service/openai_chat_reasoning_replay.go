@@ -267,7 +267,6 @@ type openAIChatReasoningReplayCandidate struct {
 }
 
 func (s *OpenAIGatewayService) prepareOpenAIChatReasoningReplay(ctx context.Context, c *gin.Context, account *Account, request *http.Request, chatBody, wireBody []byte, enabled bool) (*openAIChatReasoningReplay, []byte) {
-	ctx = withCodexRecoveryScope(ctx, account)
 	if c != nil {
 		c.Set(openAIChatReasoningReplayContextKey, (*openAIChatReasoningReplay)(nil))
 		c.Set("openai_chat_reasoning_replay_hits", 0)

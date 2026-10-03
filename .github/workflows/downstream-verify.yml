@@ -42,7 +42,7 @@ jobs:
         run: bash .github/scripts/test_model_context_capacity.sh
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|AlphaSearch|CodexQuality|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|AlphaSearch|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
       - name: Upstream automation classifier tests
         run: |
           python3 .github/scripts/test_upstream_risk.py
@@ -53,11 +53,9 @@ jobs:
       - name: Gateway management isolation race test
         working-directory: backend
         run: go test -race ./internal/handler -run '^TestOpenAIBlockedUpstreamsDoNotSerializeManagementPlane$' -count=1
-      - name: Native policy cancellation race tests
+      - name: Native policy cancellation race test
         working-directory: backend
-        run: |
-          go test -p=1 -race -tags unit ./internal/service -run '^(TestNativePolicyCancellationSurvivesDetachedClientContext|TestNativeCodexSameConfigSaveKeepsActiveEpoch)$' -count=1
-          go test -p=1 -race ./internal/codexruntime/core -run '^TestModuleServesTransportPlanFromItsConfiguration$' -count=1
+        run: go test -p=1 -race -tags unit ./internal/service -run '^TestNativePolicyCancellationSurvivesDetachedClientContext$' -count=1
       - name: Image, model list, and turn-state tests
         working-directory: backend
         run: |
@@ -70,18 +68,18 @@ jobs:
         working-directory: backend
         run: |
           go test -p=1 -tags unit ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation|AlphaSearch)' -count=1
-          go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
+          go test -p=1 -tags unit ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/service -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|DataIdentityIndex|AccountJobDataImport|OpsMetricsCollectorRecordsDatabasePoolWaitDelta|BulkUpdateAccepts|AccountHandler)' -count=1
           go build ./internal/repository
-      - name: Account job and legacy view contracts
+      - name: Account job contracts
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountJobBulk.*|TestAccountJobRetiredKindsStayReadableButCannotRun|TestAccountJobLegacyViewComparesSavedDigestWithoutQueryingTargets)$' -count=1
+        run: go test -p=1 -tags unit ./internal/handler/admin -run '^TestAccountJobBulk.*$' -count=1
       - name: Account taxonomy migration integration test
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^(Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration|TestAPIKeyRepoSuite/TestReleaseAcceptanceKeyIsHiddenButAuthenticates)$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration$|^TestAPIKeyRepoSuite$/^TestReleaseAcceptanceKeyIsAdminListedReadOnlyAndAuthenticates$' -count=1
       - name: Repository retirement and audit integration tests
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^Test(PGXBatchInsertAuditAndSystemLogs|Migration236.*|NativeFeatureRetirementIsAtomicAndPreservesLedger)$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^Test(PGXBatchInsertAuditAndSystemLogs|Migration236.*|NativeFeatureRetirementIsAtomic)$' -count=1
       - name: Historical Cindy migration tests
         working-directory: backend
         run: |
@@ -116,7 +114,6 @@ jobs:
             src/components/admin/account/__tests__/AccountTestModal.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.policyPlan.spec.ts \
-            src/components/admin/account/__tests__/CodexFingerprintPanel.spec.ts \
             src/components/keys/__tests__/UseKeyModal.spec.ts \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
@@ -145,7 +142,6 @@ jobs:
             src/components/account/__tests__/AccountUsageCell.list.spec.ts \
             src/components/account/__tests__/UsageProgressBar.spec.ts \
             src/components/account/__tests__/CreateAccountModal.spec.ts \
-            src/components/account/__tests__/CreateAccountModal.codexFingerprint.spec.ts \
             src/components/payment/__tests__/StripePaymentInline.contrast.spec.ts \
             src/views/user/__tests__/StripePaymentView.spec.ts \
             src/components/account/__tests__/OpenAIReasoningPolicyFields.spec.ts \

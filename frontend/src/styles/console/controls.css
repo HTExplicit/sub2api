@@ -387,7 +387,7 @@ html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], 
    buttons (the reference's /models filter row); a 34px trigger beside a 30px search or button reads as a misaligned
    row. Labelled form fields elsewhere keep the reference's 34px field.
    Perf pass: every template row of that shape (flex items-center, not flex-col, a .btn child, a field inside) is
-   hooked [data-ui~="dense-btn"] (18 rows; the two whose .btn children are all conditional follow); the repeated
+   hooked [data-ui~="dense-btn"] (17 rows; the two whose .btn children are all conditional follow); the repeated
    [data-ui] keep the original 0,7,2. */
 html.flat-theme :is(.table-page-layout > .layout-section-fixed, [data-ui~="dense-btn"][data-ui][data-ui][data-ui]) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
   padding-top: 0.265625rem;

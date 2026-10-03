@@ -81,7 +81,6 @@ func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Conte
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx = withCodexRecoveryScope(ctx, account)
 	enabled, policyErr := openAIReasoningPolicyEnabled(ctx, account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
 	r := &openAIReasoningRecoveryState{
 		ctx: ctx, c: c, account: account, token: token,
