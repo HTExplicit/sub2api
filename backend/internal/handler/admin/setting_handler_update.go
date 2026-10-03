@@ -2047,11 +2047,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}(),
 		OpenAIRefusalRecoveryEnabled: boolValueOrDefault(req.OpenAIRefusalRecoveryEnabled, previousSettings.OpenAIRefusalRecoveryEnabled),
 		OpenAICyberFailoverEnabled:   boolValueOrDefault(req.OpenAICyberFailoverEnabled, previousSettings.OpenAICyberFailoverEnabled),
-		// Deprecated compatibility values are deliberately preserved for a
-		// rollback window but are no longer public write fields or runtime gates.
-		OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  previousSettings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
-		OpenAIAPIKeyPromptCacheKeyNormalizationEnabled: previousSettings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
-		OpenAIRefusalRewriteEnabled:                    boolValueOrDefault(req.OpenAIRefusalRewriteEnabled, previousSettings.OpenAIRefusalRewriteEnabled),
+		OpenAIRefusalRewriteEnabled:  boolValueOrDefault(req.OpenAIRefusalRewriteEnabled, previousSettings.OpenAIRefusalRewriteEnabled),
 		OpenAIRefusalKeywords: func() []string {
 			if req.OpenAIRefusalKeywords != nil {
 				return append([]string(nil), (*req.OpenAIRefusalKeywords)...)

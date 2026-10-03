@@ -5414,33 +5414,6 @@
                 </p>
               </div>
 
-              <!-- Retired OpenAI API-key switches: stored values, read-only, no runtime effect -->
-              <div
-                v-if="deprecatedSettingRows.length"
-                class="rounded-lg border border-dashed border-gray-300 px-4 py-3 dark:border-dark-600"
-                data-testid="deprecated-settings"
-              >
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ t("admin.settings.deprecatedSettings.title") }}
-                </div>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t("admin.settings.deprecatedSettings.hint") }}
-                </p>
-                <dl class="mt-3 space-y-2 text-sm">
-                  <div
-                    v-for="row in deprecatedSettingRows"
-                    :key="row.key"
-                    class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5"
-                  >
-                    <dt class="min-w-0">
-                      <span class="text-gray-700 dark:text-gray-300">{{ row.label }}</span>
-                      <code class="ml-2 break-all text-xs text-gray-500 dark:text-gray-400">{{ row.key }}</code>
-                    </dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ row.value }}</dd>
-                  </div>
-                </dl>
-              </div>
-
               <!-- Fingerprint Unification -->
               <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
@@ -9388,24 +9361,6 @@ const { copyToClipboard } = useClipboard();
 
 const loading = ref(true);
 const loadFailed = ref(false);
-// GET /admin/settings echoes the retired switches read-only; they are shown, never saved.
-const deprecatedSettings = ref<Record<string, unknown>>({});
-const deprecatedSettingRows = computed(() =>
-  Object.entries(deprecatedSettings.value).map(([key, value]) => {
-    const labelKey = `admin.settings.deprecatedSettings.labels.${key}`;
-    const label = t(labelKey);
-    return {
-      key,
-      label: label === labelKey ? key : label,
-      value:
-        value === true
-          ? t("admin.settings.deprecatedSettings.on")
-          : value === false
-            ? t("admin.settings.deprecatedSettings.off")
-            : JSON.stringify(value),
-    };
-  }),
-);
 const saving = ref(false);
 const testingSmtp = ref(false);
 const sendingTestEmail = ref(false);
@@ -11416,7 +11371,6 @@ async function loadSettings() {
   loadFailed.value = false;
   try {
     const settings = await adminAPI.settings.getSettings();
-    deprecatedSettings.value = settings.deprecated_settings ?? {};
     settings.payment_load_balance_strategy =
       settings.payment_load_balance_strategy || "round-robin";
     // Only assign non-null values from backend (null means unconfigured, keep defaults)

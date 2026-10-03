@@ -878,15 +878,6 @@ export default {accounts: {
         responsesModeForceChatCompletions: 'Force Chat Completions',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
-        alphaSearchMode: 'Alpha Search mode',
-        alphaSearchModeDesc: 'OpenAI API keys only. Bridge mode also requires the global admin switch; disabled accounts are excluded from search scheduling.',
-        alphaSearchModeDirect: 'Direct /v1/alpha/search',
-        alphaSearchModeResponsesWebSearch: 'Responses Web Search bridge',
-        alphaSearchModeDisabled: 'Disable search',
-        promptCacheKeyMode: 'Prompt cache key mode',
-        promptCacheKeyModeDesc: 'OpenAI API keys only. SHA-256 mode also requires the global admin switch and only rewrites values longer than 64 characters.',
-        promptCacheKeyModePassthrough: 'Pass through',
-        promptCacheKeyModeSHA25664: 'SHA-256 (64 characters)',
         imagesUrlToB64Json: 'Image result URL to base64',
         imagesUrlToB64JsonDesc:
           'Only applies to non-streaming Images responses of OpenAI API Key accounts. When an upstream image item has a url but no b64_json, the gateway downloads the url and fills b64_json with its base64 content (url is kept) for clients built on the official API; the response is returned unchanged if the download fails.',

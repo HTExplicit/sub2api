@@ -2599,9 +2599,8 @@ html.flat-theme [data-ui~="settings"] .card :where(label[class~="font-medium"][c
 }
 
 /* 3.4 Field labels. The recipe and the block utility labels are the mono label already (controls.css 3.5, style.css
-   .input-label); the inline ones that sit right before their field (label[for] + input.mt-2, the grok / TTFT /
-   retired-switch fields, the small grey labels of the search provider and the backup list) join them, so a form has
-   one label language. */
+   .input-label); the inline ones that sit right before their field (label[for] + input.mt-2, the grok / TTFT fields,
+   the small grey labels of the search provider and the backup list) join them, so a form has one label language. */
 html.flat-theme [data-ui~="settings"] label[class~="text-sm"][class~="font-medium"]:not([class~="block"]):has(+ :is(input, select, textarea, div)),
 html.flat-theme [data-ui~="settings"] label[class~="text-xs"]:is([class~="text-gray-500"], [class~="text-gray-600"]):has(+ :is(input, select, textarea, div)) {
   display: block;

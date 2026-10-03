@@ -558,16 +558,6 @@ export default {
         reference: 'Reference catalog',
         sources: 'Sources'
       },
-      deprecatedSettings: {
-        title: 'Deprecated settings (read-only, no effect)',
-        hint: 'These switches are retired: saving keeps the stored values, but nothing reads them at runtime. Shown here as stored.',
-        on: 'On',
-        off: 'Off',
-        labels: {
-          openai_apikey_alpha_search_responses_bridge_enabled: 'OpenAI API-key accounts: Alpha Search via the Responses bridge',
-          openai_apikey_prompt_cache_key_normalization_enabled: 'OpenAI API-key accounts: prompt_cache_key normalization'
-        }
-      },
       gatewayForwarding: {
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',

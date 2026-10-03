@@ -513,14 +513,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		payload.DefaultPlatformQuotas = platformQuotas
 	}
 
-	data := systemSettingsResponseData(payload, authSourceDefaults)
-	// Deprecated compatibility values are preserved on save but have no public
-	// write field or runtime effect; they are echoed read-only.
-	data["deprecated_settings"] = map[string]any{
-		service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  settings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
-		service.SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled: settings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
-	}
-	response.Success(c, data)
+	response.Success(c, systemSettingsResponseData(payload, authSourceDefaults))
 }
 
 // openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.

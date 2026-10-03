@@ -551,16 +551,6 @@ export default {
         reference: '参考目录',
         sources: '来源'
       },
-      deprecatedSettings: {
-        title: '已弃用设置（只读，不生效）',
-        hint: '这些开关已停用：保存设置时保留库里的原值，运行时不再读取。这里只显示当前存储的值。',
-        on: '开启',
-        off: '关闭',
-        labels: {
-          openai_apikey_alpha_search_responses_bridge_enabled: 'OpenAI API Key 账号：Alpha Search 走 Responses 桥接',
-          openai_apikey_prompt_cache_key_normalization_enabled: 'OpenAI API Key 账号：prompt_cache_key 归一化'
-        }
-      },
       gatewayForwarding: {
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',

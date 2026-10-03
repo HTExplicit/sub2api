@@ -4,7 +4,6 @@ package handler
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -93,44 +92,6 @@ func (u *replayableEndpointFailoverUpstream) requestPaths() []string {
 	return append([]string(nil), u.paths...)
 }
 
-type replayableEndpointSettingRepo struct {
-	values map[string]string
-}
-
-func (r replayableEndpointSettingRepo) Get(_ context.Context, key string) (*service.Setting, error) {
-	return nil, nil
-}
-
-func (r replayableEndpointSettingRepo) GetValue(_ context.Context, key string) (string, error) {
-	return r.values[key], nil
-}
-
-func (r replayableEndpointSettingRepo) Set(_ context.Context, key, value string) error {
-	return nil
-}
-
-func (r replayableEndpointSettingRepo) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
-	values := make(map[string]string, len(keys))
-	for _, key := range keys {
-		if value, ok := r.values[key]; ok {
-			values[key] = value
-		}
-	}
-	return values, nil
-}
-
-func (r replayableEndpointSettingRepo) SetMultiple(_ context.Context, settings map[string]string) error {
-	return nil
-}
-
-func (r replayableEndpointSettingRepo) GetAll(_ context.Context) (map[string]string, error) {
-	return r.GetMultiple(context.Background(), []string{service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled})
-}
-
-func (r replayableEndpointSettingRepo) Delete(_ context.Context, key string) error {
-	return nil
-}
-
 func newReplayableEndpointFailoverHandler(t *testing.T, upstream service.HTTPUpstream) (*OpenAIGatewayHandler, int64) {
 	t.Helper()
 	groupID := int64(44001)
@@ -165,14 +126,11 @@ func newReplayableEndpointFailoverHandler(t *testing.T, upstream service.HTTPUps
 		},
 	}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
-	settingService := service.NewSettingService(replayableEndpointSettingRepo{values: map[string]string{
-		service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled: "true",
-	}}, cfg)
 	gatewayService := service.NewOpenAIGatewayService(
 		openAIImagesFailoverAccountRepo{accounts: accounts},
 		nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil,
 		upstream,
-		nil, nil, nil, nil, nil, nil, settingService, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	billingService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingService.Stop)
@@ -217,7 +175,7 @@ func TestAlphaSearchRetriesPoolFailureOnExactSameAccount(t *testing.T) {
 	require.Equal(t, []int64{1, 1}, upstream.calls())
 }
 
-func TestAlphaSearchLegacyBridgeSettingsDoNotSwitchOrdinaryAPIKeys(t *testing.T) {
+func TestAlphaSearchOrdinaryAPIKeyToolErrorDoesNotSwitchAccounts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &replayableEndpointFailoverUpstream{
 		firstStatus: http.StatusBadRequest,
