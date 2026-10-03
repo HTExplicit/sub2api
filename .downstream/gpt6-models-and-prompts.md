@@ -60,6 +60,14 @@ Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `ena
 
 侧栏“Codex 运行设置”（`/admin/codex-runtime`）有一个开关“压缩 Codex Responses 请求体”：开启时 OAuth 账号发往 ChatGPT Codex 后端的流式 `/responses` 请求体以 zstd 压缩发送，compact、models 等其他请求保持明文。保存沿用 TOTP 二次验证，对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约与未保存时的默认值见 [native domains](native-domains.md)。
 
+## 失效推理密文恢复
+
+一个全局开关，默认开启，没有账号级选项。存为 `settings.reasoning_recovery_config` 一行 JSON（`{"enabled": <bool>}`），没有该行即开启；`GET/PUT /api/v1/admin/reasoning-recovery` 读写 `{"enabled": <bool>}`，管理员认证、无二次验证，保存记入操作审计。请求路径只读内存中的布尔值（保存即替换，60 秒后台刷新以同步多实例），不查询数据库，每次转发开始时读取一次。启动时读取失败或存储值不是严格的 `{"enabled": <bool>}` 则停止启动；运行中刷新失败保留当前值。
+
+开启时，OpenAI 平台的 API Key、OAuth 和 Setup Token 账号（含自动透传）在原生 Responses 与 Chat Completions 转 Responses 的 HTTP 请求上生效：上游以结构化错误码 `invalid_encrypted_content` 或 `thinking_signature_invalid` 拒绝、且尚无语义输出时，去掉被拒推理项的 `encrypted_content`，在同一账号重发一次；被拒密文按来源在 Redis 记忆 24 小时，期间同源请求发送前即去掉。Messages 桥接与 WebSocket 不恢复。关闭时不重发也不预先去除，签名拒绝仍作为请求级终态返回，不切换账号。
+
+迁移 `267_purge_account_reasoning_options.sql` 删除 `accounts.extra` 中的 `openai_chat_reasoning_replay_enabled` 与 `openai_reasoning_signature_recovery_enabled`。Chat 工具回合推理回注已移除：Chat Completions 转 Responses 不再保存或回注上一轮的推理项。
+
 ## 账号连接测试与批量测试
 
 单账号、批量和定时测试共用同一测试路径，错误按上游 v0.2.8 原样显示：`API returned <状态码>: <原始响应>`、`Request failed: <错误>` 及流内 `error`/`response.failed` 的上游 message；服务日志 `Account test error:` 与界面文本相同。成功仍要求有效协议终态和可见文本，失败终态附上游原始内容，例如 `stream ended before terminal (last event: …)`、`completed without visible text (finish_reason=…)`、`finish_reason=…`。
