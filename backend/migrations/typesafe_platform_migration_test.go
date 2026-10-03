@@ -18,7 +18,7 @@ func TestTypeSafePlatformMigration(t *testing.T) {
 	require.Contains(t, sql, "DROP CONSTRAINT IF EXISTS composite_model_routes_target_platform_check")
 	// Downstream: the quota list keeps `cindy` like the downstream 237 and 238,
 	// so the file also applies to a database that has not reached 260 and still
-	// holds `cindy` quota rows; 260 removes them and 264 states the final list.
+	// holds `cindy` quota rows; 260 removes them and 265 states the final list.
 	require.Contains(t, sql,
 		"CHECK (platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'cindy', 'opencode_go', 'typesafe'))")
 	require.Contains(t, sql,
@@ -32,7 +32,7 @@ func TestTypeSafePlatformMigration(t *testing.T) {
 // re-create the quota CHECK (241 compat, 251, 260), so the downstream tail
 // states the union again; nothing downstream re-creates the route CHECK.
 func TestTypeSafeStaysInTheFinalPlatformChecks(t *testing.T) {
-	const tail = "264_user_platform_quota_typesafe_union.sql"
+	const tail = "265_user_platform_quota_typesafe_union.sql"
 	const platforms = "('anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go', 'typesafe')"
 
 	names, err := fs.Glob(FS, "*.sql")

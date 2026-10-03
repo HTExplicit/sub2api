@@ -11,7 +11,7 @@
 --
 -- Downstream: the quota list keeps `cindy`, as the downstream 237 and 238 do,
 -- so it stays a superset on a database that has not reached 260 and still holds
--- `cindy` quota rows. 260 removes those rows and the value; 264 states the
+-- `cindy` quota rows. 260 removes those rows and the value; 265 states the
 -- final list.
 
 ALTER TABLE user_platform_quotas
