@@ -497,6 +497,9 @@ const testMode = ref<OpenAITestMode>('default')
 // The quality check run of the current stream; the verdict is never stored.
 type QualityRunState = Omit<CandyQualityRun, 'outcome'> & { outcome: CandyQualityOutcome | 'pending' }
 const qualityRun = ref<QualityRunState | null>(null)
+// The model this run requested upstream and the one the upstream declared in its reply.
+let runRequestedModel = ''
+let runDeclaredModel = ''
 const reasoningEffort = ref('')
 const effectiveReasoningEffort = computed(() => {
   const levels = modelOptionsForMode.value.find(model => model.id === selectedModelId.value)?.reasoning_efforts || []
@@ -965,6 +968,8 @@ const startTest = async () => {
 
   resetState()
   status.value = 'connecting'
+  runRequestedModel = ''
+  runDeclaredModel = ''
   const qualityCheck = isQualityMode.value && supportsTextPrompt.value
   if (qualityCheck) {
     qualityRun.value = { answer: '', outcome: 'pending', reasoningTokens: null, requestedModel: selectedModelId.value, declaredModel: '' }
@@ -1127,6 +1132,7 @@ const handleEvent = (event: {
       if (event.model) {
         addLine(t('admin.accounts.usingModel', { model: event.model }), 'text-cyan-400')
         // The model the test actually requested upstream (after account mapping).
+        runRequestedModel = event.model
         if (quality) quality.requestedModel = event.model
       }
       addLine(
@@ -1162,7 +1168,10 @@ const handleEvent = (event: {
       break
 
     case 'upstream_model':
-      if (quality && event.upstream_model) quality.declaredModel = event.upstream_model
+      if (event.upstream_model) {
+        runDeclaredModel = event.upstream_model
+        if (quality) quality.declaredModel = event.upstream_model
+      }
       break
 
     case 'image':
@@ -1211,6 +1220,10 @@ const handleEvent = (event: {
       if (streamingContent.value) {
         addLine(streamingContent.value, 'text-green-300')
         streamingContent.value = ''
+      }
+      // The quality verdict card reports a differing model itself.
+      if (!quality && runDeclaredModel && runRequestedModel && runDeclaredModel !== runRequestedModel) {
+        addLine(`↳ ${t('admin.accounts.batchTest.upstreamResponse')}: ${runDeclaredModel}（${t('admin.accounts.batchTest.modelMismatch')}）`, 'text-red-400')
       }
       if (quality) {
         quality.reasoningTokens = typeof event.reasoning_tokens === 'number' ? event.reasoning_tokens : null

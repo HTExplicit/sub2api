@@ -237,4 +237,21 @@ describe('AccountTestModal quality check', () => {
     expect(wrapper!.text()).toContain('admin.accounts.testCompleted')
     expect(wrapper!.find('[data-test="quality-verdict"]').exists()).toBe(false)
   })
+
+  it.each([
+    ['gpt-6-luna', true],
+    ['gpt-6-astra', false]
+  ])('says so only when an ordinary test is answered by another model (%s)', async (declared, mismatch) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(stream([
+      { type: 'test_start', model: 'gpt-6-astra' },
+      { type: 'content', text: 'OK' },
+      { type: 'upstream_model', upstream_model: declared },
+      { type: 'test_complete', success: true }
+    ])))
+    await open()
+    await start().trigger('click')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('admin.accounts.testCompleted')
+    expect(wrapper!.text().includes(`admin.accounts.batchTest.upstreamResponse: ${declared}（admin.accounts.batchTest.modelMismatch）`)).toBe(mismatch)
+  })
 })
