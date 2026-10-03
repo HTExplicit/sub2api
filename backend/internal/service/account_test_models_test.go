@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/stretchr/testify/require"
 )
 
@@ -305,4 +306,25 @@ func TestPickConnectionTestModelPrefersClaudeTestModelsInOrder(t *testing.T) {
 	// Without a displayed list the account's own mapping decides.
 	account.Credentials = map[string]any{"model_mapping": map[string]any{"claude-opus-5-5": "claude-opus-5-5", "claude-fable-5": "claude-fable-5"}}
 	require.Equal(t, "claude-opus-5-5", PickConnectionTestModel(account))
+}
+
+// TypeSafe accounts are probed with the native System One model: a batch test
+// must not label them with a Claude test model, and the probe has no effort.
+func TestPickConnectionTestModelUsesSystemOneModelForTypeSafe(t *testing.T) {
+	account := &Account{ID: 8, Platform: PlatformTypeSafe, Type: AccountTypeAPIKey}
+	require.Equal(t, typesafe.JevLatestModel, PickConnectionTestModel(account))
+	require.Equal(t, typesafe.JevLatestModel, PickConnectionTestModel(account, typesafe.JevLatestModel))
+
+	levels, defaultLevel := AccountTestReasoningOptions(account, typesafe.JevLatestModel)
+	require.Empty(t, levels)
+	require.Empty(t, defaultLevel)
+}
+
+// System One has no model list, so the periodic catalog refresh skips TypeSafe
+// accounts instead of failing and backing off on every one of them.
+func TestUpstreamModelCatalogAutoSyncSkipsTypeSafe(t *testing.T) {
+	account := &Account{ID: 8, Platform: PlatformTypeSafe, Type: AccountTypeAPIKey, Status: StatusActive}
+	require.False(t, UpstreamModelCatalogAutoSyncEligible(account))
+	account.Platform = PlatformDeepseek
+	require.True(t, UpstreamModelCatalogAutoSyncEligible(account))
 }
