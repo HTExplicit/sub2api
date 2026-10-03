@@ -3132,7 +3132,7 @@
       </div>
 
       <AccountSystemPromptBinding
-        v-if="account"
+        v-if="account && takesSystemPrompt(account.platform)"
         :key="account.id"
         ref="systemPromptBinding"
         :account-ids="[account.id]"
@@ -3285,6 +3285,7 @@ import {
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { supportsUpstreamModelSync } from '@/utils/upstreamModelSync'
+import { takesSystemPrompt } from '@/utils/systemPromptBinding'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'

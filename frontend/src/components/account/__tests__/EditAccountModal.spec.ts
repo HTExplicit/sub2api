@@ -715,6 +715,19 @@ describe('EditAccountModal', () => {
     expect(antigravityButton(antigravityKey('https://cloudcode-pa.googleapis.com'))).toBe(false)
   })
 
+  it('offers the system prompt binding only for an account that can receive a prompt', () => {
+    const bindingOffered = (account: ReturnType<typeof buildAccount>) => {
+      const wrapper = mountModal(account)
+      const offered = wrapper.find('[data-test="account-system-prompt-binding"]').exists()
+      wrapper.unmount()
+      return offered
+    }
+    expect(bindingOffered(buildAccount())).toBe(true)
+    expect(bindingOffered(buildAntigravityAccount())).toBe(true)
+    // System One has no system or instructions field.
+    expect(bindingOffered(buildTypeSafeAccount())).toBe(false)
+  })
+
   it('account.edit keeps an OpenAI API-key account on the Laxa endpoint editable like any other', async () => {
     const account = buildAccount()
     account.credentials.base_url = 'https://api.laxarouter.ai'

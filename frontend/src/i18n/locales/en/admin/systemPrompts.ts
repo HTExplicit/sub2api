@@ -1,13 +1,13 @@
 export default {
   systemPrompts: {
     title: 'System Prompts',
-    description: 'Keep a small prompt library and choose one site default. Accounts that inherit on every platform receive it; a single account can turn it off or use another library prompt.',
+    description: 'Keep a small prompt library and choose one site default. Accounts that inherit on every platform except TypeSafe receive it; a single account can turn it off or use another library prompt.',
     accountPrompts: 'System prompt',
     enabled: 'Enable system prompts',
     enabledHint: 'When off, no account is injected.',
     defaultPrompt: 'Site default prompt',
     noDefault: 'No default',
-    defaultHint: 'Accounts in inherit mode (all platforms) use this prompt.',
+    defaultHint: 'Accounts in inherit mode (all platforms except TypeSafe) use this prompt.',
     usage: '{inherit} accounts inherit · {off} off · {custom} custom',
     library: 'Prompt library',
     add: 'Add prompt',
@@ -29,7 +29,7 @@ export default {
     empty: 'No prompts yet.',
     invalid: 'Every prompt needs a name and text of at most 64 KiB.',
     loadFailed: 'Loading failed',
-    notes: 'Codex Responses Lite and compact requests are never injected; prompt_cache_key is not rewritten; clients see their own instructions echoed. Claude OAuth mimicry blocks are configured in Settings → Gateway.',
+    notes: 'TypeSafe accounts are never injected and are not counted above: System One requests have no system instructions field. Codex Responses Lite and compact requests are never injected; prompt_cache_key is not rewritten; clients see their own instructions echoed. Claude OAuth mimicry blocks are configured in Settings → Gateway.',
     binding: {
       description: 'Inherit uses the site default, Off injects nothing, Custom uses one library prompt.',
       mode: 'Mode',
@@ -39,7 +39,7 @@ export default {
       prompt: 'Prompt',
       apply: 'Apply',
       applied: 'Updated {count} accounts',
-      bulkHint: 'Applies to the {count} selected accounts.',
+      bulkHint: 'Applies to the {count} selected accounts; TypeSafe accounts among them are skipped.',
       globalOff: 'System prompts are switched off; nothing is injected.',
       effectiveDefault: 'In effect: site default "{name}"',
       effectiveNone: 'No site default is set; nothing is injected.',

@@ -6,14 +6,16 @@ import (
 	"errors"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 type systemPromptBindingStats struct {
 	db *sql.DB
 }
 
-// NewSystemPromptBindingStats counts accounts by their extra.system_prompt
-// binding for the admin page. Request paths never call it.
+// NewSystemPromptBindingStats counts the accounts that can take a prompt by
+// their extra.system_prompt binding for the admin page. Request paths never
+// call it.
 func NewSystemPromptBindingStats(db *sql.DB) service.SystemPromptBindingStats {
 	return &systemPromptBindingStats{db: db}
 }
@@ -28,7 +30,8 @@ func (r *systemPromptBindingStats) CountSystemPromptBindings(ctx context.Context
 		       COUNT(*)
 		FROM accounts
 		WHERE deleted_at IS NULL
-		GROUP BY 1, 2`)
+		  AND platform = ANY($1)
+		GROUP BY 1, 2`, pq.Array(service.SystemPromptPlatforms))
 	if err != nil {
 		return nil, err
 	}

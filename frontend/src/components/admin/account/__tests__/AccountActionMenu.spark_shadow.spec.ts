@@ -48,6 +48,24 @@ const anchorRect = new DOMRect(100, 100, 24, 24)
 const getBodyText = () => document.body.textContent ?? ''
 const getBodyButtons = () => Array.from(document.body.querySelectorAll('button'))
 
+describe('AccountActionMenu — 系统提示词入口', () => {
+  const offered = (platform: Account['platform']) => {
+    const wrapper = mount(AccountActionMenu, {
+      props: { show: true, account: makeAccount({ platform, type: 'apikey' }), anchorRect },
+      attachTo: document.body,
+    })
+    const found = document.body.querySelector('[data-test="account-prompt-binding-action"]') !== null
+    wrapper.unmount()
+    return found
+  }
+
+  it('只对请求有注入点的平台提供，TypeSafe（System One）账号没有该入口', () => {
+    expect(offered('openai')).toBe(true)
+    expect(offered('antigravity')).toBe(true)
+    expect(offered('typesafe')).toBe(false)
+  })
+})
+
 describe('AccountActionMenu — spark shadow 按钮可见性', () => {
   it('普通账号显示「复制账号」按钮', () => {
     const account = makeAccount({ platform: 'anthropic', type: 'apikey', parent_account_id: null })
