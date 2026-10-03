@@ -770,7 +770,6 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.get('[data-testid="observability-settings"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="official-model-catalog"]').exists()).toBe(true);
     expect(wrapper.get<HTMLInputElement>('[data-testid="image-tools-studio"]').element.checked).toBe(false);
-    expect(wrapper.find('[data-test-extension-slot="admin.settings"]').exists()).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
     expect(updateSettings).toHaveBeenCalledOnce();

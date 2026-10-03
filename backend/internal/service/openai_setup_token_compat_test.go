@@ -174,7 +174,7 @@ func TestOpenAISetupTokenChatCompletionsUsesCodexTransform(t *testing.T) {
 	require.NotEmpty(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 }
 
-func TestOpenAISetupTokenMessagesUsesCodexBridgeWithoutUnprovenTurnState(t *testing.T) {
+func TestOpenAISetupTokenMessagesUsesCodexBridgeAndTurnState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstResp := openAICompatSSECompletedResponse("resp_setup_first", "gpt-5.4")
@@ -226,7 +226,7 @@ func TestOpenAISetupTokenMessagesUsesCodexBridgeWithoutUnprovenTurnState(t *test
 	require.NoError(t, err)
 	require.NotNil(t, secondResult)
 	require.True(t, isOpenAICompatMessagesBridgeContext(secondCtx))
-	require.Empty(t, upstream.requests[1].Header.Get("x-codex-turn-state"), "a shared cache key does not prove that the next user prompt belongs to the prior turn")
+	require.Equal(t, "turn_state_setup", upstream.requests[1].Header.Get("x-codex-turn-state"))
 	require.Equal(t, generateSessionUUID(isolateOpenAIUpstreamSessionID(0, account, "stable-cache-key")), upstream.requests[1].Header.Get("session-id"))
 	require.Empty(t, upstream.requests[1].Header.Get("conversation_id"))
 	requireOpenAIMessagesCodexIdentity(t, upstream.requests[1], resolveCodexOutboundIdentityForAccount(account, "").userAgent, "codex-tui")

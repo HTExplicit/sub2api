@@ -104,7 +104,7 @@ func isClientCanceledTransportError(ctx context.Context, err error) bool {
 // handleOpenAIUpstreamTransportError handles a transport-level upstream failure
 // (Do/DoWithTLS returned a non-HTTP error: proxy/DNS/TCP/TLS). It:
 //  1. records the failure in Ops error logs (status 0, kind=request_error),
-//     except for client disconnects and scoped Codex quality requests;
+//     except when the client disconnected (see isClientCanceledTransportError);
 //  2. restores immediate durable cooldowns for persistent faults only on the
 //     marked ordinary HTTP path; other paths keep downstream classification;
 //  3. returns *UpstreamFailoverError for the handler's applicable retry policy,
@@ -115,7 +115,7 @@ func isClientCanceledTransportError(ctx context.Context, err error) bool {
 //
 // passthrough tags the Ops error event for the OpenAI passthrough forward path.
 func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, passthrough bool) error {
-	if IsCodexQualityRequest(ctx) || isClientCanceledTransportError(ctx, err) {
+	if isClientCanceledTransportError(ctx, err) {
 		return err
 	}
 	safeErr := sanitizeUpstreamErrorMessage(err.Error())

@@ -20,9 +20,6 @@ func (h *AccountHandler) ExecuteAccountJob(
 	if h == nil || job == nil || len(items) != 1 {
 		return nil, errors.New("invalid account job execution")
 	}
-	if err := service.ValidateRecordedAccountJobTargets(job, payload, items); err != nil {
-		return nil, err
-	}
 	item := items[0]
 	result := h.executeAccountJobItem(ctx, job.Kind, payload, item)
 	return []service.AccountJobExecutionResult{result}, nil

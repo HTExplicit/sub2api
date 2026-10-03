@@ -33,8 +33,6 @@ func TestAccountJobSubmissionRetainsActorAndNativeMetadata(t *testing.T) {
 	var metadata map[string]any
 	require.NoError(t, json.Unmarshal(repo.created[0].Metadata, &metadata))
 	require.Equal(t, map[string]any{"target_count": float64(1)}, metadata)
-	require.NotContains(t, metadata, "plugin_id")
-	require.NotContains(t, metadata, "plugin_generation")
 	require.Equal(t, accountJobTestActorID, repo.created[0].CreatedBy)
 	require.Equal(t, service.AccountJobKindImportData, repo.created[0].Kind)
 	require.Equal(t, "fixture-import", repo.created[0].IdempotencyKey)

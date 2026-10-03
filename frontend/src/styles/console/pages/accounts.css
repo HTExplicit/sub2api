@@ -885,8 +885,7 @@ html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
 /* ================================================================== 7 · details drawer: the content
    (the drawer's frame, header and buttons are overlays.css') */
 
-html.flat-theme [data-test="account-details-drawer"] > header + div > section,
-html.flat-theme [data-test="account-details-drawer"] > header + div > [data-test="codex-fingerprint-panel"] {
+html.flat-theme [data-test="account-details-drawer"] > header + div > section {
   border-color: rgb(var(--ui-line));
   padding: 16px var(--ui-dialog-x, 18px);
 }
@@ -915,7 +914,7 @@ html.flat-theme [data-test="account-details-drawer"] > header + div :is(div, dd)
 }
 
 /* Inner separators and the tag choices of the classification editor (a chip with its 14px checkbox). */
-html.flat-theme [data-test="account-details-drawer"] > header + div :is(div, section)[class~="border-t"] {
+html.flat-theme [data-test="account-details-drawer"] > header + div div[class~="border-t"] {
   border-top-color: rgb(var(--ui-line));
 }
 

@@ -208,14 +208,6 @@ func TestAccountJobBulkReplayUsesSubmissionIdentityWithoutWrites(t *testing.T) {
 	require.Equal(t, job.ID, replayedJob.ID)
 	require.Equal(t, original, repo.created[0], "resubmission must retain the originally frozen target, not the newly supplied seeds")
 	require.Equal(t, 1, len(repo.created))
-	legacy := original
-	legacy.Metadata = json.RawMessage(`{"plugin_id":7,"plugin_generation":2,"target_count":1}`)
-	legacyRepo := &bulkJobScopeRepository{accountJobSubmitRepository: &accountJobSubmitRepository{created: []service.CreateAccountJobParams{legacy}}}
-	legacyJobs := service.NewAccountJobService(legacyRepo, accountJobTestEncryptor{})
-	_, _, err = legacyJobs.ReplaySubmission(context.Background(), 77, service.AccountJobKindBulkUpdate, "owner-bound", payload)
-	require.ErrorIs(t, err, service.ErrAccountJobIdempotencyConflict, "a native request cannot silently claim a historical plugin-owned submission")
-	require.Equal(t, []service.CreateAccountJobParams{legacy}, legacyRepo.created)
-
 }
 
 type bulkJobScopeAdmin struct {

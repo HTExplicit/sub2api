@@ -495,7 +495,6 @@ func settingsAuditRequest(req UpdateSettingsRequest) UpdateSettingsRequest {
 }
 
 func (h *SettingHandler) UpdateSettings(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
 	var sentFields map[string]json.RawMessage
 	if err := c.ShouldBindBodyWith(&sentFields, binding.JSON); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())

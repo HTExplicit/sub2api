@@ -790,20 +790,12 @@ func prioritizeOpenAICompactAccounts(accounts []*Account) []*Account {
 // would be sent for a given request, honoring the legacy compact-only mapping
 // when the caller is on the /responses/compact path.
 func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedModel string, requireCompact bool) string {
-	model, _ := resolveOpenAIAccountUpstreamModelForRequestContext(context.Background(), account, requestedModel, requireCompact)
-	return model
-}
-
-func resolveOpenAIAccountUpstreamModelForRequestContext(ctx context.Context, account *Account, requestedModel string, requireCompact bool) (string, error) {
 	// Forward checks the raw Chat Completions fallback before passthrough.
 	// These API-key accounts therefore apply normal account model_mapping and
 	// upstream normalization, but never compact_model_mapping.
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
-		upstreamModel, err := resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
-		if err != nil {
-			return "", err
-		}
-		return normalizeOpenAIModelForUpstream(account, upstreamModel), nil
+		upstreamModel := resolveOpenAIForwardModel(account, requestedModel, "")
+		return normalizeOpenAIModelForUpstream(account, upstreamModel)
 	}
 
 	// Passthrough accounts only replace authentication. Their Forward path
@@ -814,7 +806,7 @@ func resolveOpenAIAccountUpstreamModelForRequestContext(ctx context.Context, acc
 	if account != nil && account.IsOpenAIPassthroughEnabled() {
 		upstreamModel := strings.TrimSpace(requestedModel)
 		if upstreamModel == "" {
-			return "", nil
+			return ""
 		}
 		if requireCompact {
 			// forwardOpenAIPassthrough resolves compact mappings from the client
@@ -827,36 +819,33 @@ func resolveOpenAIAccountUpstreamModelForRequestContext(ctx context.Context, acc
 		}
 		if account.IsOpenAIApiKey() {
 			if baseModel, _, accepted := resolveOpenAIModelReasoningAlias(upstreamModel); accepted {
-				return baseModel, nil
+				return baseModel
 			}
 		}
-		return upstreamModel, nil
+		return upstreamModel
 	}
 	if requireCompact && account != nil {
 		if compactModel, matched := account.ResolveCompactMappedModel(strings.TrimSpace(requestedModel)); matched {
 			if compactModel = strings.TrimSpace(compactModel); compactModel != "" {
 				if account.IsOpenAIApiKey() {
-					return normalizeOpenAIModelForUpstream(account, compactModel), nil
+					return normalizeOpenAIModelForUpstream(account, compactModel)
 				}
-				return compactModel, nil
+				return compactModel
 			}
 		}
 	}
 
-	upstreamModel, err := resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
-	if err != nil {
-		return "", err
-	}
+	upstreamModel := resolveOpenAIForwardModel(account, requestedModel, "")
 	if upstreamModel == "" {
-		return "", nil
+		return ""
 	}
 	if requireCompact {
 		compactModel := resolveOpenAICompactForwardModel(account, upstreamModel)
 		if compactModel != upstreamModel {
-			return compactModel, nil
+			return compactModel
 		}
 	}
-	return normalizeOpenAIModelForUpstream(account, upstreamModel), nil
+	return normalizeOpenAIModelForUpstream(account, upstreamModel)
 }
 
 func (s *OpenAIGatewayService) filterOpenAIAccountsForGroupPrivacy(ctx context.Context, groupID *int64, accounts []Account) []Account {

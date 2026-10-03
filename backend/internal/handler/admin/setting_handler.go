@@ -52,19 +52,17 @@ func firstNonEmpty(values ...string) string {
 
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
-	codexGateway               *service.OpenAIGatewayService
-	nativeCodexConfigEncryptor service.SecretEncryptor
-	settingService             *service.SettingService
-	emailService               *service.EmailService
-	turnstileService           *service.TurnstileService
-	aliyunCaptchaService       *service.AliyunCaptchaService
-	opsService                 *service.OpsService
-	paymentConfigService       *service.PaymentConfigService
-	paymentService             *service.PaymentService
-	userAttributeService       *service.UserAttributeService
-	notificationEmailService   *service.NotificationEmailService
-	totpService                *service.TotpService
-	userService                *service.UserService
+	settingService           *service.SettingService
+	emailService             *service.EmailService
+	turnstileService         *service.TurnstileService
+	aliyunCaptchaService     *service.AliyunCaptchaService
+	opsService               *service.OpsService
+	paymentConfigService     *service.PaymentConfigService
+	paymentService           *service.PaymentService
+	userAttributeService     *service.UserAttributeService
+	notificationEmailService *service.NotificationEmailService
+	totpService              *service.TotpService
+	userService              *service.UserService
 }
 
 // NewSettingHandler 创建系统设置处理器
@@ -164,10 +162,36 @@ func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
 	response.Success(c, req)
 }
 
+// GetCodexRuntimeSettings returns the Codex request compression switch this
+// process applies.
+// GET /api/v1/admin/settings/codex-runtime
+func (h *SettingHandler) GetCodexRuntimeSettings(c *gin.Context) {
+	response.Success(c, service.EffectiveCodexRuntimeConfig())
+}
+
+// UpdateCodexRuntimeSettings saves the Codex request compression switch. An
+// omitted switch is on.
+// PUT /api/v1/admin/settings/codex-runtime
+func (h *SettingHandler) UpdateCodexRuntimeSettings(c *gin.Context) {
+	req := extensionv1.CodexRuntimeConfig{RequestZstd: true}
+	raw, err := c.GetRawData()
+	if err == nil {
+		err = service.DecodeSwitchSettings(raw, &req, "request_zstd")
+	}
+	if err != nil {
+		response.BadRequest(c, "Invalid Codex runtime settings: "+err.Error())
+		return
+	}
+	if err := h.settingService.UpdateCodexRuntimeConfig(c.Request.Context(), req); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, req)
+}
+
 // GetSettings 获取所有系统设置
 // GET /api/v1/admin/settings
 func (h *SettingHandler) GetSettings(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
 	settings, err := h.settingService.GetAllSettings(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)

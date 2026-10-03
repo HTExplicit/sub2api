@@ -8,9 +8,10 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
+	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -73,8 +74,99 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 	SetCodexForceCLIEnabled(true)
 	forced := resolveCodexIdentitySnapshotContext(context.Background(), account, account, codexAccountIdentityOverrideUA(account))
 	require.Equal(t, "account", forced.IdentitySource)
-	require.Equal(t, legacyCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
+	require.Equal(t, deriveCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
 		"ForceCodexCLI drops the custom UA while retaining the account's derived TUI profile")
+}
+
+func TestCodexIdentitySnapshotReportsTheSelectedFingerprintSource(t *testing.T) {
+	SetCodexForceCLIEnabled(true)
+	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
+	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Extra: map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
+	snapshot := resolveCodexIdentitySnapshotContext(context.Background(), account, account, "")
+	require.Equal(t, "account", snapshot.IdentitySource)
+	require.False(t, snapshot.UAOverridePresent)
+	snapshot = resolveCodexIdentitySnapshotContext(context.Background(), account, account, "codex_cli_rs/0.144.0 (Windows 10.0.19045; x86_64) unknown")
+	require.Equal(t, "override_ua", snapshot.IdentitySource)
+	require.True(t, snapshot.UAOverridePresent)
+	// An override that does not pair as a Codex identity leaves the canonical
+	// identity in place; the flag is then the only sign that one is configured.
+	snapshot = resolveCodexIdentitySnapshotContext(context.Background(), account, account, "explicit UA override")
+	require.Equal(t, "canonical", snapshot.IdentitySource)
+	require.True(t, snapshot.UAOverridePresent)
+}
+
+// 生效版本号写不进账号身份的 User-Agent 时发送必须失败：请求头保持原样、token 刷新不出站，
+// 而不是退回全局规范身份。
+//
+// 不得给本用例加 t.Parallel()：它改写进程级解析器与版本号校验。
+func TestCodexIdentityInvalidVersionCannotSendCanonicalFallback(t *testing.T) {
+	// 生效版本号到达账号身份之前已由 NormalizeCodexClientVersion 校验；放宽这层校验，
+	// 让一个不合法的版本号走到身份层。
+	previous := codexClientVersionPattern
+	codexClientVersionPattern = regexp.MustCompile(`^\S+$`)
+	SetCodexCanonicalUserAgentResolver(func() string {
+		return "codex-tui/9.9.9_bad (Ubuntu 22.4.0; x86_64) xterm-256color"
+	})
+	t.Cleanup(func() {
+		codexClientVersionPattern = previous
+		SetCodexCanonicalUserAgentResolver(nil)
+	})
+	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": "fixture-refresh"},
+		Extra:       map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
+	require.Equal(t, "9.9.9_bad", resolveCodexOutboundIdentity("").version)
+
+	_, err := resolveCodexOutboundIdentityForAccountContext(context.Background(), account, "")
+	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
+	headers := http.Header{"Originator": []string{"fixture-original"}}
+	err = enforceCodexIdentityHeadersForAccountContext(context.Background(), headers, account, "")
+	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
+	require.Equal(t, "fixture-original", headers.Get("Originator"))
+	require.Empty(t, headers.Get("User-Agent"))
+	client := &identityRefreshingOAuthClientStub{}
+	_, err = NewOpenAIOAuthService(nil, client).RefreshAccountToken(context.Background(), account)
+	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
+	require.Empty(t, client.userAgent)
+}
+
+type codexIdentityBackfillRepo struct {
+	AccountRepository
+	accounts []Account
+	written  map[int64]map[string]any
+}
+
+func (r *codexIdentityBackfillRepo) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]Account, error) {
+	return r.accounts, nil
+}
+
+func (r *codexIdentityBackfillRepo) UpdateExtraIfRevision(_ context.Context, id int64, _ time.Time, updates map[string]any) (bool, error) {
+	r.written[id] = updates
+	return true, nil
+}
+
+// 启动回填只给缺少合法身份的 OpenAI OAuth-like 账号写入按种子派生的身份。
+func TestCodexIdentityBackfillWritesOnlyMissingIdentities(t *testing.T) {
+	const seed = "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"
+	stored := codexClientIdentityExtraValue(deriveCodexClientIdentity("6f2c1c7e-6e2d-4a4b-9f0b-2f5f0c8a1d33"), time.Unix(0, 0))
+	repo := &codexIdentityBackfillRepo{written: map[int64]map[string]any{}, accounts: []Account{
+		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{codexFingerprintSeedExtraKey: seed}},
+		{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{codexFingerprintSeedExtraKey: seed, CodexClientIdentityExtraKey: stored}},
+		{ID: 5, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{}},
+		{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeSetupToken, Extra: map[string]any{codexFingerprintSeedExtraKey: seed}},
+		{ID: 8, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{codexFingerprintSeedExtraKey: seed}},
+	}}
+
+	updated, failed, err := NewCodexClientIdentityBackfillService(repo).RunOnce(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, failed)
+	require.Equal(t, 2, updated)
+	require.Len(t, repo.written, 2)
+	for _, id := range []int64{2, 7} {
+		got, ok := codexClientIdentityFromExtra(repo.written[id])
+		require.True(t, ok, "account %d", id)
+		require.Equal(t, deriveCodexClientIdentity(seed), got.withoutGeneratedAt())
+	}
 }
 
 // 账号级身份：由种子确定性派生，UA 三处版本同源，形态与 codex-rs 的
@@ -117,13 +209,10 @@ func TestCodexClientIdentityIsSystemManagedAndSchemaChecked(t *testing.T) {
 	prepared := prepareCodexFingerprintExtraForUpdate(account, map[string]any{CodexClientIdentityExtraKey: crafted})
 	got, ok := codexClientIdentityFromExtra(prepared)
 	require.True(t, ok)
-	require.Equal(t, legacyCodexClientIdentity(seed), got.withoutGeneratedAt(), "已有账号保留按种子派生的 v1 身份")
+	require.Equal(t, deriveCodexClientIdentity(seed), got.withoutGeneratedAt())
 	require.NotContains(t, sanitizedCodexFingerprintExtraUpdates(map[string]any{CodexClientIdentityExtraKey: crafted}), CodexClientIdentityExtraKey)
-	created, ok := codexClientIdentityFromExtra(prepareCodexFingerprintExtraForCreate(PlatformOpenAI, AccountTypeOAuth, map[string]any{CodexClientIdentityExtraKey: crafted}))
-	require.True(t, ok)
-	require.Equal(t, deriveCodexClientIdentity(seed), created.withoutGeneratedAt(), "新建账号同样忽略表单身份，落库官方 Windows CLI 参照（v2）")
 
-	mismatched := legacyCodexClientIdentity(seed)
+	mismatched := deriveCodexClientIdentity(seed)
 	mismatched.Sandbox = "seccomp"
 	mismatched.OSType = "Windows"
 	require.False(t, mismatched.valid())
@@ -157,19 +246,12 @@ func TestRefreshAccountTokenSharesForceCodexCLIOverridePolicy(t *testing.T) {
 	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, stub.userAgent, "ForceCodexCLI 时与推理面一样忽略显式 UA")
 }
 
-// legacyCodexClientIdentity 是已有账号（有 ID、未存储身份）按种子派生的 v1 身份；
-// 不带账号的 deriveCodexClientIdentity 表示新建账号，得到官方 Windows CLI 参照（v2）。
-func legacyCodexClientIdentity(seed string) codexClientIdentity {
-	result, _ := invokeCodexIdentityPolicyForAccount(context.Background(), nil, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed, Preset: "legacy"})
-	return codexClientIdentity(result.Profile)
-}
-
-// codexTestSeedForOS 返回一个让已有账号派生出指定操作系统身份的合法种子（确定性搜索）。
+// codexTestSeedForOS 返回一个派生出指定操作系统身份的合法种子（确定性搜索）。
 func codexTestSeedForOS(t *testing.T, osType string) string {
 	t.Helper()
 	for i := 0; i < 4096; i++ {
 		seed := fmt.Sprintf("00000000-0000-4000-8000-%012d", i)
-		if legacyCodexClientIdentity(seed).OSType == osType {
+		if deriveCodexClientIdentity(seed).OSType == osType {
 			return seed
 		}
 	}

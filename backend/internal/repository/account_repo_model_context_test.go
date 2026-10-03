@@ -162,7 +162,7 @@ func TestLockAndMergeAccountProbeExtraUsesLockedModelContextValues(t *testing.T)
 				WillReturnRows(sqlmock.NewRows([]string{
 					"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
 					"enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot",
-					"model_context_overrides", "upstream_model_metadata", "current_extra",
+					"model_context_overrides", "upstream_model_metadata", "system_prompt",
 					"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
 				}).AddRow(identityUnchanged, false, true, nil, nil, nil, nil, nil, nil,
 					[]byte(`{"other-model":700000}`), []byte(`{"fresh":true}`), nil, false, nil, nil))
@@ -182,39 +182,47 @@ func TestLockAndMergeAccountProbeExtraUsesLockedModelContextValues(t *testing.T)
 	}
 }
 
-// This path serves every account update: a non-object stored extra must not
-// fail the edit, only skip carrying locked values over. Data of the retired
-// Codex route acquisition supplied by the editor or an import is never written.
-func TestLockAndMergeAccountExtraDegradesOnUnparsableExtra(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
-	t.Cleanup(func() { _ = client.Close() })
-	mock.ExpectQuery(`(?s)SELECT.*FOR NO KEY UPDATE`).
-		WithArgs(int64(41), service.PlatformOpenAI, service.AccountTypeOAuth, `{"access_token":"test"}`, nil).
-		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "model_context_overrides", "upstream_model_metadata", "current_extra", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot"}).
-			AddRow(true, false, true, nil, nil, nil, nil, nil, nil, nil, nil, []byte(`[1,2,3]`), false, nil, nil))
-	account := &service.Account{ID: 41, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Credentials: map[string]any{"access_token": "test"}, Extra: map[string]any{"plugin_account_projections": map[string]any{"codexrip.codex-runtime": map[string]any{"forged": true}}, "codex_turn_ticket:gpt-6-astra": map[string]any{"state": "forged"}, "codex_harvest_proxy_url": "http://proxy.example.test:8080", "new_admin_setting": true}}
-	extra, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
-	require.NoError(t, err, "unparsable extra must not fail the account update")
-	require.Equal(t, true, extra["new_admin_setting"])
-	for _, key := range []string{"plugin_account_projections", "codex_turn_ticket:gpt-6-astra", "codex_harvest_proxy_url"} {
-		require.NotContains(t, extra, key)
-	}
-	require.NoError(t, mock.ExpectationsWereMet())
-}
+// The system prompt binding is written only by its own endpoint: an account
+// update keeps what is stored under the row lock, its absence included,
+// whatever the editor submitted.
+func TestLockAndMergeAccountProbeExtraKeepsLockedSystemPromptBinding(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		locked []byte
+		want   any
+	}{
+		{name: "stored binding", locked: []byte(`{"mode":"off"}`), want: map[string]any{"mode": "off"}},
+		{name: "no stored binding"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = db.Close() })
+			client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+			t.Cleanup(func() { _ = client.Close() })
+			mock.ExpectQuery(`(?s)SELECT.*extra -> 'system_prompt'.*FOR NO KEY UPDATE`).
+				WithArgs(int64(41), service.PlatformOpenAI, service.AccountTypeOAuth, `{"access_token":"test"}`, nil).
+				WillReturnRows(sqlmock.NewRows([]string{
+					"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
+					"enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot",
+					"model_context_overrides", "upstream_model_metadata", "system_prompt",
+					"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
+				}).AddRow(true, false, true, nil, nil, nil, nil, nil, nil, nil, nil, test.locked, false, nil, nil))
+			account := &service.Account{ID: 41, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Credentials: map[string]any{"access_token": "test"},
+				Extra: map[string]any{"new_admin_setting": true, service.AccountExtraSystemPromptKey: map[string]any{"mode": "custom", "prompt_id": "stale"}}}
 
-// Like migration 263, only the codexrip.codex-runtime projection goes; another
-// plugin's entry and a key that merely shares a name stay.
-func TestWithoutRetiredCodexTicketExtraKeepsOtherEntries(t *testing.T) {
-	kept := map[string]any{"codex_turn_ticket_summary": "not the retired prefix", "plugin_account_projections": map[string]any{"acme.other-plugin": true}}
-	require.Equal(t, kept, withoutRetiredCodexTicketExtra(kept))
-	require.Equal(t, kept, withoutRetiredCodexTicketExtra(map[string]any{
-		"codex_turn_ticket_summary":        "not the retired prefix",
-		"codex_ticket_runtime:gpt-6-astra": map[string]any{"phase": "ready"},
-		"plugin_account_projections":       map[string]any{"codexrip.codex-runtime": map[string]any{"identity": "owner"}, "acme.other-plugin": true},
-	}))
+			extra, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
+
+			require.NoError(t, err)
+			require.Equal(t, true, extra["new_admin_setting"])
+			if test.want == nil {
+				require.NotContains(t, extra, service.AccountExtraSystemPromptKey)
+			} else {
+				require.Equal(t, test.want, extra[service.AccountExtraSystemPromptKey])
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestShouldEnqueueSchedulerOutboxForExtraUpdatesModelContextKeys(t *testing.T) {
@@ -242,7 +250,7 @@ func TestUpdateAccountModelContextPatchClearsOnlyAfterSuccessfulWrite(t *testing
 				WillReturnRows(sqlmock.NewRows([]string{
 					"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
 					"enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot",
-					"model_context_overrides", "upstream_model_metadata", "current_extra",
+					"model_context_overrides", "upstream_model_metadata", "system_prompt",
 					"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
 				}).AddRow(true, false, true, nil, nil, nil, nil, nil, nil,
 					[]byte(`{"other-model":700000}`), []byte(`{"fresh":true}`), nil, false, nil, nil))

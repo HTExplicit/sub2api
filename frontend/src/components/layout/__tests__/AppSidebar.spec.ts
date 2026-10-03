@@ -68,7 +68,6 @@ describe('AppSidebar extensions section', () => {
     expect(componentSource).toContain("{{ t('nav.extensions') }}")
     expect(componentSource).not.toContain('/admin/cindy-accounts')
     expect(componentSource).toContain("items.push({ path: '/admin/codex-runtime'")
-    expect(componentSource).not.toContain('pluginExtensions')
     expect(componentSource).toContain("path: '/image-studio'")
   })
 

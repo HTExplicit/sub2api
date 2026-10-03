@@ -1544,8 +1544,8 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 }
 
 // restoreCodexEventStreamContentType 为缺少 Content-Type 的 ChatGPT Codex /responses 流补回
-// text/event-stream。ChatGPT 边缘自 2026-09-23 起不再为这类 SSE 响应发送该头，而模型声明校验、
-// 工具名映射和图片流等消费方都按它识别流；请求声明接受 SSE 且上游 200 时响应体就是 SSE。
+// text/event-stream。ChatGPT 边缘自 2026-09-23 起不再为这类 SSE 响应发送该头，而工具名映射
+// 和图片流等消费方都按它识别流；请求声明接受 SSE 且上游 200 时响应体就是 SSE。
 func restoreCodexEventStreamContentType(resp *http.Response) {
 	if resp == nil || resp.StatusCode != http.StatusOK || resp.Header == nil || resp.Header.Get("Content-Type") != "" {
 		return

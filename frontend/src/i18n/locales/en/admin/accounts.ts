@@ -923,8 +923,7 @@ export default {accounts: {
         codexCLIOnlyAppServerDesc:
           "Effective only when the switch above is on. When enabled, this account also allows third-party clients that embed the Codex engine over the app-server protocol (e.g. Claude Code's codex plugin); they still pass the global engine-fingerprint gate. OR-combined with the global app-server toggle.",
         codexFingerprintMode: 'Codex fingerprint convergence',
-        codexFingerprintModeDesc: 'When multiple users share the same OAuth account, converge device/session identifiers to account-level stable values to reduce upstream-visible device and session count. Default follows the backend/plugin policy; an explicit choice overrides it. Device only presents a single installation upstream, paired with the account-level Codex client identity. Choose Off to pass client identifiers through as-is.',
-        codexFingerprintDefault: 'Default (follow backend)',
+        codexFingerprintModeDesc: 'When multiple users share the same OAuth account, converge device/session identifiers to account-level stable values to reduce upstream-visible device and session count. Defaults to "Device only": one account presents a single installation upstream, paired with the account-level Codex client identity. Choose Off to pass client identifiers through as-is.',
         codexFingerprintOff: 'Off (passthrough)',
         codexFingerprintDevice: 'Device only',
         codexFingerprintSession: 'Device + Session',
@@ -1895,6 +1894,7 @@ export default {accounts: {
         reasonFailed: 'The test did not finish successfully',
         reasonIncomplete: 'The answer did not finish',
         reasonNoNumber: 'No final answer number found',
+        reasonModelDiffers: 'The upstream declared a different model than requested',
         finalAnswer: 'Final answer',
         reasoningTokens: 'Reasoning tokens',
         notReported: 'Not reported',
@@ -1904,7 +1904,7 @@ export default {accounts: {
         modelMatches: 'Matches the requested model',
         modelDiffers: 'Differs from the requested model {model}',
         reasoningTokensHint: 'Exactly {tokens} reasoning tokens: every such answer in our records was wrong',
-        note: 'The first verdict only looks at the final number; it is a hint and does not affect scheduling.'
+        note: 'The first verdict looks at the final number and the model the upstream declared; it is a hint and does not affect scheduling.'
       },
       usageWindow: {
         statsTitle: '5-Hour Window Usage Statistics',

@@ -42,7 +42,6 @@ func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *tes
 	svc := &AccountTestService{
 		httpUpstream:  upstream,
 		pluginManager: manager,
-		cfg:           &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}},
 	}
 	account := &Account{
 		ID:       53,
@@ -55,7 +54,8 @@ func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *tes
 		},
 	}
 
-	err := svc.testOpenAIImageOAuth(c, withCodexTransportFixture(context.Background(), true), account, "gpt-image-1", "draw a cat")
+	enableCodexRequestZstd(t)
+	err := svc.testOpenAIImageOAuth(c, context.Background(), account, "gpt-image-1", "draw a cat")
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))

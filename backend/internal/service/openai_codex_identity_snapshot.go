@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
@@ -17,8 +16,6 @@ import (
 // process state published by NewOpenAIGatewayService, so the snapshot describes
 // the policy that was actually active in this process.
 type codexIdentitySnapshot struct {
-	ProfileSource             string    `json:"profile_source"`
-	ProfileSchema             int       `json:"profile_schema"`
 	SchemaVersion             int       `json:"v"`
 	AccountID                 int64     `json:"account_id"`
 	IdentityAccountID         int64     `json:"identity_account_id"`
@@ -59,9 +56,7 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 		UAOverridePresent:  strings.TrimSpace(overrideUA) != "",
 	}
 	if source != nil && source.IsOpenAIOAuthLike() {
-		if plan, err := codexTransportPlan(ctx, source.Type, source.ID, extensionv1.CodexTransportQuery{}); err == nil {
-			snapshot.ZstdEnabled = plan.Enabled
-		}
+		snapshot.ZstdEnabled = codexRequestZstd.Load()
 	}
 	if routed != nil {
 		snapshot.AccountID = routed.ID
@@ -88,17 +83,10 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 		}
 	}
 	if source != nil {
-		if profile, ok := source.codexClientIdentityContext(ctx); ok {
-			snapshot.ProfileSchema = profile.Version
-			snapshot.ProfileSource = profile.Source
-			if snapshot.ProfileSource == "" {
-				snapshot.ProfileSource = "legacy_generated"
-			}
-		}
 		snapshot.IdentityAccountID = source.ID
 		snapshot.AccountRevision = source.UpdatedAt
 		snapshot.IdentityPersisted = func() bool {
-			_, ok := codexClientIdentityFromExtraContext(ctx, source, source.Extra)
+			_, ok := codexClientIdentityFromExtra(source.Extra)
 			return ok
 		}()
 	}
@@ -115,7 +103,7 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 			snapshot.IdentitySource = "override_ua"
 		}
 	} else if source != nil {
-		if accountIdentity, ok := source.codexClientIdentityContext(ctx); ok && accountIdentity.userAgentForAccountContext(ctx, source, identity.version) == identity.userAgent {
+		if accountIdentity, ok := source.CodexClientIdentity(); ok && accountIdentity.UserAgent(identity.version) == identity.userAgent {
 			snapshot.IdentitySource = "account"
 		}
 	}

@@ -56,19 +56,19 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 			plugin: NativeRetirementPlugin{Key: "codexrip.account-tools", State: "enabled", Manifest: json.RawMessage(`{"capabilities":[{"id":"extensions.admin.v1","platform":"*","account_type":"*"}]}`)}, wantErr: true,
 		},
 		{
-			name: "Codex separately bound OAuth and setup tokens stay equivalent",
-			plugin: NativeRetirementPlugin{Key: "codexrip.codex-runtime", State: "enabled", Manifest: json.RawMessage(`{"capabilities":[{"id":"extensions.request.v1","platform":"openai","account_type":"oauth"},{"id":"extensions.request.v1","platform":"openai","account_type":"setup-token"}]}`), Bindings: []NativeRetirementBinding{
-				{Capability: "extensions.request.v1", Platform: "openai", AccountType: "oauth", Enabled: true, RolloutPercent: 100},
-				{Capability: "extensions.request.v1", Platform: "openai", AccountType: "setup-token", Enabled: true, RolloutPercent: 100},
+			name: "fully bound prompt skills, platform-scoped request included, stay equivalent",
+			plugin: NativeRetirementPlugin{Key: "codexrip.prompt-skills", State: "enabled", Manifest: json.RawMessage(`{"capabilities":[{"id":"extensions.admin.v1","platform":"*","account_type":"*"},{"id":"extensions.request.v1","platform":"openai","account_type":"*"}]}`), Bindings: []NativeRetirementBinding{
+				{Capability: "extensions.admin.v1", Platform: "*", AccountType: "*", Enabled: true, RolloutPercent: 100},
+				{Capability: "extensions.request.v1", Platform: "openai", AccountType: "*", Enabled: true, RolloutPercent: 100},
 			}},
 		},
 		{
 			name:   "unfinished update cannot be retired",
-			plugin: NativeRetirementPlugin{Key: "codexrip.codex-runtime", State: "updating"}, wantErr: true,
+			plugin: NativeRetirementPlugin{Key: "codexrip.model-policy", State: "updating"}, wantErr: true,
 		},
 		{
-			name:   "disabled whole Codex domain needs an explicit decision",
-			plugin: NativeRetirementPlugin{Key: "codexrip.codex-runtime", State: "disabled"}, wantErr: true,
+			name:   "disabled whole domain without a native switch needs an explicit decision",
+			plugin: NativeRetirementPlugin{Key: "codexrip.model-policy", State: "disabled"}, wantErr: true,
 		},
 		{
 			name:   "missing capability scope is rejected",

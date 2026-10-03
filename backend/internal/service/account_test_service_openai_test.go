@@ -29,8 +29,6 @@ type queuedHTTPUpstream struct {
 	tlsFlags  []bool
 }
 
-// OAuth Codex account tests share business traffic's entry point Do. API-key
-// probes use DoWithTLS.
 func (u *queuedHTTPUpstream) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
 	return u.serve(req, nil)
 }
@@ -199,7 +197,7 @@ func TestAccountTestService_EmptyModelKeepsOpenAIDefault(t *testing.T) {
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()
-	ctx.Request = ctx.Request.WithContext(withCodexTransportFixture(ctx.Request.Context(), true))
+	enableCodexRequestZstd(t)
 
 	resp := newJSONResponse(http.StatusOK, "")
 	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"OK"}
@@ -216,11 +214,7 @@ data: {"type":"response.completed"}
 
 	repo := &openAIAccountTestRepo{}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
-	svc := &AccountTestService{
-		accountRepo:  repo,
-		httpUpstream: upstream,
-		cfg:          &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}},
-	}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream}
 	account := &Account{
 		ID:          89,
 		Platform:    PlatformOpenAI,
@@ -273,28 +267,6 @@ data: {"type":"response.completed"}
 	body, err := io.ReadAll(upstream.requests[0].Body)
 	require.NoError(t, err)
 	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(body, "model").String())
-}
-
-func TestAccountTestService_OpenAIOAuthGuardsDeclaredModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for declared, matches := range map[string]bool{"gpt-5.4": true, "gpt-5.5": false} {
-		ctx, recorder := newTestContext()
-		resp := newJSONResponse(http.StatusOK, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\n"+
-			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"model\":\""+declared+"\"}}\n\n")
-		upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
-		svc := &AccountTestService{httpUpstream: upstream, openAIGatewayService: &OpenAIGatewayService{cfg: &config.Config{}}}
-		account := &Account{ID: 91, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1, Credentials: map[string]any{"access_token": "test-token"}}
-		err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
-		require.Len(t, upstream.requests, 1)
-		if matches {
-			require.NoError(t, err)
-			require.Contains(t, recorder.Body.String(), "test_complete")
-			continue
-		}
-		// Like business traffic, the test fails when the reply declares another model.
-		require.ErrorContains(t, err, ErrCodexModelMismatch.Error())
-		require.NotContains(t, recorder.Body.String(), `"success":true`)
-	}
 }
 
 func TestAccountTestService_OpenAIShadowUsesParentCredentialsAndShadowModel(t *testing.T) {

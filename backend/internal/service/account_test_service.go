@@ -974,37 +974,29 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	credentialAccount.ApplyHeaderOverrides(req.Header)
-	if isOAuth && !account.IsCredentialShadow() && s.openAIGatewayService != nil {
-		req = withCodexExpectedModel(req, upstreamTestModelID)
-	}
 
 	// Get proxy URL
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	var codexWireObserved bool
 	if isOAuth {
-		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
-		req = req.WithContext(withCodexWireObserver(req.Context(), func(wire *http.Request) {
-			codexWireObserved = true
-			snapshot := base.withWire("http", wire.Header)
-			s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
-			s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(wire.Header)})
-		}))
-	}
-
-	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
-	if isOAuth && !codexWireObserved {
+		// Report the request this test puts on the wire before it is sent. A
+		// plugin round trip takes the plaintext request; every other send goes
+		// out as the transport copy prepared here, which the sender passes on.
 		transport := "http"
 		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
 			transport = "plugin"
+		} else if req, err = prepareOpenAICodexWireRequest(req, account); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 		}
 		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		snapshot := base.withWire(transport, req.Header)
 		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
 		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(req.Header)})
 	}
+
+	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -3042,7 +3034,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 		proxyURL = account.Proxy.URL()
 	}
 	// 复用压缩准备，但保留图像探针原来的直接 Do 路由；不顺带启用插件或 TLS 回退。
-	wire, err := prepareCodexTransport(req, credentialAccount)
+	wire, err := prepareOpenAICodexWireRequest(req, credentialAccount)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
 	}

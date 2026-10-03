@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -99,35 +98,25 @@ func TestAccountTestPromptAdaptiveAndOpenCodeFinalRequests(t *testing.T) {
 }
 
 // An OAuth account test sends the mapped model over the ordinary transport
-// and reports the final wire headers once, without Authorization. No Cookie
-// or turn-state material reaches the wire, and dormant route-qualification
-// extra keys change nothing.
+// and reports the final wire headers once, without Authorization.
 func TestAccountTestPromptOAuthMappedModelReportsFinalWire(t *testing.T) {
-	cfg := &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}}
-	a := codexOAuthTestAccount(41)
+	a := &Account{ID: 41, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"access_token": "tok", "chatgpt_account_id": "acc-1"}}
 	a.Status = StatusActive
 	a.Credentials["access_token"] = "account-test-access-token-canary"
 	a.Credentials["model_mapping"] = map[string]any{"alias": "gpt-5.6-sol"}
-	a.Credentials["header_override_enabled"] = true
-	a.Credentials["header_overrides"] = map[string]any{openAICodexTurnStateHeader: "header-override-state"}
-	a.Extra = map[string]any{"codex_turn_ticket:gpt-5.6-sol": map[string]any{"state": "dormant-state"}, "plugin_account_projections": map[string]any{NativeCodexPluginKey: map[string]any{"scheduling": map[string]any{"gpt-5.6-sol": map[string]any{"effect": "deny"}}}}}
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"model\":\"gpt-5.6-sol\"}}\n\n")}}
-	gateway := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, accountRepo: &codexAccountRepositoryFixture{account: a}, nativeCodexRuntime: nativeCodexTestRuntime(t)}
-	svc := &AccountTestService{cfg: cfg, httpUpstream: upstream, openAIGatewayService: gateway}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")}}
+	svc := &AccountTestService{httpUpstream: upstream}
 	c, rec := newTestContext()
 	prompt := "你的知识库库截止日期是什么时间,直接回复不要联网"
-	c.Request = c.Request.WithContext(withCodexTransportFixture(c.Request.Context(), true))
+	enableCodexRequestZstd(t)
 	require.NoError(t, svc.testOpenAIAccountConnection(c, a, "alias", prompt, ""))
 	require.Len(t, upstream.requests, 1)
 	req := upstream.requests[0]
-	require.Empty(t, req.Header.Get("Cookie"))
-	require.Empty(t, req.Header.Get(openAICodexTurnStateHeader), "turn-state material never reaches the wire")
 	raw, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	body := zstdDecodeForTest(t, raw)
 	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(body, "model").String())
 	require.Equal(t, prompt, gjson.GetBytes(body, "input.0.content.0.text").String())
-	require.NotContains(t, rec.Body.String(), "dormant-state")
 	// The reported wire headers leave out Authorization: the access token went
 	// on the wire but never appears in the test output.
 	require.Equal(t, "Bearer account-test-access-token-canary", req.Header.Get("Authorization"))
@@ -145,5 +134,4 @@ func TestAccountTestPromptOAuthMappedModelReportsFinalWire(t *testing.T) {
 	for name := range wireHeaders {
 		require.False(t, strings.EqualFold(name, "Authorization"), "Authorization is never reported")
 	}
-	require.NotContains(t, rec.Body.String(), "Codex ticket")
 }

@@ -1,26 +1,6 @@
 package service
 
-import (
-	"context"
-	"net/http"
-)
-
-type codexWireObserverKey struct{}
-
-func withCodexWireObserver(ctx context.Context, observer func(*http.Request)) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, codexWireObserverKey{}, observer)
-}
-
-func codexWireObserverFromContext(ctx context.Context) func(*http.Request) {
-	if ctx == nil {
-		return nil
-	}
-	observer, _ := ctx.Value(codexWireObserverKey{}).(func(*http.Request))
-	return observer
-}
+import "net/http"
 
 func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 	s.pluginManager = manager
@@ -41,7 +21,7 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 // doOpenAIAccountTestUpstream 让 OpenAI OAuth 账号测试与真实转发使用同一插件路径。
 // API Key 和未命中插件的账号保持各自原有的 HTTPUpstream 行为。未命中插件时，发往
 // /backend-api/codex/responses 的 OAuth POST 与真实转发（doOpenAICodexUpstream）走同一
-// zstd 压缩准备函数、同一模型声明校验；TLS 指纹 / 代理 / 凭据来源不变。
+// zstd 压缩准备函数；TLS 指纹 / 代理 / 凭据来源不变。
 func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	request *http.Request,
 	proxyURL string,
@@ -56,14 +36,11 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	}
 	// 插件 round-trip 有意拿到明文请求；zstd 压缩是网关传输层的事，只在真正经
 	// HTTPUpstream 发出的副本上做。
-	wire, err := prepareCodexTransport(request, account)
+	wire, err := prepareOpenAICodexWireRequest(request, account)
 	if err != nil {
 		return nil, err
 	}
-	if observer := codexWireObserverFromContext(wire.Context()); observer != nil {
-		observer(wire)
-	}
-	if useTLSFallback && !account.IsOpenAIOAuthLike() {
+	if useTLSFallback {
 		return s.httpUpstream.DoWithTLS(
 			wire,
 			proxyURL,
@@ -72,12 +49,5 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 			s.tlsFPProfileService.ResolveTLSProfile(account),
 		)
 	}
-	response, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
-	if err == nil && isCodexCredentialOwner(account) && s.openAIGatewayService != nil {
-		s.openAIGatewayService.observeCodexWire(wire.Context(), account, wire, response, "http")
-		// The same model guard as doOpenAICodexUpstream: the reply must declare
-		// the model under test.
-		s.openAIGatewayService.guardCodexResponseModel(wire, account, response)
-	}
-	return response, err
+	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -31,13 +32,29 @@ type QuotaEstimateRepository interface {
 	ReadQuotaEstimate(context.Context, int64, string, string) (*QuotaEstimateObservation, *QuotaEstimateObservation, error)
 }
 
+// quotaEstimateOwnerIdentity identifies the principal behind an account's
+// credential. Token refresh changes access/refresh tokens, not the owner; a
+// reauthorization to another principal changes it. Stored estimates are bound
+// to this value, so its formula must stay stable.
+func quotaEstimateOwnerIdentity(a *Account) string {
+	if a == nil {
+		return ""
+	}
+	parts := []string{a.Platform, a.Type, a.GetCredential("chatgpt_account_id"), a.GetCredential("chatgpt_user_id"), a.GetCredential("organization_id")}
+	if parts[2] == "" && parts[3] == "" {
+		parts = append(parts, a.GetCredential("email"))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
 func quotaEstimateIdentity(account *Account) string {
 	if account == nil {
 		return ""
 	}
 	// Account-rate changes start a new calibration. The owner identity excludes
 	// access-token refreshes, which do not represent a different subscription.
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%.17g", CodexCredentialOwnerIdentity(account), account.BillingRateMultiplier())))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%.17g", quotaEstimateOwnerIdentity(account), account.BillingRateMultiplier())))
 	return hex.EncodeToString(sum[:])
 }
 

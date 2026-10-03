@@ -64,9 +64,6 @@ func (h *AccountHandler) PrepareAccountJob(
 	job *service.AccountJob,
 	raw json.RawMessage,
 ) (context.Context, func(), error) {
-	if err := service.ValidateRecordedAccountJob(job, raw); err != nil {
-		return ctx, nil, err
-	}
 	if h == nil || job == nil || job.Kind != service.AccountJobKindImportData {
 		return ctx, func() {}, nil
 	}

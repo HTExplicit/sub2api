@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -25,9 +24,9 @@ func TestAccountTestReasoningSurvivesMappingAndWireCompression(t *testing.T) {
 	a := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
 		Credentials: map[string]any{"access_token": "test-access", "model_mapping": map[string]any{"friendly": "gpt-6-astra"}}}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")}}
-	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: a}, httpUpstream: upstream, cfg: &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}}}
+	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: a}, httpUpstream: upstream}
 	c, rec := newTestContext()
-	c.Request = c.Request.WithContext(withCodexTransportFixture(c.Request.Context(), true))
+	enableCodexRequestZstd(t)
 	require.NoError(t, svc.TestAccountConnection(c, a.ID, "friendly", "test", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "ultra"}))
 	require.Len(t, upstream.requests, 1)
 	raw, err := io.ReadAll(upstream.requests[0].Body)

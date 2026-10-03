@@ -50,14 +50,13 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactOAuthSuccessPersi
 	svc := &AccountTestService{
 		accountRepo:  repo,
 		httpUpstream: upstream,
-		// 原生 v2 探测走普通 /responses 线，与真实转发同一 zstd 压缩边界。
-		cfg: &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}},
 	}
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", bytes.NewReader(nil))
-	c.Request = c.Request.WithContext(withCodexTransportFixture(c.Request.Context(), true))
+	// 原生 v2 探测走普通 /responses 线，与真实转发同一 zstd 压缩边界。
+	enableCodexRequestZstd(t)
 
 	err := svc.TestAccountConnection(c, account.ID, "gpt-5.4", "", AccountTestModeCompact)
 	require.NoError(t, err)

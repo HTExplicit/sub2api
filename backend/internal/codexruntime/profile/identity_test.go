@@ -1,8 +1,7 @@
 package profile
 
 import (
-	"context"
-	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -23,34 +22,14 @@ func TestIdentityPolicyPreservesDeterminismAndProtocolPairing(t *testing.T) {
 	if bad.valid() {
 		t.Fatal("header injection accepted")
 	}
-	query, _ := json.Marshal(extensionv1.CodexIdentityQuery{Profile: extensionv1.CodexClientProfile(first), Version: "0.150.0\r\nx: value"})
-	_, err := Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.identity.agent", Payload: query})
-	if err == nil {
+	if _, err := UserAgent(extensionv1.CodexClientProfile(first), "0.150.0\r\nx: value"); !errors.Is(err, ErrInvalidVersion) {
 		t.Fatal("invalid version accepted")
 	}
-}
-
-func TestIdentityCapturedDefaultPreservesExplicitLegacyProfiles(t *testing.T) {
-	query, _ := json.Marshal(extensionv1.CodexIdentityQuery{Seed: "account-seed"})
-	result, err := Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.identity.derive", Payload: query})
-	if err != nil {
-		t.Fatal(err)
+	if _, err := UserAgent(extensionv1.CodexClientProfile(bad), "0.150.0"); err == nil {
+		t.Fatal("invalid profile accepted")
 	}
-	var value extensionv1.CodexIdentityResult
-	if json.Unmarshal(result.Payload, &value) != nil || value.Profile.Version != 2 || value.Profile.Source != "reference_derived_windows_cli" {
-		t.Fatal("new account did not receive explicit captured-reference profile")
-	}
-	profile := codexClientIdentity(value.Profile)
-	if !profile.valid() || !strings.HasPrefix(profile.UserAgent("0.145.0"), "codex_exec/0.156.0 ") {
-		t.Fatal("captured reference version changed")
-	}
-	legacy := deriveCodexClientIdentity("old-seed")
-	query, _ = json.Marshal(extensionv1.CodexIdentityQuery{Seed: "old-seed", Profile: extensionv1.CodexClientProfile(legacy), Version: "0.156.0"})
-	result, err = Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.identity.plan", Payload: query})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if json.Unmarshal(result.Payload, &value) != nil || value.Profile.Version != 1 || value.Profile.OSType != legacy.OSType || !strings.HasPrefix(value.UserAgent, "codex-tui/0.156.0 ") {
-		t.Fatal("legacy profile was silently migrated")
+	typed := Derive("1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55")
+	if got, err := UserAgent(typed, "0.150.0"); err != nil || got != ua || !Valid(typed) || SandboxForUserAgent(ua) != first.Sandbox {
+		t.Fatal("typed calls disagree with the profile")
 	}
 }

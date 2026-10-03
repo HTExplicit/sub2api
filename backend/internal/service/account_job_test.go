@@ -262,34 +262,6 @@ type accountJobTestExecutor struct {
 	cleanupCalls     int
 }
 
-// A row of a kind this version has no executor for (written by another
-// version) stays readable, but nothing can submit or retry that kind.
-func TestAccountJobRetiredKindsStayReadableButCannotRun(t *testing.T) {
-	for _, kind := range []string{"kind_from_another_version"} {
-		t.Run(kind, func(t *testing.T) {
-			repo := newAccountJobTestRepo()
-			jobs := NewAccountJobService(repo, accountJobTestCipher{})
-			_, _, err := jobs.Submit(context.Background(), 9, kind, "new", json.RawMessage(`{}`), nil, []AccountJobItemSeed{{Ordinal: 1}})
-			require.Error(t, err)
-			old, _, err := repo.Create(context.Background(), CreateAccountJobParams{CreatedBy: 9, Kind: kind, IdempotencyKey: "old",
-				PayloadCipher: "cipher:{}", PayloadExpires: time.Now().Add(time.Hour), Items: []AccountJobItemSeed{{Ordinal: 1}}, Attempt: 1})
-			require.NoError(t, err)
-			repo.jobs[old.ID].Status = AccountJobStatusFailed
-			repo.jobs[old.ID].FailedCount = 1
-			repo.items[old.ID][0].Status = AccountJobItemStatusFailed
-
-			stored, err := jobs.Get(context.Background(), old.ID)
-			require.NoError(t, err)
-			require.Equal(t, kind, stored.Kind)
-			require.False(t, stored.RetryEligible)
-			require.Equal(t, "kind_unsupported", stored.RetryUnavailableReason)
-			_, _, err = jobs.RetryFailed(context.Background(), old.ID, 9, "retry")
-			require.ErrorIs(t, err, ErrAccountJobNotRetryable)
-			require.Len(t, repo.jobs, 1)
-		})
-	}
-}
-
 func (e *accountJobTestExecutor) PrepareAccountJob(ctx context.Context, _ *AccountJob, _ json.RawMessage) (context.Context, func(), error) {
 	e.prepareCalls++
 	return ctx, func() { e.cleanupCalls++ }, nil
