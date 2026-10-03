@@ -22,7 +22,8 @@ const (
 // they must not fall through to testClaudeAccountConnection (which would send
 // the key to /v1/messages and could misclassify the account).
 // Like every connection test downstream, a failure reports the upstream text
-// as it is: the transport error and the whole response body.
+// as it is (the transport error and the whole response body), and success
+// needs a valid protocol terminal: the answer to the question this test asks.
 func (s *AccountTestService) testTypeSafeAccountConnection(c *gin.Context, account *Account, prompt string) error {
 	ctx := c.Request.Context()
 	if account.Type != AccountTypeAPIKey {
@@ -87,11 +88,17 @@ func (s *AccountTestService) testTypeSafeAccountConnection(c *gin.Context, accou
 		return s.sendErrorAndEnd(c, errMsg)
 	}
 
-	decoded, err := typesafe.DecodeSystemOneResponse(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid System One response: %s", err.Error()))
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to read response: %s", err.Error()))
 	}
-	s.sendEvent(c, TestEvent{Type: "content", Text: truncateString(string(decoded.Body), typeSafeTestMaxPreviewBytes)})
+	// A relay or a wrong base URL can answer 200 with any JSON, and a passed
+	// test recovers the account's error and rate-limit state. The account
+	// passes only when System One answered the question that was asked.
+	if _, err := typesafe.NoulScore(body, typeSafeTestQuestionID); err != nil {
+		return s.sendTestFailure(c, accountTestTerminal("Invalid System One response: %s: %s", err.Error(), string(body)))
+	}
+	s.sendEvent(c, TestEvent{Type: "content", Text: truncateString(string(body), typeSafeTestMaxPreviewBytes)})
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
 }

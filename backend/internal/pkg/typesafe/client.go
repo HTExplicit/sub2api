@@ -162,23 +162,49 @@ func Evaluate(ctx context.Context, client *http.Client, baseURL, key string, inp
 		return nil, resp.StatusCode, fmt.Errorf("typesafe API status %d", resp.StatusCode)
 	}
 	var out struct {
-		Model   string `json:"model"`
-		Usage   Usage  `json:"usage"`
-		Answers map[string]struct {
-			Type string   `json:"type"`
-			Noul *float64 `json:"noul"`
-		} `json:"answers"`
+		Model   string      `json:"model"`
+		Usage   Usage       `json:"usage"`
+		Answers noulAnswers `json:"answers"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil || strings.TrimSpace(out.Model) == "" {
 		return nil, resp.StatusCode, errors.New("typesafe invalid response")
 	}
 	result := &Result{Model: out.Model, Usage: out.Usage, Scores: make(map[string]float64, len(input.Questions))}
 	for id := range input.Questions {
-		answer, ok := out.Answers[id]
-		if !ok || answer.Type != "noul" || answer.Noul == nil || math.IsNaN(*answer.Noul) || math.IsInf(*answer.Noul, 0) || *answer.Noul < 0 || *answer.Noul > 1 {
-			return nil, resp.StatusCode, fmt.Errorf("typesafe invalid answer for %s", id)
+		score, err := out.Answers.score(id)
+		if err != nil {
+			return nil, resp.StatusCode, err
 		}
-		result.Scores[id] = *answer.Noul
+		result.Scores[id] = score
 	}
 	return result, resp.StatusCode, nil
+}
+
+// noulAnswers is the answers object of a System One response as far as noul
+// questions read it.
+type noulAnswers map[string]struct {
+	Type string   `json:"type"`
+	Noul *float64 `json:"noul"`
+}
+
+// score is the one definition of a valid noul answer: the question was
+// answered, as type "noul", with a probability between 0 and 1.
+func (a noulAnswers) score(id string) (float64, error) {
+	answer, ok := a[id]
+	if !ok || answer.Type != "noul" || answer.Noul == nil || math.IsNaN(*answer.Noul) || math.IsInf(*answer.Noul, 0) || *answer.Noul < 0 || *answer.Noul > 1 {
+		return 0, fmt.Errorf("typesafe invalid answer for %s", id)
+	}
+	return *answer.Noul, nil
+}
+
+// NoulScore returns the probability a System One response body gives for the
+// noul question id. The answer is validated exactly as Evaluate validates it.
+func NoulScore(body []byte, id string) (float64, error) {
+	var out struct {
+		Answers noulAnswers `json:"answers"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return 0, errors.New("typesafe invalid response")
+	}
+	return out.Answers.score(id)
 }
