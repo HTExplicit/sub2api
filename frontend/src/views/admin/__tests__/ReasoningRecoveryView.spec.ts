@@ -31,6 +31,8 @@ async function mountView() {
 type View = Awaited<ReturnType<typeof mountView>>
 const toggle = (wrapper: View) => wrapper.get('[data-test="reasoning-recovery-enabled"]')
 const saveButton = (wrapper: View) => wrapper.get<HTMLButtonElement>('[data-test="reasoning-recovery-save"]')
+// Every control of the page, in document order.
+const controls = (wrapper: View) => wrapper.findAll('button').map(button => button.attributes('data-test'))
 
 describe('ReasoningRecoveryView', () => {
   beforeEach(() => {
@@ -40,19 +42,20 @@ describe('ReasoningRecoveryView', () => {
     useStepUp.mockReset()
   })
 
-  it('shows no switch until the stored value is loaded, then enables Save only while the draft differs', async () => {
+  it('shows only Save until the stored value is loaded, then the switch, and enables Save only while the draft differs', async () => {
     let answer!: (value: { data: { enabled: boolean } }) => void
     get.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
     const wrapper = await mountView()
 
     expect(get).toHaveBeenCalledWith(path)
     expect(wrapper.text()).toContain('common.loading')
-    expect(wrapper.find('[data-test="reasoning-recovery-enabled"]').exists()).toBe(false)
+    expect(controls(wrapper)).toEqual(['reasoning-recovery-save'])
     expect(saveButton(wrapper).element.disabled).toBe(true)
 
     answer({ data: { enabled: true } })
     await flushPromises()
     expect(wrapper.text()).not.toContain('common.loading')
+    expect(controls(wrapper)).toEqual(['reasoning-recovery-save', 'reasoning-recovery-enabled'])
     expect(toggle(wrapper).attributes('aria-checked')).toBe('true')
     expect(saveButton(wrapper).element.disabled).toBe(true)
 
@@ -93,25 +96,27 @@ describe('ReasoningRecoveryView', () => {
     expect(saveButton(wrapper).element.disabled).toBe(true)
   })
 
-  it('reports a failed or unusable load without showing a value, and loads again on Reload', async () => {
+  it('reports a failed or unusable load without a switch, and reads again only when the page is opened again', async () => {
     get.mockRejectedValueOnce({ message: 'load refused' })
-    const wrapper = await mountView()
+    const refused = await mountView()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('load refused')
-    expect(wrapper.find('[data-test="reasoning-recovery-enabled"]').exists()).toBe(false)
-    expect(saveButton(wrapper).element.disabled).toBe(true)
+    expect(refused.get('[role="alert"]').text()).toBe('load refused')
+    expect(controls(refused)).toEqual(['reasoning-recovery-save'])
+    expect(saveButton(refused).element.disabled).toBe(true)
+    expect(get).toHaveBeenCalledTimes(1)
+    refused.unmount()
 
     get.mockResolvedValueOnce({ data: {} })
-    await wrapper.get('[data-test="reasoning-recovery-reload"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toBe('admin.reasoningRecovery.loadFailed')
-    expect(wrapper.find('[data-test="reasoning-recovery-enabled"]').exists()).toBe(false)
+    const unusable = await mountView()
+    expect(unusable.get('[role="alert"]').text()).toBe('admin.reasoningRecovery.loadFailed')
+    expect(controls(unusable)).toEqual(['reasoning-recovery-save'])
+    unusable.unmount()
 
     get.mockResolvedValueOnce({ data: { enabled: false } })
-    await wrapper.get('[data-test="reasoning-recovery-reload"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(toggle(wrapper).attributes('aria-checked')).toBe('false')
+    const reopened = await mountView()
+    expect(get).toHaveBeenCalledTimes(3)
+    expect(reopened.find('[role="alert"]').exists()).toBe(false)
+    expect(toggle(reopened).attributes('aria-checked')).toBe('false')
   })
 
   it('reports a failed save and keeps the draft', async () => {

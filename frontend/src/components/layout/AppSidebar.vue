@@ -709,6 +709,21 @@ const ShieldIcon = {
     )
 }
 
+const RecoveryIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3'
+        })
+      ]
+    )
+}
+
 const PriceTagIcon = {
   render: () =>
     h(
@@ -753,7 +768,7 @@ const consoleThemeIcons: Array<[typeof DashboardIcon, InstanceType<typeof Icon>[
   [BellIcon, 'bell'], [TicketIcon, 'ticket'], [CogIcon, 'cog'], [DocumentIcon, 'document'], [SunIcon, 'sun'],
   [MoonIcon, 'moon'], [ChevronDoubleLeftIcon, 'chevronDoubleLeft'], [ChevronDoubleRightIcon, 'chevronDoubleRight'],
   [OrderIcon, 'clipboardList'], [OrderListIcon, 'receipt'], [SignalIcon, 'signal'], [ShieldIcon, 'shield'],
-  [PriceTagIcon, 'tag'], [ChevronDownIcon, 'chevronDown']
+  [RecoveryIcon, 'undo'], [PriceTagIcon, 'tag'], [ChevronDownIcon, 'chevronDown']
 ]
 for (const [icon, name] of consoleThemeIcons) {
   const upstream = icon.render
@@ -838,7 +853,7 @@ function buildExtensionNavItems(includeAdmin: boolean): NavItem[] {
   if (includeAdmin) {
     items.push({ path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon })
     items.push({ path: '/admin/codex-runtime', label: t('nav.codexRuntime'), icon: PluginIcon })
-    items.push({ path: '/admin/reasoning-recovery', label: t('nav.reasoningRecovery'), icon: ShieldIcon })
+    items.push({ path: '/admin/reasoning-recovery', label: t('nav.reasoningRecovery'), icon: RecoveryIcon })
   }
   items.push({ path: '/image-studio', label: t('nav.imageStudio'), icon: BatchImageIcon, featureFlag: flagImageStudio })
   return items

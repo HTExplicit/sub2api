@@ -128,6 +128,7 @@ const nodes = {
   'activity': [['path', { d: 'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2' }]],
   'clipboard-list': [['rect', { width: '8', height: '4', x: '8', y: '2', rx: '1', ry: '1' }], ['path', { d: 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2' }], ['path', { d: 'M12 11h4' }], ['path', { d: 'M12 16h4' }], ['path', { d: 'M8 11h.01' }], ['path', { d: 'M8 16h.01' }]],
   'receipt-text': [['path', { d: 'M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z' }], ['path', { d: 'M14 8H8' }], ['path', { d: 'M16 12H8' }], ['path', { d: 'M13 16H8' }]],
+  'undo-2': [['path', { d: 'M9 14 4 9l5-5' }], ['path', { d: 'M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11' }]],
   'panel-left-close': [['rect', { width: '18', height: '18', x: '3', y: '3', rx: '2' }], ['path', { d: 'M9 3v18' }], ['path', { d: 'm16 15-3-3 3-3' }]],
   'panel-left-open': [['rect', { width: '18', height: '18', x: '3', y: '3', rx: '2' }], ['path', { d: 'M9 3v18' }], ['path', { d: 'm14 9 3 3-3 3' }]],
   'wallet': [['path', { d: 'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1' }], ['path', { d: 'M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4' }]],
@@ -232,6 +233,7 @@ export const lucideIcons = {
   signal: glyph('activity'), // channel status: the reference Logs pulse line
   clipboardList: glyph('clipboard-list'),
   receipt: glyph('receipt-text'),
+  undo: glyph('undo-2'), // the 推理恢复 entry: the turn-back arrow, like arrow-uturn-left
   chevronDoubleLeft: glyph('panel-left-close'), // collapse the sidebar, the reference's glyph
   chevronDoubleRight: glyph('panel-left-open'),
   banknotes: glyph('wallet'), // the header balance

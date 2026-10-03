@@ -7,7 +7,6 @@ export default {
     scope: 'Applies only to requests actually sent over HTTP/SSE on the native Responses, Compact and Chat-to-Responses paths. Messages, WebSocket (including HTTP ingress routed to WS) and native Chat-only upstreams are not covered. The 24 hours are a logical limit; Redis persistence files and backups may retain historical bytes.',
     save: 'Save',
     saved: 'Reasoning recovery setting saved',
-    reload: 'Refresh',
     loadFailed: 'Loading failed',
     saveFailed: 'Saving failed'
   }

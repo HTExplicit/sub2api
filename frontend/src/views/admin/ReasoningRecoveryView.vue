@@ -6,14 +6,11 @@
           <h1 class="text-xl font-semibold">{{ t('admin.reasoningRecovery.title') }}</h1>
           <p class="text-sm text-muted">{{ t('admin.reasoningRecovery.description') }}</p>
         </div>
-        <div class="flex items-center gap-2">
-          <button type="button" class="btn btn-secondary btn-sm" data-test="reasoning-recovery-reload" :disabled="loading || saving" @click="load">{{ t('admin.reasoningRecovery.reload') }}</button>
-          <button type="button" class="btn btn-primary btn-sm" data-test="reasoning-recovery-save" :disabled="!draft || !dirty || saving || loading" @click="save">{{ t('admin.reasoningRecovery.save') }}</button>
-        </div>
+        <button type="button" class="btn btn-primary btn-sm" data-test="reasoning-recovery-save" :disabled="!draft || !dirty || saving" @click="save">{{ t('admin.reasoningRecovery.save') }}</button>
       </header>
 
       <p v-if="error" role="alert" class="text-sm text-red-600">{{ error }}</p>
-      <p v-if="loading && !draft" class="py-10 text-center text-sm text-muted">{{ t('common.loading') }}</p>
+      <p v-if="loading" class="py-10 text-center text-sm text-muted">{{ t('common.loading') }}</p>
 
       <section v-if="draft && state">
         <label class="flex items-center gap-3">
@@ -53,9 +50,9 @@ function receive(value: ReasoningRecoveryConfig) {
   draft.value = { enabled: value.enabled }
 }
 
+// Read once per visit: after a failed read the page keeps the error and no switch until it is opened again.
 async function load() {
   loading.value = true
-  error.value = ''
   try {
     receive(await reasoningRecoveryAPI.get())
   } catch (value) {

@@ -7,7 +7,6 @@ export default {
     scope: '仅适用于实际 HTTP/SSE 的原生 Responses、Compact 与 Chat→Responses 路径。Messages、WebSocket（包括 HTTP 入口转 WS）、原生 Chat-only 上游不启用。24 小时是逻辑期限，Redis 持久化文件与备份可能保留历史字节。',
     save: '保存',
     saved: '推理恢复设置已保存',
-    reload: '刷新',
     loadFailed: '加载失败',
     saveFailed: '保存失败'
   }
