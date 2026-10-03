@@ -132,6 +132,16 @@ describe('UserDashboardStats 按平台拆分', () => {
     expect(w.text()).toContain('Kimi')
   })
 
+  // Downstream: the order is the concrete platform catalog, so Kimi (a catalog
+  // platform) stays ahead of TypeSafe; only platforms outside it come last.
+  it('TypeSafe 使用 Jev 标签，按平台目录顺序排在 Kimi 之后、未知平台之前', () => {
+    const w = mountStats(
+      makeStats({ total_actual_cost: 0.6, today_actual_cost: 0, by_platform: [usage('acme', 0.1), usage('typesafe', 0.2), usage('kimi', 0.3)] })
+    )
+    expect(cardPlatforms(w)).toEqual(['kimi', 'typesafe', 'acme'])
+    expect(w.text()).toContain('TypeSafe / Jev')
+  })
+
   it('总值大于各平台之和时追加"其他"卡片，且不计入平台计数', () => {
     const w = mountStats(
       makeStats({ total_actual_cost: 1.0, today_actual_cost: 0, by_platform: [usage('anthropic', 0.4)] })
