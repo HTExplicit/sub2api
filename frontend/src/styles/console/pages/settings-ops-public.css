@@ -2408,9 +2408,9 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  *   views/admin/SettingsView.vue (84 switch rows)    data-ui="setting-row"    (3.1)
  *   views/admin/SettingsView.vue (2 matrix rows)     data-ui="quota-row"      (6.x the platform quota matrices)
  *   views/admin/SettingsView.vue:1863                data-ui="card-title-icon" (2.1 the glyph before a card title)
- *   views/admin/SettingsView.vue:6413, 8050, 8103    data-ui="settings-dlg-foot" (10 the inline dialogs' button rows)
+ *   views/admin/SettingsView.vue:6386, 8035, 8088    data-ui="settings-dlg-foot" (10 the inline dialogs' button rows)
  *   views/admin/BackupView.vue:347                   data-ui="r2-table-box"   (the R2 guide's settings table frame)
- *   views/admin/SettingsView.vue:7851, BackupView.vue:203  data-ui="settings-list-box" (6.3 the two lists that can be empty)
+ *   views/admin/SettingsView.vue:7836, BackupView.vue:203  data-ui="settings-list-box" (6.3 the two lists that can be empty)
  * Existing hooks used: .settings-tabs-* (SettingsView), #provider-form (PaymentProviderDialog), data-testid
  * "official-model-catalog*", "image-tools-settings", "observability-settings", "backup-schedule", "retired-plugins",
  * data-test="account-system-prompt-binding" (the per-account binding in the accounts dialogs).
