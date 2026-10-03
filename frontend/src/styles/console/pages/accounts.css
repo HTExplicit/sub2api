@@ -37,7 +37,8 @@
  *                                            hooks (controls.css 3.2, 7.1)
  * Card grid, compact list, the drawer's content, the account forms (#create-account-form, #edit-account-form,
  * #bulk-edit-account-form) and the taxonomy manager rows are reached through their existing ids and data-test
- * attributes. The system prompt binding inside the account dialogs is P3's (settings-ops-public.css). */
+ * attributes, the table's priority control (section 5) through AccountPriorityCell's data-testid attributes. The
+ * system prompt binding inside the account dialogs is P3's (settings-ops-public.css). */
 
 html.flat-theme {
   /* the view switcher's segment: 14px glyph, 10px either side; the frame and inset are controls.css' */
@@ -686,6 +687,29 @@ html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"]:is([
   --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
   --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
   --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
+}
+
+/* 优先级: upstream's quick-adjust control (AccountPriorityCell: − value +; the two steppers show under the pointer or
+   on focus, a click on the value turns it into an input, a change saves by itself). It is the value of the 优先级 line
+   and sits under its label, as the column cannot hold both. The figure keeps the primary tone (above). The steppers
+   are icon buttons, so they take the label tone whatever grey class they carry and the ink under the pointer (the row
+   actions' rule, data.css 12.3); one at the end of the range is the theme's disabled .55 (on the glyph: the button's
+   own opacity is what shows and hides it). The control's 28px box gives 3px back above and below, so the line keeps
+   the pitch of the lines around it. Reached through the component's own static data-testid attributes. */
+html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] {
+  margin-block: -3px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] > button:is([data-testid="account-priority-decrement"], [data-testid="account-priority-increment"]) {
+  color: rgb(var(--ui-data-label));
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] > button:is([data-testid="account-priority-decrement"], [data-testid="account-priority-increment"]):hover:not(:disabled) {
+  color: rgb(var(--ui-data-primary));
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] > button:is([data-testid="account-priority-decrement"], [data-testid="account-priority-increment"]):disabled > svg {
+  opacity: 0.55;
 }
 
 /* ================================================================== 6 · card grid and compact list */

@@ -21,6 +21,7 @@ const {
   reviewDuplicates,
   getAllProxies,
   getAllGroups,
+  updateAccount,
   accountJobsState
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
@@ -37,7 +38,14 @@ const {
   reviewDuplicates: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
+  updateAccount: vi.fn(),
   accountJobsState: { store: null as any }
+}))
+
+// AccountPriorityCell saves through the accounts API module directly.
+vi.mock('@/api/admin/accounts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/admin/accounts')>()),
+  update: updateAccount
 }))
 
 vi.mock('@/stores/accountJobs', async () => {
@@ -146,6 +154,8 @@ const DataTableStub = {
         <slot name="cell-select" :row="row" />
         <slot name="cell-name" :row="row" :value="row.name" />
         <div data-test="taxonomy-cell"><slot name="cell-taxonomy_route" :row="row" /></div>
+        <!-- like DataTable's row: a click that reaches it opens the row -->
+        <div data-test="priority-cell" @click="$emit('row-click', row)"><slot name="cell-priority" :row="row" /></div>
       </div>
     </div>
   `
@@ -419,6 +429,26 @@ describe('admin AccountsView Cockpit console', () => {
     await flushPromises()
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-show')).toBe('true')
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-id')).toBe('1')
+  })
+
+  it('adjusts the priority in its cell without opening the details drawer', async () => {
+    updateAccount.mockReset().mockResolvedValue({ ...account, priority: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+    getById.mockClear()
+
+    await wrapper.get('[data-testid="account-priority-increment"]').trigger('click')
+    await wrapper.get('[data-testid="account-priority-value"]').trigger('click')
+    await wrapper.get('[data-testid="account-priority-input"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="details-drawer"]').exists()).toBe(false)
+    expect(getById).not.toHaveBeenCalled()
+
+    // the row itself still opens the drawer
+    await wrapper.get('[data-test="priority-cell"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="details-drawer"]').text()).toContain('console-account')
+    wrapper.unmount()
   })
 
   it('uses unfiltered taxonomy counts for management and facet counts for navigation', async () => {

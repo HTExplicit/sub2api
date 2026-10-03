@@ -460,8 +460,10 @@
             />
           </template>
           <template #cell-priority="{ row }">
+            <!-- The row opens the details drawer on a click; the stepper and its inline input keep theirs. -->
             <AccountPriorityCell
               :account="row"
+              @click.stop
               @updated="handleAccountUpdated"
               @error="(message: string) => appStore.showError(message)"
             />

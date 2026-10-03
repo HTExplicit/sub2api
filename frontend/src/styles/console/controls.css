@@ -549,7 +549,7 @@ html.flat-theme input:is([type="checkbox"], [type="radio"]):focus-visible {
    the account dialogs' segments go with it (monochrome identity, D3). data-ui="seg" opts a fork component into the
    same look.
    Perf pass: the utility-built boxes (a gray-100 / gray-50 box with a 4px or 2px inset whose children are all buttons,
-   no data-ui of their own) are hooked [data-ui~="seg-box"] in their templates (19 boxes) instead of being found by a
+   no data-ui of their own) are hooked [data-ui~="seg-box"] in their templates (20 boxes) instead of being found by a
    "children are all buttons" test; the repeated [data-ui] and :not(uipad) keep the original 0,4,3 of that compound
    (the upstream thumb is still found by its bg-white class, unlike data-ui="seg"). */
 html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad),
@@ -618,8 +618,8 @@ html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not
 /* 7.1a The account dialog's platform choice (owner decision 2 and the .11 approval "platform icons keep their brand
    colours"): an unchosen segment draws its platform glyph in the platform's identity colour (tokens.css identity
    hues: >= 4.5:1 on the surface, so >= 3:1 as a glyph, both themes); the chosen segment is the pill with an ink
-   glyph (7.1). The ten segments are known by their place (CreateAccountModal's two rows, the first one marked
-   data-tour="account-form-platform"); labels stay muted. (wave 2, reported by the accounts agent) */
+   glyph (7.1). The eleven segments are known by their place (CreateAccountModal's two rows of five and six, the
+   first one marked data-tour="account-form-platform"); labels stay muted. (wave 2, reported by the accounts agent) */
 html.flat-theme [data-tour="account-form-platform"] > button:nth-child(1) { --ctl-seg-glyph: var(--ui-id-orange); }
 html.flat-theme [data-tour="account-form-platform"] > button:nth-child(2) { --ctl-seg-glyph: var(--ui-id-green); }
 html.flat-theme [data-tour="account-form-platform"] > button:nth-child(3) { --ctl-seg-glyph: var(--ui-id-blue); }
@@ -630,6 +630,7 @@ html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(2) 
 html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(3) { --ctl-seg-glyph: var(--ui-id-teal); }
 html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(4) { --ctl-seg-glyph: var(--ui-id-rose); }
 html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(5) { --ctl-seg-glyph: var(--ui-id-amber); }
+html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(6) { --ctl-seg-glyph: var(--ui-id-sky); }
 
 html.flat-theme :is([data-tour="account-form-platform"], [data-tour="account-form-platform"] + div) > button:not(.bg-white) > svg {
   color: rgb(var(--ctl-seg-glyph, var(--ui-muted)));

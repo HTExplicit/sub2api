@@ -31,6 +31,7 @@
           {{ t('admin.settings.payment.rechargeBonus.modeLabel') }}
         </span>
         <div
+          data-ui="seg-box"
           class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-600 dark:bg-dark-800"
           role="group"
         >
