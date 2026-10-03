@@ -225,7 +225,7 @@ func TestAdminServiceSimpleModeNormalizesAllUnsupportedCreateFieldsDirectly(t *t
 		AudioRealtimePricePerMin: &one, ClaudeCodeOnly: true, FallbackGroupID: &fallbackID,
 		ModelRouting: map[string][]int64{"claude": {1}}, ModelRoutingEnabled: true,
 		AllowMessagesDispatch: true, AllowLive: true, ForceOpenAIFast: true, RequireOAuthOnly: true,
-		RPMLimit: 99, MaxReasoningEffort: "high",
+		RPMLimit: 99, MaxReasoningEffort: "high", ProfitControlEnabled: true, ProfitMinMargin: &one,
 		ModelAllowlist:           GroupModelAllowlist{Enabled: true, Models: []string{"claude-*"}},
 		CopyAccountsFromGroupIDs: []int64{2},
 	}
@@ -264,7 +264,8 @@ func TestAdminServiceSimpleModeNormalizesAllUnsupportedUpdateFieldsDirectly(t *t
 		AudioRealtimePricePerMin: &one, ClaudeCodeOnly: &truth, FallbackGroupID: &fallbackID,
 		ModelRouting: map[string][]int64{"claude": {1}}, ModelRoutingEnabled: &truth,
 		AllowMessagesDispatch: &truth, AllowLive: &truth, ForceOpenAIFast: &truth, RequireOAuthOnly: &truth,
-		RPMLimit: new(int), MaxReasoningEffort: ptrString("high"),
+		RPMLimit: new(int), MaxReasoningEffort: ptrString("high"), ProfitControlEnabled: &truth,
+		ProfitMinMargin:          &one,
 		ModelAllowlist:           &GroupModelAllowlist{Enabled: true, Models: []string{"claude-*"}},
 		CopyAccountsFromGroupIDs: []int64{2},
 	}

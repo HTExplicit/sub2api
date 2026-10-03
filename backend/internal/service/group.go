@@ -400,17 +400,20 @@ func computePeakAwareMultipliers(apiKey *APIKey, base float64, now time.Time) (t
 	return
 }
 
+// validProfitControlRatio 判定 margin/buffer 是否为可落库的合法小数：[0,1) 且非 NaN/Inf。
+func validProfitControlRatio(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v < 1
+}
+
 // NormalizeGroupPlatform 把创建分组时省略的 platform 归一化为默认平台。
+// handler 的入参预校验必须与 CreateGroup 落库时用同一个归一化结果，否则
+// 「省略 platform + 启用利润控制」会被 handler 以「平台不支持」400 掉，
+// 而该分组本会被建成受支持的 anthropic 分组。
 func NormalizeGroupPlatform(platform string) string {
 	if platform == "" {
 		return PlatformAnthropic
 	}
 	return platform
-}
-
-// validProfitControlRatio accepts finite ratios in [0, 1).
-func validProfitControlRatio(v float64) bool {
-	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v < 1
 }
 
 // ValidateProfitControlConfig 是分组利润控制配置的唯一校验来源，handler 与 service 层共用。
