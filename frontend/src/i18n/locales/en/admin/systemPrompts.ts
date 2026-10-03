@@ -1,7 +1,7 @@
 export default {
   systemPrompts: {
     title: 'System Prompts',
-    description: 'Keep a small prompt library and choose one site default. Accounts that inherit on every platform except TypeSafe receive it; a single account can turn it off or use another library prompt.',
+    description: 'Keep a small prompt library and choose one site default. Accounts that inherit the default receive it; a single account can turn it off or use another library prompt.',
     accountPrompts: 'System prompt',
     enabled: 'Enable system prompts',
     enabledHint: 'When off, no account is injected.',

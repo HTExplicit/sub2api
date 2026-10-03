@@ -1,7 +1,7 @@
 export default {
   systemPrompts: {
     title: '系统提示词',
-    description: '维护一个小提示词库，选一个站点默认。除 TypeSafe 外，所有平台上继承默认的账号都会注入它；单个账号可以关闭或改用库里的另一条。',
+    description: '维护一个小提示词库，选一个站点默认。继承默认的账号都会注入它；单个账号可以关闭或改用库里的另一条。',
     accountPrompts: '系统提示词',
     enabled: '启用系统提示词',
     enabledHint: '关闭后所有账号都不注入。',
