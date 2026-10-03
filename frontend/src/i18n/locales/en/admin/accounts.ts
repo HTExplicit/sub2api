@@ -998,6 +998,11 @@ export default {accounts: {
         fileReadFailed: 'Failed to read the selected file',
         noResponseBody: 'No response body from server'
       },
+      // TypeSafe specific hints
+      typesafe: {
+        baseUrlHint: 'Leave default for official TypeSafe API',
+        apiKeyHint: 'Your TypeSafe API Key'
+      },
       anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
         apiKeyPassthroughDesc:

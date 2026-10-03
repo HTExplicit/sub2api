@@ -250,6 +250,20 @@ function buildOpenAISparkShadowAccount() {
   } as any
 }
 
+function buildTypeSafeAccount() {
+  return {
+    ...buildAccount(),
+    id: 8,
+    name: 'TypeSafe Key',
+    platform: 'typesafe',
+    credentials: {
+      base_url: 'https://api.typesafe.ai',
+      model_mapping: { 'jev-latest': 'jev-latest' }
+    },
+    credentials_status: { has_api_key: true }
+  } as any
+}
+
 function buildVertexAccount() {
   return {
     id: 2,
@@ -661,6 +675,44 @@ describe('EditAccountModal', () => {
       wrapper.unmount()
       vi.useRealTimers()
     }
+  })
+
+  it('shows the TypeSafe wording of the Base URL hint and of both placeholders for a TypeSafe account', () => {
+    const wrapper = mountModal(buildTypeSafeAccount())
+    expect(wrapper.get('[data-testid="account-base-url"]').attributes('placeholder')).toBe('https://api.typesafe.ai')
+    expect(wrapper.text()).toContain('admin.accounts.typesafe.baseUrlHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.baseUrlHint')
+    expect(wrapper.findAll('input').some(input => input.attributes('placeholder') === 'ts-...')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('offers the upstream model sync only for an account whose model list the backend can read', () => {
+    // the model selector offers the sync for the account ID it is given
+    const selectorAccountId = (account: ReturnType<typeof buildAccount>) => {
+      const wrapper = mountModal(account)
+      const accountId = wrapper.findComponent(ModelWhitelistSelectorStub).props('accountId')
+      wrapper.unmount()
+      return accountId
+    }
+    expect(selectorAccountId(buildAccount())).toBe(1)
+    expect(selectorAccountId(buildTypeSafeAccount())).toBeUndefined()
+    expect(selectorAccountId(buildVertexAccount())).toBeUndefined()
+
+    const antigravityButton = (account: ReturnType<typeof buildAccount>) => {
+      const wrapper = mountModal(account)
+      const offered = wrapper.findAll('button').some(button => button.text() === 'admin.accounts.syncUpstreamModels')
+      wrapper.unmount()
+      return offered
+    }
+    const antigravityKey = (baseUrl: string) => ({
+      ...buildAntigravityAccount(),
+      type: 'apikey',
+      credentials: { base_url: baseUrl },
+      credentials_status: { has_api_key: true }
+    })
+    expect(antigravityButton(buildAntigravityAccount())).toBe(true)
+    expect(antigravityButton(antigravityKey('https://relay.example.com/antigravity/'))).toBe(true)
+    expect(antigravityButton(antigravityKey('https://cloudcode-pa.googleapis.com'))).toBe(false)
   })
 
   it('account.edit keeps an OpenAI API-key account on the Laxa endpoint editable like any other', async () => {

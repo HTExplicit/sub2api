@@ -1134,6 +1134,11 @@ export default {accounts: {
         fileReadFailed: '读取所选文件失败',
         noResponseBody: '服务器未返回响应体'
       },
+      // TypeSafe specific hints
+      typesafe: {
+        baseUrlHint: '留空使用官方 TypeSafe API',
+        apiKeyHint: '您的 TypeSafe API Key'
+      },
       anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',
         apiKeyPassthroughDesc:

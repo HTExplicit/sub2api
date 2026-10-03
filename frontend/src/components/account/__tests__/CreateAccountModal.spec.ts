@@ -777,6 +777,34 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     )
   })
 
+  it('shows the TypeSafe hints and starts no upstream model sync for a TypeSafe account', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'TypeSafe / Jev')
+
+    const inputs = wrapper.findAll<HTMLInputElement>('form#create-account-form input')
+    expect(inputs.some((input) => input.attributes('placeholder') === 'https://api.typesafe.ai')).toBe(true)
+    expect(wrapper.text()).toContain('admin.accounts.typesafe.baseUrlHint')
+    expect(wrapper.text()).toContain('admin.accounts.typesafe.apiKeyHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.baseUrlHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.apiKeyHint')
+
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('jev account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('ts-test-key')
+    // System One has no model list: neither the preview nor the sync after the create is offered.
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('syncCredentials')).toBeUndefined()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({
+      platform: 'typesafe',
+      type: 'apikey',
+      credentials: { base_url: 'https://api.typesafe.ai', model_mapping: { 'jev-latest': 'jev-latest' } }
+    })
+    expect(syncUpstreamModelsMock).not.toHaveBeenCalled()
+    expect(showWarningMock).not.toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.accountCreated')
+  })
+
   // namespace 摊平是仅 OAuth 的兼容开关：API Key 走 chat completions 回退桥时由桥自行摊平
   it('shows the Codex namespace flatten toggle only for OpenAI OAuth accounts', async () => {
     const wrapper = mountModal()

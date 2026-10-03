@@ -44,7 +44,9 @@
                     ? 'https://cloudcode-pa.googleapis.com'
                     : account.platform === 'grok'
                       ? 'https://api.x.ai/v1'
-                      : 'https://api.anthropic.com'
+                      : account.platform === 'typesafe'
+                        ? 'https://api.typesafe.ai'
+                        : 'https://api.anthropic.com'
             "
           />
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
@@ -226,7 +228,9 @@
                     ? 'sk-...'
                     : account.platform === 'grok'
                       ? 'xai-...'
-                      : 'sk-ant-...'
+                      : account.platform === 'typesafe'
+                        ? 'ts-...'
+                        : 'sk-ant-...'
             "
           />
           <p v-if="!editApiKey" class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
@@ -310,7 +314,7 @@
                 v-model="allowedModels"
                 :model-mappings="modelMappings"
                 :platform="account?.platform || 'anthropic'"
-                :account-id="account?.id"
+                :account-id="upstreamSyncAccountId"
                 :synced-models="capacitySyncedModels"
                 @upstream-synced="acceptCapacitySync"
               />
@@ -806,7 +810,7 @@
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
             <ModelWhitelistSelector
-              v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
+              v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="upstreamSyncAccountId" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
               v-model:capacity-drafts="capacityDrafts"
               :capacity-rows="capacityRows"
               :sync-source-key="capacitySyncSourceKey"
@@ -1032,7 +1036,7 @@
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
             <ModelWhitelistSelector
-              v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
+              v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="upstreamSyncAccountId" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
               v-model:capacity-drafts="capacityDrafts"
               :capacity-rows="capacityRows"
               :sync-source-key="capacitySyncSourceKey"
@@ -1407,11 +1411,11 @@
             <p class="text-xs text-purple-700 dark:text-purple-400">{{ t('admin.accounts.mapRequestModels') }}</p>
           </div>
 
-          <div class="mb-3 flex flex-wrap gap-2">
+          <div v-if="upstreamSyncAccountId" class="mb-3 flex flex-wrap gap-2">
             <button
               type="button"
               @click="syncAntigravityUpstreamModels"
-              :disabled="isSyncingAntigravityUpstream || !account?.id"
+              :disabled="isSyncingAntigravityUpstream"
               class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
             >
               {{ isSyncingAntigravityUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
@@ -3280,6 +3284,7 @@ import {
 } from '@/utils/format'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { supportsUpstreamModelSync } from '@/utils/upstreamModelSync'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
@@ -3430,6 +3435,7 @@ const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (props.account.platform === 'typesafe') return t('admin.accounts.typesafe.baseUrlHint')
   if (props.account.platform === 'grok') return ''
   return t('admin.accounts.baseUrlHint')
 })
@@ -3737,6 +3743,12 @@ const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist'
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
 const isSyncingAntigravityUpstream = ref(false)
+// 同步上游支持的模型 reads the saved account, so its stored platform, type and credentials decide whether the dialog
+// offers it: the model selectors and the Antigravity button get the account ID only where the sync can work.
+const upstreamSyncAccountId = computed(() => {
+  const account = props.account
+  return account && supportsUpstreamModelSync(account.platform, account.type, account.credentials) ? account.id : undefined
+})
 const tempUnschedEnabled = ref(false)
 const accountSchedulingThresholdOverrideEnabled = ref(false)
 const accountSchedulingThresholdOverrideValue = ref(100)
@@ -4756,11 +4768,11 @@ const addAntigravityPresetMapping = (from: string, to: string) => {
 }
 
 const syncAntigravityUpstreamModels = async () => {
-  if (!props.account?.id || isSyncingAntigravityUpstream.value) return
+  const accountID = upstreamSyncAccountId.value
+  if (!accountID || isSyncingAntigravityUpstream.value) return
 
   isSyncingAntigravityUpstream.value = true
   try {
-    const accountID = props.account.id
     const result = await synchronizeCapacity(() => scopedAccounts().syncUpstreamModels(accountID))
     if (!result) return
     const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
