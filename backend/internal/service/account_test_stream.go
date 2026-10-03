@@ -369,11 +369,31 @@ func parseAccountConnectionStream(protocol string, body io.Reader, allowMedia bo
 	return false, "", p.incomplete()
 }
 
+// responsesReasoningTokens reads response.usage.output_tokens_details.reasoning_tokens
+// from a Responses stream event.
+func responsesReasoningTokens(data map[string]any) (int, bool) {
+	response, _ := data["response"].(map[string]any)
+	usage, _ := response["usage"].(map[string]any)
+	details, _ := usage["output_tokens_details"].(map[string]any)
+	tokens, ok := details["reasoning_tokens"].(float64)
+	if !ok || tokens < 0 {
+		return 0, false
+	}
+	return int(tokens), true
+}
+
 func (s *AccountTestService) processConnectionStream(c *gin.Context, body io.Reader, protocol string, account *Account) error {
+	var reasoningTokens *int
 	limited, upstreamModel, err := parseAccountConnectionStream(protocol, body, c.GetBool("account_test_allow_media"), func(event TestEvent) { s.sendEvent(c, event) }, func(data map[string]any) {
 		if account != nil && (data["error"] != nil || data["type"] == "response.failed" || data["type"] == "error") {
 			raw, _ := json.Marshal(data)
 			s.markOpenAIBudgetExceededFromTest(c.Request.Context(), account, http.StatusOK, raw)
+		}
+		// OpenAI accounts only: the admin quality check reads this count.
+		if protocol == "responses" && account.IsOpenAI() {
+			if tokens, ok := responsesReasoningTokens(data); ok {
+				reasoningTokens = &tokens
+			}
 		}
 	})
 	if err != nil {
@@ -385,6 +405,6 @@ func (s *AccountTestService) processConnectionStream(c *gin.Context, body io.Rea
 	if upstreamModel != "" {
 		s.sendEvent(c, TestEvent{Type: "upstream_model", UpstreamModel: upstreamModel})
 	}
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true, OutputLimited: limited})
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true, OutputLimited: limited, ReasoningTokens: reasoningTokens})
 	return nil
 }

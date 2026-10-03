@@ -47,6 +47,7 @@ const (
 // TestEvent represents a SSE event for account testing
 type TestEvent struct {
 	OutputLimited            bool   `json:"output_limited,omitempty"`
+	ReasoningTokens          *int   `json:"reasoning_tokens,omitempty"` // OpenAI Responses test_complete; absent when unreported
 	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
 	EffectiveReasoningEffort string `json:"effective_reasoning_effort,omitempty"`
 	Type                     string `json:"type"`
