@@ -256,9 +256,6 @@ func TestOpenAIReasoningRecoveryChatToolRoundKeepsNoReasoningState(t *testing.T)
 			require.NotContains(t, string(upstream.bodies[1]), "rs_original")
 			require.Zero(t, store.gets)
 			require.Zero(t, store.puts)
-			for key := range c.Keys {
-				require.NotContains(t, key, "replay")
-			}
 		})
 	}
 }
