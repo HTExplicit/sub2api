@@ -2,9 +2,9 @@
 --
 -- openai_chat_reasoning_replay_enabled switched Chat reasoning replay and
 -- openai_reasoning_signature_recovery_enabled switched the recovery of invalid
--- reasoning ciphertext for one account (previous release, git 06e865f6e,
--- backend/internal: service/account.go:120-121, read by
--- service/plugin_codex_recovery.go:85-97). Replay is deleted. Recovery has one
+-- reasoning ciphertext for one account (previous release v0.2.11-codexrip.9,
+-- git 291d25e7f, backend/internal: service/account.go:120-121, read by
+-- service/plugin_codex_recovery.go:20-27). Replay is deleted. Recovery has one
 -- global switch now (settings.reasoning_recovery_config, on while no row is
 -- stored) and no account option, so nothing reads either key any more.
 --
