@@ -33,13 +33,11 @@ database whose `codexrip.codex-runtime` installation was never retired, whose
 saved Codex runtime configuration has no hash recorded by v0.2.11-codexrip.6,
 .7 or .8, or whose `sub2api_plugin_state` table holds rows of another plugin
 key. Starting one of those three releases once satisfies the first two
-conditions. Migration 270 stops startup, changing nothing, on a database whose
-`codexrip.image-tools` installation was never retired; starting
-v0.2.13-codexrip.6 once retires it.
+conditions.
 
 Then, before native settings load and before the plugin manager starts, one
 transaction retires the other first-party plugin installations a database still
-holds:
+holds, except `codexrip.image-tools`, which it does not read or change:
 
 1. Validates the saved first-party capability scopes and decrypts configuration.
 2. Imports the effective observability switches only when the native settings
@@ -56,10 +54,9 @@ domain without an equivalent native switch, requires an explicit migration
 decision rather than automatic activation.
 
 The retired installation rows remain and are listed read-only, with the
-receipt, at `GET /admin/plugins/retired`; the `codexrip.codex-runtime` and
-`codexrip.image-tools` rows hold no saved configuration, package, manifest or
-bindings. The upstream plugin manager cannot list, modify, delete or replace the
-retired first-party keys.
+receipt, at `GET /admin/plugins/retired`; the `codexrip.codex-runtime` row holds
+no saved configuration, package, manifest or bindings. The upstream plugin
+manager cannot list, modify, delete or replace the retired first-party keys.
 
 ## Release and rollback boundary
 
@@ -82,13 +79,12 @@ continues. Images at or before v0.2.11-codexrip.5 also need
 require a database dump taken before migration 264.
 
 Migration 270 has no down path either. It drops the three Image Studio tables
-with the job history and the records of the stored image files, deletes the
-`image_tools_config` setting and strips the `codexrip.image-tools` installation
-to its identity; the files under `<data dir>/image-studio` are not removed. An
-earlier image starts on such a database only with Image Studio off, which the
-missing setting leaves to `GATEWAY_IMAGE_STUDIO_ENABLED`: with that variable
-`true` it exits at start, and its Image Studio job routes fail on the dropped
-tables.
+with the job history and the records of the stored image files and deletes the
+`image_tools_config` setting; the files under `<data dir>/image-studio` are not
+removed. An earlier image starts on such a database only with Image Studio off,
+which the missing setting leaves to `GATEWAY_IMAGE_STUDIO_ENABLED`: with that
+variable `true` it exits at start, and its Image Studio job routes fail on the
+dropped tables.
 
 Migration 271 has no down path. It drops `usage_billing_dedup.account_id`, which
 the billing claim no longer writes and nothing reads. An earlier image names
