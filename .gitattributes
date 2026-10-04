@@ -31,6 +31,8 @@ Dockerfile text eol=lf
 *.mjs text eol=lf
 *.cjs text eol=lf
 *.py text eol=lf
+# Upstream stores this one script with CRLF; keep its bytes as they are.
+tools/check_pnpm_audit_exceptions.py -text
 *.ps1 text eol=lf
 go.mod text eol=lf
 go.sum text eol=lf
