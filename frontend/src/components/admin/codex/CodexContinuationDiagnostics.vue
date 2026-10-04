@@ -160,7 +160,7 @@ function recoverySummary(recovery: Recovery): string {
   const parts = [`disposition=${recovery.disposition || ''}`, `retry_attempted=${!!recovery.retry_attempted}`]
   if (recovery.not_attempted_reason) parts.push(`not_attempted_reason=${recovery.not_attempted_reason}`)
   if (recovery.cache_skipped_items) parts.push(`cache_skipped_items=${recovery.cache_skipped_items}`)
-  return text('推理签名恢复：', 'Reasoning recovery: ') + parts.join(' · ')
+  return text('推理恢复：', 'Reasoning recovery: ') + parts.join(' · ')
 }
 
 const known = (value?: Signal) => !!value && !['missing', 'uninspected', 'null', 'unknown'].includes(value.kind || '')
