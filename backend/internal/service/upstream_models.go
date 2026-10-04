@@ -32,7 +32,7 @@ const (
 // capacity fields (context_window, max_context_window, max_input_tokens,
 // max_output_tokens) always come from one declaration, never completed field
 // by field; CapacitySource says whose: "upstream" (this account's upstream) or
-// "registry" (models.dev reference), observed at ObservedAt.
+// "registry" (provider registry reference), observed at ObservedAt.
 type UpstreamModelMetadata struct {
 	ID                       string                     `json:"id"`
 	DisplayName              string                     `json:"display_name,omitempty"`
@@ -277,11 +277,11 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 	// Dedicated image/video generators are not Codex agent catalog entries and often
 	// omit context windows in public registries. Keep them out of completeness checks
 	// so they do not mask successful agent-model capability sync.
-	capabilityIDs := capabilitySyncModelIDs(enrichIDs)
+	capabilityIDs := cindyCapabilitySyncModelIDs(account, capabilitySyncModelIDs(enrichIDs))
 
 	source := "upstream"
 	if upstreamCatalogNeedsRegistry(capabilityIDs, catalog.Metadata) {
-		if registryMetadata, registryErr := s.fetchModelsDevMetadata(ctx, account, enrichIDs); registryErr == nil {
+		if registryMetadata, registrySource, registryErr := s.fetchUpstreamRegistryMetadata(ctx, account, capabilityIDs); registryErr == nil {
 			for modelID, fallback := range registryMetadata {
 				if upstreamModelMetadataHasCapacity(fallback) {
 					fallback.ObservedAt = syncedAt
@@ -290,7 +290,7 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 				merged, changed := mergeUpstreamModelMetadata(current, fallback)
 				catalog.Metadata[modelID] = merged
 				if changed {
-					source = "models.dev"
+					source = registrySource
 				}
 			}
 		} else {
