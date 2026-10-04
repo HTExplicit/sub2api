@@ -1903,8 +1903,6 @@ const refreshUpstreamBillingSortedList = async (force = false) => {
   await refreshUpstreamBillingRates(force)
 }
 
-useIntervalFn(() => { void refreshUpstreamBillingRates() }, 5 * 60_000, { immediate: false })
-
 const debouncedReload = () => {
   clearSelection()
   syncAccountListDerivedParams()
