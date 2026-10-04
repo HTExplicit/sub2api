@@ -294,6 +294,7 @@ func NewBillingService(cfg *config.Config, pricingService *PricingService) *Bill
 // initFallbackPricing 初始化硬编码回退价格（当动态价格不可用时使用）
 // 价格单位：USD per token（与LiteLLM格式一致）
 func (s *BillingService) initFallbackPricing() {
+	addConversationStandardFallbackPricing(s.fallbackPrices)
 	// Claude 4.5 Opus
 	s.fallbackPrices["claude-opus-4.5"] = &ModelPricing{
 		InputPricePerToken:         5e-6,    // $5 per MTok
@@ -905,6 +906,12 @@ func (s *BillingService) initFallbackPricing() {
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	modelLower := strings.ToLower(model)
+	switch modelLower {
+	case "hy3", "tencent/hy3", "hy4-preview", "tencent/hy4-preview",
+		"qwen3.8-27b", "qwen/qwen3.8-27b", "qwen3.8-flash", "qwen/qwen3.8-flash",
+		"qwen3.8-omni-flash", "qwen/qwen3.8-omni-flash", "muse-spark-1.3", "meta/muse-spark-1.3":
+		return s.fallbackPrices[modelLower]
+	}
 	if modelLower == "jev-latest" {
 		return s.fallbackPrices["jev-latest"]
 	}
@@ -1262,7 +1269,7 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	if err != nil {
 		return nil, err
 	}
-	if channelPricing == nil {
+	if channelPricing == nil || channelPricing.IsTokenAllowlistOnly() {
 		return pricing, nil
 	}
 	// 防止修改 fallbackPrices 中的共享指针

@@ -87,6 +87,9 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 	var chPricing *ChannelModelPricing
 	if input.GroupID != nil && r.channelService != nil {
 		chPricing = r.lookupChannelPricingNormalized(ctx, *input.GroupID, input.Model)
+		if chPricing.IsTokenAllowlistOnly() {
+			chPricing = nil
+		}
 		if chPricing != nil {
 			mode := chPricing.BillingMode
 			if mode == "" {
@@ -225,7 +228,7 @@ func (r *ModelPricingResolver) lookupChannelPricingNormalized(ctx context.Contex
 // applyChannelOverrides 应用渠道定价覆盖
 func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupID int64, model string, resolved *ResolvedPricing) {
 	chPricing := r.lookupChannelPricingNormalized(ctx, groupID, model)
-	if chPricing == nil {
+	if chPricing == nil || chPricing.IsTokenAllowlistOnly() {
 		return
 	}
 
@@ -246,6 +249,9 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 
 // applyTokenOverrides 应用 token 模式的渠道覆盖
 func (r *ModelPricingResolver) applyTokenOverrides(chPricing *ChannelModelPricing, resolved *ResolvedPricing) {
+	if chPricing.IsTokenAllowlistOnly() {
+		return
+	}
 	if resolved.BasePricing == nil {
 		resolved.BasePricing = &ModelPricing{}
 	} else {

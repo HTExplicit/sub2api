@@ -37,6 +37,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -152,24 +153,28 @@ func normalizeGrokAccountTestMode(mode string) string {
 
 // AccountTestService handles account testing operations
 type AccountTestService struct {
-	quotaActivity             *QuotaActivityService
-	accountRepo               AccountRepository
-	geminiTokenProvider       *GeminiTokenProvider
-	claudeTokenProvider       *ClaudeTokenProvider
-	grokTokenProvider         *GrokTokenProvider
-	antigravityGatewayService *AntigravityGatewayService
-	httpUpstream              HTTPUpstream
-	cfg                       *config.Config
-	settingService            *SettingService
-	tlsFPProfileService       *TLSFingerprintProfileService
-	openAIGatewayService      *OpenAIGatewayService
-	openaiGatewayService      *OpenAIGatewayService
-	modelMetadataRegistryMu   sync.Mutex
-	modelMetadataRegistry     map[string]modelsDevProvider
-	modelMetadataRegistryAt   time.Time
-	pluginManager             *PluginManager
-	agentIdentityTaskMu       sync.Mutex
-	agentIdentityWS           agentIdentityWSConnectionInvalidator
+	quotaActivity               *QuotaActivityService
+	accountRepo                 AccountRepository
+	geminiTokenProvider         *GeminiTokenProvider
+	claudeTokenProvider         *ClaudeTokenProvider
+	grokTokenProvider           *GrokTokenProvider
+	antigravityGatewayService   *AntigravityGatewayService
+	httpUpstream                HTTPUpstream
+	cfg                         *config.Config
+	settingService              *SettingService
+	tlsFPProfileService         *TLSFingerprintProfileService
+	openAIGatewayService        *OpenAIGatewayService
+	openaiGatewayService        *OpenAIGatewayService
+	modelMetadataRegistryMu     sync.Mutex
+	modelMetadataRegistry       map[string]modelsDevProvider
+	modelMetadataRegistryAt     time.Time
+	cindyMetadataRegistryMu     sync.Mutex
+	cindyMetadataRegistry       map[string]UpstreamModelMetadata
+	cindyMetadataRegistryAt     time.Time
+	cindyMetadataRegistryFlight singleflight.Group
+	pluginManager               *PluginManager
+	agentIdentityTaskMu         sync.Mutex
+	agentIdentityWS             agentIdentityWSConnectionInvalidator
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
 	// WS dialer when nil (supports proxy + coder/websocket handshake).
 	grokWSDialer openAIWSClientDialer

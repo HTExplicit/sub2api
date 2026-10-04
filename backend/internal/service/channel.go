@@ -110,6 +110,16 @@ type ChannelModelPricing struct {
 	UpdatedAt                  time.Time           `json:"updated_at,omitempty"`
 }
 
+// IsTokenAllowlistOnly distinguishes a model restriction from a price override.
+// An explicitly configured zero remains an override.
+func (p *ChannelModelPricing) IsTokenAllowlistOnly() bool {
+	return p != nil && (p.BillingMode == "" || p.BillingMode == BillingModeToken) &&
+		p.InputPrice == nil && p.OutputPrice == nil && p.CacheWritePrice == nil && p.CacheWrite1hPrice == nil &&
+		p.CacheReadPrice == nil && p.FastMultiplier == nil && p.FlexMultiplier == nil &&
+		len(p.ReasoningEffortMultipliers) == 0 && p.ImageInputPrice == nil && p.ImageOutputPrice == nil &&
+		p.PerRequestPrice == nil && len(p.Intervals) == 0 && p.TimePricing == nil
+}
+
 // ChannelTimePricing 渠道模型定价的分时倍率配置。
 type ChannelTimePricing struct {
 	Timezone     string                     `json:"timezone"`
