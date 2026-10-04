@@ -215,6 +215,7 @@ type bulkJobScopeAdmin struct {
 	accountsByID map[int64]*service.Account
 	matches      []int64
 	filterCalls  int
+	filterGroups []int64 // the group each target-resolving list call filtered by
 	filterErr    error
 	updatedIDs   []int64
 	bulkInputs   []*service.BulkUpdateAccountsInput
@@ -242,11 +243,13 @@ func (s *bulkJobScopeAdmin) listMatches() ([]service.Account, int64, error) {
 	return accounts, int64(len(accounts)), nil
 }
 
-func (s *bulkJobScopeAdmin) ListAccounts(context.Context, int, int, string, string, string, string, int64, string, string, string) ([]service.Account, int64, error) {
+func (s *bulkJobScopeAdmin) ListAccounts(_ context.Context, _ int, _ int, _ string, _ string, _ string, _ string, groupID int64, _ string, _ string, _ string) ([]service.Account, int64, error) {
+	s.filterGroups = append(s.filterGroups, groupID)
 	return s.listMatches()
 }
 
-func (s *bulkJobScopeAdmin) ListAccountsConsole(context.Context, int, int, service.AccountConsoleFilters) ([]service.Account, int64, error) {
+func (s *bulkJobScopeAdmin) ListAccountsConsole(_ context.Context, _ int, _ int, filters service.AccountConsoleFilters) ([]service.Account, int64, error) {
+	s.filterGroups = append(s.filterGroups, filters.GroupID)
 	return s.listMatches()
 }
 

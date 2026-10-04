@@ -224,7 +224,8 @@ type BulkUpdateAccountFilters struct {
 	Folders     string `json:"folders"`
 	Tags        string `json:"tags"`
 	AccountIDs  string `json:"account_ids"`
-	Group       string `json:"group"`
+	GroupID     string `json:"group_id"` // the group filter under the name the account list reads
+	Group       string `json:"group"`    // the same filter under its older name
 	Search      string `json:"search"`
 	PrivacyMode string `json:"privacy_mode"`
 }
@@ -2272,15 +2273,33 @@ func splitBulkAccountFilterValues(values ...string) []string {
 	return out
 }
 
+// bulkAccountFilterGroup returns the group a bulk filter selects: group_id, the name the account list and the
+// account page use, or the older group. Two different values are rejected rather than one of them being picked,
+// since the filter decides which accounts a bulk operation changes.
+func bulkAccountFilterGroup(filters *BulkUpdateAccountFilters) (string, error) {
+	groupID, group := strings.TrimSpace(filters.GroupID), strings.TrimSpace(filters.Group)
+	if groupID == "" {
+		return group, nil
+	}
+	if group != "" && group != groupID {
+		return "", infraerrors.BadRequest("INVALID_GROUP_FILTER", "group and group_id filters differ")
+	}
+	return groupID, nil
+}
+
 func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*service.BulkUpdateAccountFilters, error) {
 	if filters == nil {
 		return nil, nil
+	}
+	group, err := bulkAccountFilterGroup(filters)
+	if err != nil {
+		return nil, err
 	}
 	out := &service.BulkUpdateAccountFilters{
 		Platform:    filters.Platform,
 		Type:        filters.Type,
 		Status:      filters.Status,
-		Group:       filters.Group,
+		Group:       group,
 		Search:      filters.Search,
 		PrivacyMode: filters.PrivacyMode,
 	}
@@ -2309,18 +2328,17 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*serv
 		Plans: splitBulkAccountFilterValues(filters.Plans), Search: strings.TrimSpace(filters.Search),
 		GroupID: 0, PrivacyMode: strings.TrimSpace(filters.PrivacyMode), SortBy: "id", SortOrder: "asc",
 	}
-	switch strings.TrimSpace(filters.Group) {
+	switch group {
 	case "":
 	case accountListGroupUngroupedQueryValue:
 		console.GroupID = service.AccountListGroupUngrouped
 	default:
-		groupID, err := strconv.ParseInt(strings.TrimSpace(filters.Group), 10, 64)
+		groupID, err := strconv.ParseInt(group, 10, 64)
 		if err != nil || groupID <= 0 {
 			return nil, infraerrors.BadRequest("INVALID_GROUP_FILTER", "invalid group filter")
 		}
 		console.GroupID = groupID
 	}
-	var err error
 	console.ProxyIDs, console.IncludeDirect, err = parseIDQueryValues(splitBulkAccountFilterValues(filters.Proxies), "direct")
 	if err != nil {
 		return nil, err

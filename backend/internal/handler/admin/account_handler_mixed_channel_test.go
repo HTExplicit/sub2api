@@ -266,6 +266,68 @@ func TestBulkUpdateAcceptsFilterTargetRequest(t *testing.T) {
 	require.Nil(t, filters.Console)
 }
 
+// The account page sends the group filter as group_id, the name the account list reads. A bulk request must
+// resolve its targets within that group, whichever of the two filter shapes it uses.
+func TestBulkUpdateFilterTargetResolvesWithinTheGroupFilter(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		filters   map[string]any
+		wantGroup int64
+	}{
+		{name: "group_id_with_scalar_filters", filters: map[string]any{"status": "active", "group_id": "12"}, wantGroup: 12},
+		{name: "group_id_with_console_filters", filters: map[string]any{"statuses": "active", "group_id": "12"}, wantGroup: 12},
+		{name: "group_id_alone", filters: map[string]any{"group_id": "12"}, wantGroup: 12},
+		{name: "ungrouped_with_scalar_filters", filters: map[string]any{"status": "active", "group_id": "ungrouped"}, wantGroup: service.AccountListGroupUngrouped},
+		{name: "ungrouped_with_console_filters", filters: map[string]any{"statuses": "active", "group_id": "ungrouped"}, wantGroup: service.AccountListGroupUngrouped},
+		{name: "older_name_with_scalar_filters", filters: map[string]any{"status": "active", "group": "12"}, wantGroup: 12},
+		{name: "older_name_with_console_filters", filters: map[string]any{"statuses": "active", "group": "12"}, wantGroup: 12},
+		{name: "both_names_agreeing", filters: map[string]any{"statuses": "active", "group_id": "12", "group": " 12 "}, wantGroup: 12},
+		{name: "no_group", filters: map[string]any{"statuses": "active"}, wantGroup: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			adminSvc := newBulkJobScopeAdmin(7)
+			adminSvc.matches = []int64{7}
+			router, _, _ := newBulkJobScopeRouter(adminSvc)
+
+			body, _ := json.Marshal(map[string]any{"filters": test.filters, "schedulable": true})
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/bulk", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			setAccountJobTestIdempotencyKey(req)
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+			require.Equal(t, []int64{test.wantGroup}, adminSvc.filterGroups)
+		})
+	}
+
+	for _, test := range []struct {
+		name    string
+		filters map[string]any
+	}{
+		{name: "names_disagreeing", filters: map[string]any{"statuses": "active", "group_id": "12", "group": "13"}},
+		{name: "names_disagreeing_with_scalar_filters", filters: map[string]any{"status": "active", "group_id": "12", "group": "ungrouped"}},
+		{name: "group_id_not_an_id", filters: map[string]any{"statuses": "active", "group_id": "twelve"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			adminSvc := newBulkJobScopeAdmin(7)
+			adminSvc.matches = []int64{7}
+			router, _, jobs := newBulkJobScopeRouter(adminSvc)
+
+			body, _ := json.Marshal(map[string]any{"filters": test.filters, "schedulable": true})
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/bulk", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			setAccountJobTestIdempotencyKey(req)
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			require.Empty(t, adminSvc.filterGroups, "an unusable group filter must not resolve any target")
+			require.Empty(t, jobs.created)
+		})
+	}
+}
+
 func TestBulkUpdateAcceptsCockpitConsoleFilterTargetRequest(t *testing.T) {
 	adminSvc := newBulkJobScopeAdmin(7)
 	adminSvc.matches = []int64{7}
