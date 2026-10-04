@@ -417,6 +417,34 @@ func TestAccountTaxonomyConsoleSearchByAPIKeyDigestIntegration(t *testing.T) {
 	})
 }
 
+func TestAccountTaxonomyConsoleOrderBreaksTiesByIDIntegration(t *testing.T) {
+	ctx := context.Background()
+	prefix := taxonomyIntegrationPrefix("tie-order")
+	client, admin := newAccountTaxonomyIntegrationAdmin(t, prefix)
+
+	// Five accounts that are equal in the sorted column.
+	ids := make([]int64, 0, 5)
+	for _, name := range []string{"c", "a", "e", "b", "d"} {
+		ids = append(ids, mustCreateAccount(t, client, &service.Account{Name: prefix + name, Priority: 7}).ID)
+	}
+	list := func(order string, page, pageSize int) []int64 {
+		accounts, total, err := admin.ListAccountsConsole(ctx, page, pageSize, service.AccountConsoleFilters{
+			Search: prefix, SortBy: "priority", SortOrder: order,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(ids)), total)
+		return idsOfAccounts(accounts)
+	}
+
+	descending := []int64{ids[4], ids[3], ids[2], ids[1], ids[0]}
+	require.Equal(t, ids, list("asc", 1, 20))
+	require.Equal(t, descending, list("desc", 1, 20))
+	// Pages of one ordering neither overlap nor skip.
+	require.Equal(t, descending[:2], list("desc", 1, 2))
+	require.Equal(t, descending[2:4], list("desc", 2, 2))
+	require.Equal(t, descending[4:], list("desc", 3, 2))
+}
+
 func TestAccountTaxonomyBulkUpdateAndOrderingIntegration(t *testing.T) {
 	ctx := context.Background()
 	prefix := taxonomyIntegrationPrefix("bulk")
