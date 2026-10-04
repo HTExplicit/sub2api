@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"net/http"
 	"regexp"
 	"strings"
@@ -275,15 +274,10 @@ func pairCodexIdentityHeaders(h http.Header) {
 // 优先级：管理员显式配置的账号级 User-Agent（只贡献客户端名与 OS / 架构 / 终端指纹，
 // 版本段仍由生效版本重建）> 账号持久化 / 种子派生的 Codex TUI 身份 > 全局规范身份。
 // 版本号三处同源：UA 首段、UA 尾部括号组与 version 头都取当前生效的官方版本。
-func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) codexOutboundIdentity {
-	identity, _ := resolveCodexOutboundIdentityForAccountContext(context.Background(), account, overrideUA)
-	return identity
-}
-
-// resolveCodexOutboundIdentityForAccountContext 与 resolveCodexOutboundIdentityForAccount 同语义，
-// 并把唯一的失败原因交还调用方：生效版本号无法写进该账号身份的 User-Agent 时返回错误，
+//
+// 唯一的失败原因：生效版本号无法写进该账号身份的 User-Agent。此时返回错误，
 // 调用方必须让本次发送失败，而不是退回全局规范身份出站。
-func resolveCodexOutboundIdentityForAccountContext(_ context.Context, account *Account, overrideUA string) (codexOutboundIdentity, error) {
+func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) (codexOutboundIdentity, error) {
 	canonical := resolveCodexOutboundIdentity(overrideUA)
 	if overrideUA != "" {
 		return canonical, nil
@@ -301,12 +295,8 @@ func resolveCodexOutboundIdentityForAccountContext(_ context.Context, account *A
 
 // enforceCodexIdentityHeadersForAccount 与 enforceCodexIdentityHeadersWithUA 语义相同，
 // 但强制统一时使用账号级身份而不是全局规范身份，使同一账号的所有出站请求
-// 表现为同一台机器上的同一个 Codex TUI。
+// 表现为同一台机器上的同一个 Codex TUI。账号身份解析失败时返回该错误，请求头保持原样。
 func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string) error {
-	return enforceCodexIdentityHeadersForAccountContext(context.Background(), h, account, overrideUA)
-}
-
-func enforceCodexIdentityHeadersForAccountContext(ctx context.Context, h http.Header, account *Account, overrideUA string) error {
 	if h == nil || h.Get("originator") == "" {
 		return nil
 	}
@@ -314,7 +304,7 @@ func enforceCodexIdentityHeadersForAccountContext(ctx context.Context, h http.He
 		pairCodexIdentityHeaders(h)
 		return nil
 	}
-	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, account, overrideUA)
+	identity, err := resolveCodexOutboundIdentityForAccount(account, overrideUA)
 	if err != nil {
 		return err
 	}

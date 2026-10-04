@@ -1588,7 +1588,10 @@ func (s *OpenAIGatewayService) effectiveCodexOutboundUserAgent(c *gin.Context, a
 	}
 	overrideUA := s.codexIdentityOverrideUA(account)
 	if codexIdentityEnforcement.Load() {
-		return resolveCodexOutboundIdentityForAccount(codexAccountIdentitySource(c, account), overrideUA).userAgent
+		// 这里只预测终态 UA 供 sandbox 对齐，不决定请求能否发出：身份解析失败时预测为空
+		// （sandbox 不改写），是否拒绝发送由终态收口 enforceCodexIdentityHeadersForAccount 决定。
+		identity, _ := resolveCodexOutboundIdentityForAccount(codexAccountIdentitySource(c, account), overrideUA)
+		return identity.userAgent
 	}
 	candidate := overrideUA
 	if candidate == "" {

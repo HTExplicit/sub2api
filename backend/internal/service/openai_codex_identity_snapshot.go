@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -44,7 +43,7 @@ type codexIdentitySnapshot struct {
 // resolveCodexIdentitySnapshot computes the identity and fingerprint state
 // from the routed account and the credential source used for this attempt.
 // It intentionally contains no credential, seed, cookie, or proxy URL data.
-func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Account, overrideUA string) codexIdentitySnapshot {
+func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string) codexIdentitySnapshot {
 	if source == nil {
 		source = routed
 	}
@@ -91,7 +90,9 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 		}()
 	}
 
-	identity, _ := resolveCodexOutboundIdentityForAccountContext(ctx, source, overrideUA)
+	// The snapshot only reports. The send path resolves the same identity for
+	// the request and is where a failure to build it stops the send.
+	identity, _ := resolveCodexOutboundIdentityForAccount(source, overrideUA)
 	snapshot.UserAgent = identity.userAgent
 	snapshot.Originator = identity.originator
 	snapshot.Version = identity.version

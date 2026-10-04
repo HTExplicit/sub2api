@@ -1400,7 +1400,7 @@ func (s *AccountTestService) buildOpenAIOAuthUpstreamModelsRequest(ctx context.C
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	identity, identityErr := resolveCodexOutboundIdentityForAccountContext(req.Context(), credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+	identity, identityErr := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	if identityErr != nil {
 		return nil, identityErr
 	}
@@ -1410,7 +1410,7 @@ func (s *AccountTestService) buildOpenAIOAuthUpstreamModelsRequest(ctx context.C
 	req.Header.Set("Version", identity.version)
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	credentialAccount.ApplyHeaderOverrides(req.Header)
-	if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
+	if err := enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
 		return nil, err
 	}
 	return req, nil
