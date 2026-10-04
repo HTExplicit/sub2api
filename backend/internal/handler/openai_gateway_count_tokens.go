@@ -288,7 +288,6 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	switchCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	retryState := newOpenAIFailoverRetryState()
-	var lastUpstreamErr error
 	var lastFailoverErr *service.UpstreamFailoverError
 	var sameAccountRetrySelection *service.AccountSelectionResult
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -316,12 +315,12 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 			if c.Request.Context().Err() != nil {
 				return
 			}
-			if retryingSameAccount && lastUpstreamErr != nil {
-				writeCountTokensFailoverError(c, lastFailoverErr, lastUpstreamErr)
+			if retryingSameAccount && lastFailoverErr != nil {
+				writeCountTokensFailoverError(c, lastFailoverErr)
 				return
 			}
-			if len(failedAccountIDs) > 0 && lastUpstreamErr != nil {
-				writeCountTokensFailoverError(c, lastFailoverErr, lastUpstreamErr)
+			if len(failedAccountIDs) > 0 && lastFailoverErr != nil {
+				writeCountTokensFailoverError(c, lastFailoverErr)
 				return
 			}
 			requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
@@ -349,8 +348,8 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 				if h.failoverAfterSameAccountSlotFailure(
 					c, account, account.GetMappedModel(currentRoutingModel), lastFailoverErr,
 					failedAccountIDs, &switchCount, maxAccountSwitches, &oauth429FailoverState,
-					false, "count_tokens", reqLog, true,
-					func() { writeCountTokensFailoverError(c, lastFailoverErr, lastUpstreamErr) },
+					"count_tokens", reqLog, true,
+					func() { writeCountTokensFailoverError(c, lastFailoverErr) },
 				) {
 					continue
 				}
@@ -377,10 +376,9 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		}
 		if !failoverErr.ShouldRetryNextAccount() {
 			finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(currentRoutingModel), failoverErr, openAIFailoverRetryStop)
-			writeCountTokensFailoverError(c, failoverErr, attemptErr)
+			writeCountTokensFailoverError(c, failoverErr)
 			return
 		}
-		lastUpstreamErr = attemptErr
 		lastFailoverErr = failoverErr
 		retryAction := retryState.Handle(c.Request.Context(), h.gatewayService, account, account.GetMappedModel(currentRoutingModel), failoverErr, true, sameAccountRetryDelay, "count_tokens")
 		finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(currentRoutingModel), failoverErr, retryAction)
@@ -391,24 +389,24 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		case openAIFailoverRetryCanceled:
 			return
 		case openAIFailoverRetryStop:
-			writeCountTokensFailoverError(c, failoverErr, attemptErr)
+			writeCountTokensFailoverError(c, failoverErr)
 			return
 		}
 		failedAccountIDs[account.ID] = struct{}{}
 		if switchCount >= maxAccountSwitches {
-			writeCountTokensFailoverError(c, failoverErr, attemptErr)
+			writeCountTokensFailoverError(c, failoverErr)
 			return
 		}
 		switchCount++
 		if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
-			writeCountTokensFailoverError(c, failoverErr, attemptErr)
+			writeCountTokensFailoverError(c, failoverErr)
 			return
 		}
 		h.gatewayService.RecordOpenAIAccountSwitch()
 	}
 }
 
-func writeCountTokensFailoverError(c *gin.Context, failoverErr *service.UpstreamFailoverError, _ error) {
+func writeCountTokensFailoverError(c *gin.Context, failoverErr *service.UpstreamFailoverError) {
 	status := http.StatusBadGateway
 	errorType := "upstream_error"
 	errorCode := ""

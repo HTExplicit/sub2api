@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"testing"
 
 	coderws "github.com/coder/websocket"
@@ -211,20 +209,6 @@ func TestOpenAIRefusalRecoveryWSOutputFailsOpenAboveBufferLimit(t *testing.T) {
 
 	require.True(t, limitHit)
 	require.Len(t, written, 1)
-}
-
-func TestOpenAIWSCyberRecoveryErrorUsesFailoverOnlyWhenReplaySafe(t *testing.T) {
-	payload := []byte(`{"type":"response.failed","response":{"error":{"code":"cyber_policy"}}}`)
-
-	safeErr := newOpenAIWSCyberRecoveryError(payload, http.Header{}, true)
-	var failoverErr *UpstreamFailoverError
-	require.True(t, errors.As(safeErr, &failoverErr))
-	require.True(t, failoverErr.IsOpenAIRefusalRecovery())
-
-	unsafeErr := newOpenAIWSCyberRecoveryError(payload, http.Header{}, false)
-	var closeErr *OpenAIWSClientCloseError
-	require.True(t, errors.As(unsafeErr, &closeErr))
-	require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
 }
 
 func TestOpenAIRefusalRecoveryWSOutputWritesRetryableFailureWithoutBufferedFrames(t *testing.T) {

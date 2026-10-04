@@ -853,7 +853,7 @@ func mergeAccountModelContextExtra(
 	extra map[string]any,
 	currentOverrides, currentMetadata []byte,
 ) (map[string]any, error) {
-	if err := service.ValidateModelContextOverrides(account, account.ModelContextOverridesPatch); err != nil {
+	if err := service.ValidateModelContextOverrides(account.ModelContextOverridesPatch); err != nil {
 		return nil, err
 	}
 	merged := copyJSONMap(normalizeJSONMap(extra))
@@ -2051,7 +2051,7 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 }
 
 func (r *accountRepository) ListSchedulable(ctx context.Context) ([]service.Account, error) {
-	accounts, err := r.schedulableAccountsQuery(ctx, time.Now()).All(ctx)
+	accounts, err := r.schedulableAccountsQuery(time.Now()).All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2059,7 +2059,7 @@ func (r *accountRepository) ListSchedulable(ctx context.Context) ([]service.Acco
 }
 
 func (r *accountRepository) ListSchedulableAccountLoads(ctx context.Context) ([]service.AccountWithConcurrency, error) {
-	accounts, err := r.schedulableAccountsQuery(ctx, time.Now()).
+	accounts, err := r.schedulableAccountsQuery(time.Now()).
 		Select(
 			dbaccount.FieldID,
 			dbaccount.FieldConcurrency,
@@ -2079,7 +2079,7 @@ func (r *accountRepository) ListSchedulableAccountLoads(ctx context.Context) ([]
 	return loads, nil
 }
 
-func (r *accountRepository) schedulableAccountsQuery(ctx context.Context, now time.Time) *dbent.AccountQuery {
+func (r *accountRepository) schedulableAccountsQuery(now time.Time) *dbent.AccountQuery {
 	return r.client.Account.Query().
 		Where(
 			dbaccount.StatusEQ(service.StatusActive),

@@ -721,39 +721,34 @@ func openAIOAuth429SameAccountRetryDelay(headers http.Header, deadline time.Time
 }
 
 func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until time.Time, reason string) {
-	s.blockAccountScheduling(account, until, reason, false)
-}
-
-// BlockAccountSchedulingFromPersistedCooldown mirrors only the ordinary DB
-// cooldown fields. Request-owned cooldowns and credential mutation guards
-// continue to use BlockAccountScheduling instead.
-func (s *OpenAIGatewayService) BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time, reason string) {
-	if until.IsZero() {
-		s.BlockAccountScheduling(account, until, reason)
-		return
-	}
-	s.blockAccountScheduling(account, until, reason, true)
-}
-
-func (s *OpenAIGatewayService) blockAccountScheduling(account *Account, until time.Time, reason string, fromPersistedCooldown bool) {
 	if s == nil || !isOpenAIAccount(account) {
 		return
 	}
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
 	defer mu.Unlock()
-	_, _ = s.blockAccountSchedulingLockedWithSource(account, until, reason, fromPersistedCooldown)
-	if fromPersistedCooldown {
-		// A DB mirror is not an independent Redis breaker. Persisting its
-		// deadline there would keep vetoing the account after DB recovery.
-		return
-	}
+	_, _ = s.blockAccountSchedulingLocked(account, until, reason)
 	if account.Type != AccountTypeAPIKey {
 		sources := s.openAIAccountRuntimeBlockSourcesLocked(account.ID)
 		if sources.hasIndependent {
 			s.persistOpenAIRuntimeBreaker(context.Background(), account.ID, "", reason, sources.independentUntil)
 		}
 	}
+}
+
+// BlockAccountSchedulingFromPersistedCooldown mirrors only the ordinary DB
+// cooldown fields. Request-owned cooldowns and credential mutation guards
+// continue to use BlockAccountScheduling instead.
+func (s *OpenAIGatewayService) BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time) {
+	if s == nil || !isOpenAIAccount(account) {
+		return
+	}
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	// A DB mirror is not an independent Redis breaker. Persisting its
+	// deadline there would keep vetoing the account after DB recovery.
+	_, _ = s.blockAccountSchedulingLockedWithSource(account, until, true)
 }
 
 func (s *OpenAIGatewayService) openAIRuntimeBreakerStore() (OpenAIRuntimeBreakerStore, bool) {
@@ -851,7 +846,7 @@ type openAIAccountRuntimeBlockSources struct {
 
 func (sources openAIAccountRuntimeBlockSources) effectiveUntil() (time.Time, bool) {
 	if sources.hasIndependent {
-		if sources.independentUntil.IsZero() || !sources.hasPersisted || !sources.persistedUntil.After(sources.independentUntil) {
+		if !sources.hasPersisted || !sources.persistedUntil.After(sources.independentUntil) {
 			return sources.independentUntil, true
 		}
 	}
@@ -859,7 +854,7 @@ func (sources openAIAccountRuntimeBlockSources) effectiveUntil() (time.Time, boo
 }
 
 func (sources *openAIAccountRuntimeBlockSources) expire(now time.Time) {
-	if sources.hasIndependent && !sources.independentUntil.IsZero() && !now.Before(sources.independentUntil) {
+	if sources.hasIndependent && !now.Before(sources.independentUntil) {
 		sources.hasIndependent = false
 		sources.independentUntil = time.Time{}
 		sources.independentOwner = 0
@@ -870,8 +865,6 @@ func (sources *openAIAccountRuntimeBlockSources) expire(now time.Time) {
 	}
 }
 
-// Unknown entries retain the legacy independent meaning. Only an explicit
-// persisted-cooldown writer may make a block eligible for DB-authority cleanup.
 // Callers hold the per-account runtime block lock.
 func (s *OpenAIGatewayService) openAIAccountRuntimeBlockSourcesLocked(accountID int64) openAIAccountRuntimeBlockSources {
 	if raw, ok := s.openaiAccountRuntimeBlockSources.Load(accountID); ok {
@@ -879,21 +872,14 @@ func (s *OpenAIGatewayService) openAIAccountRuntimeBlockSourcesLocked(accountID 
 			return sources
 		}
 	}
-	if raw, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID); ok {
-		if until, valid := raw.(time.Time); valid {
-			generation, _ := s.openaiAccountRuntimeBlockGeneration.Load(accountID)
-			owner, _ := generation.(uint64)
-			return openAIAccountRuntimeBlockSources{hasIndependent: true, independentUntil: until, independentOwner: owner}
-		}
-	}
 	return openAIAccountRuntimeBlockSources{}
 }
 
-func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, until time.Time, reason string) (uint64, bool) {
-	return s.blockAccountSchedulingLockedWithSource(account, until, reason, false)
+func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, until time.Time, _ string) (uint64, bool) {
+	return s.blockAccountSchedulingLockedWithSource(account, until, false)
 }
 
-func (s *OpenAIGatewayService) blockAccountSchedulingLockedWithSource(account *Account, until time.Time, reason string, fromPersistedCooldown bool) (uint64, bool) {
+func (s *OpenAIGatewayService) blockAccountSchedulingLockedWithSource(account *Account, until time.Time, fromPersistedCooldown bool) (uint64, bool) {
 	now := time.Now()
 	blockUntil := until
 	if blockUntil.IsZero() || !blockUntil.After(now) {
@@ -911,7 +897,7 @@ func (s *OpenAIGatewayService) blockAccountSchedulingLockedWithSource(account *A
 		}
 		sources.hasPersisted = true
 	} else {
-		if !sources.hasIndependent || blockUntil.IsZero() || (!sources.independentUntil.IsZero() && blockUntil.After(sources.independentUntil)) {
+		if !sources.hasIndependent || blockUntil.After(sources.independentUntil) {
 			sources.independentUntil = blockUntil
 		}
 		sources.hasIndependent = true

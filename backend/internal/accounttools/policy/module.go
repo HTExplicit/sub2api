@@ -14,20 +14,6 @@ import (
 type Module struct{}
 
 func New() *Module { return &Module{} }
-func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil || fields == nil || len(fields) != 0 {
-		return nil, errors.New("account tools has no additional configuration")
-	}
-	return json.RawMessage(`{}`), nil
-}
-func (m *Module) ApplyConfig(ctx context.Context, raw json.RawMessage) error {
-	_, err := m.ValidateConfig(ctx, raw)
-	return err
-}
-func (m *Module) Status(context.Context) (json.RawMessage, error) {
-	return json.Marshal(map[string]any{"taxonomy": true, "reasoning_selection": true, "text_prompt": true})
-}
 
 func failure(code, message string, status int) extensionv1.Result {
 	return extensionv1.Result{Code: code, Message: message, HTTPStatus: status}
@@ -45,9 +31,6 @@ func strictIDs(ids []int64) bool {
 func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if err := ctx.Err(); err != nil {
 		return extensionv1.Result{}, err
-	}
-	if in.Capability != extensionv1.CapabilityAdmin {
-		return extensionv1.Result{}, errors.New("unsupported account tools capability")
 	}
 	var output any = map[string]bool{"valid": true}
 	switch in.Operation {
@@ -68,9 +51,6 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		if !request.ValidUTF8 || request.Characters < 0 || request.Characters > 8192 {
 			return failure("ACCOUNT_TEST_PROMPT_INVALID", "test prompt must be valid UTF-8 and at most 8192 characters", 400), nil
 		}
-	case "tools.describe":
-		raw, err := m.Status(ctx)
-		return extensionv1.Result{Payload: raw}, err
 	case "taxonomy.name":
 		var request extensionv1.TaxonomyName
 		if json.Unmarshal(in.Payload, &request) != nil {

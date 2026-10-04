@@ -313,7 +313,7 @@ func (r *ImageStudioRuntime) processClaim(ctx context.Context, claim *ImageStudi
 		return
 	}
 	expiresAt := time.Now().Add(ImageStudioFileRetention)
-	artifact, err := r.store.Save(ctx, job.UserID, ImageStudioArtifactOutput, result.Data, result.ContentType, expiresAt)
+	artifact, err := r.store.Save(ctx, job.UserID, ImageStudioArtifactOutput, result.Data, result.ContentType)
 	if err != nil {
 		r.failClaim(ctx, job.ID, claim.Item.ID, err)
 		return

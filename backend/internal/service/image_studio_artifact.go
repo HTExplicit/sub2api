@@ -37,7 +37,6 @@ func (s *ImageStudioArtifactStore) Save(
 	kind ImageStudioArtifactKind,
 	data []byte,
 	contentType string,
-	expiresAt time.Time,
 ) (ImageStudioInputArtifact, error) {
 	contentType, extension, err := validateImageStudioImage(data, contentType)
 	if err != nil {

@@ -171,13 +171,6 @@ func (r *OpenAIImagesRequest) IsEdits() bool {
 	return r != nil && r.Endpoint == openAIImagesEditsEndpoint
 }
 
-func (r *OpenAIImagesRequest) InputImageCount() int {
-	if r == nil || !r.IsEdits() {
-		return 0
-	}
-	return len(r.InputImageURLs) + len(r.Uploads)
-}
-
 func (r *OpenAIImagesRequest) StickySessionSeed() string {
 	if r == nil {
 		return ""
@@ -768,7 +761,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 					Duration:         time.Since(startTime),
 					FirstTokenMs:     ttft,
 					ImageCount:       streamCount,
-					ImageInputCount:  parsed.InputImageCount(),
 					ImageSize:        parsed.SizeTier,
 					ImageInputSize:   parsed.Size,
 					ImageOutputSizes: streamSizes,
@@ -791,7 +783,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			Duration:         time.Since(startTime),
 			FirstTokenMs:     firstTokenMs,
 			ImageCount:       imageCount,
-			ImageInputCount:  parsed.InputImageCount(),
 			ImageSize:        parsed.SizeTier,
 			ImageInputSize:   parsed.Size,
 			ImageOutputSizes: imageOutputSizes,
@@ -816,7 +807,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			Duration:         time.Since(startTime),
 			FirstTokenMs:     firstTokenMs,
 			ImageCount:       imageCount,
-			ImageInputCount:  parsed.InputImageCount(),
 			ImageSize:        parsed.SizeTier,
 			ImageInputSize:   parsed.Size,
 			ImageOutputSizes: nonStreamSizes,

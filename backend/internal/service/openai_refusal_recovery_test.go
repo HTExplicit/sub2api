@@ -185,7 +185,7 @@ func TestRewriteOpenAIResponsesJSONLeavesIncompleteResponsesUntouched(t *testing
 }
 
 func TestOpenAICyberFailoverErrorRetriesAnotherAccountWithoutHealthPenalty(t *testing.T) {
-	err := NewOpenAICyberFailoverError([]byte(`{"response":{"error":{"code":"cyber_policy"}}}`), http.Header{"X-Request-Id": []string{"req_1"}})
+	err := NewOpenAICyberFailoverError(http.Header{"X-Request-Id": []string{"req_1"}})
 
 	require.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
 	require.Equal(t, http.StatusServiceUnavailable, err.ClientStatusCode)

@@ -931,7 +931,7 @@ func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveModelCooldown(t *test
 	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
 		StatusCode: http.StatusServiceUnavailable,
 	})
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute), "stale_account_cooldown")
+	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute))
 	svc.ReportOpenAIAccountScheduleResult(account.ID, "gpt-5.4", true, nil)
 
 	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
@@ -1485,7 +1485,7 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 func TestRuntimeBlockHonorsClearedPersistedCooldown(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 92, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(30*time.Minute), "grok payment required")
+	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(30*time.Minute))
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
@@ -1502,10 +1502,10 @@ func TestRuntimeBlockConditionalClearSkipsNewerGeneration(t *testing.T) {
 			svc := &OpenAIGatewayService{}
 			account := &Account{ID: 94, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
 			firstUntil := time.Now().Add(10 * time.Minute)
-			svc.BlockAccountSchedulingFromPersistedCooldown(account, firstUntil, "stale")
+			svc.BlockAccountSchedulingFromPersistedCooldown(account, firstUntil)
 			snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
 			require.True(t, snapshot.blocked)
-			svc.BlockAccountSchedulingFromPersistedCooldown(account, firstUntil.Add(testCase.extension), "fresh")
+			svc.BlockAccountSchedulingFromPersistedCooldown(account, firstUntil.Add(testCase.extension))
 			svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
 			require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 			require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
@@ -1518,7 +1518,7 @@ func TestRuntimeBlockConditionalClearKeepsOAuthProbeOwnership(t *testing.T) {
 	cache := &runtimeBreakerTestCache{entries: make(map[string]runtimeBreakerTestEntry)}
 	svc := &OpenAIGatewayService{cache: cache}
 	account := &Account{ID: 95, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute), "stale_local_cooldown")
+	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute))
 	cache.mu.Lock()
 	cache.entries[runtimeBreakerTestKey(account.ID, "")] = runtimeBreakerTestEntry{
 		blockUntil: time.Now().Add(-time.Second), owner: "current-owner",
@@ -1550,7 +1550,7 @@ func TestRuntimeBlockKeepsActivePersistedCooldown(t *testing.T) {
 		Schedulable:            true,
 		TempUnschedulableUntil: &until,
 	}
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, until, "grok payment required")
+	svc.BlockAccountSchedulingFromPersistedCooldown(account, until)
 	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
@@ -1582,11 +1582,11 @@ func TestRuntimeBlockSourcesKeepIndependentDeadlineAndClearWithoutResurrection(t
 			independentUntil := time.Now().Add(time.Minute)
 			persistedUntil := independentUntil.Add(time.Hour)
 			if persistedFirst {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil, "429")
+				svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil)
 			}
 			svc.BlockAccountScheduling(account, independentUntil, "429")
 			if !persistedFirst {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil, "429")
+				svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil)
 			}
 			require.Equal(t, persistedUntil, svc.peekOpenAIAccountRuntimeBlock(account).until)
 			require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
@@ -1597,7 +1597,7 @@ func TestRuntimeBlockSourcesKeepIndependentDeadlineAndClearWithoutResurrection(t
 			svc.ClearAccountSchedulingBlock(account.ID)
 			_, sourcesRemain := svc.openaiAccountRuntimeBlockSources.Load(account.ID)
 			require.False(t, sourcesRemain)
-			svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil, "429")
+			svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil)
 			require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"),
 				"a cleared independent contribution must not reappear behind a new DB mirror")
 		})
@@ -1609,7 +1609,7 @@ func TestRuntimeBlockSourcesDoNotExtendIndependentRedisDeadline(t *testing.T) {
 	svc := &OpenAIGatewayService{cache: cache}
 	account := &Account{ID: 97, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	independentUntil := time.Now().Add(time.Minute)
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, independentUntil.Add(time.Hour), "429")
+	svc.BlockAccountSchedulingFromPersistedCooldown(account, independentUntil.Add(time.Hour))
 	require.Empty(t, cache.entries, "DB mirrors do not create independent Redis breakers")
 	svc.BlockAccountScheduling(account, independentUntil, "429")
 	cache.mu.Lock()
@@ -1637,11 +1637,11 @@ func TestRuntimeBlockSourcesRollbackOnlyOwnedIndependentContribution(t *testing.
 			account := &Account{ID: 98, Platform: PlatformGrok, Type: AccountTypeOAuth}
 			now := time.Now()
 			if testCase.beforeDB > 0 {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, now.Add(testCase.beforeDB), "429")
+				svc.BlockAccountSchedulingFromPersistedCooldown(account, now.Add(testCase.beforeDB))
 			}
 			rollback := svc.blockGrokCredentialRuntime(account, now.Add(testCase.tentative), "credential_tentative")
 			if testCase.afterDB > 0 {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, now.Add(testCase.afterDB), "429")
+				svc.BlockAccountSchedulingFromPersistedCooldown(account, now.Add(testCase.afterDB))
 			}
 			rollback()
 			snapshot := svc.peekOpenAIAccountRuntimeBlock(account)

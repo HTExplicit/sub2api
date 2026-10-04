@@ -104,10 +104,6 @@ func accountTestSupportsReasoningWire(account *Account, model string) bool {
 	}
 }
 
-func ValidateAccountTestReasoning(account *Account, model, mode, effort string) error {
-	return ValidateAccountTestReasoningContext(context.Background(), account, model, mode, effort)
-}
-
 func ValidateAccountTestReasoningContext(ctx context.Context, account *Account, model, mode, effort string) error {
 	if effort == "" {
 		return nil
@@ -116,7 +112,7 @@ func ValidateAccountTestReasoningContext(ctx context.Context, account *Account, 
 		return errors.New("account is unavailable")
 	}
 	levels, _ := AccountTestReasoningOptions(account, model)
-	return accountToolsOperationForAccount(ctx, account, "test.reasoning", extensionv1.ReasoningSelection{Mode: mode, Effort: effort, Levels: levels}, nil)
+	return accountToolsOperation(ctx, "test.reasoning", extensionv1.ReasoningSelection{Mode: mode, Effort: effort, Levels: levels}, nil)
 }
 
 func applyAccountTestReasoning(c *gin.Context, payload map[string]any, chat bool) {

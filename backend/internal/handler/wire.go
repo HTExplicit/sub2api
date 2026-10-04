@@ -50,7 +50,6 @@ func ProvideAdminHandlers(
 	auditLogHandler *admin.AuditLogHandler,
 	systemPromptHandler *admin.SystemPromptHandler,
 	reasoningRecoveryHandler *admin.ReasoningRecoveryHandler,
-	_ *service.AccountJobRuntime,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	accountTrafficObserver *service.AccountTrafficObserver,
@@ -317,10 +316,9 @@ var ProviderSet = wire.NewSet(
 	ProvideHandlers,
 )
 
-func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) (*service.AccountJobRuntime, error) {
+func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) *service.AccountJobRuntime {
 	accountHandler.SetAccountJobService(jobs)
-	runtime := service.NewAccountJobRuntime(jobs, accountHandler)
-	return runtime, nil
+	return service.NewAccountJobRuntime(jobs, accountHandler)
 }
 
 func ProvidePluginHandler(manager *service.PluginManager, retired *service.NativeFeatureBootstrap) *admin.PluginHandler {
@@ -334,7 +332,6 @@ func ProvideImageStudioRuntime(
 	studio *service.ImageStudioService,
 	store service.ImageStudioFileStorage,
 	executor *ImageStudioGatewayExecutor,
-) (*service.ImageStudioRuntime, error) {
-	runtime := service.NewImageStudioRuntime(repo, studio, store, executor, service.ImageStudioRuntimeOptions{})
-	return runtime, nil
+) *service.ImageStudioRuntime {
+	return service.NewImageStudioRuntime(repo, studio, store, executor, service.ImageStudioRuntimeOptions{})
 }

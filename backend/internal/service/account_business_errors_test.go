@@ -27,7 +27,7 @@ func TestAccountBusinessMessageCatalogSeparatesPreviewAndFailureCodes(t *testing
 	require.Equal(t, "pq: account 7 is referenced by usage_logs", message)
 	// A code without a catalog sentence is kept as reported and gets the
 	// generic item sentence.
-	code, message = NormalizeAccountBusinessFailure("code_not_in_catalog")
+	code, message = AccountJobFailure("code_not_in_catalog", "")
 	require.Equal(t, "code_not_in_catalog", code)
 	require.Equal(t, "account job item failed", message)
 

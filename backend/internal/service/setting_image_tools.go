@@ -10,12 +10,6 @@ import (
 // the image-tools plugin configuration. A missing switch is off.
 const SettingKeyImageToolsConfig = "image_tools_config"
 
-// EffectiveImageToolsConfig returns the switch this process applies.
-func EffectiveImageToolsConfig() extensionv1.ImageToolsConfig {
-	config, _ := currentImageToolsConfig()
-	return config
-}
-
 // LoadImageToolsConfig installs the stored switch for this process at startup.
 // Without a stored value the deploy-time flag stays in force.
 func (s *SettingService) LoadImageToolsConfig(ctx context.Context) error {

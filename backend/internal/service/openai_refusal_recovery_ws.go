@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	openaiwsv2 "github.com/Wei-Shaw/sub2api/internal/service/openai_ws_v2"
@@ -260,13 +259,6 @@ func openAIRefusalRecoveryWSSemanticEvent(eventType string, payload []byte) bool
 			strings.HasPrefix(eventType, "response.refusal") ||
 			strings.HasPrefix(eventType, "response.reasoning")
 	}
-}
-
-func newOpenAIWSCyberRecoveryError(payload []byte, headers http.Header, replaySafe bool) error {
-	if replaySafe {
-		return NewOpenAICyberFailoverError(payload, headers)
-	}
-	return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "Temporary upstream failure; please retry", NewOpenAICyberFailoverError(payload, headers))
 }
 
 func OpenAIWSRetryableFailureEvent() []byte {

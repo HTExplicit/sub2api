@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"testing"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateImageStudioCreateInputEnforcesFixedModelsAndNativeOneFanout(t *testing.T) {
+func TestPlanImageStudioEnforcesFixedModelsAndNativeOneFanout(t *testing.T) {
+	previous := imageToolsConfigOverride.Load()
+	t.Cleanup(func() { imageToolsConfigOverride.Store(previous) })
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{StudioEnabled: true})
 	tests := []struct {
 		name         string
 		input        ImageStudioCreateInput
@@ -80,7 +84,7 @@ func TestValidateImageStudioCreateInputEnforcesFixedModelsAndNativeOneFanout(t *
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateImageStudioCreateInput(tt.input, tt.hasReference, tt.hasMask)
+			_, err := planImageStudio(context.Background(), tt.input, tt.hasReference, tt.hasMask)
 			if tt.wantCode == "" {
 				require.NoError(t, err)
 				return

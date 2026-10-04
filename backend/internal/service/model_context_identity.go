@@ -231,7 +231,7 @@ func upstreamMetadataCapacity(snapshotSource string, entry UpstreamModelMetadata
 // Explicit edits address one logical upstream model and remove its obsolete
 // spelling keys. Unedited values are preserved, including unresolved conflicts.
 func ApplyAccountModelContextOverrides(account *Account, existing any, patch map[string]*int64) (map[string]int64, error) {
-	if err := ValidateModelContextOverrides(account, patch); err != nil {
+	if err := ValidateModelContextOverrides(patch); err != nil {
 		return nil, err
 	}
 	resolve := capacityOverrideTargetResolver(account)

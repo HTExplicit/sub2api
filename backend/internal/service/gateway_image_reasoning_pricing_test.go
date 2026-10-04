@@ -130,7 +130,7 @@ func TestCalculateRecordUsageCost_MediaReasoningPricing(t *testing.T) {
 						result.VideoCount, result.VideoDurationSeconds = 2, 5
 					}
 					var err error
-					cost, err = svc.calculateOpenAIRecordUsageCost(context.Background(), result, apiKey, nil,
+					cost, err = svc.calculateOpenAIRecordUsageCost(context.Background(), result, apiKey,
 						[]string{model}, 0.5, 0.5, 0.5, 0.5, UsageTokens{}, "", nil, time.Time{})
 					require.NoError(t, err)
 				}

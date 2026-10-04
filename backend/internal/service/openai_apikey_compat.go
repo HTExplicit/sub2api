@@ -68,7 +68,7 @@ func observeOpenAIPromptCacheKeyNormalization(c *gin.Context, changed bool) {
 // Responses wire body. finalizeResponsesForSend calls it for every Responses
 // send after the system prompt, so the upstream never sees an over-long key.
 func applyOpenAIAPIKeyPromptCacheKeyMode(c *gin.Context, account *Account, body []byte) ([]byte, error) {
-	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, c, account)
+	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, account)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func applyOpenAIAPIKeyPromptCacheKeyMode(c *gin.Context, account *Account, body 
 
 // normalizeOpenAIAPIKeyPromptCacheKey is the single final-wire normalizer for
 // the account option openai_prompt_cache_key_mode=sha256_64.
-func normalizeOpenAIAPIKeyPromptCacheKey(body []byte, _ *gin.Context, account *Account) ([]byte, bool, error) {
+func normalizeOpenAIAPIKeyPromptCacheKey(body []byte, account *Account) ([]byte, bool, error) {
 	if account.OpenAIPromptCacheKeyMode() != OpenAIPromptCacheKeyModeSHA25664 {
 		return body, false, nil
 	}

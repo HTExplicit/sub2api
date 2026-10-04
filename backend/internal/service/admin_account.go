@@ -458,7 +458,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	if !AccountTakesSystemPrompt(account) {
 		delete(account.Extra, AccountExtraSystemPromptKey)
 	}
-	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
+	if err := ValidateModelContextOverrides(input.ModelContextOverrides); err != nil {
 		return nil, err
 	}
 	if input.ModelContextOverrides != nil {
@@ -622,7 +622,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		owned = openAIAPIKeyOwnedExtraForUpdate(account, input.Extra)
 	}
 	NormalizeAccountCredentialBaseURLs(input.Credentials)
-	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
+	if err := ValidateModelContextOverrides(input.ModelContextOverrides); err != nil {
 		return nil, err
 	}
 	var normalizedExtra map[string]any
@@ -911,9 +911,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 				return nil, err
 			}
 		}
-	}
-	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
-		return nil, err
 	}
 	account.ModelContextOverridesPatch = input.ModelContextOverrides
 	if input.ModelContextOverrides != nil {

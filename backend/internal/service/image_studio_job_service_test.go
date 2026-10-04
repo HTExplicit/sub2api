@@ -8,7 +8,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -32,15 +31,6 @@ func (f *imageStudioAPIKeyRepoFake) GetByID(_ context.Context, id int64) (*APIKe
 	return nil, ErrAPIKeyNotFound
 }
 
-type imageStudioAccountReaderFake struct {
-	AccountRepository
-	accounts map[int64][]Account
-}
-
-func (f *imageStudioAccountReaderFake) ListSchedulableByGroupID(_ context.Context, groupID int64) ([]Account, error) {
-	return append([]Account(nil), f.accounts[groupID]...), nil
-}
-
 type imageStudioRepoFake struct {
 	ImageStudioRepository
 	created ImageStudioCreateParams
@@ -57,7 +47,7 @@ type imageStudioStoreFake struct {
 	removed []string
 }
 
-func (f *imageStudioStoreFake) Save(_ context.Context, _ int64, kind ImageStudioArtifactKind, data []byte, contentType string, _ time.Time) (ImageStudioInputArtifact, error) {
+func (f *imageStudioStoreFake) Save(_ context.Context, _ int64, kind ImageStudioArtifactKind, data []byte, contentType string) (ImageStudioInputArtifact, error) {
 	artifact := ImageStudioInputArtifact{Kind: kind, StorageKey: string(kind) + ".png", ContentType: contentType, ByteSize: int64(len(data))}
 	f.saved = append(f.saved, artifact)
 	return artifact, nil
@@ -73,24 +63,18 @@ func (f *imageStudioStoreFake) Remove(key string) error {
 	return nil
 }
 
-func canonicalImageStudioFixture() (*Group, APIKey, Account) {
+func canonicalImageStudioFixture() APIKey {
 	group := &Group{ID: 31, Name: "Images", Platform: PlatformOpenAI, Status: StatusActive, AllowImageGeneration: true}
-	key := APIKey{ID: 41, UserID: 7, Key: "must-never-leave-server", Name: "Studio", Status: StatusActive, GroupID: &group.ID, Group: group}
-	account := Account{
-		ID: 51, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
-		Credentials: map[string]any{"api_key": "upstream-secret", "base_url": "https://relay.example.test"},
-	}
-	return group, key, account
+	return APIKey{ID: 41, UserID: 7, Key: "must-never-leave-server", Name: "Studio", Status: StatusActive, GroupID: &group.ID, Group: group}
 }
 
 func TestImageStudioEligibleKeysHidesUnavailableImageCandidatesAndCredentials(t *testing.T) {
-	group, key, account := canonicalImageStudioFixture()
+	key := canonicalImageStudioFixture()
 	legacyGroup := &Group{ID: 32, Name: "legacy", Platform: PlatformOpenAI, Status: StatusActive, AllowImageGeneration: true}
 	legacyKey := APIKey{ID: 42, UserID: 7, Key: "legacy-secret", Name: "legacy", Status: StatusActive, GroupID: &legacyGroup.ID, Group: legacyGroup}
 	studio := NewImageStudioService(
 		&imageStudioRepoFake{},
 		&imageStudioAPIKeyRepoFake{keys: []APIKey{key, legacyKey}},
-		&imageStudioAccountReaderFake{accounts: map[int64][]Account{group.ID: {account}}},
 		&imageStudioStoreFake{},
 	)
 
@@ -101,6 +85,5 @@ func TestImageStudioEligibleKeysHidesUnavailableImageCandidatesAndCredentials(t 
 	raw, err := json.Marshal(items)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "must-never-leave-server")
-	require.NotContains(t, string(raw), "upstream-secret")
 	require.NotContains(t, string(raw), `"key"`)
 }

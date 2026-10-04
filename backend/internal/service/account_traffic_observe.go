@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"go.uber.org/zap"
@@ -121,16 +120,10 @@ type AccountTrafficObserver struct {
 
 // Whether turns are recorded follows the admin_observability_config setting,
 // whose default is the legacy gateway flag.
-func NewAccountTrafficObserver(cache AccountTrafficObserveCache, _ *config.Config) *AccountTrafficObserver {
+func NewAccountTrafficObserver(cache AccountTrafficObserveCache) *AccountTrafficObserver {
 	return &AccountTrafficObserver{
 		cache: cache,
 	}
-}
-
-// Enabled reports whether telemetry is switched on, for management displays.
-// Begin and Snapshot additionally require a concrete account identity.
-func (o *AccountTrafficObserver) Enabled() bool {
-	return o != nil && o.cache != nil && currentAdminObservabilityConfig().TelemetryEnabled
 }
 
 // Begin records one started turn for account/protocol and samples in-flight
@@ -211,12 +204,6 @@ func (t *AccountTrafficTurn) Finish(result *OpenAIForwardResult, err error, clie
 			)
 		}
 	})
-}
-
-// Compatibility facade for callers without a begun turn. Started observations
-// instead evaluate the rule table captured before incrementing.
-func classifyAccountTrafficOutcome(result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {
-	return evaluateAccountTrafficOutcome(accountTrafficOutcomeRules, result, err, clientCancelled)
 }
 
 func evaluateAccountTrafficOutcome(table extensionv1.DecisionTable, result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {

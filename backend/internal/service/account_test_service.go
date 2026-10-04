@@ -163,7 +163,6 @@ type AccountTestService struct {
 	cfg                         *config.Config
 	settingService              *SettingService
 	tlsFPProfileService         *TLSFingerprintProfileService
-	openAIGatewayService        *OpenAIGatewayService
 	openaiGatewayService        *OpenAIGatewayService
 	modelMetadataRegistryMu     sync.Mutex
 	modelMetadataRegistry       map[string]modelsDevProvider
@@ -194,7 +193,6 @@ func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 
 func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayService) {
 	if s != nil {
-		s.openAIGatewayService = gateway
 		s.openaiGatewayService = gateway
 	}
 }
@@ -214,14 +212,10 @@ func (s *AccountTestService) FetchOpenAIAccountCatalogModels(ctx context.Context
 }
 
 func (s *AccountTestService) fetchOpenAIAccountModels(ctx context.Context, account *Account, projectMapping bool) ([]openai.Model, error) {
-	if s == nil || (s.openAIGatewayService == nil && s.openaiGatewayService == nil) {
+	if s == nil || s.openaiGatewayService == nil {
 		return nil, errors.New("OpenAI model discovery service is unavailable")
 	}
-	gateway := s.openAIGatewayService
-	if gateway == nil {
-		gateway = s.openaiGatewayService
-	}
-	response, err := gateway.FetchOpenAIModelsList(ctx, account)
+	response, err := s.openaiGatewayService.FetchOpenAIModelsList(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +410,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
 	c.Set("account_test_allow_media", !accountTestUsesTextPrompt(modelID, mode))
-	if err := validateAccountPromptExtension(ctx, account, prompt, modelID, mode); err != nil {
+	if err := validateAccountPromptExtension(ctx, prompt, modelID, mode); err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
 	if err := ValidateAccountTestReasoningContext(ctx, account, modelID, mode, testOpts.ReasoningEffort); err != nil {
@@ -1038,10 +1032,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 
 	// Process SSE stream
-	if err := s.processOpenAIStream(c, ctx, account, resp.Body); err != nil {
-		return err
-	}
-	return nil
+	return s.processOpenAIStream(c, account, resp.Body)
 }
 
 // testGrokAccountConnection routes Grok admin connectivity tests by explicit mode first,
@@ -1353,7 +1344,7 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Responses API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	return s.processOpenAIStream(c, ctx, account, resp.Body)
+	return s.processOpenAIStream(c, account, resp.Body)
 }
 
 func (s *AccountTestService) testGrokImageGeneration(c *gin.Context, ctx context.Context, account *Account, authToken, modelID, prompt, imageDataURL string) error {
@@ -2233,7 +2224,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	return s.processOpenAIChatCompletionsStream(c, ctx, account, resp.Body)
+	return s.processOpenAIChatCompletionsStream(c, account, resp.Body)
 }
 
 // testOpenAICompactConnection probes native remote compaction v2 (streaming
@@ -2483,11 +2474,7 @@ func (s *AccountTestService) markOpenAIBudgetExceededFromTest(ctx context.Contex
 		return false
 	}
 	if s != nil {
-		gateway := s.openAIGatewayService
-		if gateway == nil {
-			gateway = s.openaiGatewayService
-		}
-		gateway.handleOpenAIBudgetExceeded(ctx, account, body)
+		s.openaiGatewayService.handleOpenAIBudgetExceeded(ctx, account, body)
 	}
 	return true
 }
@@ -2847,12 +2834,12 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 
 // processOpenAIChatCompletionsStream processes SSE chunks from the
 // OpenAI-compatible Chat Completions API.
-func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
+func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, account *Account, body io.Reader) error {
 	return s.processConnectionStream(c, body, "chat", account)
 }
 
 // processOpenAIStream processes the SSE stream from OpenAI Responses API
-func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
+func (s *AccountTestService) processOpenAIStream(c *gin.Context, account *Account, body io.Reader) error {
 	return s.processConnectionStream(c, body, "responses", account)
 }
 

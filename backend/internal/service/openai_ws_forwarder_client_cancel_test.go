@@ -323,7 +323,7 @@ func TestClassifyAccountTrafficOutcome(t *testing.T) {
 		{name: "safety_net_nil_nil", want: AccountTrafficOutcomeFailedOther},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, classifyAccountTrafficOutcome(tc.result, tc.err, tc.clientCancelled))
+			require.Equal(t, tc.want, evaluateAccountTrafficOutcome(accountTrafficOutcomeRules, tc.result, tc.err, tc.clientCancelled))
 		})
 	}
 }

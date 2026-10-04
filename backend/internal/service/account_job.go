@@ -794,9 +794,3 @@ func normalizeAccountJobMetadata(raw json.RawMessage) json.RawMessage {
 	}
 	return append(json.RawMessage(nil), raw...)
 }
-
-// NormalizeAccountJobFailure keeps code and supplies the catalog sentence for
-// a failure without underlying error text; see AccountJobFailure.
-func NormalizeAccountJobFailure(code string) (string, string) {
-	return NormalizeAccountBusinessFailure(code)
-}

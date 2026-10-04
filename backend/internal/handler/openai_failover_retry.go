@@ -28,7 +28,6 @@ func (h *OpenAIGatewayHandler) failoverAfterSameAccountSlotFailure(
 	switchCount *int,
 	maxAccountSwitches int,
 	oauth429State *service.OpenAIOAuth429FailoverState,
-	streamStarted bool,
 	logScope string,
 	reqLog *zap.Logger,
 	allowAccountSwitch bool,

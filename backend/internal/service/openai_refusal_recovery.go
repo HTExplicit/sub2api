@@ -297,7 +297,7 @@ func NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders http.Header) *Upstrea
 	}
 }
 
-func NewOpenAICyberFailoverError(_ []byte, upstreamHeaders http.Header) *UpstreamFailoverError {
+func NewOpenAICyberFailoverError(upstreamHeaders http.Header) *UpstreamFailoverError {
 	err := NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders)
 	err.Reason = OpenAICyberFailoverReason
 	err.ResponseBody = []byte(`{"error":{"message":"Temporary upstream failure","type":"server_error","code":"upstream_retry_exhausted","retryable":true}}`)

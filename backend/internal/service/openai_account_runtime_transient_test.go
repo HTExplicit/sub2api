@@ -120,7 +120,7 @@ func TestHandleOpenAITransientError_PersistedCooldownClearsWithDatabaseState(t *
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 5106, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute), "upstream_disable")
+	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute))
 
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))

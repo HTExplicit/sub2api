@@ -89,10 +89,6 @@ type AccountConsoleFacets struct {
 	Tags               []AccountManagementTag    `json:"tags"`
 }
 
-func normalizeAccountTaxonomyName(value string) (string, string, error) {
-	return normalizeAccountTaxonomyNameContext(context.Background(), value)
-}
-
 func (s *adminServiceImpl) ListAccountFolders(ctx context.Context) ([]AccountManagementFolder, error) {
 	return s.listAccountFolders(ctx, true)
 }

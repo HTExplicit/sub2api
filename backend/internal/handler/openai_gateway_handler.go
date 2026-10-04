@@ -851,7 +851,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
 				c, account, account.GetMappedModel(routingModel), lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState, streamStarted,
+				&switchCount, maxAccountSwitches, &oauth429FailoverState,
 				"responses", reqLog, true,
 				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
 			) {
@@ -1496,7 +1496,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
 				c, account, account.GetMappedModel(currentRoutingModel), lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState, streamStarted,
+				&switchCount, maxAccountSwitches, &oauth429FailoverState,
 				"messages", reqLog, true,
 				func() { h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted) },
 			) {

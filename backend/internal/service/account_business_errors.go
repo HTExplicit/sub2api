@@ -83,10 +83,3 @@ func AccountJobFailure(code, message string) (string, string) {
 	}
 	return code, accountBusinessMessageCatalog[AccountJobCodeExecutionFailed].message
 }
-
-// NormalizeAccountBusinessFailure returns the code and sentence of a failure
-// without underlying error text. Every reported code is kept, including codes
-// without a catalog sentence; only an empty code becomes execution_failed.
-func NormalizeAccountBusinessFailure(code string) (string, string) {
-	return AccountJobFailure(code, "")
-}

@@ -198,7 +198,7 @@ func buildOpenAIReasoningScope(c *gin.Context, account *Account, req *http.Reque
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	identity := openAIReasoningRequestIdentity(account, req, wireBody, proxyURL, "")
+	identity := openAIReasoningRequestIdentity(account, req, proxyURL, "")
 	return BuildOpenAIReasoningCacheScope(OpenAIReasoningScopeInput{
 		UserID: key.UserID, APIKeyID: key.ID, GroupID: groupID, AccountID: account.ID,
 		SourceIdentityHash: identity, Endpoint: req.URL.String(),
@@ -207,7 +207,7 @@ func buildOpenAIReasoningScope(c *gin.Context, account *Account, req *http.Reque
 	})
 }
 
-func openAIReasoningRequestIdentity(account *Account, req *http.Request, _ []byte, proxyURL, token string) string {
+func openAIReasoningRequestIdentity(account *Account, req *http.Request, proxyURL, token string) string {
 	identity := struct {
 		AccountID                                                    int64
 		AccountType, Endpoint, Host, Method, Proxy, Token            string
@@ -262,7 +262,7 @@ func (r *openAIReasoningRecoveryState) PrepareRequest(req *http.Request, body []
 			return nil, nil, errors.New("reasoning recovery request snapshot unavailable")
 		}
 	}
-	identity := openAIReasoningRequestIdentity(r.account, req, body, proxyURL, r.token)
+	identity := openAIReasoningRequestIdentity(r.account, req, proxyURL, r.token)
 	if identity == "" {
 		return nil, nil, errors.New("reasoning recovery source identity unavailable")
 	}

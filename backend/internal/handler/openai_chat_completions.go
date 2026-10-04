@@ -269,7 +269,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
 				c, account, account.GetMappedModel(routingModel), lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState, streamStarted,
+				&switchCount, maxAccountSwitches, &oauth429FailoverState,
 				"chat_completions", reqLog, true,
 				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
 			) {

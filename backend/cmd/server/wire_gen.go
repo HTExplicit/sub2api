@@ -309,17 +309,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	auditLogHandler := admin.NewAuditLogHandler(auditLogService, totpService)
 	systemPromptHandler := admin.NewSystemPromptHandler(systemPromptService)
 	reasoningRecoveryHandler := admin.NewReasoningRecoveryHandler(reasoningRecoveryService)
-	accountJobRuntime, err := handler.ProvideAccountJobRuntime(accountJobService, accountHandler)
-	if err != nil {
-		return nil, err
-	}
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	accountTrafficObserveCache := repository.ProvideAccountTrafficObserveCache(redisClient, configConfig)
-	accountTrafficObserver := service.NewAccountTrafficObserver(accountTrafficObserveCache, configConfig)
+	accountTrafficObserver := service.NewAccountTrafficObserver(accountTrafficObserveCache)
 	openCodeGoUsageService := service.ProvideOpenCodeGoUsageService(accountRepository, httpUpstream, settingService, leaderLockCache, db)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	claudeResetCreditService := service.ProvideClaudeResetCreditService(accountRepository, claudeTokenProvider, proxyRepository, settingService, idempotencyCoordinator, leaderLockCache)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, accountJobHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, systemPromptHandler, reasoningRecoveryHandler, accountJobRuntime, upstreamBillingProbeService, ollamaCloudUsageService, accountTrafficObserver, openCodeGoUsageService, claudeResetCreditService)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, accountJobHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, systemPromptHandler, reasoningRecoveryHandler, upstreamBillingProbeService, ollamaCloudUsageService, accountTrafficObserver, openCodeGoUsageService, claudeResetCreditService)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
 	userMessageQueueService := service.ProvideUserMessageQueueService(userMsgQueueCache, rpmCache, configConfig)
@@ -354,7 +350,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageHandler := handler.ProvideBatchImageHandler(batchImagePublicService, batchImageDownloadService, batchImageCleanupService, openAIGatewayHandler)
 	imageStudioRepository := repository.NewImageStudioRepository(db)
 	imageStudioArtifactStore := service.ProvideImageStudioArtifactStore(configConfig, imageStudioRepository)
-	imageStudioService := service.NewImageStudioService(imageStudioRepository, apiKeyRepository, accountRepository, imageStudioArtifactStore)
+	imageStudioService := service.NewImageStudioService(imageStudioRepository, apiKeyRepository, imageStudioArtifactStore)
 	imageStudioJobHandler := handler.NewImageStudioJobHandler(imageStudioService)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, imageStudioJobHandler, idempotencyCoordinator, idempotencyCleanupService)
@@ -366,11 +362,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	stepUpAuthMiddleware := middleware.NewStepUpAuthMiddleware(totpService, userService, settingService)
 	engine := server.ProvideRouter(configConfig, handlers, jwtAuthMiddleware, optionalJWTAuthMiddleware, adminAuthMiddleware, apiKeyAuthMiddleware, auditLogMiddleware, stepUpAuthMiddleware, apiKeyService, subscriptionService, opsService, settingService, compositeRouteResolver, redisClient)
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
+	accountJobRuntime := handler.ProvideAccountJobRuntime(accountJobService, accountHandler)
 	imageStudioGatewayExecutor := handler.NewImageStudioGatewayExecutor(openAIGatewayHandler, subscriptionService, opsService)
-	imageStudioRuntime, err := handler.ProvideImageStudioRuntime(imageStudioRepository, imageStudioService, imageStudioArtifactStore, imageStudioGatewayExecutor)
-	if err != nil {
-		return nil, err
-	}
+	imageStudioRuntime := handler.ProvideImageStudioRuntime(imageStudioRepository, imageStudioService, imageStudioArtifactStore, imageStudioGatewayExecutor)
 	codexClientIdentityBackfillService := service.ProvideCodexClientIdentityBackfillService(accountRepository)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsRepository, settingRepository, accountRepository, concurrencyService, db, redisClient, configConfig)
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, settingRepository, db, redisClient, configConfig)

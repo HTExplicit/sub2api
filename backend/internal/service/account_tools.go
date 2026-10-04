@@ -10,24 +10,13 @@ import (
 )
 
 func accountToolsOperation(ctx context.Context, operation string, input, output any) error {
-	return accountToolsOperationScoped(ctx, 0, operation, input, output)
-}
-
-func accountToolsOperationForAccount(ctx context.Context, account *Account, operation string, input, output any) error {
-	if account == nil {
-		return ErrExtensionOperationUnavailable
-	}
-	return accountToolsOperationScoped(ctx, account.ID, operation, input, output)
-}
-
-func accountToolsOperationScoped(ctx context.Context, accountID int64, operation string, input, output any) error {
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return err
 	}
 	call, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	result, err := invokeAccountTools(call, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, AccountID: accountID, Payload: raw})
+	result, err := invokeAccountTools(call, extensionv1.Invocation{Operation: operation, Payload: raw})
 	if err != nil {
 		// Administrators see why the operation failed (for example a timeout).
 		return infraerrors.New(503, "ACCOUNT_TOOLS_UNAVAILABLE", "account tools are unavailable: "+err.Error()).WithCause(err)
