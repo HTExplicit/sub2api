@@ -230,36 +230,21 @@ type ToolCallOutputContextCoverage struct {
 // 与可重建上下文。不能复用 ValidateFunctionCallOutputContextBytes 的 HasToolCallContext：
 // 该标志只代表"存在某一个上下文项"，部分覆盖的续链仍会被上游拒绝。
 func AnalyzeToolCallOutputContextCoverageBytes(body []byte) ToolCallOutputContextCoverage {
-	return analyzeToolCallOutputContextCoverageBytes(body, true)
-}
-
-// AnalyzeConcreteToolCallOutputContextCoverageBytes is the migration-safe
-// variant of AnalyzeToolCallOutputContextCoverageBytes. It requires each output
-// to have its concrete tool-call item in the same payload; item_reference alone
-// still depends on the old provider's stored response and is not portable.
-func AnalyzeConcreteToolCallOutputContextCoverageBytes(body []byte) ToolCallOutputContextCoverage {
-	return analyzeToolCallOutputContextCoverageBytes(body, false)
-}
-
-func analyzeToolCallOutputContextCoverageBytes(body []byte, allowItemReferences bool) ToolCallOutputContextCoverage {
 	coverage := ToolCallOutputContextCoverage{}
 	if len(body) == 0 {
 		return coverage
 	}
 	input := parseRawJSONView(body).Get("input")
-	items := input.Array()
-	if input.IsObject() {
-		items = []gjson.Result{input}
-	} else if !input.IsArray() {
+	if !input.IsArray() && !input.IsObject() {
 		return coverage
 	}
 
 	missingCallID := false
 	var outputCallIDs map[string]struct{}
 	var contextIDs map[string]struct{}
-	for _, item := range items {
+	analyzeItem := func(item gjson.Result) {
 		if !item.IsObject() {
-			continue
+			return
 		}
 		itemType := item.Get("type").String()
 		switch {
@@ -268,7 +253,7 @@ func analyzeToolCallOutputContextCoverageBytes(body []byte, allowItemReferences 
 			callID := strings.TrimSpace(item.Get("call_id").String())
 			if callID == "" {
 				missingCallID = true
-				continue
+				return
 			}
 			if outputCallIDs == nil {
 				outputCallIDs = make(map[string]struct{})
@@ -277,22 +262,30 @@ func analyzeToolCallOutputContextCoverageBytes(body []byte, allowItemReferences 
 		case isCodexToolCallContextItemType(itemType):
 			callID := strings.TrimSpace(item.Get("call_id").String())
 			if callID == "" {
-				continue
+				return
 			}
 			if contextIDs == nil {
 				contextIDs = make(map[string]struct{})
 			}
 			contextIDs[callID] = struct{}{}
-		case allowItemReferences && itemType == "item_reference":
+		case itemType == "item_reference":
 			idValue := strings.TrimSpace(item.Get("id").String())
 			if idValue == "" {
-				continue
+				return
 			}
 			if contextIDs == nil {
 				contextIDs = make(map[string]struct{})
 			}
 			contextIDs[idValue] = struct{}{}
 		}
+	}
+	if input.IsArray() {
+		input.ForEach(func(_, item gjson.Result) bool {
+			analyzeItem(item)
+			return true
+		})
+	} else {
+		analyzeItem(input)
 	}
 
 	if !coverage.HasFunctionCallOutput || missingCallID {

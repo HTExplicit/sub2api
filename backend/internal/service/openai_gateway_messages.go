@@ -94,10 +94,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	clientStream := anthropicReq.Stream // client's original stream preference
 
 	// 2. Model mapping
-	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, normalizedModel, defaultMappedModel)
-	if modelPolicyErr != nil {
-		return nil, modelPolicyErr
-	}
+	billingModel := resolveOpenAIForwardModel(account, normalizedModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	if err := validateGPT61SolCompatRequest(body, upstreamModel); err != nil {
 		writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", err.Error())

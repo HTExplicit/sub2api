@@ -303,11 +303,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				requestModel = mappedModel
 			}
 		}
-		mappedRequestModel, err := resolveOpenAIForwardModelContext(ctx, account, requestModel, "")
-		if err != nil {
-			return openAIWSClientPayload{}, err
-		}
-		upstreamModel := normalizeOpenAIModelForUpstream(account, mappedRequestModel)
+		upstreamModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(requestModel))
 		requestedReasoningEffort := CanonicalRequestedReasoningEffort(normalized, strings.TrimSpace(values[1].String()))
 		if next, policyErr := applyOpenAIWSReasoningEffortPolicy(normalized, hooks); policyErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, policyErr.Error(), policyErr)
@@ -1056,14 +1052,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	var rejectedFieldRetryState *openAIResponsesRejectedFieldRetryState
 	sendAndRelay := func(turn int, lease *openAIWSConnLease, cleanPayload, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, requestedReasoningEffort *string) (*OpenAIForwardResult, error) {
-		mappedModel := strings.TrimSpace(gjson.GetBytes(payload, "model").String())
-		if originalModel != "" && mappedModel == "" {
-			mapped, err := resolveOpenAIForwardModelContext(ctx, account, originalModel, "")
-			if err != nil {
-				return nil, err
-			}
-			mappedModel = normalizeOpenAIModelForUpstream(account, mapped)
-		}
 		responseModelObserver := &upstreamResponseModelObserver{}
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
@@ -1141,8 +1129,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		lastEventType := ""
 		needModelReplace := false
 		clientDisconnected := false
+		mappedModel := ""
 		var mappedModelBytes []byte
 		if originalModel != "" {
+			mappedModel = strings.TrimSpace(gjson.GetBytes(payload, "model").String())
+			if mappedModel == "" {
+				mappedModel = normalizeOpenAIModelForUpstream(account, account.GetMappedModel(originalModel))
+			}
 			needModelReplace = mappedModel != "" && mappedModel != originalModel
 			if needModelReplace {
 				mappedModelBytes = []byte(mappedModel)

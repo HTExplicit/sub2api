@@ -101,7 +101,7 @@ func (s *AccountTestService) testOpenCodeGoConnection(c *gin.Context, account *A
 		return s.processClaudeStream(c, resp.Body)
 	}
 	if protocol == APIProtocolChatCompletions {
-		return s.processOpenAIChatCompletionsStream(c, ctx, account, resp.Body)
+		return s.processOpenAIChatCompletionsStream(c, account, resp.Body)
 	}
-	return s.processOpenAIStream(c, ctx, account, resp.Body)
+	return s.processOpenAIStream(c, account, resp.Body)
 }

@@ -431,7 +431,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
 				c, account, grokMediaScheduleModel(account, routingModel, nil), lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState, streamStarted,
+				&switchCount, maxAccountSwitches, &oauth429FailoverState,
 				"grok_media", reqLog, !endpoint.IsVideoLookupRequest(),
 				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
 			) {

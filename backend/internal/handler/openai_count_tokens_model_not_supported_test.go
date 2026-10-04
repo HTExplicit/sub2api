@@ -18,7 +18,7 @@ func TestWriteCountTokensFailoverErrorPreservesModelNotSupported(t *testing.T) {
 	writeCountTokensFailoverError(ctx, &service.UpstreamFailoverError{
 		StatusCode: http.StatusBadRequest,
 		Reason:     service.GatewayFailureReason("upstream_400_model_not_supported"),
-	}, nil)
+	})
 
 	var envelope map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))

@@ -154,7 +154,7 @@ func TestAccountTestService_Budget429PutsAccountIntoError(t *testing.T) {
 	}
 	rateLimitService.SetAccountRuntimeBlocker(gateway)
 	svc := &AccountTestService{
-		accountRepo: repo, httpUpstream: upstream, openAIGatewayService: gateway, cfg: cfg,
+		accountRepo: repo, httpUpstream: upstream, openaiGatewayService: gateway, cfg: cfg,
 	}
 	account := newBudgetRelayAccount(8660, false)
 	account.Concurrency = 1

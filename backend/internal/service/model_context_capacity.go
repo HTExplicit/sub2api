@@ -239,16 +239,8 @@ func isMediaModelForCapacity(modelID string) bool {
 }
 
 // ValidateModelContextOverrides distinguishes omitted (nil map), no-op (empty
-// map), and deletion (nil value at one model key). It never mutates the account;
-// every account may carry overrides.
-func ValidateModelContextOverrides(_ *Account, patch map[string]*int64) error {
-	if patch == nil {
-		return nil
-	}
-	return validateModelContextOverridesPatch(patch)
-}
-
-func validateModelContextOverridesPatch(patch map[string]*int64) error {
+// map), and deletion (nil value at one model key).
+func ValidateModelContextOverrides(patch map[string]*int64) error {
 	for modelID, value := range patch {
 		if !validModelContextID(modelID) {
 			return infraerrors.BadRequest("INVALID_MODEL_CONTEXT_OVERRIDE", "model context override requires a concrete upstream model ID")
@@ -263,7 +255,7 @@ func validateModelContextOverridesPatch(patch map[string]*int64) error {
 // ApplyModelContextOverrides is also used under the repository row lock. The
 // returned map is fresh, and a patch cannot erase unrelated model overrides.
 func ApplyModelContextOverrides(existing any, patch map[string]*int64) (map[string]int64, error) {
-	if err := validateModelContextOverridesPatch(patch); err != nil {
+	if err := ValidateModelContextOverrides(patch); err != nil {
 		return nil, err
 	}
 	values := modelContextOverridesFromExtra(existing)

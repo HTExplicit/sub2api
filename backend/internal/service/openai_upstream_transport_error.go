@@ -183,7 +183,7 @@ func (s *OpenAIGatewayService) tempUnscheduleOpenAITransportError(ctx context.Co
 	reason := "upstream transport error (proxy/network): " + safeErr
 	// Mark this as a DB-cooldown mirror, so later authoritative recovery can
 	// clear it without leaving an independent downstream breaker behind.
-	s.BlockAccountSchedulingFromPersistedCooldown(account, until, "transport_error")
+	s.BlockAccountSchedulingFromPersistedCooldown(account, until)
 	if s.accountRepo == nil {
 		logger.L().With(zap.String("component", "service.openai_gateway")).Warn(
 			"openai.account_temp_unscheduled_transport_memory_only",

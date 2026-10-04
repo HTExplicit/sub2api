@@ -21,7 +21,7 @@ func TestTaxonomyPoliciesRejectAmbiguityAndInvalidAssignments(t *testing.T) {
 		{"taxonomy.assignment", `{"tag_ids":[-1]}`, "ACCOUNT_TAG_ID_INVALID"},
 		{"taxonomy.assignment", `{"tag_ids":[1,1,2]}`, ""},
 	} {
-		out, err := New().Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: tc.operation, Payload: json.RawMessage(tc.payload)})
+		out, err := New().Invoke(context.Background(), extensionv1.Invocation{Operation: tc.operation, Payload: json.RawMessage(tc.payload)})
 		if err != nil || out.Code != tc.code {
 			t.Fatalf("%s: %v %+v", tc.operation, err, out)
 		}
@@ -34,7 +34,7 @@ func TestReasoningSelectionValidatesTheSuppliedWireCapabilities(t *testing.T) {
 		valid        bool
 	}{{"default", "ultra", true}, {"text", "ultra", true}, {"compact", "ultra", false}, {"default", " high ", false}, {"default", "high", false}, {"default", "", true}} {
 		raw, _ := json.Marshal(extensionv1.ReasoningSelection{Mode: tc.mode, Effort: tc.effort, Levels: []string{"ultra"}})
-		out, err := New().Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "test.reasoning", Payload: raw})
+		out, err := New().Invoke(context.Background(), extensionv1.Invocation{Operation: "test.reasoning", Payload: raw})
 		if err != nil || (out.Code == "") != tc.valid {
 			t.Fatalf("%s/%s: %v %+v", tc.mode, tc.effort, err, out)
 		}

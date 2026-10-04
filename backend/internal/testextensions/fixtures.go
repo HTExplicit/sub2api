@@ -15,7 +15,7 @@ import (
 type operations struct{}
 
 func (operations) InvokeOperation(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") || in.Operation == "tools.describe" {
+	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") {
 		return accounttools.New().Invoke(ctx, in)
 	}
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled

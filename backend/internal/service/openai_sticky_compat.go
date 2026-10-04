@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -220,27 +219,14 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountIDIfMatches(ctx context
 		return err
 	}
 
-	primaryErr := deleteIfMatches(primaryKey)
+	err := deleteIfMatches(primaryKey)
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {
-		return primaryErr
+		return err
 	}
 
 	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
-	legacyErr := deleteIfMatches(legacyKey)
-	// Both generations are independent Redis keys, so always attempt both and
-	// preserve both failures. A legacy-only residue can re-pin the next fallback
-	// read even when the primary compare-and-delete succeeded.
-	return errors.Join(primaryErr, legacyErr)
-}
-
-// ClearOpenAIStickySessionAccountIDIfMatches removes only the binding still
-// owned by expectedAccountID. A concurrent request that already rebound the
-// session to another account is preserved by the cache compare-and-delete.
-func (s *OpenAIGatewayService) ClearOpenAIStickySessionAccountIDIfMatches(
-	ctx context.Context,
-	groupID *int64,
-	sessionHash string,
-	expectedAccountID int64,
-) error {
-	return s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, expectedAccountID)
+	if legacyKey != "" {
+		_ = deleteIfMatches(legacyKey)
+	}
+	return err
 }

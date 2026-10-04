@@ -30,7 +30,7 @@ func TestImportPolicyPlansEachItemByIdentityMatches(t *testing.T) {
 	}
 	request.Phase = "finalize"
 	raw, _ := json.Marshal(request)
-	if _, err := New().Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "import.plan", Payload: raw}); err == nil {
+	if _, err := New().Invoke(context.Background(), extensionv1.Invocation{Operation: "import.plan", Payload: raw}); err == nil {
 		t.Fatal("incomplete prepared phase was accepted")
 	}
 }

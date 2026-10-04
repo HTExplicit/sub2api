@@ -53,7 +53,7 @@ func TestAccountHandlerTrafficTelemetryFollowsTelemetrySwitch(t *testing.T) {
 			stub.getAccountResult = &service.Account{ID: 18, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Concurrency: 3, Credentials: map[string]any{"api_key": "never-return-secret"}}
 			cache := &stubAccountTrafficObserveCache{snapshot: map[service.AccountTrafficProtocol]service.AccountTrafficObserveState{service.AccountTrafficProtocolHTTP: {Started: 3, Completed2xx: 2}}}
 			handler := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-			handler.SetAccountTrafficObserver(service.NewAccountTrafficObserver(cache, nil))
+			handler.SetAccountTrafficObserver(service.NewAccountTrafficObserver(cache))
 			router := gin.New()
 			router.GET("/accounts/:id/traffic-telemetry", handler.GetTrafficTelemetry)
 			recorder := httptest.NewRecorder()
@@ -91,7 +91,7 @@ func TestAccountHandlerGetTrafficTelemetryReturnsSnapshot(t *testing.T) {
 			service.AccountTrafficProtocolHTTP: {Started: 3, Completed2xx: 2, Upstream429: 1, PeakInFlight: 2, RequestsLast60s: 1},
 			service.AccountTrafficProtocolWS:   {},
 		},
-	}, nil))
+	}))
 	router := gin.New()
 	router.GET("/accounts/:id/traffic-telemetry", handler.GetTrafficTelemetry)
 

@@ -64,10 +64,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	startTime := time.Now()
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		mappedModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, defaultMappedModel)
-		if modelPolicyErr != nil {
-			return nil, modelPolicyErr
-		}
+		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
 		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, mappedModel)
 		if err != nil {
 			return nil, err
@@ -87,10 +84,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	// 2. Resolve model mapping (same as ForwardAsChatCompletions)
-	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, originalModel, defaultMappedModel)
-	if modelPolicyErr != nil {
-		return nil, modelPolicyErr
-	}
+	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	if err := validateGPT61SolCompatRequest(body, upstreamModel); err != nil {
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())

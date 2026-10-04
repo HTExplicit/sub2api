@@ -10,22 +10,15 @@ import (
 const (
 	// Preserve the existing bound on internal policy plans and catalog payloads.
 	MaxPayloadBytes = 4 * 1024 * 1024
-	CapabilityAdmin = "extensions.admin.v1"
 )
 
-// Invocation carries one declared capability and a domain operation. The host
-// validates the capability binding before crossing the process boundary.
+// Invocation carries one domain operation and its payload.
 type Invocation struct {
-	Capability string          `json:"capability"`
-	Operation  string          `json:"operation"`
-	Payload    json.RawMessage `json:"payload"`
-	// AccountID is set from the host's authorized execution target, never from
-	// a plugin UI payload. It also partitions cached policy results.
-	AccountID int64 `json:"account_id,omitempty"`
+	Operation string          `json:"operation"`
+	Payload   json.RawMessage `json:"payload"`
 }
 
 type Result struct {
-	PluginID   int64           `json:"plugin_id,omitempty"`
 	HTTPStatus int             `json:"http_status,omitempty"`
 	Payload    json.RawMessage `json:"payload,omitempty"`
 	Code       string          `json:"code,omitempty"`

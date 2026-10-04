@@ -18,7 +18,7 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionReturnsRetryable503(t *testing.T
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
-	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, service.NewOpenAICyberFailoverError(nil, nil), false)
+	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, service.NewOpenAICyberFailoverError(nil), false)
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Equal(t, "1", recorder.Header().Get("Retry-After"))
@@ -32,7 +32,7 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionWritesServerErrorSSE(t *testing.
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
-	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, service.NewOpenAICyberFailoverError(nil, nil), true)
+	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, service.NewOpenAICyberFailoverError(nil), true)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "event: response.failed")
@@ -47,7 +47,7 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionWritesAnthropicRetryableError(t 
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 
-	(&OpenAIGatewayHandler{}).handleAnthropicFailoverExhausted(c, service.NewOpenAICyberFailoverError(nil, nil), false)
+	(&OpenAIGatewayHandler{}).handleAnthropicFailoverExhausted(c, service.NewOpenAICyberFailoverError(nil), false)
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Equal(t, "1", recorder.Header().Get("Retry-After"))
@@ -59,7 +59,7 @@ func TestOpenAIRefusalRecoveryCyberAttemptClearsPerAttemptState(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	h := &OpenAIGatewayHandler{}
-	failoverErr := service.NewOpenAICyberFailoverError(nil, nil)
+	failoverErr := service.NewOpenAICyberFailoverError(nil)
 
 	for _, inputTokens := range []int{7, 11} {
 		service.MarkOpsCyberPolicy(c, service.CyberPolicyMark{Code: "cyber_policy", UpstreamInTok: inputTokens})
@@ -109,7 +109,7 @@ func TestPrepareOpenAIRefusalPromptRetryNeverMutatesCyberFailover(t *testing.T) 
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	body := []byte(`{"model":"gpt-5.6-sol","input":"task"}`)
 
-	repaired, changed, err := prepareOpenAIRefusalPromptRetry(c, body, service.NewOpenAICyberFailoverError(nil, nil))
+	repaired, changed, err := prepareOpenAIRefusalPromptRetry(c, body, service.NewOpenAICyberFailoverError(nil))
 
 	require.NoError(t, err)
 	require.False(t, changed)

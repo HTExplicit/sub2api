@@ -160,7 +160,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
 				c, account, "", lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState, false,
+				&switchCount, maxAccountSwitches, &oauth429FailoverState,
 				"codex_models", nil, true,
 				func() {
 					h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))

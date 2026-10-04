@@ -74,14 +74,14 @@ func TestTaxonomyAssignmentPreservesPolicyNormalizationAndFailsClosed(t *testing
 }
 
 func TestNormalizeAccountTaxonomyNameTrimsAndBuildsCaseInsensitiveKey(t *testing.T) {
-	display, normalized, err := normalizeAccountTaxonomyName("  Production  ")
+	display, normalized, err := normalizeAccountTaxonomyNameContext(context.Background(), "  Production  ")
 	require.NoError(t, err)
 	require.Equal(t, "Production", display)
 	require.Equal(t, "production", normalized)
 
-	_, _, err = normalizeAccountTaxonomyName("   ")
+	_, _, err = normalizeAccountTaxonomyNameContext(context.Background(), "   ")
 	require.Error(t, err)
-	_, _, err = normalizeAccountTaxonomyName(string(make([]rune, 101)))
+	_, _, err = normalizeAccountTaxonomyNameContext(context.Background(), string(make([]rune, 101)))
 	require.Error(t, err)
 }
 

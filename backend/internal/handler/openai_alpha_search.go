@@ -201,7 +201,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
 				c, account, account.GetMappedModel(requestedModel), lastFailoverErr, failedAccountIDs,
-				&switchCount, h.maxAccountSwitches, &oauth429FailoverState, streamStarted,
+				&switchCount, h.maxAccountSwitches, &oauth429FailoverState,
 				"alpha_search", reqLog, true,
 				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
 			) {

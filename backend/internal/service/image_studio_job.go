@@ -206,7 +206,7 @@ type ImageStudioExecutor interface {
 }
 
 type ImageStudioFileStorage interface {
-	Save(ctx context.Context, userID int64, kind ImageStudioArtifactKind, data []byte, contentType string, expiresAt time.Time) (ImageStudioInputArtifact, error)
+	Save(ctx context.Context, userID int64, kind ImageStudioArtifactKind, data []byte, contentType string) (ImageStudioInputArtifact, error)
 	Open(storageKey string) (io.ReadCloser, error)
 	Read(storageKey string) ([]byte, error)
 	Remove(storageKey string) error
@@ -236,11 +236,6 @@ type ImageStudioRepository interface {
 	DeleteArtifact(ctx context.Context, artifactID int64) error
 	ExpireRequests(ctx context.Context, now time.Time) error
 	DeleteExpiredJobs(ctx context.Context, now time.Time) error
-}
-
-func ValidateImageStudioCreateInput(input ImageStudioCreateInput, hasReference, hasMask bool) error {
-	_, err := planImageStudio(context.Background(), input, hasReference, hasMask, false)
-	return err
 }
 
 func ResolveImageStudioTerminalStatus(cancelRequested bool, counts ImageStudioCounts) ImageStudioJobStatus {

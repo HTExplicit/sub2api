@@ -32,13 +32,13 @@ func TestOpenAIPromptCacheKeyModeAppliesOnlyToOptedInAPIKeys(t *testing.T) {
 		promptCacheKeyModeAccount("SHA256_64"),
 		{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{OpenAIPromptCacheKeyModeExtraKey: OpenAIPromptCacheKeyModeSHA25664}},
 	} {
-		unchanged, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, nil, account)
+		unchanged, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, account)
 		require.NoError(t, err)
 		require.False(t, changed)
 		require.Equal(t, body, unchanged)
 	}
 
-	hashed, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, nil, promptCacheKeyModeAccount(OpenAIPromptCacheKeyModeSHA25664))
+	hashed, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, promptCacheKeyModeAccount(OpenAIPromptCacheKeyModeSHA25664))
 	require.NoError(t, err)
 	require.True(t, changed)
 	digest := sha256.Sum256([]byte(longKey))
@@ -62,7 +62,7 @@ func TestOpenAIPromptCacheKeyModeNormalizesFinalUnicodeWireValue(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := []byte(`{"prompt_cache_key":"` + test.value + `","input":[]}`)
-			normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, nil, account)
+			normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, account)
 			require.NoError(t, err)
 			require.Equal(t, test.wantHash, changed)
 			if !test.wantHash {
@@ -76,7 +76,7 @@ func TestOpenAIPromptCacheKeyModeNormalizesFinalUnicodeWireValue(t *testing.T) {
 	}
 
 	nonString := []byte(`{"prompt_cache_key":123,"input":[]}`)
-	result, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(nonString, nil, account)
+	result, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(nonString, account)
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, nonString, result)

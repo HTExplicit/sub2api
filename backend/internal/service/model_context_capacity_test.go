@@ -223,9 +223,8 @@ func TestModelContextCapacityCatalogParserKeepsIndependentModels(t *testing.T) {
 }
 
 func TestModelContextCapacityOverridesPatchValidationAndIsolation(t *testing.T) {
-	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	value := int64(1050000)
-	if err := ValidateModelContextOverrides(account, map[string]*int64{"real-model": &value}); err != nil {
+	if err := ValidateModelContextOverrides(map[string]*int64{"real-model": &value}); err != nil {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
@@ -233,7 +232,7 @@ func TestModelContextCapacityOverridesPatchValidationAndIsolation(t *testing.T) 
 		value int64
 	}{{"*", 1}, {" bad", 1}, {"", 1}, {"bad\n", 1}, {"good", 0}, {"good", -1}, {"good", MaxSafeModelContextTokens + 1}} {
 		value := test.value
-		if ValidateModelContextOverrides(account, map[string]*int64{test.id: &value}) == nil {
+		if ValidateModelContextOverrides(map[string]*int64{test.id: &value}) == nil {
 			t.Errorf("accepted invalid override %q=%d", test.id, value)
 		}
 	}
@@ -246,8 +245,8 @@ func TestModelContextCapacityOverridesPatchValidationAndIsolation(t *testing.T) 
 	if existing["delete"] != 200000 || existing["change"] != 400000 {
 		t.Fatal("patch mutated the old snapshot")
 	}
-	account.Type = AccountTypeOAuth
-	if ValidateModelContextOverrides(account, map[string]*int64{"gpt-6-sol": &value}) != nil {
+	oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	if _, err := ApplyAccountModelContextOverrides(oauth, nil, map[string]*int64{"gpt-6-sol": &value}); err != nil {
 		t.Fatal("an OAuth account must accept overrides like any other account")
 	}
 }

@@ -38,7 +38,7 @@ func TestOpenAIFirstOutputFailoverStopsAfterOneAccountSwitch(t *testing.T) {
 }
 
 func TestOpenAIFirstOutputFailoverDoesNotCapRefusalRecoveryAccountSwitches(t *testing.T) {
-	failoverErr := service.NewOpenAICyberFailoverError(nil, nil)
+	failoverErr := service.NewOpenAICyberFailoverError(nil)
 	count := 0
 
 	for range 3 {

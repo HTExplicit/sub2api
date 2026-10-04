@@ -50,7 +50,7 @@ type AccountRuntimeBlocker interface {
 }
 
 type accountPersistedSchedulingCooldownBlocker interface {
-	BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time, reason string)
+	BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time)
 }
 
 // notifyPersistedAccountSchedulingCooldown distinguishes DB cooldown mirrors
@@ -60,7 +60,7 @@ func notifyPersistedAccountSchedulingCooldown(blocker AccountRuntimeBlocker, acc
 		return
 	}
 	if persisted, ok := blocker.(accountPersistedSchedulingCooldownBlocker); ok {
-		persisted.BlockAccountSchedulingFromPersistedCooldown(account, until, reason)
+		persisted.BlockAccountSchedulingFromPersistedCooldown(account, until)
 		return
 	}
 	blocker.BlockAccountScheduling(account, until, reason)

@@ -1,9 +1,6 @@
 package service
 
-import (
-	"context"
-	"strings"
-)
+import "strings"
 
 // resolveOpenAIForwardModel 解析 OpenAI 兼容转发使用的模型。
 // messagesDispatchMappedModel 是调用方已为 /v1/messages 解析的显式调度结果；
@@ -22,12 +19,6 @@ func resolveOpenAIForwardModel(account *Account, requestedModel, messagesDispatc
 		return messagesDispatchMappedModel
 	}
 	return mappedModel
-}
-
-// resolveOpenAIForwardModelContext is the request-path spelling of
-// resolveOpenAIForwardModel; account model_mapping is the only model policy.
-func resolveOpenAIForwardModelContext(_ context.Context, account *Account, requestedModel, messagesDispatchMappedModel string) (string, error) {
-	return resolveOpenAIForwardModel(account, requestedModel, messagesDispatchMappedModel), nil
 }
 
 // openAIOAuthForeignModelPrefixes 列出明确属于其他厂商家族的模型名前缀。

@@ -1837,7 +1837,7 @@ func TestOpenAIWSPostOutputCyberClose(t *testing.T) {
 		service.NewOpenAIWSClientCloseError(
 			coderws.StatusTryAgainLater,
 			reason,
-			service.NewOpenAICyberFailoverError(nil, nil),
+			service.NewOpenAICyberFailoverError(nil),
 		),
 	)
 
@@ -1848,7 +1848,7 @@ func TestOpenAIWSPostOutputCyberClose(t *testing.T) {
 	require.Equal(t, reason, closeErr.Reason())
 	require.False(t, shouldReportOpenAIWSProxyAccountFailure(wrappedCyberClose))
 
-	_, ok = openAIWSPostOutputCyberClose(service.NewOpenAICyberFailoverError(nil, nil))
+	_, ok = openAIWSPostOutputCyberClose(service.NewOpenAICyberFailoverError(nil))
 	require.False(t, ok, "a replay-safe Cyber failover must remain eligible for account switching")
 
 	nonCyberClose := service.NewOpenAIWSClientCloseError(

@@ -81,10 +81,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	beginUpstreamResponseModelObservation(c)
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		mappedModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, defaultMappedModel)
-		if modelPolicyErr != nil {
-			return nil, modelPolicyErr
-		}
+		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
 		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, mappedModel)
 		if err != nil {
 			return nil, err
@@ -221,10 +218,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 2. Resolve model mapping early so compat prompt_cache_key injection can
 	// derive a stable seed from the final upstream model family.
-	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, originalModel, defaultMappedModel)
-	if modelPolicyErr != nil {
-		return nil, modelPolicyErr
-	}
+	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	if err := validateGPT61SolCompatRequest(body, upstreamModel); err != nil {
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())

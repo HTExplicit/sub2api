@@ -817,7 +817,7 @@ readLoop:
 						if refusalOutput != nil {
 							refusalOutput.DropTurn()
 						}
-						return nil, NewOpenAICyberFailoverError(message, lease.HandshakeHeaders())
+						return nil, NewOpenAICyberFailoverError(lease.HandshakeHeaders())
 					}
 					if sanitized, ok := sanitizeOpenAICyberPolicyFailedEvent(message); ok {
 						message = sanitized

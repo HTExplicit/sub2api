@@ -36,23 +36,21 @@ type ImageStudioArtifactDownload struct {
 }
 
 type ImageStudioService struct {
-	runtime  *ImageStudioRuntime
-	repo     ImageStudioRepository
-	apiKeys  APIKeyRepository
-	accounts AccountRepository
-	store    ImageStudioFileStorage
-	now      func() time.Time
-	origins  imageStudioOrigins
+	runtime *ImageStudioRuntime
+	repo    ImageStudioRepository
+	apiKeys APIKeyRepository
+	store   ImageStudioFileStorage
+	now     func() time.Time
+	origins imageStudioOrigins
 }
 
 func NewImageStudioService(
 	repo ImageStudioRepository,
 	apiKeys APIKeyRepository,
-	accounts AccountRepository,
 	store ImageStudioFileStorage,
 ) *ImageStudioService {
 	return &ImageStudioService{
-		repo: repo, apiKeys: apiKeys, accounts: accounts, store: store, now: time.Now,
+		repo: repo, apiKeys: apiKeys, store: store, now: time.Now,
 	}
 }
 
@@ -69,7 +67,7 @@ func imageStudioGroupEligible(group *Group) bool {
 // EligibleKeys lists the caller's active API keys whose group allows image
 // generation while Image Studio has a model source.
 func (s *ImageStudioService) EligibleKeys(ctx context.Context, userID int64) ([]ImageStudioEligibleKey, error) {
-	if s == nil || s.apiKeys == nil || s.accounts == nil || userID <= 0 {
+	if s == nil || s.apiKeys == nil || userID <= 0 {
 		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 	}
 	lister, ok := s.apiKeys.(apiKeyAllByUserIDLister)
@@ -95,7 +93,7 @@ func (s *ImageStudioService) EligibleKeys(ctx context.Context, userID int64) ([]
 }
 
 func (s *ImageStudioService) eligibleAPIKey(ctx context.Context, userID, apiKeyID int64) (*APIKey, error) {
-	if s == nil || s.apiKeys == nil || s.accounts == nil {
+	if s == nil || s.apiKeys == nil {
 		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 	}
 	key, err := s.apiKeys.GetByID(ctx, apiKeyID)
@@ -112,7 +110,7 @@ func (s *ImageStudioService) Create(
 	reference, mask *ImageStudioUpload,
 ) (*ImageStudioJob, error) {
 	input.Prompt = strings.TrimSpace(input.Prompt)
-	plan, err := planImageStudio(ctx, input, reference != nil, mask != nil, true)
+	plan, err := planImageStudio(ctx, input, reference != nil, mask != nil)
 	if err != nil {
 		return nil, err
 	}
@@ -137,14 +135,14 @@ func (s *ImageStudioService) Create(
 		}
 	}
 	if reference != nil {
-		artifact, err := s.store.Save(ctx, userID, ImageStudioArtifactReference, reference.Data, reference.ContentType, expiresAt)
+		artifact, err := s.store.Save(ctx, userID, ImageStudioArtifactReference, reference.Data, reference.ContentType)
 		if err != nil {
 			return nil, err
 		}
 		saved = append(saved, artifact)
 	}
 	if mask != nil {
-		artifact, err := s.store.Save(ctx, userID, ImageStudioArtifactMask, mask.Data, mask.ContentType, expiresAt)
+		artifact, err := s.store.Save(ctx, userID, ImageStudioArtifactMask, mask.Data, mask.ContentType)
 		if err != nil {
 			removeSaved()
 			return nil, err

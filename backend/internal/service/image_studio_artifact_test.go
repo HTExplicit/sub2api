@@ -24,7 +24,7 @@ func TestImageStudioArtifactStoreWritesOpaqueValidatedFile(t *testing.T) {
 	store := NewImageStudioArtifactStore(t.TempDir(), &imageStudioUsageRepoStub{})
 	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3}
 
-	artifact, err := store.Save(context.Background(), 7, ImageStudioArtifactReference, png, "image/png", time.Now().Add(time.Hour))
+	artifact, err := store.Save(context.Background(), 7, ImageStudioArtifactReference, png, "image/png")
 	require.NoError(t, err)
 	require.NotContains(t, artifact.StorageKey, "/")
 	require.NotContains(t, artifact.StorageKey, `\`)
@@ -45,7 +45,7 @@ func TestImageStudioArtifactStoreRejectsQuotaBeforeWriting(t *testing.T) {
 	}})
 	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3}
 
-	_, err := store.Save(context.Background(), 7, ImageStudioArtifactOutput, png, "image/png", time.Now().Add(time.Hour))
+	_, err := store.Save(context.Background(), 7, ImageStudioArtifactOutput, png, "image/png")
 	var studioErr *ImageStudioError
 	require.ErrorAs(t, err, &studioErr)
 	require.Equal(t, "storage_quota_exceeded", studioErr.Code)
@@ -55,7 +55,7 @@ func TestImageStudioArtifactStoreRejectsMismatchedContentType(t *testing.T) {
 	store := NewImageStudioArtifactStore(t.TempDir(), &imageStudioUsageRepoStub{})
 	jpeg := []byte{0xff, 0xd8, 0xff, 0xdb, 1, 2, 3}
 
-	_, err := store.Save(context.Background(), 7, ImageStudioArtifactOutput, jpeg, "image/png", time.Now().Add(time.Hour))
+	_, err := store.Save(context.Background(), 7, ImageStudioArtifactOutput, jpeg, "image/png")
 	var studioErr *ImageStudioError
 	require.ErrorAs(t, err, &studioErr)
 	require.Equal(t, "invalid_image", studioErr.Code)

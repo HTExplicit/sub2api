@@ -41,8 +41,7 @@ func TestTrafficObservationFollowsTelemetrySwitch(t *testing.T) {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
 			useAdminObservability(t, extensionv1.AdminObservabilityConfig{TelemetryEnabled: enabled})
 			cache := &trafficScopeCache{}
-			observer := NewAccountTrafficObserver(cache, nil)
-			require.Equal(t, enabled, observer.Enabled())
+			observer := NewAccountTrafficObserver(cache)
 			turn := observer.Begin(context.Background(), account, AccountTrafficProtocolWS)
 			snapshot, err := observer.Snapshot(context.Background(), account)
 			if !enabled {
@@ -64,7 +63,7 @@ func TestTrafficObservationFollowsTelemetrySwitch(t *testing.T) {
 func TestTrafficObservationRejectsMissingAccountIdentity(t *testing.T) {
 	useAdminObservability(t, extensionv1.AdminObservabilityConfig{TelemetryEnabled: true})
 	cache := &trafficScopeCache{}
-	observer := NewAccountTrafficObserver(cache, nil)
+	observer := NewAccountTrafficObserver(cache)
 	for _, account := range []*Account{
 		nil,
 		{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
@@ -85,7 +84,7 @@ func TestTrafficObservationRejectsMissingAccountIdentity(t *testing.T) {
 func TestTrafficObservationFinishesStartedTurnAfterTelemetryIsSwitchedOff(t *testing.T) {
 	useAdminObservability(t, extensionv1.AdminObservabilityConfig{TelemetryEnabled: true})
 	cache := &trafficScopeCache{}
-	observer := NewAccountTrafficObserver(cache, nil)
+	observer := NewAccountTrafficObserver(cache)
 	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	turn := observer.Begin(context.Background(), account, AccountTrafficProtocolHTTP)
 	require.NotNil(t, turn)
