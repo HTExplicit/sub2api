@@ -26,6 +26,11 @@ func ReasoningFidelityGatewayForTest(cfg *config.Config, upstream HTTPUpstream, 
 		frozen.values[key] = value
 	}
 	svc.settingService = NewSettingService(frozen, cfg)
+	recovery, err := ProvideReasoningRecoveryService(frozen)
+	if err != nil {
+		return nil, errors.New("invalid_frozen_reasoning_recovery")
+	}
+	svc.SetReasoningRecoveryService(recovery)
 	if prompts != nil {
 		normalized, err := normalizeSystemPromptConfig(*prompts)
 		if err != nil {
