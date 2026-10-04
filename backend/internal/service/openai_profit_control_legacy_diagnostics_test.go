@@ -28,26 +28,22 @@ func legacyProfitDiagnosticAccount(id int64) *Account {
 	return a
 }
 
-func TestSelectAccountWithScheduler_DormantProfitKeepsNonProfitDiagnostics(t *testing.T) {
+func TestSelectAccountWithScheduler_LegacyProfitDiagnostics(t *testing.T) {
 	groupID := int64(5313)
 	ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0))
 
-	t.Run("legacy margin does not create a threshold rejection", func(t *testing.T) {
+	t.Run("threshold reports deterministic pool count", func(t *testing.T) {
 		account := legacyProfitDiagnosticAccount(53131)
 		profitControlTestAccountWithRate(account, 0.9)
 		svc := legacyProfitDiagnosticService([]Account{*account})
 
 		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
-		require.NoError(t, err)
-		require.NotNil(t, selection)
-		require.Equal(t, account.ID, selection.Account.ID)
-		require.False(t, selection.ProfitGateActive())
-		if selection.ReleaseFunc != nil {
-			selection.ReleaseFunc()
-		}
+		require.Nil(t, selection)
+		require.ErrorIs(t, err, ErrNoAvailableAccounts)
+		require.Contains(t, err.Error(), "pool=1, filtered: profit_threshold=1")
 	})
 
-	t.Run("missing account rate does not activate retired validation", func(t *testing.T) {
+	t.Run("missing account rate reports invalid rate", func(t *testing.T) {
 		account := upstreamCostTestOAuthAccount(53132)
 		account.Status = StatusActive
 		account.Schedulable = true
@@ -55,13 +51,9 @@ func TestSelectAccountWithScheduler_DormantProfitKeepsNonProfitDiagnostics(t *te
 		svc := legacyProfitDiagnosticService([]Account{*account})
 
 		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
-		require.NoError(t, err)
-		require.NotNil(t, selection)
-		require.Equal(t, account.ID, selection.Account.ID)
-		require.False(t, selection.ProfitGateActive())
-		if selection.ReleaseFunc != nil {
-			selection.ReleaseFunc()
-		}
+		require.Nil(t, selection)
+		require.ErrorIs(t, err, ErrNoAvailableAccounts)
+		require.Contains(t, err.Error(), "profit_invalid_account_rate=1")
 	})
 
 	t.Run("model support gate does not report profit reasons", func(t *testing.T) {

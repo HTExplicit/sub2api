@@ -193,7 +193,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.Contains(t, gjson.GetBytes(wireBody, "input.0.content.0.text").String(), `"search_query"`)
 }
 
-func TestForwardAlphaSearchOrdinaryAPIKeyIgnoresLegacyBridgeSettings(t *testing.T) {
+func TestForwardAlphaSearchOrdinaryAPIKeyUsesDirectAlphaSearchEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
@@ -206,12 +206,7 @@ func TestForwardAlphaSearchOrdinaryAPIKeyIgnoresLegacyBridgeSettings(t *testing.
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body:       io.NopCloser(strings.NewReader(alphaSearchResponsesSSE("search result"))),
 	}}
-	settings := &SettingService{}
-	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
-		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
-		expiresAt: time.Now().Add(time.Minute).UnixNano(),
-	})
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
 		ID:          47,
 		Platform:    PlatformOpenAI,
@@ -243,12 +238,7 @@ func TestForwardAlphaSearchOrdinaryAPIKeyToolErrorUsesOfficialFailurePath(t *tes
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(bytes.NewReader(upstreamBody)),
 	}}
-	settings := &SettingService{}
-	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
-		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
-		expiresAt: time.Now().Add(time.Minute).UnixNano(),
-	})
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
 		ID:          49,
 		Platform:    PlatformOpenAI,
@@ -279,12 +269,7 @@ func TestForwardAlphaSearchOrdinaryAPIKeyGenericBadRequestDoesNotFanOut(t *testi
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
 	}}
-	settings := &SettingService{}
-	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
-		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
-		expiresAt: time.Now().Add(time.Minute).UnixNano(),
-	})
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
 		ID:          50,
 		Platform:    PlatformOpenAI,
@@ -317,12 +302,7 @@ func TestForwardAlphaSearchOrdinaryAPIKeyTrustsOfficialAlphaSearchSuccess(t *tes
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body:       io.NopCloser(strings.NewReader(textOnlySSE)),
 	}}
-	settings := &SettingService{}
-	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
-		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
-		expiresAt: time.Now().Add(time.Minute).UnixNano(),
-	})
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
 		ID:          51,
 		Platform:    PlatformOpenAI,

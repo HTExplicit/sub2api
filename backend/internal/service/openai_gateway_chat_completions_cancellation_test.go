@@ -161,10 +161,10 @@ func TestForwardAsChatCompletions_StreamCancellationIsPerReasoningAttempt(t *tes
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 			body := []byte(strings.Replace(reasoningRecoveryFixture, `"store":false`, `"stream":true,"store":false`, 1))
-			c, recorder := openAIChatReplayTestContext(t, body)
+			c, recorder := reasoningRecoveryChatContext(t, body)
 			c.Request = c.Request.WithContext(ctx)
 			failed := newContextBoundBlockingReadCloser([]byte(`data: {"type":"response.failed","response":{"id":"resp_rejected","status":"failed","error":{"code":"invalid_encrypted_content","param":"input[1].encrypted_content"}}}` + "\n\n"))
-			completed := newContextBoundBlockingReadCloser([]byte("data: " + string(openAIChatReplayTestPayload(`[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]`)) + "\n\n"))
+			completed := newContextBoundBlockingReadCloser([]byte("data: " + reasoningRecoveryChatCompleted + "\n\n"))
 			t.Cleanup(failed.forceUnblock)
 			t.Cleanup(completed.forceUnblock)
 			upstream := &contextBoundChatRecoveryUpstream{httpUpstreamRecorder: httpUpstreamRecorder{responses: []*http.Response{

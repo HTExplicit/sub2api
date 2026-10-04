@@ -41,21 +41,6 @@ func TestUpdateSettingsPartialPayloadKeepsUnsentKeys(t *testing.T) {
 	require.Equal(t, "true", repo.values[service.SettingKeyTurnstileEnabled])
 }
 
-func TestUpdateSettingsIgnoresDeprecatedAPIKeyCompatibilityWrites(t *testing.T) {
-	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
-		service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  "true",
-		service.SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled: "false",
-	})
-
-	rec := doUpdateSettings(t, h, map[string]any{
-		"openai_apikey_alpha_search_responses_bridge_enabled":  false,
-		"openai_apikey_prompt_cache_key_normalization_enabled": true,
-	}, nil)
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled])
-	require.Equal(t, "false", repo.values[service.SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled])
-}
-
 // A full payload keeps whole-document semantics: fields explicitly set to their
 // zero value are still cleared.
 func TestUpdateSettingsFullPayloadStillClearsSentEmptyFields(t *testing.T) {

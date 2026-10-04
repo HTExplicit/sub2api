@@ -581,6 +581,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex runtime settings', titleKey: 'nav.codexRuntime' }
   },
   {
+    path: '/admin/reasoning-recovery',
+    name: 'AdminReasoningRecovery',
+    component: () => import('@/views/admin/ReasoningRecoveryView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Reasoning Recovery', titleKey: 'nav.reasoningRecovery' }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),

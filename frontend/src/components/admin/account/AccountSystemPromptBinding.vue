@@ -2,7 +2,7 @@
   <section class="space-y-3" data-test="account-system-prompt-binding">
     <h3 v-if="embedded" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.systemPrompts.accountPrompts') }}</h3>
     <p class="text-xs text-muted">{{ t('admin.systemPrompts.binding.description') }}</p>
-    <p v-if="accountIds.length > 1" class="text-xs text-muted">{{ t('admin.systemPrompts.binding.bulkHint', { count: accountIds.length }) }}</p>
+    <p v-if="scope" class="text-xs text-muted" data-test="system-prompt-binding-scope">{{ scope }}</p>
     <p v-if="error" role="alert" class="text-sm text-red-600">{{ error }}</p>
     <div data-ui="dense-dlg-if" class="flex flex-wrap items-end gap-3">
       <label class="space-y-1">
@@ -23,7 +23,7 @@
         {{ t('admin.systemPrompts.binding.apply') }}
       </button>
     </div>
-    <p v-if="state" class="text-xs text-muted" data-test="system-prompt-binding-effect">{{ effect }}</p>
+    <p v-if="state && promptTakers > 0" class="text-xs text-muted" data-test="system-prompt-binding-effect">{{ effect }}</p>
   </section>
 </template>
 
@@ -35,11 +35,23 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { systemPromptsAPI, type SystemPromptBinding, type SystemPromptBindingMode, type SystemPromptState } from '@/api/admin/systemPrompts'
 import { readSystemPromptBinding } from '@/utils/systemPromptBinding'
 
-const props = defineProps<{ accountIds: number[]; current?: unknown; embedded?: boolean }>()
+// takers: how many of accountIds the caller knows to take a prompt. The account edit dialog and the row menu offer the
+// binding only for such an account and leave it out. A bulk selection can also hold accounts that take none and
+// accounts the list has not loaded; the request skips every account that takes none.
+const props = defineProps<{ accountIds: number[]; takers?: number; current?: unknown; embedded?: boolean }>()
 const emit = defineEmits<{ changed: [binding: SystemPromptBinding] }>()
 const { t } = useI18n()
 const appStore = useAppStore()
 
+// What the binding puts in effect is stated only when an account is known to receive it.
+const promptTakers = computed(() => props.takers ?? props.accountIds.length)
+// Which accounts the binding reaches: their number for more than one, and that TypeSafe accounts are skipped
+// whenever one of them may be skipped, whatever the size of the selection.
+const scope = computed(() => {
+  const count = props.accountIds.length
+  if (promptTakers.value >= count) return count > 1 ? t('admin.systemPrompts.binding.bulkHint', { count }) : ''
+  return count > 1 ? t('admin.systemPrompts.binding.bulkSkipHint', { count }) : t('admin.systemPrompts.binding.skipHint')
+})
 const initial = readSystemPromptBinding(props.current)
 const state = ref<SystemPromptState | null>(null)
 const mode = ref<SystemPromptBindingMode>(initial.mode)

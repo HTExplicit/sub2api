@@ -160,7 +160,7 @@ function recoverySummary(recovery: Recovery): string {
   const parts = [`disposition=${recovery.disposition || ''}`, `retry_attempted=${!!recovery.retry_attempted}`]
   if (recovery.not_attempted_reason) parts.push(`not_attempted_reason=${recovery.not_attempted_reason}`)
   if (recovery.cache_skipped_items) parts.push(`cache_skipped_items=${recovery.cache_skipped_items}`)
-  return text('推理签名恢复：', 'Reasoning recovery: ') + parts.join(' · ')
+  return text('推理恢复：', 'Reasoning recovery: ') + parts.join(' · ')
 }
 
 const known = (value?: Signal) => !!value && !['missing', 'uninspected', 'null', 'unknown'].includes(value.kind || '')
@@ -177,8 +177,7 @@ function explain(diagnostic: Diagnostic): string[] {
   if (incoming.inspection_limited || wire.inspection_limited || history.scan_limited || error.inspection_limited) lines.push(text('本次结构检查受大小或可读性限制；未检查部分不能当作不存在。', 'Structural inspection was limited by size or readability; uninspected fields are not evidence of absence.'))
   if (recovery.retry_attempted) lines.push(text('宿主已执行一次受限恢复请求；恢复是否成功须查看后续结果。', 'The host dispatched one bounded recovery request; check the subsequent result for its outcome.'))
   const reasons: Record<string, [string, string]> = {
-    disabled: ['恢复能力已关闭或当前账号不在启用范围。', 'Recovery is disabled or outside the enabled account scope.'],
-    policy_unavailable: ['恢复能力不可用，未启用替代执行路径。', 'Recovery was unavailable.'],
+    disabled: ['推理恢复开关已关闭，或该账号类型、请求路径不在恢复适用范围。', 'Reasoning recovery is switched off, or this account type or request path is outside what it covers.'],
     semantic_output_committed: ['已向客户端发送业务输出，宿主禁止重放请求。', 'Semantic output was already committed; the host prohibits replay.'],
     source_changed: ['请求来源已变化，宿主禁止跨来源恢复。', 'The source changed; the host prohibits recovery across sources.'],
     request_cancelled: ['请求已取消，未继续恢复。', 'The request was canceled before further recovery.']

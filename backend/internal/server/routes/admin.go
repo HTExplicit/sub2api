@@ -129,6 +129,9 @@ func RegisterAdminRoutes(
 		// 独立业务 System Prompt 管理
 		registerSystemPromptRoutes(admin, h)
 
+		// 推理恢复全局开关
+		registerReasoningRecoveryRoutes(admin, h)
+
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
 
@@ -155,6 +158,14 @@ func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		prompts.GET("", h.Admin.SystemPrompt.Get)
 		prompts.PUT("", h.Admin.SystemPrompt.Save)
 		prompts.PUT("/bindings", h.Admin.SystemPrompt.SetBindings)
+	}
+}
+
+func registerReasoningRecoveryRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	recovery := admin.Group("/reasoning-recovery")
+	{
+		recovery.GET("", h.Admin.ReasoningRecovery.Get)
+		recovery.PUT("", h.Admin.ReasoningRecovery.Save)
 	}
 }
 

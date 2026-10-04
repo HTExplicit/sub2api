@@ -32,7 +32,14 @@ ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流�
 
 侧栏“扩展功能 → 系统提示词”：一个全局开关、一个站点默认提示词和提示词库（名称、正文 ≤64 KiB、位置 prepend/append、角色 auto/system/developer，最多 50 条）。整份配置存为 `settings.system_prompts` 一行 JSON；`GET/PUT /api/v1/admin/system-prompts` 读写整份配置并返回账号使用统计，删除仍被自定义账号使用的提示词返回 409。
 
-账号绑定存于 `accounts.extra.system_prompt`（`inherit`、`off`、`custom` + `prompt_id`，缺省为继承）。账号编辑、行菜单和批量栏（≤1000 个）通过 `PUT /api/v1/admin/system-prompts/bindings` 写入，普通账号编辑保留该键。继承的账号在所有平台使用站点默认；全局开关关闭时一律不注入。
+账号绑定存于 `accounts.extra.system_prompt`（`inherit`、`off`、`custom` + `prompt_id`，缺省为继承）。账号编辑、行菜单和批量栏（≤1000 个）通过 `PUT /api/v1/admin/system-prompts/bindings` 写入，普通账号编辑保留该键。继承的账号使用站点默认；全局开关关闭时一律不注入。
+
+绑定只属于请求有注入点的平台，即 `service.SystemPromptPlatforms` 的十个平台（下表四种最终协议）。TypeSafe 只走 System One，请求没有 system / instructions 字段，转发时原样发送，所以它的账号不注入、不计入使用统计、不持有绑定：
+
+- 账号编辑和行菜单不提供该入口；批量栏在选中的账号都已加载且都不可注入时也不提供。选中的是一组 ID，可以包含其他页、全部结果或导入结果里未加载的账号，这类选择保留入口，批量弹窗提示 TypeSafe 账号会被跳过。
+- 绑定接口跳过这类账号并返回实际写入的账号数。
+- 创建账号（数据导入、复制账号同此路径）时丢弃这类账号带入的 `extra.system_prompt`；批量编辑和 extra 合并接口在任何平台都不写该键，已有账号的绑定只由绑定接口写入。
+- 迁移 `268_purge_system_prompt_bindings_without_insertion_point.sql` 一次性删除它们已存的绑定。
 
 请求路径只读内存快照（保存即替换，60 秒后台刷新以同步多实例）和调度账号自带的绑定，不查询数据库；配置不可用时不注入并告警，不向客户端返回错误。每个最终协议只注入一次：
 
@@ -52,6 +59,14 @@ Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `ena
 ## Codex 运行设置
 
 侧栏“Codex 运行设置”（`/admin/codex-runtime`）有一个开关“压缩 Codex Responses 请求体”：开启时 OAuth 账号发往 ChatGPT Codex 后端的流式 `/responses` 请求体以 zstd 压缩发送，compact、models 等其他请求保持明文。保存沿用 TOTP 二次验证，对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约与未保存时的默认值见 [native domains](native-domains.md)。
+
+## 失效推理密文恢复
+
+侧栏“扩展功能 → 推理恢复”（`/admin/reasoning-recovery`）：一个全局开关和保存按钮，默认开启，没有账号级选项；页面打开时读取一次，读取失败时显示错误、不显示开关。存为 `settings.reasoning_recovery_config` 一行 JSON（`{"enabled": <bool>}`），没有该行即开启；`GET/PUT /api/v1/admin/reasoning-recovery` 以标准响应封装读写 `{"enabled": <bool>}`，管理员认证、无二次验证，保存记入操作审计，请求体不是严格的 `{"enabled": <bool>}` 时返回 400 且不保存。请求路径只读内存中的布尔值（保存即替换，60 秒后台刷新以同步多实例），不查询数据库，每次转发开始时读取一次。启动时读取失败或存储值不是严格的 `{"enabled": <bool>}` 则停止启动；运行中刷新失败保留当前值。
+
+开启时，OpenAI 平台的 API Key、OAuth 和 Setup Token 账号（含自动透传）在原生 Responses（含 compact）与 Chat Completions 转 Responses 的 HTTP 请求上生效：上游以结构化错误码 `invalid_encrypted_content` 或 `thinking_signature_invalid` 拒绝、且尚无语义输出时，去掉被拒推理项的 `encrypted_content`，在同一账号重发一次；被拒密文按来源在 Redis 记忆 24 小时，期间同源请求发送前即去掉。Messages 桥接与 WebSocket 不恢复。关闭时不重发也不预先去除，签名拒绝仍作为请求级终态返回，不切换账号。
+
+迁移 `267_purge_account_reasoning_options.sql` 一次性删除各账号 `extra` 中原有的两个账号级推理选项键（键名见该文件）；此后没有代码读写它们，已存的账号级取值不带入全局开关。Chat Completions 转 Responses 的请求只由客户端消息转换而来，网关不保存响应中的推理项。
 
 ## 账号连接测试与批量测试
 

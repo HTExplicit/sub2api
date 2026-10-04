@@ -1091,10 +1091,6 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
@@ -1232,10 +1228,6 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	var req UpdateAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
-		return
-	}
-	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
-		response.ErrorFrom(c, err)
 		return
 	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
@@ -1909,10 +1901,6 @@ func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
 	if err := service.ValidateUpstreamRequestIDHeaderExtra(req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -2127,10 +2115,6 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		if err := service.ValidateOpenAIReasoningPolicyExtra(item.Extra); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
 	}
 	groupIDs := make([]int64, 0)
 	for _, item := range req.Accounts {
@@ -2187,10 +2171,6 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
@@ -2240,31 +2220,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	if h.replayAccountJob(c, service.AccountJobKindBulkUpdate, submission) {
 		return
 	}
-	if service.HasOpenAIReasoningPolicyUpdates(req.Extra) {
-		// A bulk worker processes individual items. Validate the complete set
-		// before submitting any item, not only the UI's current metadata page.
-		resolvedIDs, err := h.resolveAccountJobTargetIDs(c.Request.Context(), ids, req.Filters)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		if len(resolvedIDs) == 0 {
-			response.BadRequest(c, "No matching accounts for reasoning policy update")
-			return
-		}
-		accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), resolvedIDs)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		if err := service.ValidateOpenAIReasoningPolicyTargets(resolvedIDs, accounts); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		// Freeze the validated selection in item seeds. The original request
-		// remains the replay source; workers execute only each seed's target.
-		ids = resolvedIDs
-	} else if len(ids) == 0 {
+	if len(ids) == 0 {
 		if h.accountJobs == nil {
 			response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
 			return

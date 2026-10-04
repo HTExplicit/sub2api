@@ -1920,9 +1920,9 @@ func openAIHTTPAuthoritativeTerminalEvent(payload []byte, eventType string) bool
 }
 
 // An explicit signature rejection is request-scoped even when recovery is
-// disabled, unavailable, or already consumed. It must not fall into generic
-// account-pool retries. Once semantic bytes were committed the parser retains
-// the genuine failure event and returns a plain error instead of replaying.
+// disabled or already consumed. It must not fall into generic account-pool
+// retries. Once semantic bytes were committed the parser retains the genuine
+// failure event and returns a plain error instead of replaying.
 func openAIHTTPReasoningRejectionBeforeOutput(c *gin.Context, payload []byte, semanticCommitted bool) error {
 	if bodyHasSSEFraming(payload) {
 		forEachOpenAISSEFrame(string(payload), func(_ string, data []byte) {

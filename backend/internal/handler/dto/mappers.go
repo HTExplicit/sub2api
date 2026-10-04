@@ -150,8 +150,6 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 	if g == nil {
 		return nil
 	}
-	// Profit control is retired and has no runtime effect; the stored legacy
-	// values are returned read-only (writes are rejected).
 	out := &AdminGroup{
 		Group:                       groupFromServiceBase(g),
 		ForceOpenAIFast:             g.ForceOpenAIFast,

@@ -306,7 +306,10 @@ func (s *SchedulerSnapshotService) GetGroupByID(ctx context.Context, groupID int
 	return s.groupRepo.GetByID(ctx, groupID)
 }
 
-// GetGroupByIDLite returns scheduling fields without account-count aggregation.
+// GetGroupByIDLite 获取分组配置但不加载账号计数聚合。
+// 利润门只需要平台、倍率、利润与高峰字段，GetByID 附带的那条账号计数聚合
+// 查询纯属浪费——composite / 模型路由 / fallback 每次装门都要付一次，WS 更是
+// 每个 turn 一次，且发生在「是否启用利润控制」判定之前。
 func (s *SchedulerSnapshotService) GetGroupByIDLite(ctx context.Context, groupID int64) (*Group, error) {
 	if s.groupRepo == nil {
 		return nil, nil

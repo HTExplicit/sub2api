@@ -534,6 +534,8 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	excludedIDs map[int64]struct{},
 	requireCompact bool,
 ) (*AccountSelectionResult, error) {
+	// 分组利润控制：公共入口装门，保证不经 selectAccountWithScheduler
+	// 的调用方也无法绕过利润准入（scheduler 内部路径已在唯一调度入口装门）。
 	ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	return s.selectAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, "", requireCompact)
 }
@@ -809,6 +811,9 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
 		return policyMiss()
 	}
+	// 分组利润控制：与 quota auto-pause 同语义——利润不合格是暂时
+	// 状态（上游倍率/高峰随时间变化），只跳过本次复用、落回普通调度，不删除
+	// 绑定（倍率恢复后可继续按 previous_response_id 粘连）。
 	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
 		return policyMiss()
 	}

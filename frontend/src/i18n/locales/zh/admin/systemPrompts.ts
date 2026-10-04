@@ -1,13 +1,13 @@
 export default {
   systemPrompts: {
     title: '系统提示词',
-    description: '维护一个小提示词库，选一个站点默认。所有平台上继承默认的账号都会注入它；单个账号可以关闭或改用库里的另一条。',
+    description: '维护一个小提示词库，选一个站点默认。继承默认的账号都会注入它；单个账号可以关闭或改用库里的另一条。',
     accountPrompts: '系统提示词',
     enabled: '启用系统提示词',
     enabledHint: '关闭后所有账号都不注入。',
     defaultPrompt: '站点默认提示词',
     noDefault: '不使用默认',
-    defaultHint: '继承模式的账号（所有平台）使用这一条。',
+    defaultHint: '继承模式的账号（除 TypeSafe 外的所有平台）使用这一条。',
     usage: '继承默认 {inherit} 个账号 · 关闭 {off} 个 · 自定义 {custom} 个',
     library: '提示词库',
     add: '新增提示词',
@@ -29,7 +29,7 @@ export default {
     empty: '还没有提示词。',
     invalid: '每条提示词都需要名称和正文，正文不超过 64 KiB。',
     loadFailed: '加载失败',
-    notes: 'Codex Responses Lite 与 compact 请求不注入；不改写 prompt_cache_key；返回给客户端的 instructions 保持客户端原值。Claude OAuth 伪装块在“设置 → 网关”中配置。',
+    notes: 'TypeSafe 账号不注入，也不计入上面的账号数：System One 请求没有系统指令字段。Codex Responses Lite 与 compact 请求不注入；不改写 prompt_cache_key；返回给客户端的 instructions 保持客户端原值。Claude OAuth 伪装块在“设置 → 网关”中配置。',
     binding: {
       description: '继承：使用站点默认；关闭：不注入；自定义：使用库中指定的一条。',
       mode: '方式',
@@ -40,6 +40,8 @@ export default {
       apply: '应用',
       applied: '已更新 {count} 个账号',
       bulkHint: '将应用到选中的 {count} 个账号。',
+      bulkSkipHint: '将应用到选中的 {count} 个账号；其中的 TypeSafe 账号会被跳过。',
+      skipHint: '选中的账号如果是 TypeSafe 账号，会被跳过。',
       globalOff: '全局开关已关闭，当前不会注入。',
       effectiveDefault: '当前生效：站点默认“{name}”',
       effectiveNone: '站点未设置默认提示词，当前不会注入。',

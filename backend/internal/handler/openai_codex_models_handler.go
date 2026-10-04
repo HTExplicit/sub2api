@@ -104,6 +104,10 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	var sameAccountRetrySelection *service.AccountSelectionResult
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 
+	// The manifest is not billed, so the profit gate must not filter the
+	// accounts that can serve it.
+	c.Request = c.Request.WithContext(service.WithOpenAIProfitControlSuppressed(c.Request.Context()))
+
 	for {
 		retryingSameAccount := sameAccountRetrySelection != nil
 		var selection *service.AccountSelectionResult

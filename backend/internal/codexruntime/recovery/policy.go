@@ -9,11 +9,6 @@ import (
 
 var inputParam = regexp.MustCompile(`^input(?:\[(\d+)\]|\.(\d+))(?:\.encrypted_content)?$`)
 
-func ReplayPolicy() extensionv1.ReplayRules {
-	return extensionv1.ReplayRules{Version: "chat-tools-v1", Enabled: true, MaxToolCalls: 32, AllowOmittedReasoning: true,
-		ChatFields: []string{"role", "content", "reasoning_content", "reasoning", "tool_calls", "refusal"}, OutputKinds: []string{"reasoning", "message", "function_call"}}
-}
-
 func Rejection(in extensionv1.RecoveryEnvelope) extensionv1.RecoveryRejection {
 	if !extensionv1.ValidReasoningRejectionEnvelope(in) {
 		return extensionv1.RecoveryRejection{}
@@ -59,10 +54,4 @@ func Select(in extensionv1.RecoverySelectionQuery) extensionv1.RecoverySelection
 		return extensionv1.RecoverySelection{Reason: "ambiguous_encrypted_carriers"}
 	}
 	return extensionv1.RecoverySelection{Indices: append([]int(nil), in.CipherIndices...), Reason: "recovery_not_dispatched"}
-}
-
-// Enabled reports an account's reasoning policy setting: on unless it is
-// configured to anything but true.
-func Enabled(in extensionv1.RecoverySetting) bool {
-	return !in.Configured || (in.Valid && in.Value)
 }

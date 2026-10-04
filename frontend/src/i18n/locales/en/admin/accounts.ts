@@ -837,15 +837,7 @@ export default {accounts: {
         apiKeyHint: 'Your OpenAI API Key',
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
-          'When enabled, this OpenAI account forwards requests/responses as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering. Enabled signature recovery below is an explicit exception and is recorded as lossy recovery.',
-        reasoningPolicy: {
-          chatReplay: 'Replay reasoning for Chat tool turns',
-          chatReplayDesc: 'Enabled by default. Cache completed function-tool batches that can be represented faithfully in Chat for 24 hours. Restore raw reasoning and tool items only when account, user, model, reasoning configuration and history all match. Cache failures do not block requests; full input conversations are not cached.',
-          signatureRecovery: 'Recover invalid reasoning ciphertext (lossy)',
-          signatureRecoveryDesc: 'Enabled by default. After an explicit signature rejection and before semantic output, remove only the rejected reasoning ciphertext and retry the same account at most once. Remember that old ciphertext for 24 hours without removing new reasoning. This also applies as a passthrough exception, may incur extra upstream charges, and does not restore the original reasoning chain.',
-          applyField: 'Apply this setting (otherwise keep existing value)',
-          boundaryHint: 'Only actual HTTP/SSE native Responses, Compact and Chat-to-Responses paths are eligible; replay is Chat-to-Responses only. Messages, WebSocket (including HTTP ingress routed to WS), and native Chat-only upstreams do not use this recovery. The 24-hour limit is logical; Redis persistence files and backups may retain historical bytes.'
-        },
+          'When enabled, this OpenAI account forwards requests/responses as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering. The global Reasoning Recovery switch under Extensions still applies to passthrough accounts as an explicit exception.',
         flattenNamespaces: 'Flatten Codex namespace tools (compatibility)',
         flattenNamespacesDesc:
           'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',
@@ -886,15 +878,6 @@ export default {accounts: {
         responsesModeForceChatCompletions: 'Force Chat Completions',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
-        alphaSearchMode: 'Alpha Search mode',
-        alphaSearchModeDesc: 'OpenAI API keys only. Bridge mode also requires the global admin switch; disabled accounts are excluded from search scheduling.',
-        alphaSearchModeDirect: 'Direct /v1/alpha/search',
-        alphaSearchModeResponsesWebSearch: 'Responses Web Search bridge',
-        alphaSearchModeDisabled: 'Disable search',
-        promptCacheKeyMode: 'Prompt cache key mode',
-        promptCacheKeyModeDesc: 'OpenAI API keys only. SHA-256 mode also requires the global admin switch and only rewrites values longer than 64 characters.',
-        promptCacheKeyModePassthrough: 'Pass through',
-        promptCacheKeyModeSHA25664: 'SHA-256 (64 characters)',
         imagesUrlToB64Json: 'Image result URL to base64',
         imagesUrlToB64JsonDesc:
           'Only applies to non-streaming Images responses of OpenAI API Key accounts. When an upstream image item has a url but no b64_json, the gateway downloads the url and fills b64_json with its base64 content (url is kept) for clients built on the official API; the response is returned unchanged if the download fails.',
@@ -1014,6 +997,11 @@ export default {accounts: {
         uploadPreviewAlt: 'Upload preview',
         fileReadFailed: 'Failed to read the selected file',
         noResponseBody: 'No response body from server'
+      },
+      // TypeSafe specific hints
+      typesafe: {
+        baseUrlHint: 'Leave default for official TypeSafe API',
+        apiKeyHint: 'Your TypeSafe API Key'
       },
       anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',

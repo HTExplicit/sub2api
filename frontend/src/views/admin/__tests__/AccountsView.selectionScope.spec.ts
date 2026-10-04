@@ -231,4 +231,22 @@ describe('AccountsView selection scope through real bulk controls', () => {
     expect(toolbar.props('allResultsSelected')).toBe(true)
     expect(showError).not.toHaveBeenCalled()
   })
+
+  it('offers the system prompt binding from what the list knows about the selected rows', async () => {
+    const typeSafePage = { ...page([7], 2, 2), items: makeAccounts([7]).map(account => ({ ...account, platform: 'typesafe', type: 'apikey' })) }
+    listAccounts.mockImplementation(async (currentPage: number) => currentPage === 1 ? typeSafePage : page([99], 2, 2))
+    const view = mountView()
+    await flushPromises()
+    const offered = () => view.getComponent(AccountBulkActionsBar).find('[data-test="account-prompt-binding-bulk"]').exists()
+
+    // One selected TypeSafe row: no entry, as in its row menu.
+    await view.get('[data-account="7"] input').setValue(true)
+    expect(offered()).toBe(false)
+    // The next page does not hold that row: the selection is no longer known, and the request skips the account.
+    await view.get('[data-test="page-two"]').trigger('click')
+    await flushPromises()
+    expect(offered()).toBe(true)
+    await view.get('[data-account="99"] input').setValue(true)
+    expect(offered()).toBe(true)
+  })
 })

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -22,11 +23,26 @@ const openAIRuntimeBreakerHalfOpenRetention = 5 * time.Minute
 
 type gatewayCache struct {
 	rdb *redis.Client
+	// reasoningStateRDB serves only the rejected-cipher memory; see
+	// newReasoningStateClient.
+	reasoningStateRDB *redis.Client
 }
 
 func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
-	return &gatewayCache{rdb: rdb}
+	return &gatewayCache{rdb: rdb, reasoningStateRDB: newReasoningStateClient(rdb)}
 }
+
+// Close releases the client of the rejected-cipher memory, the only resource
+// the cache owns; application cleanup calls it through io.Closer. The shared
+// client is closed by its owner.
+func (c *gatewayCache) Close() error {
+	if c == nil || c.reasoningStateRDB == nil {
+		return nil
+	}
+	return c.reasoningStateRDB.Close()
+}
+
+var _ io.Closer = (*gatewayCache)(nil)
 
 // buildSessionKey 构建 session key，包含 groupID 实现分组隔离
 // 格式: sticky_session:{groupID}:{sessionHash}

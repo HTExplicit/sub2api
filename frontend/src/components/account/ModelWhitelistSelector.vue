@@ -286,28 +286,9 @@ const normalizedPlatforms = computed(() => {
   )
 })
 
-const upstreamSyncPlatforms = new Set([
-  'anthropic',
-  'openai',
-  'gemini',
-  'antigravity',
-  'grok',
-  'kimi',
-  'zhipu',
-  'deepseek',
-  'minimax',
-  'opencode_go'
-])
-const canSyncUpstream = computed(() => {
-  if (props.accountId) {
-    if (normalizedPlatforms.value.length === 0) return true
-    return normalizedPlatforms.value.some(platform => upstreamSyncPlatforms.has(platform.toLowerCase()))
-  }
-  if (props.syncCredentials) {
-    return upstreamSyncPlatforms.has(props.syncCredentials.platform.toLowerCase())
-  }
-  return false
-})
+// The account dialogs pass a saved account's ID or the credentials of an unsaved one only where the backend can list
+// the models (utils/upstreamModelSync.ts), so having either one is the whole condition.
+const canSyncUpstream = computed(() => Boolean(props.accountId || props.syncCredentials))
 
 interface ModelSelectorOption {
   value: string

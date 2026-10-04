@@ -526,49 +526,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     wrapper.unmount()
   })
 
-  it('reasoning policy defaults on without writing untouched switches during creation', async () => {
-    const wrapper = await submitApiKeyAccount('openai')
-    expect(wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.get('[data-testid="openai-reasoning-signatureRecovery-toggle"]').attributes('aria-checked')).toBe('true')
-    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
-    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
-    wrapper.unmount()
-  })
-
-  it('reasoning policy creates an explicit independent opt-out', async () => {
-    const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'OpenAI')
-    await selectButtonByText(wrapper, 'API Key')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('openai account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
-    await wrapper.get('[data-testid="openai-reasoning-signatureRecovery-toggle"]').trigger('click')
-    await wrapper.get('form#create-account-form').trigger('submit.prevent')
-    await flushPromises()
-    expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_reasoning_signature_recovery_enabled).toBe(false)
-    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
-    wrapper.unmount()
-  })
-
-  it('reasoning policy preserves untouched import settings and forwards explicit edits', async () => {
-    const untouched = await openCodexImportStep()
-    await untouched.get('[data-testid="import-codex-session"]').trigger('click')
-    await flushPromises()
-    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
-    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
-    untouched.unmount()
-
-    const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'OpenAI')
-    await wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]').trigger('click')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
-    await wrapper.get('form#create-account-form').trigger('submit.prevent')
-    await wrapper.get('[data-testid="import-codex-pat"]').trigger('click')
-    await flushPromises()
-    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_chat_reasoning_replay_enabled).toBe(false)
-    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
-    wrapper.unmount()
-  })
-
   it('submits the Codex fingerprint mode of an OAuth-based account, explicit off included, and none for an API-key account', async () => {
     const untouched = await openCodexImportStep()
     await untouched.get('[data-testid="import-codex-session"]').trigger('click')
@@ -617,7 +574,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(submitted.credentials).not.toHaveProperty('model_mapping')
   })
 
-  it('keeps only the transport selector and removes account-level compatibility modes', async () => {
+  it('leaves the Responses mode on auto when the Laxa base URL is typed instead of taken from the preset', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
@@ -632,8 +589,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     const responses = wrapper.get<HTMLSelectElement>('[data-testid="openai-responses-mode-select"]')
 
     expect(responses.element.value).toBe('auto')
-    expect(wrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
   })
 
   afterEach(() => vi.useRealTimers())
@@ -820,6 +775,34 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(showWarningMock).toHaveBeenCalledWith(
       'admin.accounts.syncUpstreamModelsMetadataIncomplete'
     )
+  })
+
+  it('shows the TypeSafe hints and starts no upstream model sync for a TypeSafe account', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'TypeSafe / Jev')
+
+    const inputs = wrapper.findAll<HTMLInputElement>('form#create-account-form input')
+    expect(inputs.some((input) => input.attributes('placeholder') === 'https://api.typesafe.ai')).toBe(true)
+    expect(wrapper.text()).toContain('admin.accounts.typesafe.baseUrlHint')
+    expect(wrapper.text()).toContain('admin.accounts.typesafe.apiKeyHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.baseUrlHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.apiKeyHint')
+
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('jev account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('ts-test-key')
+    // System One has no model list: neither the preview nor the sync after the create is offered.
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('syncCredentials')).toBeUndefined()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({
+      platform: 'typesafe',
+      type: 'apikey',
+      credentials: { base_url: 'https://api.typesafe.ai', model_mapping: { 'jev-latest': 'jev-latest' } }
+    })
+    expect(syncUpstreamModelsMock).not.toHaveBeenCalled()
+    expect(showWarningMock).not.toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.accountCreated')
   })
 
   // namespace 摊平是仅 OAuth 的兼容开关：API Key 走 chat completions 回退桥时由桥自行摊平

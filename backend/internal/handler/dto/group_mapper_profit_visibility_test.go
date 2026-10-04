@@ -60,12 +60,11 @@ func TestGroupFromServiceOmitsProfitControl(t *testing.T) {
 	}
 }
 
-// TestGroupFromServiceAdminReturnsStoredProfitControlFields shows administrators
-// the stored legacy values of the retired profit control, read-only.
-func TestGroupFromServiceAdminReturnsStoredProfitControlFields(t *testing.T) {
+// TestGroupFromServiceAdminIncludesProfitControl 钉死管理端仍能读写利润控制配置。
+func TestGroupFromServiceAdminIncludesProfitControl(t *testing.T) {
 	admin := GroupFromServiceAdmin(profitControlServiceGroup())
-	if !admin.ProfitControlEnabled || admin.ProfitMinMargin != 0.3 || admin.ProfitSafetyBuffer != 0.05 {
-		t.Fatalf("管理员 DTO 必须原样返回库里的利润控制旧值: %+v", admin)
+	if admin.ProfitControlEnabled != true || admin.ProfitMinMargin != 0.3 || admin.ProfitSafetyBuffer != 0.05 {
+		t.Fatalf("管理员 DTO 未透传利润控制配置: %+v", admin)
 	}
 	fields := marshalToMap(t, admin)
 	for _, f := range profitControlJSONFields {

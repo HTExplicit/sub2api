@@ -250,6 +250,20 @@ function buildOpenAISparkShadowAccount() {
   } as any
 }
 
+function buildTypeSafeAccount() {
+  return {
+    ...buildAccount(),
+    id: 8,
+    name: 'TypeSafe Key',
+    platform: 'typesafe',
+    credentials: {
+      base_url: 'https://api.typesafe.ai',
+      model_mapping: { 'jev-latest': 'jev-latest' }
+    },
+    credentials_status: { has_api_key: true }
+  } as any
+}
+
 function buildVertexAccount() {
   return {
     id: 2,
@@ -663,61 +677,55 @@ describe('EditAccountModal', () => {
     }
   })
 
-  it.each(['apikey', 'oauth', 'setup-token'])('reasoning policy defaults on and omits untouched edits for %s', async (type) => {
-    const account = { ...buildAccount(), type }
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
-    const wrapper = mountModal(account)
-    expect(wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.get('[data-testid="openai-reasoning-signatureRecovery-toggle"]').attributes('aria-checked')).toBe('true')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
+  it('shows the TypeSafe wording of the Base URL hint and of both placeholders for a TypeSafe account', () => {
+    const wrapper = mountModal(buildTypeSafeAccount())
+    expect(wrapper.get('[data-testid="account-base-url"]').attributes('placeholder')).toBe('https://api.typesafe.ai')
+    expect(wrapper.text()).toContain('admin.accounts.typesafe.baseUrlHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.baseUrlHint')
+    expect(wrapper.findAll('input').some(input => input.attributes('placeholder') === 'ts-...')).toBe(true)
     wrapper.unmount()
   })
 
-  it('reasoning policy preserves explicit false and malformed historical values until changed', async () => {
-    const account = buildAccount()
-    account.extra = { openai_chat_reasoning_replay_enabled: false, openai_reasoning_signature_recovery_enabled: 'invalid-old-value' }
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
-    const wrapper = mountModal(account)
-    expect(wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]').attributes('aria-checked')).toBe('false')
-    expect(wrapper.get('[data-testid="openai-reasoning-signatureRecovery-toggle"]').attributes('aria-checked')).toBe('false')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
-    expect(account.extra.openai_reasoning_signature_recovery_enabled).toBe('invalid-old-value')
-    wrapper.unmount()
+  it('offers the upstream model sync only for an account whose model list the backend can read', () => {
+    // the model selector offers the sync for the account ID it is given
+    const selectorAccountId = (account: ReturnType<typeof buildAccount>) => {
+      const wrapper = mountModal(account)
+      const accountId = wrapper.findComponent(ModelWhitelistSelectorStub).props('accountId')
+      wrapper.unmount()
+      return accountId
+    }
+    expect(selectorAccountId(buildAccount())).toBe(1)
+    expect(selectorAccountId(buildTypeSafeAccount())).toBeUndefined()
+    expect(selectorAccountId(buildVertexAccount())).toBeUndefined()
+
+    const antigravityButton = (account: ReturnType<typeof buildAccount>) => {
+      const wrapper = mountModal(account)
+      const offered = wrapper.findAll('button').some(button => button.text() === 'admin.accounts.syncUpstreamModels')
+      wrapper.unmount()
+      return offered
+    }
+    const antigravityKey = (baseUrl: string) => ({
+      ...buildAntigravityAccount(),
+      type: 'apikey',
+      credentials: { base_url: baseUrl },
+      credentials_status: { has_api_key: true }
+    })
+    expect(antigravityButton(buildAntigravityAccount())).toBe(true)
+    expect(antigravityButton(antigravityKey('https://relay.example.com/antigravity/'))).toBe(true)
+    expect(antigravityButton(antigravityKey('https://cloudcode-pa.googleapis.com'))).toBe(false)
   })
 
-  it('reasoning policy allows an explicit enable without overwriting the other switch', async () => {
-    const account = buildAccount()
-    account.extra = { openai_chat_reasoning_replay_enabled: false, openai_reasoning_signature_recovery_enabled: false }
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
-    const wrapper = mountModal(account)
-    await wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]').trigger('click')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_chat_reasoning_replay_enabled).toBe(true)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
-    wrapper.unmount()
-  })
-
-  it('reasoning policy is available for OpenAI accounts but not native Grok', () => {
-    const openai = mountModal(buildAccount())
-    expect(openai.find('[data-testid="openai-reasoning-policy"]').exists()).toBe(true)
-    openai.unmount()
-    const grok = mountModal(buildGrokAPIKeyAccount())
-    expect(grok.find('[data-testid="openai-reasoning-policy"]').exists()).toBe(false)
-    grok.unmount()
-  })
-
-  it('does not expose account-level compatibility selectors', () => {
-    const ordinaryWrapper = mountModal(buildAccount())
-    expect(ordinaryWrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
-    expect(ordinaryWrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
+  it('offers the system prompt binding only for an account that can receive a prompt', () => {
+    const bindingOffered = (account: ReturnType<typeof buildAccount>) => {
+      const wrapper = mountModal(account)
+      const offered = wrapper.find('[data-test="account-system-prompt-binding"]').exists()
+      wrapper.unmount()
+      return offered
+    }
+    expect(bindingOffered(buildAccount())).toBe(true)
+    expect(bindingOffered(buildAntigravityAccount())).toBe(true)
+    // System One has no system or instructions field.
+    expect(bindingOffered(buildTypeSafeAccount())).toBe(false)
   })
 
   it('account.edit keeps an OpenAI API-key account on the Laxa endpoint editable like any other', async () => {

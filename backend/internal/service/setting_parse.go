@@ -219,16 +219,14 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRiskControlEnabled: "false",
 
 		// cyber 会话屏蔽（默认关闭，TTL 默认 3600s）
-		SettingKeyCyberSessionBlockEnabled:                       "false",
-		SettingKeyCyberPolicyUserAllowlist:                       "",
-		SettingKeyCyberSessionBlockTTLSeconds:                    "3600",
-		SettingKeyOpenAIRefusalRecoveryEnabled:                   "false",
-		SettingKeyOpenAICyberFailoverEnabled:                     "false",
-		SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  "false",
-		SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled: "false",
-		SettingKeyOpenAIRefusalRewriteEnabled:                    "false",
-		SettingKeyOpenAIRefusalKeywords:                          defaultOpenAIRefusalKeywordsJSON,
-		SettingKeyOpenAIRefusalReplacement:                       "",
+		SettingKeyCyberSessionBlockEnabled:     "false",
+		SettingKeyCyberPolicyUserAllowlist:     "",
+		SettingKeyCyberSessionBlockTTLSeconds:  "3600",
+		SettingKeyOpenAIRefusalRecoveryEnabled: "false",
+		SettingKeyOpenAICyberFailoverEnabled:   "false",
+		SettingKeyOpenAIRefusalRewriteEnabled:  "false",
+		SettingKeyOpenAIRefusalKeywords:        defaultOpenAIRefusalKeywordsJSON,
+		SettingKeyOpenAIRefusalReplacement:     "",
 		// Claude Code version check (default: empty = disabled)
 		SettingKeyMinClaudeCodeVersion: "",
 		SettingKeyMaxClaudeCodeVersion: "",
@@ -858,8 +856,6 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.OpenAIRefusalRecoveryEnabled = settings[SettingKeyOpenAIRefusalRecoveryEnabled] == "true"
 	result.OpenAICyberFailoverEnabled = settings[SettingKeyOpenAICyberFailoverEnabled] == "true"
-	result.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled = settings[SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled] == "true"
-	result.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled = settings[SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled] == "true"
 	result.OpenAIRefusalRewriteEnabled = settings[SettingKeyOpenAIRefusalRewriteEnabled] == "true"
 	result.OpenAIRefusalKeywords = parseOpenAIRefusalKeywordsSetting(settings[SettingKeyOpenAIRefusalKeywords])
 	result.OpenAIRefusalReplacement = settings[SettingKeyOpenAIRefusalReplacement]

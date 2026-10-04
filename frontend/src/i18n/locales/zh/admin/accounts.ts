@@ -983,15 +983,7 @@ export default {accounts: {
         apiKeyHint: '您的 OpenAI API Key',
         oauthPassthrough: '自动透传（仅替换认证）',
         oauthPassthroughDesc:
-          '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；下方已开启的失效密文恢复是明确例外，会留下有损恢复记录。',
-        reasoningPolicy: {
-          chatReplay: 'Chat 工具回合推理回注',
-          chatReplayDesc: '默认开启。将已完整完成、可无损投影为 Chat 的 function 工具批次缓存 24 小时；仅在账号、用户、模型、推理配置和历史完全匹配时回注原始 reasoning 与工具项。缓存故障不阻断请求，不缓存全会话输入。',
-          signatureRecovery: '失效推理密文恢复（有损）',
-          signatureRecoveryDesc: '默认开启。遇到明确验签错误且尚未输出语义内容时，只剥离被拒 reasoning 的密文字段，在同账号最多额外重试一次；记忆该旧密文 24 小时，不删除新推理。包括自动透传的恢复例外，可能增加调用费用，不代表恢复原推理链。',
-          applyField: '修改此项（未勾选则保持原值）',
-          boundaryHint: '仅适用于实际 HTTP/SSE 的原生 Responses、Compact 与 Chat→Responses 路径；回注只用于 Chat→Responses。Messages、WebSocket（包括 HTTP 入口转 WS）、原生 Chat-only 上游不启用本轮恢复。24 小时是逻辑期限，Redis 持久化文件与备份可能保留历史字节。'
-        },
+          '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；“扩展功能 → 推理恢复”的全局开关对透传账号同样生效，是明确例外。',
         flattenNamespaces: '摊平 Codex namespace 工具（兼容）',
         flattenNamespacesDesc:
           '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
@@ -1026,15 +1018,6 @@ export default {accounts: {
         responsesModeForceResponses: '强制 Responses',
         responsesModeForceChatCompletions: '强制 Chat Completions',
         responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
-        alphaSearchMode: 'Alpha Search 模式',
-        alphaSearchModeDesc: '仅对 OpenAI API Key 生效。桥接模式还要求管理端全局开关已开启；禁用模式会从搜索调度中排除本账号。',
-        alphaSearchModeDirect: '直接调用 /v1/alpha/search',
-        alphaSearchModeResponsesWebSearch: 'Responses Web Search 桥接',
-        alphaSearchModeDisabled: '禁用搜索',
-        promptCacheKeyMode: 'Prompt Cache Key 模式',
-        promptCacheKeyModeDesc: '仅对 OpenAI API Key 生效。SHA-256 模式还要求管理端全局开关已开启，且只改写超过 64 字符的值。',
-        promptCacheKeyModePassthrough: '原样透传',
-        promptCacheKeyModeSHA25664: 'SHA-256（64 位）',
         imagesUrlToB64Json: '生图结果 URL 转 base64',
         imagesUrlToB64JsonDesc:
           '仅对 OpenAI API Key 的 Images 非流式响应生效。上游返回的图片缺少 b64_json 但带 url 时，网关下载该 url 并以 base64 回填 b64_json（url 保留），兼容按官方接口实现的客户端；下载失败则原样返回。',
@@ -1150,6 +1133,11 @@ export default {accounts: {
         uploadPreviewAlt: '上传预览',
         fileReadFailed: '读取所选文件失败',
         noResponseBody: '服务器未返回响应体'
+      },
+      // TypeSafe specific hints
+      typesafe: {
+        baseUrlHint: '留空使用官方 TypeSafe API',
+        apiKeyHint: '您的 TypeSafe API Key'
       },
       anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',

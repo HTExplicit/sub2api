@@ -12,7 +12,7 @@
         <p v-if="busy" role="status" class="border-b border-line px-4 py-2 text-xs text-muted">{{ t('common.processing') }}</p>
         <fieldset :disabled="busy" class="py-1 disabled:opacity-60">
           <template v-if="account">
-            <button data-test="account-prompt-binding-action" @click="openPromptBinding(account)" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
+            <button v-if="takesSystemPrompt(account.platform)" data-test="account-prompt-binding-action" @click="openPromptBinding(account)" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="document" size="sm" class="text-gray-500" />
               {{ t('admin.systemPrompts.accountPrompts') }}
             </button>
@@ -77,6 +77,7 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import { takesSystemPrompt } from '@/utils/systemPromptBinding'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; busy?: boolean }>()
 const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'resource-complete', 'reset-quota', 'set-privacy', 'create-spark-shadow'])

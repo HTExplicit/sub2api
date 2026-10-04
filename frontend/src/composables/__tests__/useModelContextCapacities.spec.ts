@@ -588,10 +588,10 @@ describe('useModelContextCapacities', () => {
       model_context_overrides: { 'real-model': 1_000_000 },
       upstream_model_context_capacities: { old: true },
       upstream_model_metadata: { old: true },
-      openai_reasoning_signature_recovery_enabled: false,
+      openai_long_context_billing_enabled: false,
       nested: { keep: true }
     }
-    expect(withoutManagedCapacityExtra(extra)).toEqual({ openai_reasoning_signature_recovery_enabled: false, nested: { keep: true } })
+    expect(withoutManagedCapacityExtra(extra)).toEqual({ openai_long_context_billing_enabled: false, nested: { keep: true } })
     expect(extra).toHaveProperty('model_context_overrides')
     expect(extra).toHaveProperty('upstream_model_context_capacities')
     expect(extra).toHaveProperty('upstream_model_metadata')

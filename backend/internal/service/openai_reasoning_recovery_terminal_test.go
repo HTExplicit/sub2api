@@ -19,7 +19,7 @@ import (
 )
 
 type reasoningRecoverySeededNegativeCache struct {
-	*openAIChatReplayTestCache
+	GatewayCache
 	entry OpenAIRejectedReasoning
 	gets  int
 	puts  int
@@ -101,10 +101,9 @@ func TestOpenAIReasoningRecoveryTerminalsPreserveClassificationAndDiagnostic(t *
 					var negative *reasoningRecoverySeededNegativeCache
 					if behavior == "cache_skip_then_validation" {
 						negative = &reasoningRecoverySeededNegativeCache{
-							openAIChatReplayTestCache: newOpenAIChatReplayTestCache(),
-							entry:                     OpenAIRejectedReasoning{RejectedAt: time.Now().Add(-time.Minute), ExpiresAt: time.Now().Add(time.Hour)},
+							GatewayCache: &stubGatewayCache{},
+							entry:        OpenAIRejectedReasoning{RejectedAt: time.Now().Add(-time.Minute), ExpiresAt: time.Now().Add(time.Hour)},
 						}
-						negative.GatewayCache = &stubGatewayCache{}
 						svc.cache = negative
 					}
 					result, err := svc.Forward(context.Background(), c, account, []byte(input))

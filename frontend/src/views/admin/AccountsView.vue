@@ -246,6 +246,7 @@
         <AccountBulkActionsBar
           v-if="!flatThemeActive"
           :selected-ids="selIds"
+          :selected-accounts="selAccounts"
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
@@ -572,6 +573,7 @@
         <div v-if="flatThemeActive" v-show="selIds.length > 0 || selectingAllResults" data-ui="accounts-bulk-tray">
           <AccountBulkActionsBar
             :selected-ids="selIds"
+            :selected-accounts="selAccounts"
             :total-results="pagination.total"
             :selecting-all="selectingAllResults"
             :all-results-selected="allResultsSelected"
@@ -901,20 +903,15 @@ type AccountBulkEditTarget =
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
     }
+// The selected rows the list holds. A selection is a set of IDs that can also name accounts of other pages, of every
+// result or of an import, so it can be larger than this.
+const selAccounts = computed(() => accounts.value.filter(a => isSelected(a.id)))
 const selPlatforms = computed<AccountPlatform[]>(() => {
-  const platforms = new Set(
-    accounts.value
-      .filter(a => isSelected(a.id))
-      .map(a => a.platform)
-  )
+  const platforms = new Set(selAccounts.value.map(a => a.platform))
   return [...platforms]
 })
 const selTypes = computed<AccountType[]>(() => {
-  const types = new Set(
-    accounts.value
-      .filter(a => isSelected(a.id))
-      .map(a => a.type)
-  )
+  const types = new Set(selAccounts.value.map(a => a.type))
   return [...types]
 })
 const showCreate = ref(false)

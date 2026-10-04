@@ -486,6 +486,7 @@ type OpenAIGatewayService struct {
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	systemPrompts         *SystemPromptService
+	reasoningRecovery     *ReasoningRecoveryService
 	usageCache            *UsageCache
 	usageCommitObserver   UsageCommitObserver
 	liveAttestation       liveattestation.Provider

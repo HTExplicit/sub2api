@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -40,24 +40,22 @@ const (
 // HTTP Responses request. It never re-enters a protocol converter or scheduler.
 // original is immutable; wire is the exact payload of the latest sent attempt.
 type openAIReasoningRecoveryState struct {
-	ctx               context.Context
-	c                 *gin.Context
-	account           *Account
-	enabled           bool
-	policyUnavailable bool
-	token             string
-	original          []byte
-	wire              []byte
-	scope             OpenAIReasoningCacheScope
-	store             OpenAIReasoningStateStore
-	budget            *OpenAIReasoningCacheBudget
+	ctx      context.Context
+	c        *gin.Context
+	account  *Account
+	enabled  bool
+	token    string
+	original []byte
+	wire     []byte
+	scope    OpenAIReasoningCacheScope
+	store    OpenAIReasoningStateStore
+	budget   *OpenAIReasoningCacheBudget
 
 	identity      string
 	attemptUsage  map[string]int64
 	retryBody     []byte
 	retryUsed     bool
 	stopRecorded  bool
-	onRejected    func([]string)
 	retryCleanups []func()
 
 	diagnosticIncoming       []byte
@@ -81,18 +79,25 @@ func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Conte
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	enabled, policyErr := openAIReasoningPolicyEnabled(ctx, account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
+	// The global switch is read here, once for this forwarding attempt.
 	r := &openAIReasoningRecoveryState{
 		ctx: ctx, c: c, account: account, token: token,
-		enabled:           enabled && policyErr == nil && !isOpenAICompatMessagesBridgeContext(c),
-		policyUnavailable: policyErr != nil,
-		store:             s.openAIReasoningStateStore(), budget: openAIReasoningCacheBudgetForRequest(c),
+		enabled: s.reasoningRecovery.Enabled() && account.supportsOpenAIReasoningRecovery() && !isOpenAICompatMessagesBridgeContext(c),
+		store:   s.openAIReasoningStateStore(), budget: openAIReasoningCacheBudgetForRequest(c),
 	}
 	r.redactPayload = func(payload []byte) []byte { return s.redactAgentIdentitySensitiveBody(ctx, account, payload) }
 	if c != nil {
 		c.Set(openAIReasoningRecoveryContextKey, r)
 	}
 	return r
+}
+
+// SetReasoningRecoveryService installs the global switch. Without one, recovery
+// is enabled.
+func (s *OpenAIGatewayService) SetReasoningRecoveryService(recovery *ReasoningRecoveryService) {
+	if s != nil {
+		s.reasoningRecovery = recovery
+	}
 }
 
 func (r *openAIReasoningRecoveryState) Close() {
@@ -103,12 +108,6 @@ func (r *openAIReasoningRecoveryState) Close() {
 		cleanup()
 	}
 	r.retryCleanups = nil
-}
-
-func (r *openAIReasoningRecoveryState) SetRejectedCallback(fn func([]string)) {
-	if r != nil {
-		r.onRejected = fn
-	}
 }
 
 func (r *openAIReasoningRecoveryState) RecoveryAttempt() bool { return r != nil && r.retryUsed }
@@ -181,7 +180,7 @@ func markOpenAIReasoningFailureTerminalForwarded(c *gin.Context) {
 	}
 }
 
-// buildOpenAIReasoningScope is shared by positive replay and rejection memory.
+// buildOpenAIReasoningScope identifies the source whose rejections are remembered.
 // Credentials and route identity enter only a digest; neither is stored or logged.
 func buildOpenAIReasoningScope(c *gin.Context, account *Account, req *http.Request, wireBody []byte) (OpenAIReasoningCacheScope, error) {
 	if c == nil || account == nil || req == nil || req.URL == nil {
@@ -235,19 +234,9 @@ func openAIReasoningDigest(b []byte) string {
 }
 
 // PrepareRequest is called at the actual HTTP send boundary, after all normal
-// transformations and any positive replay. Recovery compares the entire final
-// body and source, so a later builder cannot silently remap or reinject state.
+// transformations. Recovery compares the entire final body and source, so a
+// later builder cannot silently remap or reinject state.
 func (r *openAIReasoningRecoveryState) PrepareRequest(req *http.Request, body []byte, proxyURL string) (*http.Request, []byte, error) {
-	if r != nil && r.enabled {
-		enabled, err := openAIReasoningPolicyEnabled(r.ctx, r.account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
-		if !enabled || err != nil {
-			r.enabled, r.policyUnavailable = false, err != nil
-			if r.retryUsed {
-				r.diagnosticStopReason = "policy_unavailable"
-				return nil, nil, r.StopError(errors.New("recovery policy unavailable"))
-			}
-		}
-	}
 	if r == nil || !r.enabled {
 		return req, body, nil
 	}
@@ -392,14 +381,8 @@ func openAIReasoningCipherItems(body []byte) []openAIReasoningCipherItem {
 type openAIReasoningRejection struct{ code, param string }
 
 func parseOpenAIReasoningRejection(payload []byte) (openAIReasoningRejection, bool) {
-	envelope := openAIRecoveryEnvelope(payload)
-	if !extensionv1.ValidReasoningRejectionEnvelope(envelope) {
-		return openAIReasoningRejection{}, false
-	}
-	if *envelope.Code != "thinking_signature_invalid" && *envelope.Code != "invalid_encrypted_content" {
-		return openAIReasoningRejection{}, false
-	}
-	return openAIReasoningRejection{code: *envelope.Code, param: envelope.Param}, true
+	result := codexrecovery.Rejection(openAIRecoveryEnvelope(payload))
+	return openAIReasoningRejection{code: result.Code, param: result.Param}, result.Recognized
 }
 
 func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
@@ -412,9 +395,9 @@ func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 	return validateOpenAIResponsesToolOutputs(input, hasServerContext) == nil
 }
 
-func openAIReasoningRejectedIndicesContext(ctx context.Context, body []byte, rejection openAIReasoningRejection) ([]int, []string) {
-	selection, err := selectOpenAIRecoveryIndices(ctx, body, rejection.param)
-	if err != nil || len(selection.Indices) == 0 {
+func openAIReasoningRejectedIndices(body []byte, rejection openAIReasoningRejection) ([]int, []string) {
+	selection := selectOpenAIRecoveryIndices(body, rejection.param)
+	if len(selection.Indices) == 0 {
 		return nil, nil
 	}
 	byIndex := map[int]string{}
@@ -522,15 +505,11 @@ func openAIReasoningRecoverySignal(c *gin.Context, payload []byte, semanticCommi
 	if r == nil || !r.enabled || r.retryUsed || r.ctx.Err() != nil {
 		return nil
 	}
-	rejection, ok, policyErr := readOpenAIRecoveryRejection(r.ctx, payload)
-	if policyErr != nil {
-		r.policyUnavailable = true
-		return nil
-	}
+	rejection, ok := parseOpenAIReasoningRejection(payload)
 	if !ok {
 		return nil
 	}
-	indices, _ := openAIReasoningRejectedIndicesContext(r.ctx, r.wire, rejection)
+	indices, _ := openAIReasoningRejectedIndices(r.wire, rejection)
 	if len(indices) == 0 {
 		return nil
 	}
@@ -561,20 +540,11 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	if r == nil || !r.enabled || r.retryUsed || semanticCommitted || r.ctx.Err() != nil || openAIReasoningRecoveryProtectedStatus(status) {
 		return nil, false
 	}
-	enabled, policyErr := openAIReasoningPolicyEnabled(r.ctx, r.account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
-	if !enabled || policyErr != nil {
-		r.enabled, r.policyUnavailable = false, policyErr != nil
-		return nil, false
-	}
-	rejection, ok, parseErr := readOpenAIRecoveryRejection(r.ctx, payload)
-	if parseErr != nil {
-		r.policyUnavailable = true
-		return nil, false
-	}
+	rejection, ok := parseOpenAIReasoningRejection(payload)
 	if !ok {
 		return nil, false
 	}
-	indices, hashes := openAIReasoningRejectedIndicesContext(r.ctx, r.wire, rejection)
+	indices, hashes := openAIReasoningRejectedIndices(r.wire, rejection)
 	if len(indices) == 0 {
 		return nil, false
 	}
@@ -585,9 +555,6 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	r.retryUsed = true
 	r.retryBody = bytes.Clone(stripped)
 	r.diagnosticState = "retry_prepared"
-	if r.onRejected != nil {
-		r.onRejected(append([]string(nil), hashes...))
-	}
 	if r.store != nil && r.scope.ScopeHash != "" {
 		_ = r.budget.Do(r.ctx, func(ioCtx context.Context) error {
 			return r.store.PutOpenAIRejectedReasoning(ioCtx, r.scope, hashes)
@@ -755,8 +722,6 @@ func (r *openAIReasoningRecoveryState) continuationDiagnosticRecovery(payload []
 
 func (r *openAIReasoningRecoveryState) recoveryNotAttemptedReason(payload []byte) string {
 	switch {
-	case r.policyUnavailable:
-		return "policy_unavailable"
 	case !r.enabled:
 		return "disabled"
 	case r.semanticCommitted:
@@ -766,17 +731,11 @@ func (r *openAIReasoningRecoveryState) recoveryNotAttemptedReason(payload []byte
 	case openAIReasoningRecoveryProtectedStatus(r.responseStatus):
 		return "protected_status"
 	}
-	rejection, ok, policyErr := readOpenAIRecoveryRejection(r.ctx, payload)
-	if policyErr != nil {
-		return "policy_unavailable"
-	}
+	rejection, ok := parseOpenAIReasoningRejection(payload)
 	if !ok {
 		return "not_signature_rejection"
 	}
-	selection, err := selectOpenAIRecoveryIndices(r.ctx, r.wire, rejection.param)
-	if err != nil {
-		return "policy_unavailable"
-	}
+	selection := selectOpenAIRecoveryIndices(r.wire, rejection.param)
 	if len(selection.Indices) > 0 {
 		if _, err := stripOpenAIReasoningCipherIndices(r.wire, selection.Indices); err != nil {
 			return "rewrite_failed"

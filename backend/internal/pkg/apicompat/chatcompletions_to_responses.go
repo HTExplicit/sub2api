@@ -122,26 +122,6 @@ func convertChatMessagesToResponsesInput(msgs []ChatMessage) ([]ResponsesInputIt
 	return out, nil
 }
 
-// ChatMessageResponsesInput returns the exact ordinary conversion of one Chat
-// message. A stateful bridge can use this projection to replace a whole
-// assistant turn with verified original output items, never just insert hidden
-// reasoning next to a duplicate textual projection.
-func ChatMessageResponsesInput(message ChatMessage) ([]json.RawMessage, error) {
-	items, err := chatMessageToResponsesItems(message)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]json.RawMessage, 0, len(items))
-	for _, item := range items {
-		raw, err := json.Marshal(item)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, raw)
-	}
-	return out, nil
-}
-
 // chatMessageToResponsesItems converts a single ChatMessage into one or more
 // ResponsesInputItem values.
 func chatMessageToResponsesItems(m ChatMessage) ([]ResponsesInputItem, error) {

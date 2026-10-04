@@ -49,6 +49,7 @@ func ProvideAdminHandlers(
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
 	systemPromptHandler *admin.SystemPromptHandler,
+	reasoningRecoveryHandler *admin.ReasoningRecoveryHandler,
 	_ *service.AccountJobRuntime,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
@@ -100,6 +101,7 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
 		SystemPrompt:           systemPromptHandler,
+		ReasoningRecovery:      reasoningRecoveryHandler,
 	}
 }
 
@@ -307,6 +309,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
 	admin.NewSystemPromptHandler,
+	admin.NewReasoningRecoveryHandler,
 	ProvideAccountJobRuntime,
 
 	// AdminHandlers and Handlers constructors

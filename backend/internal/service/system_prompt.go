@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -18,8 +19,9 @@ import (
 )
 
 // System prompts are a small library of named prompts, one global switch and
-// one site-wide default. Every account inherits the default unless its
-// extra.system_prompt binding turns it off or selects another library prompt.
+// one site-wide default. Every account that can take a prompt
+// (SystemPromptPlatforms) inherits the default unless its extra.system_prompt
+// binding turns it off or selects another library prompt.
 // The whole configuration is one JSON setting; request paths read an
 // in-memory snapshot and the binding carried by the scheduled account, so
 // sending a request never queries the database for prompts.
@@ -28,7 +30,11 @@ import (
 const SettingKeySystemPrompts = "system_prompts"
 
 // AccountExtraSystemPromptKey stores an account's SystemPromptBinding.
-// A missing or invalid value means inherit.
+// A missing or invalid value means inherit. Only an account that can take a
+// prompt holds the key. On an existing account SetBindings is its only writer:
+// an account edit keeps the stored value and the key-level writers of extra
+// (bulk update, UpdateAccountExtra) drop the key. Account creation keeps a
+// given binding for such an account alone.
 const AccountExtraSystemPromptKey = "system_prompt"
 
 const (
@@ -55,6 +61,26 @@ const (
 )
 
 var systemPromptIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// SystemPromptPlatforms are the platforms whose requests pass an insertion
+// point. Each is forwarded by one of the four gateways that call this service
+// on the final body: GatewayService (Anthropic: Messages), OpenAIGatewayService
+// (OpenAI, Grok, the CN providers and OpenCode: Responses, Chat Completions or
+// Messages), GeminiMessagesCompatService (Gemini) and AntigravityGatewayService
+// (Antigravity: the Gemini envelope or Messages). An account on any other
+// platform can never receive a prompt, so it takes no binding and is not
+// counted. TypeSafe is such a platform: System One, its only protocol, has no
+// system or instructions field and ForwardSystemOne relays the request as it is.
+var SystemPromptPlatforms = []string{
+	PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
+	PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo,
+}
+
+// AccountTakesSystemPrompt reports whether the account's platform has an
+// insertion point.
+func AccountTakesSystemPrompt(account *Account) bool {
+	return account != nil && slices.Contains(SystemPromptPlatforms, account.Platform)
+}
 
 var (
 	ErrSystemPromptUnavailable = infraerrors.ServiceUnavailable("SYSTEM_PROMPT_UNAVAILABLE", "system prompt configuration is unavailable")
@@ -95,7 +121,7 @@ type SystemPromptBindingCount struct {
 	Accounts int64
 }
 
-// SystemPromptUsage summarizes how accounts are bound.
+// SystemPromptUsage summarizes how the accounts that can take a prompt are bound.
 type SystemPromptUsage struct {
 	Inherit int64            `json:"inherit"`
 	Off     int64            `json:"off"`
@@ -108,7 +134,8 @@ type SystemPromptState struct {
 	Usage SystemPromptUsage `json:"usage"`
 }
 
-// SystemPromptBindingStats counts account bindings for the admin page.
+// SystemPromptBindingStats counts the bindings of the accounts on
+// SystemPromptPlatforms for the admin page.
 type SystemPromptBindingStats interface {
 	CountSystemPromptBindings(ctx context.Context) ([]SystemPromptBindingCount, error)
 }
@@ -351,7 +378,9 @@ func (s *SystemPromptService) Save(ctx context.Context, config SystemPromptConfi
 	return SystemPromptState{SystemPromptConfig: normalized, Usage: usage}, nil
 }
 
-// SetBindings writes one binding to every listed account.
+// SetBindings writes one binding to every listed account that can take a
+// prompt and returns how many were written. The other listed accounts are
+// skipped, like IDs that match no account.
 func (s *SystemPromptService) SetBindings(ctx context.Context, accountIDs []int64, binding SystemPromptBinding) (int64, error) {
 	if s == nil || s.accounts == nil {
 		return 0, ErrSystemPromptUnavailable
@@ -388,6 +417,16 @@ func (s *SystemPromptService) SetBindings(ctx context.Context, accountIDs []int6
 		}
 	default:
 		return 0, systemPromptInvalid("mode must be inherit, off or custom")
+	}
+	targets, err := s.accounts.GetByIDs(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	ids = ids[:0]
+	for _, account := range targets {
+		if AccountTakesSystemPrompt(account) {
+			ids = append(ids, account.ID)
+		}
 	}
 	return s.accounts.BulkUpdate(ctx, ids, AccountBulkUpdate{Extra: map[string]any{AccountExtraSystemPromptKey: value}})
 }

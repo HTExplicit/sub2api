@@ -673,6 +673,7 @@ func TestOpenAIGatewayService_Forward_HTTPWrappedInvalidEncryptedContentStopsWit
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
 	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	svc.SetReasoningRecoveryService(newReasoningRecoverySwitchForTest(false))
 	account := &Account{
 		ID:          12,
 		Name:        "openai-apikey",
@@ -683,7 +684,7 @@ func TestOpenAIGatewayService_Forward_HTTPWrappedInvalidEncryptedContentStopsWit
 			"api_key":  "sk-test",
 			"base_url": "https://example.com",
 		},
-		Extra: map[string]any{"use_responses_api": true, OpenAIReasoningSignatureRecoveryEnabledExtraKey: false},
+		Extra: map[string]any{"use_responses_api": true},
 	}
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
