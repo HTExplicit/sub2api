@@ -753,10 +753,12 @@ func (s *adminServiceImpl) accountConsoleQuery(filters AccountConsoleFilters) *d
 	if field == "" {
 		field = dbaccount.FieldName
 	}
+	// The account ID breaks ties, as in the plain list's ordering, so one query always yields one order: pages do
+	// not overlap, and the upstream billing rates request sees the page the list request saw.
 	if strings.EqualFold(filters.SortOrder, "desc") {
-		query = query.Order(dbent.Desc(field))
+		query = query.Order(dbent.Desc(field), dbent.Desc(dbaccount.FieldID))
 	} else {
-		query = query.Order(dbent.Asc(field))
+		query = query.Order(dbent.Asc(field), dbent.Asc(dbaccount.FieldID))
 	}
 	return query
 }
