@@ -1,7 +1,7 @@
 # Native domains
 
-Six first-party domains run inside the host: Codex runtime, model policy,
-system prompts, account tools, image tools and observability. Native pages
+Five first-party domains run inside the host: Codex runtime, model policy,
+system prompts, account tools and observability. Native pages
 retain the console theme (flat_theme_enabled), account fields and persisted task interactions.
 The official third-party plugin framework and its own configuration UI remain.
 
@@ -13,10 +13,9 @@ authentication and the existing step-up policy.
 | Interface | Contract |
 | --- | --- |
 | `GET/PUT /admin/settings/codex-runtime` | Codex request body compression switch (`request_zstd`; a missing key is on). |
-| `GET/PUT /admin/settings/image-tools` | Image Studio switch (`studio_enabled`; a missing key is off). |
 | `GET/PUT /admin/settings/observability` | Telemetry and native theme switches. |
 
-Each of the three is stored as one `settings` row holding a JSON object of
+Each of the two is stored as one `settings` row holding a JSON object of
 boolean switches; `GET` and `PUT` answer with the switches in the standard
 response envelope. A `PUT` body that is not a JSON object, or that carries any
 other key or a non-boolean value (including `null`), returns HTTP 400 and stores
@@ -34,16 +33,18 @@ database whose `codexrip.codex-runtime` installation was never retired, whose
 saved Codex runtime configuration has no hash recorded by v0.2.11-codexrip.6,
 .7 or .8, or whose `sub2api_plugin_state` table holds rows of another plugin
 key. Starting one of those three releases once satisfies the first two
-conditions.
+conditions. Migration 270 stops startup, changing nothing, on a database whose
+`codexrip.image-tools` installation was never retired; starting
+v0.2.13-codexrip.6 once retires it.
 
-Then, before native settings load and before Image Studio or the plugin manager
-starts, one transaction retires the other first-party plugin installations a
-database still holds:
+Then, before native settings load and before the plugin manager starts, one
+transaction retires the other first-party plugin installations a database still
+holds:
 
 1. Validates the saved first-party capability scopes and decrypts configuration.
-2. Imports the effective image and observability switches only when their native
-   settings keys are absent. Existing keys are never overwritten. The retired
-   Cindy provider installation is disabled without importing its switches.
+2. Imports the effective observability switches only when the native settings
+   key is absent. An existing key is never overwritten. The retired Cindy
+   provider installation is disabled without importing its switches.
 3. Saves original installation/binding/bootstrap intent under
    `deplugin_retired_plugins`, disables the installations and their bindings,
    and marks their bootstrap records removed.
@@ -55,9 +56,10 @@ domain without an equivalent native switch, requires an explicit migration
 decision rather than automatic activation.
 
 The retired installation rows remain and are listed read-only, with the
-receipt, at `GET /admin/plugins/retired`; the `codexrip.codex-runtime` row holds
-no saved configuration, package, manifest or bindings. The upstream plugin
-manager cannot list, modify, delete or replace the retired first-party keys.
+receipt, at `GET /admin/plugins/retired`; the `codexrip.codex-runtime` and
+`codexrip.image-tools` rows hold no saved configuration, package, manifest or
+bindings. The upstream plugin manager cannot list, modify, delete or replace the
+retired first-party keys.
 
 ## Release and rollback boundary
 
@@ -78,6 +80,25 @@ their outbound fingerprint view and quality-run endpoints fail while forwarding
 continues. Images at or before v0.2.11-codexrip.5 also need
 `sub2api_plugin_state` and `sub2api_plugin_leases` for their route code and
 require a database dump taken before migration 264.
+
+Migration 270 has no down path either. It drops the three Image Studio tables
+with the job history and the records of the stored image files, deletes the
+`image_tools_config` setting and strips the `codexrip.image-tools` installation
+to its identity; the files under `<data dir>/image-studio` are not removed. An
+earlier image starts on such a database only with Image Studio off, which the
+missing setting leaves to `GATEWAY_IMAGE_STUDIO_ENABLED`: with that variable
+`true` it exits at start, and its Image Studio job routes fail on the dropped
+tables.
+
+Migration 271 has no down path. It drops `usage_billing_dedup.account_id`, which
+the billing claim no longer writes and nothing reads. An earlier image names
+that column in every billing claim, so its usage billing fails on such a
+database until the column is added again
+(`ALTER TABLE usage_billing_dedup ADD COLUMN account_id BIGINT`). Migration 271
+is already recorded by then and does not run a second time: after returning to
+this release or a later one, drop the column by hand
+(`ALTER TABLE usage_billing_dedup DROP COLUMN IF EXISTS account_id`). Billing
+works with the column present until that is done.
 
 Returning to a plugin-based host is not an image change. That host needs schema
 objects and plugin data the current database no longer holds, so it requires a

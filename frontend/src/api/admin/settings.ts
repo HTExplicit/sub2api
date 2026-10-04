@@ -1140,21 +1140,6 @@ export interface OfficialModelCapacityCatalog {
   entries: OfficialModelCapacityEntry[]
 }
 
-export interface ImageToolsSettings {
-  studio_enabled: boolean
-}
-
-/** Image Studio switch. */
-export async function getImageToolsSettings(): Promise<ImageToolsSettings> {
-  const { data } = await apiClient.get<ImageToolsSettings>("/admin/settings/image-tools");
-  return data;
-}
-
-export async function updateImageToolsSettings(settings: ImageToolsSettings): Promise<ImageToolsSettings> {
-  const { data } = await apiClient.put<ImageToolsSettings>("/admin/settings/image-tools", settings);
-  return data;
-}
-
 export interface ObservabilitySettings {
   telemetry_enabled: boolean
   theme_enabled: boolean
@@ -1694,8 +1679,6 @@ export async function resetWebSearchUsage(payload: {
 export const settingsAPI = {
   getSettings,
   getOfficialModelCapacityCatalog,
-  getImageToolsSettings,
-  updateImageToolsSettings,
   getObservabilitySettings,
   updateObservabilitySettings,
   updateSettings,

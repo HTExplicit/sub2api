@@ -442,7 +442,6 @@ type PublicSettings struct {
 	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
-	ImageStudioEnabled       bool `json:"image_studio_enabled"`
 	FlatThemeEnabled         bool `json:"flat_theme_enabled"`
 
 	SubscriptionEnabled bool `json:"subscription_enabled"`

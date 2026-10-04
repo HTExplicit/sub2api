@@ -21,7 +21,7 @@ func NewNativeFeatureBootstrapRepository(db *sql.DB) service.NativeFeatureBootst
 const nativeRetirementInstallationsSQL = `SELECT id,plugin_key,state,config_encrypted,runtime_generation,manifest
 	FROM sub2api_plugin_installations WHERE plugin_key IN
 	('codexrip.account-tools','codexrip.admin-observability','codexrip.cindy-provider',
-	 'codexrip.image-tools','codexrip.model-policy','codexrip.prompt-skills')
+	 'codexrip.model-policy','codexrip.prompt-skills')
 	ORDER BY id FOR UPDATE`
 
 func (r *nativeFeatureBootstrapRepository) RetireNativeFeatures(ctx context.Context, convert func(service.NativeRetirementPlugin) (map[string]json.RawMessage, error)) (*service.NativeRetirementSnapshot, error) {

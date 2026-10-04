@@ -1649,10 +1649,6 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body []byte, acc
 // 1) 删除 ChatGPT internal API 不支持的顶层 Responses 参数
 // 2) store=false 3) 非 compact 保持 stream=true；compact 强制 stream=false
 func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, bool, error) {
-	return normalizeOpenAIPassthroughOAuthBodyForModel(body, compact, gjson.GetBytes(body, "model").String())
-}
-
-func normalizeOpenAIPassthroughOAuthBodyForModel(body []byte, compact bool, resolvedModel string) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
 	}
@@ -1661,7 +1657,7 @@ func normalizeOpenAIPassthroughOAuthBodyForModel(body []byte, compact bool, reso
 	if err != nil {
 		return body, false, err
 	}
-	if reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(normalized, resolvedModel); reasoningErr != nil {
+	if reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(normalized, ""); reasoningErr != nil {
 		return body, false, reasoningErr
 	} else if reasoningChanged {
 		normalized = reasoningBody

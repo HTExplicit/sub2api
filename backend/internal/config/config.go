@@ -2726,9 +2726,6 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
-	if _, err := ResolveImageStudioEnabledFromEnvironment(); err != nil {
-		return err
-	}
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)
 	if err != nil {
 		return fmt.Errorf("security.forwarded_client_ip_headers: %w", err)

@@ -55,9 +55,6 @@ declare module 'vue-router' {
      */
     requiresRiskControl?: boolean
 
-    /** Whether this route requires the Image Studio rollout flag. */
-    requiresImageStudio?: boolean
-
     /**
      * 是否要求订阅功能开关（subscription_enabled，opt-out）未被显式关闭
      * @default false

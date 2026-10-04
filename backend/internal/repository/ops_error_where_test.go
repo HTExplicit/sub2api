@@ -151,13 +151,3 @@ func TestBuildOpsErrorLogsWhere_UserOwnershipIsDirectOnly(t *testing.T) {
 		t.Fatalf("user ownership must not depend on deleted-key attribution: %s", where)
 	}
 }
-
-func TestBuildOpsErrorLogsWhere_ExcludesClientRequestIDPrefix(t *testing.T) {
-	where, args := buildOpsErrorLogsWhere(&service.OpsErrorLogFilter{ExcludeClientRequestIDPrefix: service.ImageStudioClientRequestIDPrefix})
-	if !strings.Contains(where, "COALESCE(e.client_request_id,'') NOT LIKE $1") {
-		t.Fatalf("where missing the client request ID exclusion\nfull: %s", where)
-	}
-	if len(args) != 1 || args[0] != "image-studio-%" {
-		t.Fatalf("unexpected args: %v", args)
-	}
-}

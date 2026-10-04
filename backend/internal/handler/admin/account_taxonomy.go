@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -382,7 +381,7 @@ func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
 		return
 	}
 
-	if err := service.ValidateAccountTaxonomyPlan(c.Request.Context(), extensionv1.TaxonomyBulkPlan{AccountIDs: targetIDs, HasFilters: false, ExpectedMatchCount: req.ExpectedMatchCount, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs}); err != nil {
+	if err := service.ValidateBulkAccountTaxonomy(service.BulkAccountTaxonomyInput{AccountIDs: targetIDs, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs}); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}

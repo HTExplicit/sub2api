@@ -7,11 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
-// OpenPostgresDB opens a database/sql pool backed by pgx's PostgreSQL driver.
-func OpenPostgresDB(dsn string) (*sql.DB, error) {
-	return openPostgresDB(dsn, false)
-}
-
+// openPostgresDB opens a database/sql pool backed by pgx's PostgreSQL driver.
 func openPostgresDB(dsn string, enableServerTiming bool) (*sql.DB, error) {
 	config, err := pgx.ParseConfig(dsn)
 	if err != nil {

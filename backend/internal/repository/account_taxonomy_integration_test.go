@@ -528,10 +528,8 @@ func TestAccountTaxonomyBulkUpdateAndOrderingIntegration(t *testing.T) {
 	require.Equal(t, folderA.ID, second.ManagementFolder.ID)
 	require.Equal(t, tagA.ID, second.Tags[0].ID)
 
-	expected := 2
 	result, err = admin.BulkUpdateAccountTaxonomy(ctx, service.BulkAccountTaxonomyInput{
-		Filters:            &service.BulkUpdateAccountFilters{Console: &service.AccountConsoleFilters{Search: prefix, SortBy: "id", SortOrder: "asc"}},
-		ExpectedMatchCount: &expected, FolderAction: "clear", TagAddIDs: []int64{tagC.ID},
+		AccountIDs: accountIDs, FolderAction: "clear", TagAddIDs: []int64{tagC.ID},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2, result.MatchedCount)
@@ -547,19 +545,6 @@ func TestAccountTaxonomyBulkUpdateAndOrderingIntegration(t *testing.T) {
 		).Count(ctx)
 		require.NoError(t, countErr)
 		require.Equal(t, 1, bindingCount)
-	}
-
-	wrongExpected := 3
-	_, err = admin.BulkUpdateAccountTaxonomy(ctx, service.BulkAccountTaxonomyInput{
-		Filters:            &service.BulkUpdateAccountFilters{Console: &service.AccountConsoleFilters{Search: prefix, SortBy: "id", SortOrder: "asc"}},
-		ExpectedMatchCount: &wrongExpected, FolderAction: "set", FolderID: &folderA.ID,
-	})
-	require.Error(t, err)
-	require.Equal(t, 409, infraerrors.Code(err))
-	for _, accountID := range accountIDs {
-		loaded, loadErr := admin.GetAccount(ctx, accountID)
-		require.NoError(t, loadErr)
-		require.Nil(t, loaded.ManagementFolder)
 	}
 
 	missingTagID := int64(9223372036854770000)

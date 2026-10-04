@@ -2,87 +2,60 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"testing"
 	"time"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
-	"github.com/DATA-DOG/go-sqlmock"
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
-func replaceAccountTools(t *testing.T, invoke func(context.Context, extensionv1.Invocation) (extensionv1.Result, error)) {
-	t.Helper()
-	previous := invokeAccountTools
-	t.Cleanup(func() { invokeAccountTools = previous })
-	invokeAccountTools = invoke
-}
+func TestAccountTaxonomyRulesRejectAmbiguityAndInvalidAssignments(t *testing.T) {
+	require.NoError(t, validateTaxonomyOrderIDs([]int64{1, 2}, []int64{2, 1}))
+	require.Equal(t, "ACCOUNT_TAXONOMY_ORDER_INVALID", infraerrors.Reason(validateTaxonomyOrderIDs([]int64{1, 2}, []int64{1, 1})))
+	changed := validateTaxonomyOrderIDs([]int64{1, 2, 3}, []int64{2, 1})
+	require.Equal(t, "ACCOUNT_TAXONOMY_ORDER_CHANGED", infraerrors.Reason(changed))
+	require.Equal(t, 409, infraerrors.Code(changed))
 
-func TestSetAccountTaxonomyRejectsChangedAssignmentPlanBeforeTransaction(t *testing.T) {
-	folder, otherFolder := int64(7), int64(8)
 	for _, tc := range []struct {
-		name string
-		plan extensionv1.TaxonomyAssignmentPlan
+		input  BulkAccountTaxonomyInput
+		reason string
 	}{
-		{"changed-folder", extensionv1.TaxonomyAssignmentPlan{FolderID: &otherFolder, TagIDs: []int64{5, 6}}},
-		{"cleared-folder", extensionv1.TaxonomyAssignmentPlan{TagIDs: []int64{5, 6}}},
-		{"added-tag", extensionv1.TaxonomyAssignmentPlan{FolderID: &folder, TagIDs: []int64{5, 6, 9}}},
-		{"omitted-tag", extensionv1.TaxonomyAssignmentPlan{FolderID: &folder, TagIDs: []int64{5}}},
+		{BulkAccountTaxonomyInput{FolderAction: "clear"}, "ACCOUNT_TAXONOMY_TARGET_INVALID"},
+		{BulkAccountTaxonomyInput{AccountIDs: []int64{1}, TagAddIDs: []int64{2}, TagRemoveIDs: []int64{2}}, "ACCOUNT_TAXONOMY_TAG_OPERATION_CONFLICT"},
+		{BulkAccountTaxonomyInput{AccountIDs: []int64{1}, TagAddIDs: []int64{2}, TagRemoveIDs: []int64{3}}, ""},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			replaceAccountTools(t, func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
-				raw, err := json.Marshal(tc.plan)
-				return extensionv1.Result{Payload: raw}, err
-			})
-			db, mock, err := sqlmock.New()
+		err := ValidateBulkAccountTaxonomy(tc.input)
+		if tc.reason == "" {
 			require.NoError(t, err)
-			client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
-			t.Cleanup(func() { _ = client.Close() })
-			svc := &adminServiceImpl{entClient: client}
-			account, err := svc.SetAccountTaxonomy(context.Background(), 42, AccountTaxonomyAssignment{FolderID: &folder, TagIDs: []int64{5, 5, 6}})
-			require.ErrorIs(t, err, ErrExtensionOperationUnavailable, "a plan cannot replace or expand the user's assignment")
-			require.Nil(t, account)
-			require.NoError(t, mock.ExpectationsWereMet(), "no transaction or query should be started for a changed assignment")
-		})
+			continue
+		}
+		require.Equal(t, tc.reason, infraerrors.Reason(err))
+		require.Equal(t, 400, infraerrors.Code(err))
 	}
-}
 
-func TestTaxonomyAssignmentPreservesPolicyNormalizationAndFailsClosed(t *testing.T) {
-	folder := int64(7)
-	input := AccountTaxonomyAssignment{FolderID: &folder, TagIDs: []int64{6, 5, 6}}
-	var plan extensionv1.TaxonomyAssignmentPlan
-	require.NoError(t, accountToolsOperation(context.Background(), "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: input.FolderID, TagIDs: input.TagIDs}, &plan))
-	require.Equal(t, []int64{6, 5}, plan.TagIDs, "the policy owns stable deduplication")
-	require.NoError(t, validateTaxonomyAssignmentIntent(input, plan))
-	require.NoError(t, validateTaxonomyAssignmentIntent(AccountTaxonomyAssignment{}, extensionv1.TaxonomyAssignmentPlan{}))
-	replaceAccountTools(t, func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
-		return extensionv1.Result{}, errors.New("policy failed")
-	})
-	svc := &adminServiceImpl{}
-	account, err := svc.SetAccountTaxonomy(context.Background(), 42, input)
-	require.Error(t, err)
-	require.Equal(t, "account tools are unavailable: policy failed", infraerrors.Message(err), "administrators see the underlying failure")
-	require.Nil(t, account, "a failed policy must stop before using the nil database")
-	result, err := svc.BulkUpdateAccountTaxonomy(context.Background(), BulkAccountTaxonomyInput{AccountIDs: []int64{42}, FolderAction: "clear"})
-	require.Error(t, err)
-	require.Nil(t, result)
+	// An invalid assignment or delete target is refused before the database is used.
+	svc, nonPositive := &adminServiceImpl{}, int64(0)
+	account, err := svc.SetAccountTaxonomy(context.Background(), 42, AccountTaxonomyAssignment{TagIDs: []int64{-1}})
+	require.Equal(t, "ACCOUNT_TAG_ID_INVALID", infraerrors.Reason(err))
+	require.Nil(t, account)
+	account, err = svc.SetAccountTaxonomy(context.Background(), 42, AccountTaxonomyAssignment{FolderID: &nonPositive})
+	require.Equal(t, "ACCOUNT_FOLDER_ID_INVALID", infraerrors.Reason(err))
+	require.Nil(t, account)
+	require.Equal(t, "ACCOUNT_TAXONOMY_ID_INVALID", infraerrors.Reason(svc.DeleteAccountFolder(context.Background(), 0, false)))
+	require.Equal(t, "ACCOUNT_TAXONOMY_ID_INVALID", infraerrors.Reason(svc.DeleteAccountTag(context.Background(), -1)))
+	require.Equal(t, []int64{6, 5}, uniquePositiveIDs([]int64{6, 5, 6}), "repeated tag IDs keep their first position")
 }
 
 func TestNormalizeAccountTaxonomyNameTrimsAndBuildsCaseInsensitiveKey(t *testing.T) {
-	display, normalized, err := normalizeAccountTaxonomyNameContext(context.Background(), "  Production  ")
+	display, normalized, err := normalizeAccountTaxonomyName("  Production  ")
 	require.NoError(t, err)
 	require.Equal(t, "Production", display)
 	require.Equal(t, "production", normalized)
 
-	_, _, err = normalizeAccountTaxonomyNameContext(context.Background(), "   ")
-	require.Error(t, err)
-	_, _, err = normalizeAccountTaxonomyNameContext(context.Background(), string(make([]rune, 101)))
-	require.Error(t, err)
+	for _, invalid := range []string{"   ", string(make([]rune, 101)), "bad\x00name"} {
+		_, _, err = normalizeAccountTaxonomyName(invalid)
+		require.Equal(t, "ACCOUNT_TAXONOMY_NAME_INVALID", infraerrors.Reason(err))
+	}
 }
 
 func TestFilterConsoleAccountsCombinesDerivedStatusAndPlanAcrossFullSet(t *testing.T) {

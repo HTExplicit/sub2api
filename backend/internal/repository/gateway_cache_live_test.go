@@ -11,6 +11,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func openAIRuntimeBreakerBlockKey(accountID int64, model string) string {
+	return openAIRuntimeBreakerBaseKey(accountID, model) + ":block"
+}
+
+func openAIRuntimeBreakerMarkerKey(accountID int64, model string) string {
+	return openAIRuntimeBreakerBaseKey(accountID, model) + ":marker"
+}
+
+func openAIRuntimeBreakerClaimKey(accountID int64, model string) string {
+	return openAIRuntimeBreakerBaseKey(accountID, model) + ":claim"
+}
+
 func TestGatewayCacheLiveCallIdentityAndController(t *testing.T) {
 	redisServer := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})

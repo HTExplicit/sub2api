@@ -35,9 +35,14 @@ func TestAccountTestReasoningSurvivesMappingAndWireCompression(t *testing.T) {
 	require.Equal(t, "gpt-6-astra", gjson.GetBytes(body, "model").String())
 	require.Equal(t, "ultra", gjson.GetBytes(body, "reasoning.effort").String())
 	require.Contains(t, rec.Body.String(), `"effective_reasoning_effort":"ultra"`)
-	c, _ = newTestContext()
+	c, rec = newTestContext()
 	require.Error(t, svc.TestAccountConnection(c, a.ID, "friendly", "test", AccountTestModeCompact, AccountTestOptions{ReasoningEffort: "ultra"}))
+	require.Contains(t, rec.Body.String(), `"error":"reasoning effort is unsupported for this test mode"`)
 	require.Len(t, upstream.requests, 1, "unsupported mode must fail before any upstream request")
+	c, rec = newTestContext()
+	require.Error(t, svc.TestAccountConnection(c, a.ID, "friendly", "test", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "invented"}))
+	require.Contains(t, rec.Body.String(), `"error":"reasoning effort is not supported by the selected account model"`)
+	require.Len(t, upstream.requests, 1, "unsupported effort must fail before any upstream request")
 }
 
 func TestAccountTestReasoningOpenCodeGoSerializesNativeProtocol(t *testing.T) {

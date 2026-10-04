@@ -129,7 +129,7 @@ func TestForwardOpenAIWSV2_DisconnectedDrainPreservesTerminalAndCommitBoundaries
 			result, err := svc.forwardOpenAIWSV2(
 				ctx, c, account,
 				map[string]any{"model": "gpt-5.5", "stream": true, "reasoning": map[string]any{"effort": "high"}, "input": "hello"},
-				"", "sk-test", OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2},
+				"", "", "sk-test", OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2},
 				false, true, "gpt-5.5", "gpt-5.5", time.Now(), 1, "", new(bool),
 			)
 

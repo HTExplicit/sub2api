@@ -108,7 +108,6 @@ const (
 type OpenAIContinuationBindingLookup struct {
 	State     OpenAIContinuationBindingState
 	AccountID int64
-	Err       error
 }
 
 func LookupOpenAIContinuationBinding(ctx context.Context, store OpenAIWSStateStore, groupID int64, responseID string) OpenAIContinuationBindingLookup {
@@ -117,7 +116,7 @@ func LookupOpenAIContinuationBinding(ctx context.Context, store OpenAIWSStateSto
 	}
 	accountID, err := store.GetResponseAccount(ctx, groupID, responseID)
 	if err != nil {
-		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingStoreError, Err: err}
+		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingStoreError}
 	}
 	if accountID <= 0 {
 		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingMiss}

@@ -44,7 +44,6 @@ const (
 	openAIWSStoreDisabledConnModeOff      = "off"
 
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
-	openAIWSIngressStageInvalidEncryptedContent  = "invalid_encrypted_content"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
 )
 

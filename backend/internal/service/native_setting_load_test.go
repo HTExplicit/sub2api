@@ -22,15 +22,12 @@ func (r *nativeSwitchReadRepository) GetValue(context.Context, string) (string, 
 }
 
 func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
-	oldImage := EffectiveImageToolsConfig()
 	oldObservability := EffectiveAdminObservabilityConfig()
 	oldCodexRuntime := EffectiveCodexRuntimeConfig()
 	t.Cleanup(func() {
-		ConfigureImageTools(&oldImage)
 		ConfigureAdminObservability(&oldObservability)
 		SetCodexRequestZstdEnabled(oldCodexRuntime.RequestZstd)
 	})
-	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
 	ConfigureAdminObservability(&extensionv1.AdminObservabilityConfig{})
 	SetCodexRequestZstdEnabled(false)
 	for _, test := range []struct {
@@ -40,22 +37,21 @@ func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 	}{
 		{name: "database error", err: errors.New("fixture database unavailable")},
 		{name: "invalid JSON", value: `{"broken"`},
-		{name: "invalid value type", value: `{"studio_enabled":"false"}`},
+		{name: "invalid value type", value: `{"telemetry_enabled":"false"}`},
 		{name: "empty existing key", value: ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			svc := NewSettingService(&nativeSwitchReadRepository{value: test.value, err: test.err}, nil)
-			for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig} {
+			for _, load := range []func(context.Context) error{svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig} {
 				require.Error(t, load(context.Background()))
 			}
-			require.Equal(t, extensionv1.ImageToolsConfig{}, EffectiveImageToolsConfig())
 			require.Equal(t, extensionv1.AdminObservabilityConfig{}, EffectiveAdminObservabilityConfig())
 			require.Equal(t, extensionv1.CodexRuntimeConfig{}, EffectiveCodexRuntimeConfig())
 		})
 	}
 	svc := NewSettingService(&nativeSwitchReadRepository{err: ErrSettingNotFound}, nil)
 	var value map[string]json.RawMessage
-	found, err := svc.readNativeSwitchSetting(context.Background(), SettingKeyImageToolsConfig, &value, "studio_enabled")
+	found, err := svc.readNativeSwitchSetting(context.Background(), SettingKeyAdminObservabilityConfig, &value, "telemetry_enabled", "theme_enabled")
 	require.NoError(t, err)
 	require.False(t, found)
 }

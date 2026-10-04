@@ -549,7 +549,7 @@ html.flat-theme input:is([type="checkbox"], [type="radio"]):focus-visible {
    the account dialogs' segments go with it (monochrome identity, D3). data-ui="seg" opts a fork component into the
    same look.
    Perf pass: the utility-built boxes (a gray-100 / gray-50 box with a 4px or 2px inset whose children are all buttons,
-   no data-ui of their own) are hooked [data-ui~="seg-box"] in their templates (20 boxes) instead of being found by a
+   no data-ui of their own) are hooked [data-ui~="seg-box"] in their templates (19 boxes) instead of being found by a
    "children are all buttons" test; the repeated [data-ui] and :not(uipad) keep the original 0,4,3 of that compound
    (the upstream thumb is still found by its bg-white class, unlike data-ui="seg"). */
 html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad),
