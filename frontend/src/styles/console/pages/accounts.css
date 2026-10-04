@@ -72,6 +72,12 @@ html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-search"] {
   max-width: 288px;
 }
 
+/* At its narrowest (about 155px at 1280) the search leaves its text 111px with the field's 10px right inset, and the
+   Chinese placeholder is 113px wide: 6px on the right keeps the placeholder whole there. */
+html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-search"] > input.input[data-ui~="search-field"] {
+  padding-right: 0.375rem;
+}
+
 html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-view-switcher"] {
   flex: none;
 }
