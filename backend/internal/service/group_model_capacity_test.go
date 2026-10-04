@@ -290,6 +290,24 @@ func TestMiniMaxCompositeCapacityIncludesFallbackAndKeepsExplicitRoutePrecedence
 	require.Contains(t, string(raw), `"context_window":900000`, "capacity projection must leave the upstream source unchanged")
 }
 
+// A composite group's capacity pool is every concrete platform the group can
+// route to: the evidence of a TypeSafe account reaches the System One model.
+func TestCompositeCapacityPoolIncludesTypeSafeAccounts(t *testing.T) {
+	group := &Group{ID: 9, Platform: PlatformComposite}
+	account := newGroupCapacityAccount(1, map[string]any{"jev-latest": "jev-latest"}, map[string]int64{"jev-latest": 32000})
+	account.Platform = PlatformTypeSafe
+	repo := &groupCapacityAccountRepo{accounts: []Account{account}}
+	svc := &GatewayService{accountRepo: repo, compositeResolver: NewCompositeRouteResolver(&groupCapacityRouteRepo{})}
+	body, err := svc.ProjectModelListContextCapacities(context.Background(), group, &group.ID, group.Platform, []byte(`{"object":"list","data":[{"id":"jev-latest"}]}`))
+	require.NoError(t, err)
+	var decoded struct {
+		Data []map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &decoded))
+	require.Equal(t, float64(32000), decoded.Data[0]["context_window"])
+	require.Equal(t, "custom", decoded.Data[0]["context_capacity_source"])
+}
+
 func TestPinnedModelCapacityUsesTheWholeForwardingPool(t *testing.T) {
 	for _, codex := range []bool{false, true} {
 		t.Run(fmt.Sprintf("codex=%t", codex), func(t *testing.T) {

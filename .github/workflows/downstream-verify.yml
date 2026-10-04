@@ -175,7 +175,7 @@ jobs:
             src/api/__tests__/settings.authSourceDefaults.spec.ts \
             src/components/admin/user/__tests__/UserPlatformQuotaModal.spec.ts \
             src/components/account/__tests__/EditAccountModal.grokMediaEligibility.spec.ts \
-            -t 'platform option catalogs|全部 10 平台全 null|缺失平台填充为全 null|MiniMax scheduling threshold compatibility|已有数据正确填充 limit input|保存提交完整 10 platform payload|updates the dedicated endpoint only when the mode changes|reports partial-save errors when the dedicated endpoint fails'
+            -t 'platform option catalogs|全部 concrete 平台全 null|缺失平台填充为全 null|MiniMax scheduling threshold compatibility|已有数据正确填充 limit input|保存提交完整 platform payload|updates the dedicated endpoint only when the mode changes|reports partial-save errors when the dedicated endpoint fails'
       - name: Production build
         working-directory: frontend
         run: pnpm run build

@@ -13,6 +13,12 @@ import (
 	"strings"
 )
 
+const (
+	DefaultBaseURL = "https://api.typesafe.ai"
+	SystemOnePath  = "/v1/systemone"
+	JevLatestModel = "jev-latest"
+)
+
 type Question struct {
 	Type         string `json:"type"`
 	Instructions string `json:"instructions"`
@@ -35,22 +41,114 @@ type Usage struct {
 	OutputTokens int `json:"output_tokens"`
 }
 
+type SystemOneResponse struct {
+	Body  []byte
+	Model string
+	Usage Usage
+}
+
+func NewSystemOneRequest(ctx context.Context, baseURL, key string, body []byte) (*http.Request, error) {
+	endpoint, err := url.JoinPath(strings.TrimRight(baseURL, "/"), SystemOnePath)
+	if err != nil {
+		return nil, errors.New("typesafe invalid endpoint")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, errors.New("typesafe invalid request")
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+// MaxSystemOneResponseBytes bounds a buffered System One response body.
+const MaxSystemOneResponseBytes = 4 << 20
+
+var ErrSystemOneResponseTooLarge = errors.New("typesafe response exceeds size limit")
+
+// SystemOneResponseError is a response DecodeSystemOneResponse read but did not
+// accept. Error and Unwrap give the bare reason. Body is what was read of the
+// response, for the caller's own record; it is never part of the message.
+type SystemOneResponseError struct {
+	Err  error
+	Body []byte
+}
+
+func (e *SystemOneResponseError) Error() string { return e.Err.Error() }
+func (e *SystemOneResponseError) Unwrap() error { return e.Err }
+
+func DecodeSystemOneResponse(r io.Reader) (*SystemOneResponse, error) {
+	body, err := io.ReadAll(io.LimitReader(r, MaxSystemOneResponseBytes+1))
+	if err != nil {
+		return nil, &SystemOneResponseError{Err: errors.New("typesafe invalid response"), Body: body}
+	}
+	// A truncated body would otherwise surface as a misleading "invalid JSON".
+	if len(body) > MaxSystemOneResponseBytes {
+		return nil, &SystemOneResponseError{Err: ErrSystemOneResponseTooLarge, Body: body}
+	}
+	if !json.Valid(body) {
+		return nil, &SystemOneResponseError{Err: errors.New("typesafe invalid response"), Body: body}
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
+		return nil, &SystemOneResponseError{Err: errors.New("typesafe invalid response"), Body: body}
+	}
+	// The upstream already answered (and charged); an unexpected model or usage
+	// shape must not discard the answer, so both are decoded leniently.
+	var model string
+	_ = json.Unmarshal(envelope["model"], &model)
+	var usage map[string]json.RawMessage
+	_ = json.Unmarshal(envelope["usage"], &usage)
+	return &SystemOneResponse{
+		Body:  body,
+		Model: model,
+		Usage: Usage{
+			InputTokens:  systemOneTokenCount(usage["input_tokens"]),
+			OutputTokens: systemOneTokenCount(usage["output_tokens"]),
+		},
+	}, nil
+}
+
+// maxSystemOneTokenCount bounds a reported token count before int conversion.
+const maxSystemOneTokenCount = 1 << 40
+
+// systemOneTokenCount accepts integer, float, or numeric-string token counts.
+func systemOneTokenCount(raw json.RawMessage) int {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return 0
+	}
+	if raw[0] == '"' {
+		var text string
+		if json.Unmarshal(raw, &text) != nil {
+			return 0
+		}
+		raw = json.RawMessage(strings.TrimSpace(text))
+	}
+	var number json.Number
+	if json.Unmarshal(raw, &number) != nil {
+		return 0
+	}
+	value, err := number.Float64()
+	if err != nil || math.IsNaN(value) || value <= 0 {
+		return 0
+	}
+	if value > maxSystemOneTokenCount {
+		value = maxSystemOneTokenCount
+	}
+	return int(math.Round(value))
+}
+
 // Evaluate performs one attempt. The caller owns timeouts, retries and key rotation.
 func Evaluate(ctx context.Context, client *http.Client, baseURL, key string, input Request) (*Result, int, error) {
-	endpoint, err := url.JoinPath(strings.TrimRight(baseURL, "/"), "/v1/systemone")
-	if err != nil {
-		return nil, 0, errors.New("typesafe invalid endpoint")
-	}
 	body, err := json.Marshal(input)
 	if err != nil {
 		return nil, 0, errors.New("typesafe invalid request")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	req, err := NewSystemOneRequest(ctx, baseURL, key, body)
 	if err != nil {
-		return nil, 0, errors.New("typesafe invalid request")
+		return nil, 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -64,23 +162,49 @@ func Evaluate(ctx context.Context, client *http.Client, baseURL, key string, inp
 		return nil, resp.StatusCode, fmt.Errorf("typesafe API status %d", resp.StatusCode)
 	}
 	var out struct {
-		Model   string `json:"model"`
-		Usage   Usage  `json:"usage"`
-		Answers map[string]struct {
-			Type string   `json:"type"`
-			Noul *float64 `json:"noul"`
-		} `json:"answers"`
+		Model   string      `json:"model"`
+		Usage   Usage       `json:"usage"`
+		Answers noulAnswers `json:"answers"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil || strings.TrimSpace(out.Model) == "" {
 		return nil, resp.StatusCode, errors.New("typesafe invalid response")
 	}
 	result := &Result{Model: out.Model, Usage: out.Usage, Scores: make(map[string]float64, len(input.Questions))}
 	for id := range input.Questions {
-		answer, ok := out.Answers[id]
-		if !ok || answer.Type != "noul" || answer.Noul == nil || math.IsNaN(*answer.Noul) || math.IsInf(*answer.Noul, 0) || *answer.Noul < 0 || *answer.Noul > 1 {
-			return nil, resp.StatusCode, fmt.Errorf("typesafe invalid answer for %s", id)
+		score, err := out.Answers.score(id)
+		if err != nil {
+			return nil, resp.StatusCode, err
 		}
-		result.Scores[id] = *answer.Noul
+		result.Scores[id] = score
 	}
 	return result, resp.StatusCode, nil
+}
+
+// noulAnswers is the answers object of a System One response as far as noul
+// questions read it.
+type noulAnswers map[string]struct {
+	Type string   `json:"type"`
+	Noul *float64 `json:"noul"`
+}
+
+// score is the one definition of a valid noul answer: the question was
+// answered, as type "noul", with a probability between 0 and 1.
+func (a noulAnswers) score(id string) (float64, error) {
+	answer, ok := a[id]
+	if !ok || answer.Type != "noul" || answer.Noul == nil || math.IsNaN(*answer.Noul) || math.IsInf(*answer.Noul, 0) || *answer.Noul < 0 || *answer.Noul > 1 {
+		return 0, fmt.Errorf("typesafe invalid answer for %s", id)
+	}
+	return *answer.Noul, nil
+}
+
+// NoulScore returns the probability a System One response body gives for the
+// noul question id. The answer is validated exactly as Evaluate validates it.
+func NoulScore(body []byte, id string) (float64, error) {
+	var out struct {
+		Answers noulAnswers `json:"answers"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return 0, errors.New("typesafe invalid response")
+	}
+	return out.Answers.score(id)
 }

@@ -29,9 +29,11 @@ var upstreamModelCatalogSyncsInFlight sync.Map
 // UpstreamModelCatalogAutoSyncEligible reports whether an account's model list
 // and the capacities it declares are refreshed automatically: active API-key
 // accounts. OAuth accounts are never polled; their observations arrive with the
-// Codex manifests that already pass through the gateway.
+// Codex manifests that already pass through the gateway. TypeSafe accounts are
+// not polled either: System One has no model list (buildUpstreamModelsRequest
+// rejects the platform), so a sync could only fail and back off.
 func UpstreamModelCatalogAutoSyncEligible(account *Account) bool {
-	return account != nil && account.ID > 0 && account.Status == StatusActive && account.Type == AccountTypeAPIKey
+	return account != nil && account.ID > 0 && account.Status == StatusActive && account.Type == AccountTypeAPIKey && !account.IsTypeSafe()
 }
 
 // SyncUpstreamModelCatalogInBackground refreshes an API-key account right after
