@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,10 @@ type upstreamBillingRatesResponse struct {
 // current account-list page. It never probes an upstream and never loads
 // today-stats, usage, concurrency, or credentials for the response.
 //
+// It must resolve the same page as List for the same query: the account page
+// applies the snapshots only when the total and the ID order equal the list's,
+// and reloads the whole list otherwise.
+//
 // GET /api/v1/admin/accounts/upstream-billing-rates
 func (h *AccountHandler) GetUpstreamBillingRates(c *gin.Context) {
 	if h.adminService == nil {
@@ -47,24 +52,48 @@ func (h *AccountHandler) GetUpstreamBillingRates(c *gin.Context) {
 	sortBy := c.DefaultQuery("sort_by", "name")
 	sortOrder := c.DefaultQuery("sort_order", "asc")
 
+	// group_id is the name List reads; the older group applies only when
+	// group_id is absent.
+	groupQuery, hasGroupID := c.GetQuery("group_id")
+	if !hasGroupID {
+		groupQuery = c.Query("group")
+	}
 	var groupID int64
-	if groupQuery := c.Query("group"); groupQuery != "" {
+	if groupQuery != "" {
 		if groupQuery == accountListGroupUngroupedQueryValue {
 			groupID = service.AccountListGroupUngrouped
 		} else {
 			parsed, err := strconv.ParseInt(groupQuery, 10, 64)
 			if err != nil || parsed < 0 {
-				response.BadRequest(c, "invalid group filter")
+				response.ErrorFrom(c, infraerrors.BadRequest("INVALID_GROUP_FILTER", "invalid group filter"))
 				return
 			}
 			groupID = parsed
 		}
 	}
 
-	accounts, total, err := h.adminService.ListAccounts(
-		c.Request.Context(), page, pageSize, platform, accountType, status,
-		search, groupID, privacyMode, sortBy, sortOrder,
+	var (
+		accounts []service.Account
+		total    int64
+		err      error
 	)
+	if hasAccountConsoleFilters(c) {
+		filters, filterErr := parseAccountConsoleFilters(c, groupID)
+		if filterErr != nil {
+			response.ErrorFrom(c, filterErr)
+			return
+		}
+		var consoleService accountConsoleAdminService
+		consoleService, err = h.accountConsoleService()
+		if err == nil {
+			accounts, total, err = consoleService.ListAccountsConsole(c.Request.Context(), page, pageSize, filters)
+		}
+	} else {
+		accounts, total, err = h.adminService.ListAccounts(
+			c.Request.Context(), page, pageSize, platform, accountType, status,
+			search, groupID, privacyMode, sortBy, sortOrder,
+		)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

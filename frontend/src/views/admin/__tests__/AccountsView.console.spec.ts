@@ -14,6 +14,7 @@ const {
   getById,
   getAvailableModels,
   listWithEtag,
+  getUpstreamBillingRatesWithEtag,
   getFacets,
   listFolders,
   listTags,
@@ -33,6 +34,7 @@ const {
   getById: vi.fn(),
   getAvailableModels: vi.fn(),
   listWithEtag: vi.fn(),
+  getUpstreamBillingRatesWithEtag: vi.fn(),
   getFacets: vi.fn(),
   listFolders: vi.fn(),
   listTags: vi.fn(),
@@ -73,6 +75,7 @@ vi.mock('@/api/admin', () => ({
       getAPIKeyVisibility: vi.fn().mockResolvedValue({ enabled: false }),
       getAvailableModels,
       listWithEtag,
+      getUpstreamBillingRatesWithEtag,
       getFacets,
       listFolders,
       listTags,
@@ -295,6 +298,10 @@ const recordListSearches = () => {
 const accountRequestArguments = () =>
   JSON.stringify(Object.values(adminAPI.accounts).map(request => vi.mocked(request).mock.calls))
 
+// the refresh of the upstream billing rates the page makes after a billing probe
+const refreshBillingRates = (wrapper: ReturnType<typeof mountView>): Promise<void> =>
+  (wrapper.vm as any).refreshAccountsAfterUpstreamBillingProbe()
+
 describe('admin AccountsView Cockpit console', () => {
   it('preserves the submitted bulk-edit selection in the original window after clearing page selection', async () => {
     const wrapper = mountView()
@@ -322,6 +329,7 @@ describe('admin AccountsView Cockpit console', () => {
     getById.mockReset().mockResolvedValue(account)
     getAvailableModels.mockReset().mockResolvedValue(structuredClone(modelDisplayContract.expected))
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: null, data: null })
+    getUpstreamBillingRatesWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: null, data: null })
     getFacets.mockReset().mockResolvedValue({ total: 1, uncategorized_count: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
     listFolders.mockReset().mockResolvedValue([])
     listTags.mockReset().mockResolvedValue([])
@@ -738,6 +746,97 @@ describe('admin AccountsView Cockpit console', () => {
     await flushPromises()
     expect(getFacets).toHaveBeenLastCalledWith(expect.objectContaining({ search: keyDigestTerm(key), statuses: 'active' }))
     wrapper.unmount()
+  })
+
+  it('asks for upstream billing rates of the current page with the filters of the list request', async () => {
+    sessionStorage.setItem('account-console-sensitive-filters-v1', JSON.stringify({ search: 'console', account_ids: [] }))
+    listFolders.mockResolvedValue([{ id: 7, name: 'Production', sort_order: 0, account_count: 1 }])
+    listTags.mockResolvedValue([{ id: 3, name: 'canary', sort_order: 0, account_count: 1 }])
+    // useTableLoader hands every list request the same params object, so the filters of a request are copied as it is made
+    const listRequests: Record<string, unknown>[] = []
+    listAccounts.mockImplementation(async (_page: number, _pageSize: number, filters: Record<string, unknown>) => {
+      listRequests.push({ ...filters })
+      return { items: [account], total: 51, page: 2, page_size: 50, pages: 2 }
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/admin/accounts', component: { template: '<div />' } }]
+    })
+    await router.push('/admin/accounts?folder=7&statuses=active&group_id=23&tags=3&sort_by=status&sort_order=desc&page=2&page_size=50')
+    await router.isReady()
+    const wrapper = mountView([router])
+    try {
+      // the restored search text is looked up before the first list request
+      await vi.waitFor(() => expect(listRequests.length).toBeGreaterThan(0))
+      await flushPromises()
+
+      await refreshBillingRates(wrapper)
+
+      expect(getUpstreamBillingRatesWithEtag).toHaveBeenCalledTimes(1)
+      const [page, pageSize, rateFilters] = getUpstreamBillingRatesWithEtag.mock.calls[0]
+      expect([page, pageSize]).toEqual([2, 50])
+      expect(rateFilters).toEqual({
+        folder: '7', statuses: 'active', group_id: '23', tags: '3', search: 'console', sort_by: 'status', sort_order: 'desc'
+      })
+      for (const legacyKey of ['platform', 'type', 'status', 'group']) expect(rateFilters).not.toHaveProperty(legacyKey)
+      // the filters of the list request: all it sends but lite and include_scheduler_score, which only shape its rows
+      const { lite: _lite, include_scheduler_score: _includeSchedulerScore, ...listFilters } = listRequests[listRequests.length - 1]
+      expect(rateFilters).toEqual(listFilters)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('applies upstream billing rates answered for the listed accounts without requesting the list again', async () => {
+    const snapshot = {
+      status: 'ok',
+      data: { effective_rate_multiplier: 0.065 },
+      synced_rate_multiplier: 0.065,
+      last_attempt_at: '2026-07-29T00:00:00Z',
+      next_probe_at: '2026-07-29T00:30:00Z'
+    }
+    getUpstreamBillingRatesWithEtag.mockResolvedValue({
+      notModified: false,
+      etag: '"rates"',
+      data: { items: [{ account_id: account.id, snapshot }], total: 1, page: 1, page_size: 20 }
+    })
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      listAccounts.mockClear()
+
+      await refreshBillingRates(wrapper)
+      await flushPromises()
+
+      expect(getUpstreamBillingRatesWithEtag).toHaveBeenCalledTimes(1)
+      expect(listAccounts).not.toHaveBeenCalled()
+      const [row] = (wrapper.vm as any).accounts
+      expect(row.extra.upstream_billing_probe).toEqual(snapshot)
+      expect(row.rate_multiplier).toBe(snapshot.synced_rate_multiplier)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('asks for upstream billing rates by digest term when the search box holds the API key of an account', async () => {
+    const key = 'sk-rated-upstream-key'
+    hasAPIKeyDigest.mockResolvedValue(true)
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      const searches = recordListSearches()
+      typeSearch(wrapper, key)
+      await vi.waitFor(() => expect(searches).toEqual([keyDigestTerm(key)]), SEARCH_RELOAD_WAIT)
+      await flushPromises()
+
+      await refreshBillingRates(wrapper)
+
+      expect(getUpstreamBillingRatesWithEtag).toHaveBeenCalledTimes(1)
+      expect(getUpstreamBillingRatesWithEtag.mock.calls[0][2].search).toBe(keyDigestTerm(key))
+      expect(JSON.stringify(getUpstreamBillingRatesWithEtag.mock.calls)).not.toContain(key)
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('preserves the account list and performs no reads when account testing closes', async () => {

@@ -1802,19 +1802,8 @@ const reload = async () => {
   await refreshTodayStatsBatch()
 }
 
-const buildUpstreamBillingRateFilters = () => {
-  const rawParams = toRaw(params) as Record<string, unknown>
-  return {
-    platform: typeof rawParams.platform === 'string' ? rawParams.platform : '',
-    type: typeof rawParams.type === 'string' ? rawParams.type : '',
-    status: typeof rawParams.status === 'string' ? rawParams.status : '',
-    group: typeof rawParams.group === 'string' ? rawParams.group : '',
-    search: typeof rawParams.search === 'string' ? rawParams.search : '',
-    privacy_mode: typeof rawParams.privacy_mode === 'string' ? rawParams.privacy_mode : '',
-    sort_by: sortState.sort_by,
-    sort_order: sortState.sort_order
-  }
-}
+// The rates endpoint answers for the page the list request returns, so it is asked with that request's filters.
+const buildUpstreamBillingRateFilters = () => buildConsoleAPIParams(true)
 
 const sameAccountIDOrder = (left: number[], right: number[]) =>
   left.length === right.length && left.every((id, index) => id === right[index])

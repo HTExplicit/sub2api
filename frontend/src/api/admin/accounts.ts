@@ -117,16 +117,7 @@ export interface AccountUpstreamBillingRatesWithEtagResult {
 export async function getUpstreamBillingRatesWithEtag(
   page: number = 1,
   pageSize: number = 20,
-  filters?: {
-    platform?: string
-    type?: string
-    status?: string
-    group?: string
-    search?: string
-    privacy_mode?: string
-    sort_by?: string
-    sort_order?: 'asc' | 'desc'
-  },
+  filters?: AccountListFilters,
   options?: {
     signal?: AbortSignal
     etag?: string | null
