@@ -698,7 +698,7 @@ func (s *adminServiceImpl) accountConsoleQuery(filters AccountConsoleFilters) *d
 		query = query.Where(dbaccount.TypeIn(values...))
 	}
 	if search := strings.TrimSpace(filters.Search); search != "" {
-		query = query.Where(dbaccount.NameContainsFold(search))
+		query = query.Where(AccountSearchPredicate(search))
 	}
 	if len(filters.AccountIDs) > 0 {
 		query = query.Where(dbaccount.IDIn(uniquePositiveIDs(filters.AccountIDs)...))

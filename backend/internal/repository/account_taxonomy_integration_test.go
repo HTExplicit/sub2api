@@ -404,6 +404,19 @@ func TestAccountTaxonomyCombinedFiltersAndFacetsIntegration(t *testing.T) {
 	require.Equal(t, 1, integrationTagCount(facets.Tags, tagBlue.ID))
 }
 
+func TestAccountTaxonomyConsoleSearchByAPIKeyDigestIntegration(t *testing.T) {
+	ctx := context.Background()
+	prefix := taxonomyIntegrationPrefix("key-search")
+	client, admin := newAccountTaxonomyIntegrationAdmin(t, prefix)
+
+	requireAccountSearchByAPIKeyDigest(t, client, prefix, func(search string) []int64 {
+		accounts, total, err := admin.ListAccountsConsole(ctx, 1, 20, service.AccountConsoleFilters{Search: search})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(accounts)), total)
+		return idsOfAccounts(accounts)
+	})
+}
+
 func TestAccountTaxonomyBulkUpdateAndOrderingIntegration(t *testing.T) {
 	ctx := context.Background()
 	prefix := taxonomyIntegrationPrefix("bulk")

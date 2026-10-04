@@ -1,13 +1,16 @@
 vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { name: 'AccountOperationDialog', props: ['job', 'show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' } }))
+import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AccountsView from '../AccountsView.vue'
+import { adminAPI } from '@/api/admin'
 import { flattenStackedColumns } from '@/components/common/columnStack'
 import modelDisplayContract from '../../../../../backend/internal/service/testdata/account_available_models_contract.json'
 
 const {
   listAccounts,
+  hasAPIKeyDigest,
   getById,
   getAvailableModels,
   listWithEtag,
@@ -16,6 +19,7 @@ const {
   listTags,
   getBatchTodayStats,
   getUpstreamBillingProbeSettings,
+  showError,
   showSuccess,
   jobTrack,
   reviewDuplicates,
@@ -25,6 +29,7 @@ const {
   accountJobsState
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
+  hasAPIKeyDigest: vi.fn(),
   getById: vi.fn(),
   getAvailableModels: vi.fn(),
   listWithEtag: vi.fn(),
@@ -33,6 +38,7 @@ const {
   listTags: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
+  showError: vi.fn(),
   showSuccess: vi.fn(),
   jobTrack: vi.fn(),
   reviewDuplicates: vi.fn(),
@@ -62,6 +68,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       list: listAccounts,
+      hasAPIKeyDigest,
       getById,
       getAPIKeyVisibility: vi.fn().mockResolvedValue({ enabled: false }),
       getAvailableModels,
@@ -84,7 +91,7 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError,
     showSuccess,
     showInfo: vi.fn(),
     showWarning: vi.fn()
@@ -175,6 +182,12 @@ const ImportDataModalStub = {
   template: '<button data-test="emit-import-result" @click="$emit(\'imported\', result)">imported</button>'
 }
 
+const ConsoleFiltersStub = {
+  props: ['modelValue'],
+  emits: ['update:modelValue', 'change'],
+  template: '<div data-test="console-account-ids">{{ modelValue.account_ids.join(\',\') }}</div>'
+}
+
 const FolderBarStub = {
   props: ['folders', 'total'],
   template: '<div data-test="account-taxonomy-bar"><span data-test="folder-facet-count">{{ folders[0]?.account_count ?? -1 }}</span><span data-test="folder-navigation-total">{{ total }}</span></div>'
@@ -205,7 +218,7 @@ const commonStubs = {
     template: '<div data-test="view-cards" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountViewModeSwitcher: ViewModeStub,
-  AccountConsoleFilters: { props: ['modelValue'], template: '<div data-test="console-account-ids">{{ modelValue.account_ids.join(\',\') }}</div>' },
+  AccountConsoleFilters: ConsoleFiltersStub,
   AccountFolderBar: FolderBarStub,
   AccountTableActions: {
     emits: ['refresh'],
@@ -256,6 +269,32 @@ const mountView = (
   global: { stubs: commonStubs, plugins }
 })
 
+// what the search box does: the text reaches the page at once, the change once typing pauses
+const typeSearch = (wrapper: ReturnType<typeof mountView>, text: string) => {
+  const filters = wrapper.findComponent(ConsoleFiltersStub)
+  filters.vm.$emit('update:modelValue', { ...filters.props('modelValue'), search: text })
+  filters.vm.$emit('change')
+}
+
+const keyDigestTerm = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
+
+// the list reloads a debounce after the search is resolved
+const SEARCH_RELOAD_WAIT = { timeout: 3000 }
+
+// useTableLoader hands every list request the same params object, so the search of a request is copied as it is made
+const recordListSearches = () => {
+  const searches: unknown[] = []
+  listAccounts.mockImplementation(async (_page: number, _pageSize: number, filters?: { search?: string }) => {
+    searches.push(filters?.search)
+    return { items: [account], total: 1, page: 1, page_size: 20, pages: 1 }
+  })
+  return searches
+}
+
+// every argument of every request the page made through the accounts API
+const accountRequestArguments = () =>
+  JSON.stringify(Object.values(adminAPI.accounts).map(request => vi.mocked(request).mock.calls))
+
 describe('admin AccountsView Cockpit console', () => {
   it('preserves the submitted bulk-edit selection in the original window after clearing page selection', async () => {
     const wrapper = mountView()
@@ -278,6 +317,8 @@ describe('admin AccountsView Cockpit console', () => {
     sessionStorage.clear()
 
     listAccounts.mockReset().mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
+    // by default a search text is not the API key of any account
+    hasAPIKeyDigest.mockReset().mockResolvedValue(false)
     getById.mockReset().mockResolvedValue(account)
     getAvailableModels.mockReset().mockResolvedValue(structuredClone(modelDisplayContract.expected))
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: null, data: null })
@@ -286,6 +327,7 @@ describe('admin AccountsView Cockpit console', () => {
     listTags.mockReset().mockResolvedValue([])
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
+    showError.mockReset()
     showSuccess.mockReset()
     jobTrack.mockReset()
     reviewDuplicates.mockReset()
@@ -530,11 +572,14 @@ describe('admin AccountsView Cockpit console', () => {
     await router.push('/admin/accounts?folder=7&statuses=active&group_id=ungrouped&sort_by=status&sort_order=desc&page=2&page_size=50')
     await router.isReady()
     const wrapper = mountView([router])
-    await flushPromises()
 
-    expect(listAccounts).toHaveBeenCalledWith(2, 50, expect.objectContaining({
-      folder: '7', statuses: 'active', group_id: 'ungrouped', search: 'private search', account_ids: '1', sort_by: 'status', sort_order: 'desc'
-    }), expect.any(Object))
+    // the restored search text is looked up before the first list request
+    await vi.waitFor(() => {
+      expect(listAccounts).toHaveBeenCalledWith(2, 50, expect.objectContaining({
+        folder: '7', statuses: 'active', group_id: 'ungrouped', search: 'private search', account_ids: '1', sort_by: 'status', sort_order: 'desc'
+      }), expect.any(Object))
+    })
+    await flushPromises()
     expect(router.currentRoute.value.query.search).toBeUndefined()
     expect(router.currentRoute.value.query.account_ids).toBeUndefined()
 
@@ -546,6 +591,152 @@ describe('admin AccountsView Cockpit console', () => {
     await vi.waitFor(() => {
       expect(listAccounts).toHaveBeenLastCalledWith(2, 50, expect.objectContaining({ folder: '7', statuses: 'active' }), expect.any(Object))
     })
+    wrapper.unmount()
+  })
+
+  it('searches by name when the text is not the API key of any account', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const searches = recordListSearches()
+
+    typeSearch(wrapper, '  console  ')
+    await vi.waitFor(() => expect(searches).toEqual(['console']), SEARCH_RELOAD_WAIT)
+    await flushPromises()
+    expect(hasAPIKeyDigest.mock.calls).toEqual([[keyDigestTerm('console')]])
+    expect(getFacets).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'console' }))
+    wrapper.unmount()
+  })
+
+  it('searches by digest term when the text is the API key of an account and never sends the key', async () => {
+    const key = 'sk-console-upstream-key'
+    hasAPIKeyDigest.mockResolvedValue(true)
+    const wrapper = mountView()
+    await flushPromises()
+    const searches = recordListSearches()
+
+    typeSearch(wrapper, ` ${key} `)
+    await vi.waitFor(() => expect(searches).toEqual([keyDigestTerm(key)]), SEARCH_RELOAD_WAIT)
+    await flushPromises()
+    expect(getFacets).toHaveBeenLastCalledWith(expect.objectContaining({ search: keyDigestTerm(key) }))
+
+    // found by its key, the account stays listed after an edit although its name does not contain the text
+    const vm = wrapper.vm as any
+    vm.handleAccountUpdated({ ...account, priority: 3 })
+    expect(vm.accounts).toHaveLength(1)
+    expect(accountRequestArguments()).not.toContain(key)
+    wrapper.unmount()
+  })
+
+  it('resolves a restored search text before the first list and facets requests', async () => {
+    const key = 'sk-restored-upstream-key'
+    sessionStorage.setItem('account-console-sensitive-filters-v1', JSON.stringify({ search: key, account_ids: [] }))
+    let answerLookup!: (inUse: boolean) => void
+    hasAPIKeyDigest.mockReturnValue(new Promise<boolean>((resolve) => { answerLookup = resolve }))
+
+    const wrapper = mountView()
+    await vi.waitFor(() => expect(hasAPIKeyDigest).toHaveBeenCalledWith(keyDigestTerm(key)))
+    expect(listAccounts).not.toHaveBeenCalled()
+    expect(getFacets).not.toHaveBeenCalled()
+
+    answerLookup(true)
+    await flushPromises()
+    expect(listAccounts).toHaveBeenCalledWith(1, expect.any(Number), expect.objectContaining({ search: keyDigestTerm(key) }), expect.any(Object))
+    expect(getFacets).toHaveBeenCalledWith(expect.objectContaining({ search: keyDigestTerm(key) }))
+    expect(accountRequestArguments()).not.toContain(key)
+    wrapper.unmount()
+  })
+
+  it('reports a failed key lookup, puts the search box back and never sends the text', async () => {
+    const text = 'sk-unresolved-upstream-key'
+    const wrapper = mountView()
+    await flushPromises()
+    hasAPIKeyDigest.mockRejectedValue({ status: 503 })
+    const searches = recordListSearches()
+
+    typeSearch(wrapper, text)
+    await vi.waitFor(() => expect(showError).toHaveBeenCalledWith('admin.accounts.failedToLoad'))
+    // the filters are applied with the search the list had before, which the box shows again
+    await vi.waitFor(() => expect(searches).toEqual([undefined]), SEARCH_RELOAD_WAIT)
+    await flushPromises()
+    expect(wrapper.findComponent(ConsoleFiltersStub).props('modelValue').search).toBe('')
+    expect(JSON.parse(sessionStorage.getItem('account-console-sensitive-filters-v1') || '{}').search).toBe('')
+    expect(accountRequestArguments()).not.toContain(text)
+    wrapper.unmount()
+  })
+
+  it('looks a name search up again once the page adds an account, which may use that text as its key', async () => {
+    const key = 'sk-added-upstream-key'
+    const wrapper = mountView()
+    await flushPromises()
+    const searches = recordListSearches()
+    typeSearch(wrapper, key)
+    await vi.waitFor(() => expect(searches).toEqual([key]), SEARCH_RELOAD_WAIT)
+    await flushPromises()
+
+    hasAPIKeyDigest.mockResolvedValue(true)
+    ;(wrapper.vm as any).handleAccountCreated()
+    await vi.waitFor(() => expect(searches).toEqual([key, keyDigestTerm(key)]))
+    await flushPromises()
+    expect(getFacets).toHaveBeenLastCalledWith(expect.objectContaining({ search: keyDigestTerm(key) }))
+    wrapper.unmount()
+  })
+
+  it('looks a name search up again before the list and facets reload after an import', async () => {
+    const key = 'sk-imported-upstream-key'
+    const wrapper = mountView()
+    await flushPromises()
+    const searches = recordListSearches()
+    typeSearch(wrapper, key)
+    await vi.waitFor(() => expect(searches).toEqual([key]), SEARCH_RELOAD_WAIT)
+    await flushPromises()
+
+    // the import adds an account that uses the text as its key; the lookup has no answer yet
+    let answerLookup!: (inUse: boolean) => void
+    hasAPIKeyDigest.mockReturnValue(new Promise<boolean>((resolve) => { answerLookup = resolve }))
+    searches.length = 0
+    getFacets.mockClear()
+    await wrapper.get('[data-test="emit-import-result"]').trigger('click')
+    accountJobsState.store.recentJobs.push({ id: 71, status: 'succeeded' })
+    await vi.waitFor(() => expect(hasAPIKeyDigest).toHaveBeenLastCalledWith(keyDigestTerm(key)))
+    await flushPromises()
+    expect(searches).toEqual([])
+    expect(getFacets).not.toHaveBeenCalled()
+
+    answerLookup(true)
+    await vi.waitFor(() => expect(searches).toEqual([keyDigestTerm(key)]))
+    await flushPromises()
+    expect(getFacets).toHaveBeenCalled()
+    expect(getFacets.mock.calls.map(([filters]) => filters.search)).not.toContain(key)
+    wrapper.unmount()
+  })
+
+  it('lets a filter change wait for a lookup in flight instead of sending the text it is checking', async () => {
+    const key = 'sk-refreshed-upstream-key'
+    const wrapper = mountView()
+    await flushPromises()
+    const searches = recordListSearches()
+    typeSearch(wrapper, key)
+    await vi.waitFor(() => expect(searches).toEqual([key]), SEARCH_RELOAD_WAIT)
+    await flushPromises()
+
+    // an account now uses the text as its key; the refresh asks again and has no answer yet
+    let answerLookup!: (inUse: boolean) => void
+    hasAPIKeyDigest.mockReturnValue(new Promise<boolean>((resolve) => { answerLookup = resolve }))
+    searches.length = 0
+    getFacets.mockClear()
+    await wrapper.get('[data-test="page-refresh"]').trigger('click')
+    const filters = wrapper.findComponent(ConsoleFiltersStub)
+    filters.vm.$emit('update:modelValue', { ...filters.props('modelValue'), statuses: ['active'] })
+    filters.vm.$emit('change')
+    await flushPromises()
+    expect(searches).toEqual([])
+    expect(getFacets).not.toHaveBeenCalled()
+
+    answerLookup(true)
+    // the refresh loads at once, the filter change a debounce later
+    await vi.waitFor(() => expect(searches).toEqual([keyDigestTerm(key), keyDigestTerm(key)]), SEARCH_RELOAD_WAIT)
+    await flushPromises()
+    expect(getFacets).toHaveBeenLastCalledWith(expect.objectContaining({ search: keyDigestTerm(key), statuses: 'active' }))
     wrapper.unmount()
   })
 
