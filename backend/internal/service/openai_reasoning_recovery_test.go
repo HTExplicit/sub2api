@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,10 @@ import (
 )
 
 const reasoningRecoveryFixture = `{"model":"gpt-5.6-sol","reasoning":{"effort":"xhigh","mode":"standard","context":"keep","extension":{"x":1}},"store":false,"input":[{"role":"user","content":"constraints"},{"type":"reasoning","id":"rs_old","phase":"analysis","summary":[{"type":"summary_text","text":"visible summary"}],"encrypted_content":"opaque-old","unknown":{"keep":true}},{"type":"function_call","id":"fc_one","call_id":"call_one","name":"load_orders","arguments":"{}"},{"type":"function_call_output","call_id":"call_one","output":"[]"}]}`
+
+// A Codex multi-agent history: an inter-agent message carries its body as
+// ciphertext in a content part, between two reasoning items.
+const reasoningRecoveryAgentMessageFixture = `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","id":"rs_a","encrypted_content":"a"},{"type":"agent_message","id":"amsg_b","author":"/root","recipient":"/root/worker","content":[{"type":"input_text","text":"Payload:"},{"type":"encrypted_content","encrypted_content":"b"}]},{"type":"reasoning","id":"rs_c","encrypted_content":"c"}]}`
 
 func newReasoningRecoveryTestState(t *testing.T, ctx context.Context, body string) (*openAIReasoningRecoveryState, *http.Request, *httptest.ResponseRecorder) {
 	t.Helper()
@@ -65,6 +70,11 @@ func TestOpenAIReasoningRecoveryStrictErrorsAndScope(t *testing.T) {
 		{"specific_despite_compaction", `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","encrypted_content":"a"},{"type":"compaction","encrypted_content":"b"}]}`, `{"error":{"code":"invalid_encrypted_content","param":"input[0].encrypted_content"}}`, true},
 		{"reference_not_local_proof", `{"model":"gpt-5.6-sol","previous_response_id":"resp_old","input":[{"type":"reasoning","encrypted_content":"a"}]}`, `{"error":{"code":"invalid_encrypted_content"}}`, false},
 		{"no_reasoning_cipher", `{"model":"gpt-5.6-sol","input":[{"type":"compaction","encrypted_content":"a"}]}`, `{"error":{"code":"invalid_encrypted_content"}}`, false},
+		{"named_reasoning_despite_agent_message", reasoningRecoveryAgentMessageFixture, `{"error":{"message":"The encrypted content for item rs_c could not be verified. Reason: Encrypted content could not be decrypted or parsed.","type":"invalid_request_error","param":null,"code":"invalid_encrypted_content"}}`, true},
+		{"named_reasoning_failed_envelope", reasoningRecoveryAgentMessageFixture, `{"type":"response.failed","response":{"status":"failed","error":{"code":"invalid_encrypted_content","message":"The encrypted content for item rs_a could not be verified. Reason: Encrypted content could not be decrypted or parsed."}}}`, true},
+		{"unnamed_with_agent_message", reasoningRecoveryAgentMessageFixture, `{"error":{"message":"invalid encrypted content","param":null,"code":"invalid_encrypted_content"}}`, false},
+		{"named_agent_message", reasoningRecoveryAgentMessageFixture, `{"error":{"message":"The encrypted content for item amsg_b could not be verified. Reason: Encrypted content could not be decrypted or parsed.","param":null,"code":"invalid_encrypted_content"}}`, false},
+		{"named_longer_identifier", reasoningRecoveryAgentMessageFixture, `{"error":{"message":"The encrypted content for item rs_ab could not be verified. Reason: Encrypted content could not be decrypted or parsed.","param":null,"code":"invalid_encrypted_content"}}`, false},
 		{"orphan_tool_is_not_repaired", `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","encrypted_content":"a"},{"type":"function_call_output","call_id":"missing","output":"result"}]}`, `{"error":{"code":"invalid_encrypted_content","param":"input[0].encrypted_content"}}`, false},
 	}
 	for _, test := range tests {
@@ -80,6 +90,18 @@ func TestOpenAIReasoningRecoveryStrictErrorsAndScope(t *testing.T) {
 				require.False(t, retry, "a request has only one extra POST")
 			}
 		})
+	}
+}
+
+func TestOpenAIReasoningRecoveryNamedReasoningLeavesOtherCarriers(t *testing.T) {
+	state, _, _ := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryAgentMessageFixture)
+	payload := []byte(`{"error":{"message":"The encrypted content for item rs_c could not be verified. Reason: Encrypted content could not be decrypted or parsed.","param":null,"code":"invalid_encrypted_content"}}`)
+	after, retry := state.TryRecover(http.StatusBadRequest, nil, payload, false)
+	require.True(t, retry)
+	require.False(t, gjson.GetBytes(after, "input.0.encrypted_content").Exists())
+	require.False(t, gjson.GetBytes(after, "input.2.encrypted_content").Exists())
+	for _, path := range []string{"input.0.id", "input.1", "input.2.id"} {
+		require.Equal(t, gjson.Get(reasoningRecoveryAgentMessageFixture, path).Raw, gjson.GetBytes(after, path).Raw, path)
 	}
 }
 
@@ -204,6 +226,9 @@ func (m *reasoningRecoveryMemoryStore) GetOpenAIRejectedReasoning(_ context.Cont
 	if m.fail {
 		return nil, errors.New("cache unavailable")
 	}
+	if len(hashes) > OpenAIReasoningStateMaxLookupEntries {
+		return nil, ErrOpenAIReasoningCacheInput
+	}
 	out := map[string]OpenAIRejectedReasoning{}
 	for _, hash := range hashes {
 		if value, ok := m.values[scope.ScopeHash+":"+hash]; ok {
@@ -216,6 +241,9 @@ func (m *reasoningRecoveryMemoryStore) GetOpenAIRejectedReasoning(_ context.Cont
 func (m *reasoningRecoveryMemoryStore) PutOpenAIRejectedReasoning(_ context.Context, scope OpenAIReasoningCacheScope, hashes []string) error {
 	if m.fail {
 		return errors.New("cache unavailable")
+	}
+	if len(hashes) > OpenAIReasoningStateMaxLookupEntries {
+		return ErrOpenAIReasoningCacheInput
 	}
 	m.puts++
 	if m.values == nil {
@@ -252,6 +280,31 @@ func TestOpenAIReasoningRecoveryNegativeMemoryIsExactAndNonSliding(t *testing.T)
 	store.fail = false
 	store.values[oldKey] = OpenAIRejectedReasoning{RejectedAt: time.Now().Add(-25 * time.Hour), ExpiresAt: time.Now().Add(-time.Hour)}
 	require.Equal(t, body, string(next.skipRejectedHistory([]byte(body))))
+}
+
+func TestOpenAIReasoningRecoveryNegativeMemoryCoversLongHistory(t *testing.T) {
+	const items = 2*OpenAIReasoningStateMaxLookupEntries + 22
+	var history strings.Builder
+	for index := range items {
+		if index > 0 {
+			history.WriteByte(',')
+		}
+		fmt.Fprintf(&history, `{"type":"reasoning","encrypted_content":"cipher-%d"}`, index)
+	}
+	body := `{"model":"gpt-5.6-sol","input":[` + history.String() + `]}`
+	store := &reasoningRecoveryMemoryStore{}
+	first, _, _ := newReasoningRecoveryTestState(t, context.Background(), body)
+	first.store = store
+	_, retry := first.TryRecover(400, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
+	require.True(t, retry)
+	require.Equal(t, 3, store.puts, "the store takes at most one batch per call")
+	require.Len(t, store.values, items)
+	next, _, _ := newReasoningRecoveryTestState(t, context.Background(), body)
+	next.store = store
+	stripped := next.skipRejectedHistory([]byte(body))
+	require.Equal(t, 3, store.gets)
+	require.Equal(t, items, next.cacheSkippedItems)
+	require.NotContains(t, string(stripped), "encrypted_content")
 }
 
 func TestOpenAIReasoningRecoveryIdentityWithoutReasoningStillIsolatesSources(t *testing.T) {

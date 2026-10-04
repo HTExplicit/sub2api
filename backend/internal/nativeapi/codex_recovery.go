@@ -28,6 +28,9 @@ type RecoverySelectionQuery struct {
 	EncryptedFields  int    `json:"encrypted_fields"`
 	ServerContext    bool   `json:"server_context"`
 	Param            string `json:"param"`
+	// NamedCipher reports that the upstream error names, by item id, an item
+	// listed in CipherIndices.
+	NamedCipher bool `json:"named_cipher"`
 }
 
 type RecoverySelection struct {

@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -329,11 +331,18 @@ func (r *openAIReasoningRecoveryState) skipRejectedHistory(body []byte) []byte {
 	for _, item := range items {
 		hashes = append(hashes, item.hash)
 	}
-	var rejected map[string]OpenAIRejectedReasoning
+	// The store takes a bounded number of hashes per call; a long history is
+	// looked up in batches inside the one I/O budget.
+	rejected := make(map[string]OpenAIRejectedReasoning, len(hashes))
 	err := r.budget.Do(r.ctx, func(ioCtx context.Context) error {
-		var readErr error
-		rejected, readErr = r.store.GetOpenAIRejectedReasoning(ioCtx, r.scope, hashes)
-		return readErr
+		for batch := range slices.Chunk(hashes, OpenAIReasoningStateMaxLookupEntries) {
+			found, readErr := r.store.GetOpenAIRejectedReasoning(ioCtx, r.scope, batch)
+			if readErr != nil {
+				return readErr
+			}
+			maps.Copy(rejected, found)
+		}
+		return nil
 	})
 	if err != nil {
 		return body
@@ -361,6 +370,7 @@ func (r *openAIReasoningRecoveryState) skipRejectedHistory(body []byte) []byte {
 type openAIReasoningCipherItem struct {
 	index int
 	hash  string
+	id    string
 }
 
 func openAIReasoningCipherItems(body []byte) []openAIReasoningCipherItem {
@@ -372,17 +382,26 @@ func openAIReasoningCipherItems(body []byte) []openAIReasoningCipherItem {
 	for index, item := range input.Array() {
 		cipher := item.Get("encrypted_content")
 		if item.Get("type").String() == "reasoning" && cipher.Type == gjson.String && cipher.String() != "" {
-			out = append(out, openAIReasoningCipherItem{index, openAIReasoningDigest([]byte(cipher.String()))})
+			entry := openAIReasoningCipherItem{index: index, hash: openAIReasoningDigest([]byte(cipher.String()))}
+			if id := item.Get("id"); id.Type == gjson.String {
+				entry.id = id.String()
+			}
+			out = append(out, entry)
 		}
 	}
 	return out
 }
 
-type openAIReasoningRejection struct{ code, param string }
+// message is the upstream error text; selection reads it only for the id of
+// the rejected item.
+type openAIReasoningRejection struct{ code, param, message string }
 
 func parseOpenAIReasoningRejection(payload []byte) (openAIReasoningRejection, bool) {
 	result := codexrecovery.Rejection(openAIRecoveryEnvelope(payload))
-	return openAIReasoningRejection{code: result.Code, param: result.Param}, result.Recognized
+	if !result.Recognized {
+		return openAIReasoningRejection{}, false
+	}
+	return openAIReasoningRejection{code: result.Code, param: result.Param, message: openAIRecoveryErrorMessage(payload)}, true
 }
 
 func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
@@ -396,7 +415,7 @@ func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 }
 
 func openAIReasoningRejectedIndices(body []byte, rejection openAIReasoningRejection) ([]int, []string) {
-	selection := selectOpenAIRecoveryIndices(body, rejection.param)
+	selection := selectOpenAIRecoveryIndices(body, rejection)
 	if len(selection.Indices) == 0 {
 		return nil, nil
 	}
@@ -557,7 +576,12 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	r.diagnosticState = "retry_prepared"
 	if r.store != nil && r.scope.ScopeHash != "" {
 		_ = r.budget.Do(r.ctx, func(ioCtx context.Context) error {
-			return r.store.PutOpenAIRejectedReasoning(ioCtx, r.scope, hashes)
+			for batch := range slices.Chunk(hashes, OpenAIReasoningStateMaxLookupEntries) {
+				if err := r.store.PutOpenAIRejectedReasoning(ioCtx, r.scope, batch); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 	}
 	r.record("retry_without_encrypted_content", status, rejection.code, payload, len(indices))
@@ -735,7 +759,7 @@ func (r *openAIReasoningRecoveryState) recoveryNotAttemptedReason(payload []byte
 	if !ok {
 		return "not_signature_rejection"
 	}
-	selection := selectOpenAIRecoveryIndices(r.wire, rejection.param)
+	selection := selectOpenAIRecoveryIndices(r.wire, rejection)
 	if len(selection.Indices) > 0 {
 		if _, err := stripOpenAIReasoningCipherIndices(r.wire, selection.Indices); err != nil {
 			return "rewrite_failed"
