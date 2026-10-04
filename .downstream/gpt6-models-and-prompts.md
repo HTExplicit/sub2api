@@ -41,6 +41,8 @@ ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流�
 - 创建账号（数据导入、复制账号同此路径）时丢弃这类账号带入的 `extra.system_prompt`；批量编辑和 extra 合并接口在任何平台都不写该键，已有账号的绑定只由绑定接口写入。
 - 迁移 `268_purge_system_prompt_bindings_without_insertion_point.sql` 一次性删除它们已存的绑定。
 
+提示词库里 259 随旧默认规则一起带入的“先抓取远程规则文件”块已失效：它指向 `/skills/security-research/current/`，这条公开路由随远程 Skill 注册表在 #206 删除，现在落到前端回退页并返回 HTML，模型读不到 Markdown 原文。迁移 `269_strip_removed_remote_rules_bootstrap_from_system_prompts.sql` 只按形状删除该块（含该路径的代码围栏段、其后仍提到 `REMOTE_ROOT` 的段落，以及紧邻其前的简短抓取说明）；路径出现在其他位置，或去掉该块后正文为空的提示词原样保留并输出通知。其余段落、库顺序、全局开关、默认提示词和其他设置不动，没有该路径的配置不写入，可重复执行。
+
 请求路径只读内存快照（保存即替换，60 秒后台刷新以同步多实例）和调度账号自带的绑定，不查询数据库；配置不可用时不注入并告警，不向客户端返回错误。每个最终协议只注入一次：
 
 | 最终协议 | 投递 |
