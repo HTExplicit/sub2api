@@ -207,7 +207,7 @@ func (c *gatewayCache) PutOpenAIRejectedReasoning(ctx context.Context, scope ser
 }
 
 // newReasoningStateClient builds the client the rejected-cipher memory runs on,
-// once for the gateway cache, which keeps it for the life of the process. The
+// once for the gateway cache, which owns it and closes it in Close. The
 // shared client does not apply a context deadline to socket reads and writes
 // (ContextTimeoutEnabled is off): on it every write and read gets a timeout of
 // its own, counted from the moment it starts. This client applies the context

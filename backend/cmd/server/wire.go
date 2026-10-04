@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -95,6 +96,7 @@ func provideUsageCommitObserver() service.UsageCommitObserver {
 func provideCleanup(
 	entClient *ent.Client,
 	rdb *redis.Client,
+	gatewayCache service.GatewayCache,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAggregation *service.OpsAggregationService,
 	opsAlertEvaluator *service.OpsAlertEvaluatorService,
@@ -424,7 +426,14 @@ func provideCleanup(
 			}},
 		}
 
+		// The production gateway cache owns the Redis client of its rejected-cipher memory.
 		infraSteps := []cleanupStep{
+			{"GatewayCache", func() error {
+				if closer, ok := gatewayCache.(io.Closer); ok {
+					return closer.Close()
+				}
+				return nil
+			}},
 			{"Redis", func() error {
 				if rdb == nil {
 					return nil
