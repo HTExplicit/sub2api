@@ -204,7 +204,7 @@ export default {accounts: {
       crsBack: 'Back',
       editAccount: 'Edit Account',
       deleteAccount: 'Delete Account',
-      searchAccounts: 'Search accounts...',
+      searchAccounts: 'Search name or API key',
       notes: 'Notes',
       notesPlaceholder: 'Enter notes',
       notesHint: 'Notes are optional',

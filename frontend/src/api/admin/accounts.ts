@@ -92,6 +92,16 @@ export async function list(
   return data
 }
 
+/**
+ * Check whether any account uses the API key behind a digest term
+ * @param digestTerm - "sha256:<hex>" search term of the key (utils/accountKeySearch); the key itself is not sent
+ * @returns Whether at least one account has that key, whatever the list is filtered by
+ */
+export async function hasAPIKeyDigest(digestTerm: string, view?: CapturedAccountView): Promise<boolean> {
+  const { total } = await list(1, 1, { search: digestTerm, lite: '1' }, undefined, view)
+  return total > 0
+}
+
 export interface AccountListWithEtagResult {
   notModified: boolean
   etag: string | null
@@ -1392,6 +1402,7 @@ export async function refreshOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsag
 
 export const accountsAPI = {
   list,
+  hasAPIKeyDigest,
   listWithEtag,
   getUpstreamBillingRatesWithEtag,
   getById,
@@ -1486,6 +1497,7 @@ export const accountsAPI = {
 /** Only fixed native account operations accept an origin-view context. */
 const viewArgumentCounts: Partial<Record<keyof typeof accountsAPI, number>> = {
   list: 4,
+  hasAPIKeyDigest: 1,
   getUpstreamBillingRatesWithEtag: 4,
   listWithEtag: 4,
   getById: 1,

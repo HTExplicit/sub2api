@@ -203,7 +203,7 @@ export default {accounts: {
       crsBack: '返回',
       editAccount: '编辑账号',
       deleteAccount: '删除账号',
-      searchAccounts: '搜索账号...',
+      searchAccounts: '搜索名称或 API Key',
       notes: '备注',
       notesPlaceholder: '请输入备注',
       notesHint: '备注可选',

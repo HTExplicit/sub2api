@@ -4,7 +4,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -636,6 +638,15 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 			}
 		})
 	}
+}
+
+func (s *AccountRepoSuite) TestListWithFilters_SearchByAPIKeyDigest() {
+	requireAccountSearchByAPIKeyDigest(s.T(), s.client, "key-search-", func(search string) []int64 {
+		accounts, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, "", "", "", search, 0, "")
+		s.Require().NoError(err)
+		s.Require().Equal(int64(len(accounts)), page.Total)
+		return idsOfAccounts(accounts)
+	})
 }
 
 // --- ListByGroup / ListActive / ListByPlatform ---
@@ -1837,4 +1848,34 @@ func idsOfAccounts(accounts []service.Account) []int64 {
 		out = append(out, accounts[i].ID)
 	}
 	return out
+}
+
+// accountSearchKeyDigestTerm is the search value the admin page sends in place
+// of an API key.
+func accountSearchKeyDigestTerm(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return service.AccountSearchKeyDigestPrefix + hex.EncodeToString(sum[:])
+}
+
+// requireAccountSearchByAPIKeyDigest seeds accounts named with namePrefix and
+// checks one account search path against them; search returns the matched IDs.
+func requireAccountSearchByAPIKeyDigest(t *testing.T, client *dbent.Client, namePrefix string, search func(term string) []int64) {
+	t.Helper()
+	key := namePrefix + "key"
+	create := func(name string, credentials map[string]any) int64 {
+		return mustCreateAccount(t, client, &service.Account{
+			Name: namePrefix + name, Type: service.AccountTypeAPIKey, Credentials: credentials,
+		}).ID
+	}
+	sharedA := create("shared-a", map[string]any{"api_key": key})
+	sharedB := create("shared-b", map[string]any{"api_key": key})
+	padded := create("padded", map[string]any{"api_key": "\t" + key + " \r\n"})
+	// Named after the key, while its own key merely starts with it.
+	namedAfterKey := create("key-in-name", map[string]any{"api_key": key + "-other"})
+	create("number", map[string]any{"api_key": 1234567890})
+	create("missing", map[string]any{})
+
+	require.ElementsMatch(t, []int64{sharedA, sharedB, padded}, search(accountSearchKeyDigestTerm(key)))
+	require.Empty(t, search(accountSearchKeyDigestTerm("1234567890")), "a non-string api_key is not a key")
+	require.Equal(t, []int64{namedAfterKey}, search(key), "plain text matches names only")
 }

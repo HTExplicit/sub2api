@@ -767,6 +767,7 @@ import { getAccountPlanType } from '@/utils/accountPresentation'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import { accountKeyDigestTerm, isAccountKeyDigestTerm } from '@/utils/accountKeySearch'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
@@ -872,6 +873,14 @@ const consoleFilters = ref<AccountConsoleFilterState>({
   privacy_mode: queryString('privacy_mode'),
   account_ids: initialSensitiveConsoleState.account_ids
 })
+// What requests carry as "search" for the text in the search box: the trimmed text, or its digest term when the text
+// is exactly the API key of some account, so that the key itself is never sent. `text` is the text `value` was
+// resolved for.
+let resolvedSearch = { text: '', value: '' }
+type ConsoleSearchResolution = 'resolved' | 'failed' | 'superseded'
+type ConsoleSearchLookup = { text: string; result: Promise<ConsoleSearchResolution> }
+// The lookup in flight, if any. Its result is dropped once another one, or none, stands here.
+let pendingSearchLookup: ConsoleSearchLookup | null = null
 const folders = ref<AccountManagementFolder[]>([])
 const tags = ref<AccountManagementTag[]>([])
 const facetFolders = computed<AccountManagementFolder[]>(() => facets.value?.folders || [])
@@ -1539,7 +1548,7 @@ const buildConsoleAPIParams = (includeFolder = true) => {
     account_ids: state.account_ids.length ? state.account_ids.join(',') : undefined,
     group_id: state.group_id || undefined,
     privacy_mode: state.privacy_mode || undefined,
-    search: state.search.trim() || undefined,
+    search: resolvedSearch.value || undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
@@ -1605,13 +1614,91 @@ const loadTaxonomy = async () => {
   }
 }
 
-const handleConsoleFiltersChanged = () => {
+const lookUpConsoleSearch = async (lookup: ConsoleSearchLookup): Promise<ConsoleSearchResolution> => {
+  const { text } = lookup
+  let value = text
+  let failure: unknown = null
+  try {
+    const digestTerm = await accountKeyDigestTerm(text)
+    if (digestTerm && await adminAPI.accounts.hasAPIKeyDigest(digestTerm)) value = digestTerm
+  } catch (error) {
+    failure = error ?? new Error('account search lookup failed')
+  }
+  if (pendingSearchLookup !== lookup) return 'superseded'
+  pendingSearchLookup = null
+  if (!failure) {
+    resolvedSearch = { text, value }
+    return 'resolved'
+  }
+  console.error('Failed to resolve the account search:', failure)
+  // A lookup repeated for the applied text fails quietly: requests keep what it resolved to before.
+  if (text !== resolvedSearch.text) {
+    appStore.showError(extractApiErrorMessage(failure, t('admin.accounts.failedToLoad')))
+    // The text cannot be applied, and sending it as it is could send a key: the box goes back to the search the
+    // list shows, unless it was edited in the meantime.
+    if (consoleFilters.value.search.trim() === text) {
+      consoleFilters.value = { ...consoleFilters.value, search: resolvedSearch.text }
+      saveSensitiveConsoleState()
+    }
+  }
+  return 'failed'
+}
+
+// Brings resolvedSearch in line with the search box. The answer is immediate when there is nothing to look up (an
+// empty text, or a text already resolved unless `force` asks again); otherwise it is the outcome of the lookup. A
+// lookup of the same text already in flight answers for this call as well; one of another text is dropped. Until a
+// lookup succeeds, requests keep the value resolved before it: the text is never sent in its place.
+const resolveConsoleSearch = (force = false): 'resolved' | Promise<ConsoleSearchResolution> => {
+  const text = consoleFilters.value.search.trim()
+  if (pendingSearchLookup?.text === text) return pendingSearchLookup.result
+  pendingSearchLookup = null
+  if (!text) {
+    resolvedSearch = { text, value: text }
+    return 'resolved'
+  }
+  if (!force && text === resolvedSearch.text) return 'resolved'
+  const lookup = { text } as ConsoleSearchLookup
+  pendingSearchLookup = lookup
+  lookup.result = lookUpConsoleSearch(lookup)
+  return lookup.result
+}
+
+// Looks an applied name search up again: accounts added or changed since may use that text as their key. A key
+// search, or none, stays what it is. False when a newer resolution took over, which then applies the filters itself.
+const refreshConsoleSearch = async (): Promise<boolean> => {
+  const searchBefore = resolvedSearch.value
+  const resolution = resolveConsoleSearch(Boolean(searchBefore) && !isAccountKeyDigestTerm(searchBefore))
+  if (resolution !== 'resolved' && await resolution === 'superseded') return false
+  if (resolvedSearch.value !== searchBefore) {
+    // The search now selects other accounts: start again from their first page, facets included.
+    pagination.page = 1
+    clearSelection()
+    syncConsoleRoute()
+    void loadFacets()
+  }
+  return true
+}
+
+const applyConsoleFilters = () => {
   pagination.page = 1
-  saveSensitiveConsoleState()
   syncConsoleRoute()
   syncConsoleParams()
   debouncedReload()
   void loadFacets()
+}
+
+const handleConsoleFiltersChanged = () => {
+  saveSensitiveConsoleState()
+  const resolution = resolveConsoleSearch()
+  if (resolution === 'resolved') {
+    applyConsoleFilters()
+    return
+  }
+  // A changed search text is applied once it is looked up. If that fails, the box is back at the applied search and
+  // the other filters are applied with it.
+  void resolution.then((outcome) => {
+    if (outcome !== 'superseded') applyConsoleFilters()
+  })
 }
 
 const handleFolderSelect = (folder: string) => {
@@ -2038,6 +2125,7 @@ const refreshAccountsIncrementally = async () => {
 }
 
 const handleManualRefresh = async () => {
+  if (!await refreshConsoleSearch()) return
   await Promise.all([load(), loadUpstreamBillingProbeGlobalState()])
   // Force usage cells to refetch /usage on explicit user refresh.
   usageManualRefreshToken.value += 1
@@ -2571,6 +2659,12 @@ const selectImportedResults = async (jobIDs = completedImportJobIDs.value, expec
   }
 }
 
+// Reloads the list, and the facets when asked, after this page added or changed accounts. That can turn the applied
+// name search into a key search, so the search is looked up again before anything is requested with it.
+const reloadChangedAccounts = async (run: () => Promise<void> = load, withFacets = false) => {
+  if (await refreshConsoleSearch()) await Promise.all([run(), ...(withFacets ? [loadFacets()] : [])])
+}
+
 const refreshCompletedImports = async () => {
   if (importCompletionRefreshRunning) {
     importCompletionRefreshQueued = true
@@ -2583,7 +2677,8 @@ const refreshCompletedImports = async () => {
       const completed = new Map(completedImportQueue)
       completedImportQueue.clear()
       completedImportJobIDs.value = [...completed.keys()]
-      await Promise.all([load(), loadFacets(), loadTaxonomy()])
+      const searchCurrent = await refreshConsoleSearch()
+      await Promise.all([...(searchCurrent ? [load(), loadFacets()] : []), loadTaxonomy()])
       const selectable = [...completed].filter(([, revision]) => revision === importSelectionRevision).map(([id]) => id)
       if (selectable.length) await selectImportedResults(selectable)
     } while (importCompletionRefreshQueued)
@@ -2603,8 +2698,7 @@ watch(
       if (isTerminalAccountJob(job) && accountJobsStore.completedJobs?.some(done => done.id === job.id) && !refreshedOperations.has(job.id)) {
         refreshedOperations.add(job.id)
         if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_duplicate_review') {
-          void load()
-          if (['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge'].includes(job.kind)) void loadFacets()
+          void reloadChangedAccounts(load, ['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge'].includes(job.kind))
         }
       }
       const revision = pendingDataImportJobIDs.get(job.id)
@@ -2621,7 +2715,7 @@ const handleAccountCreated = (job?: AccountJob) => {
     accountJobsStore.track(job, { open: false })
     return
   }
-  void reload()
+  void reloadChangedAccounts(reload)
 }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
@@ -2673,7 +2767,8 @@ const accountMatchesCurrentFilters = (account: Account) => {
       return false
     }
   }
-  const search = state.search.trim().toLowerCase()
+  // An account found by its API key is not checked by name: the key cannot be compared here.
+  const search = isAccountKeyDigestTerm(resolvedSearch.value) ? '' : resolvedSearch.value.toLowerCase()
   if (search && !account.name.toLowerCase().includes(search)) return false
   return true
 }
@@ -3077,7 +3172,11 @@ onMounted(async () => {
     }
   }
 
-  await Promise.all([load(), loadFacets(), loadTaxonomy(), loadAPIKeyVisibility()])
+  // A search text restored from the session is resolved before the first requests can carry it. If that fails, the
+  // box is empty again and the list loads without a search; a newer resolution loads the list itself.
+  const searchResolution = resolveConsoleSearch()
+  const searchOutcome = searchResolution === 'resolved' ? searchResolution : await searchResolution
+  await Promise.all([...(searchOutcome === 'superseded' ? [] : [load(), loadFacets()]), loadTaxonomy(), loadAPIKeyVisibility()])
   loadUpstreamBillingProbeGlobalState()
   const [proxiesResult, groupsResult] = await Promise.allSettled([
     adminAPI.proxies.getAll(),
@@ -3106,6 +3205,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // A search lookup still in flight has nothing left to apply to.
+  pendingSearchLookup = null
   upstreamBillingRateAbortController?.abort()
   if (typeof document !== 'undefined' && document.fonts) {
     document.fonts.removeEventListener('loadingdone', remeasureAccountNames)

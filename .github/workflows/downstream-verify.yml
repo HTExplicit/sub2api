@@ -155,6 +155,7 @@ jobs:
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
+            src/utils/__tests__/accountKeySearch.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
             src/features/image-studio/__tests__/api.spec.ts \
             src/components/layout/__tests__/AppSidebar.spec.ts \
