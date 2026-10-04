@@ -652,10 +652,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err := validateCompatibleImagesModel(requestModel); err != nil {
 		return nil, err
 	}
-	upstreamModel, err := resolveOpenAIForwardModelContext(ctx, account, requestModel, "")
-	if err != nil {
-		return nil, err
-	}
+	upstreamModel := account.GetMappedModel(requestModel)
 	if err := validateCompatibleImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}

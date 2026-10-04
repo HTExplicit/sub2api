@@ -31,11 +31,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	var integrityEffortPolicy func([]byte) ([]byte, error)
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		mappedCandidate, mapErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
-		if mapErr != nil {
-			return nil, mapErr
-		}
-		candidates := []string{mappedCandidate}
+		candidates := []string{account.GetMappedModel(requestedModel)}
 		if isOpenAIResponsesCompactPath(c) {
 			if compactModel, matched := account.ResolveCompactMappedModel(requestedModel); matched {
 				candidates = append([]string{compactModel}, candidates...)

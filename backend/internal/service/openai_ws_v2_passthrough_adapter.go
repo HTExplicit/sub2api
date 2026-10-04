@@ -771,11 +771,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			return mapErr
 		}
 		if mappedModel = strings.TrimSpace(mappedModel); mappedModel != "" {
-			accountMapped, err := resolveOpenAIForwardModelContext(ctx, account, mappedModel, "")
-			if err != nil {
-				return err
-			}
-			if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
+			if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(mappedModel)); accountMapped != "" {
 				mappedModel = accountMapped
 			}
 			firstClientMessage = s.ReplaceModelInBody(firstClientMessage, mappedModel)
@@ -1134,11 +1130,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						return payload, nil, err
 					}
 					if upstreamModel = strings.TrimSpace(upstreamModel); upstreamModel != "" {
-						accountMapped, err := resolveOpenAIForwardModelContext(ctx, account, upstreamModel, "")
-						if err != nil {
-							return payload, nil, err
-						}
-						if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
+						if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(upstreamModel)); accountMapped != "" {
 							upstreamModel = accountMapped
 						}
 						payload = s.ReplaceModelInBody(payload, upstreamModel)

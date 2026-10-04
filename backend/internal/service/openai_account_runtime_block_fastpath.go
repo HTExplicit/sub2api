@@ -963,10 +963,6 @@ func (s *OpenAIGatewayService) clearOpenAIAccountSchedulingBlockScope(accountID 
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
-	return s.isOpenAIAccountRuntimeBlockedContext(context.Background(), account)
-}
-
-func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Context, account *Account) bool {
 	if s == nil || account == nil || account.ID <= 0 {
 		return false
 	}
@@ -1171,7 +1167,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx c
 	}
 	// Re-read after the conditional clear so a concurrent replacement remains
 	// blocked.
-	if s.isOpenAIAccountRuntimeBlockedContext(ctx, account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
+	if s.isOpenAIAccountRuntimeBlocked(account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
 		return true
 	}
 	if account.Type == AccountTypeAPIKey {
