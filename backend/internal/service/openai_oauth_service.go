@@ -402,7 +402,7 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 
 	clientID := account.GetCredential("client_id")
-	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, account, codexAccountIdentityOverrideUA(account))
+	identity, err := resolveCodexOutboundIdentityForAccount(account, codexAccountIdentityOverrideUA(account))
 	if err != nil {
 		return nil, err
 	}

@@ -212,7 +212,9 @@ func TestOpenAISetupTokenMessagesUsesCodexBridgeAndTurnState(t *testing.T) {
 	require.Equal(t, chatgptCodexURL, upstream.requests[0].URL.String())
 	require.Equal(t, "Bearer setup-token-value", upstream.requests[0].Header.Get("Authorization"))
 	require.Equal(t, "chatgpt-setup", upstream.requests[0].Header.Get("chatgpt-account-id"))
-	requireOpenAIMessagesCodexIdentity(t, upstream.requests[0], resolveCodexOutboundIdentityForAccount(account, "").userAgent, "codex-tui")
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	requireOpenAIMessagesCodexIdentity(t, upstream.requests[0], identity.userAgent, "codex-tui")
 	require.Empty(t, upstream.requests[0].Header.Get("x-codex-turn-state"))
 
 	secondBody := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"next"}],"stream":false}`)
@@ -229,7 +231,7 @@ func TestOpenAISetupTokenMessagesUsesCodexBridgeAndTurnState(t *testing.T) {
 	require.Equal(t, "turn_state_setup", upstream.requests[1].Header.Get("x-codex-turn-state"))
 	require.Equal(t, generateSessionUUID(isolateOpenAIUpstreamSessionID(0, account, "stable-cache-key")), upstream.requests[1].Header.Get("session-id"))
 	require.Empty(t, upstream.requests[1].Header.Get("conversation_id"))
-	requireOpenAIMessagesCodexIdentity(t, upstream.requests[1], resolveCodexOutboundIdentityForAccount(account, "").userAgent, "codex-tui")
+	requireOpenAIMessagesCodexIdentity(t, upstream.requests[1], identity.userAgent, "codex-tui")
 }
 
 func openAISetupTokenCompatAccount(id int64) *Account {

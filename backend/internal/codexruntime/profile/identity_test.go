@@ -8,7 +8,7 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
-func TestIdentityPolicyPreservesDeterminismAndProtocolPairing(t *testing.T) {
+func TestIdentityProfilePreservesDeterminismAndProtocolPairing(t *testing.T) {
 	first := deriveCodexClientIdentity("1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55")
 	if first != deriveCodexClientIdentity("1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55") || !first.valid() {
 		t.Fatal("stable profile changed")

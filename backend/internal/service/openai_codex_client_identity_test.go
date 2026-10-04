@@ -51,7 +51,8 @@ func TestRefreshAccountTokenUsesAccountCodexIdentity(t *testing.T) {
 	info, err := svc.RefreshAccountToken(context.Background(), account)
 	require.NoError(t, err)
 	require.Equal(t, "with-identity", info.AccessToken)
-	expected := resolveCodexOutboundIdentityForAccount(account, "")
+	expected, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
 	require.Equal(t, expected.userAgent, stub.userAgent)
 	require.Equal(t, "codex-tui", stub.originator)
 }
@@ -62,9 +63,11 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 		Credentials: map[string]any{"chatgpt_account_id": "acct-9"},
 		Extra:       map[string]any{codexFingerprintSeedExtraKey: seed}}
 
-	snapshot := resolveCodexIdentitySnapshotContext(context.Background(), account, account, "")
+	snapshot := resolveCodexIdentitySnapshot(account, account, "")
 	require.Equal(t, "account", snapshot.IdentitySource)
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, snapshot.UserAgent)
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.userAgent, snapshot.UserAgent)
 	raw, err := json.Marshal(snapshot)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), seed)
@@ -72,7 +75,7 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
 	account.Credentials["user_agent"] = "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown"
 	SetCodexForceCLIEnabled(true)
-	forced := resolveCodexIdentitySnapshotContext(context.Background(), account, account, codexAccountIdentityOverrideUA(account))
+	forced := resolveCodexIdentitySnapshot(account, account, codexAccountIdentityOverrideUA(account))
 	require.Equal(t, "account", forced.IdentitySource)
 	require.Equal(t, deriveCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
 		"ForceCodexCLI drops the custom UA while retaining the account's derived TUI profile")
@@ -83,15 +86,15 @@ func TestCodexIdentitySnapshotReportsTheSelectedFingerprintSource(t *testing.T) 
 	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
 	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
 		Extra: map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
-	snapshot := resolveCodexIdentitySnapshotContext(context.Background(), account, account, "")
+	snapshot := resolveCodexIdentitySnapshot(account, account, "")
 	require.Equal(t, "account", snapshot.IdentitySource)
 	require.False(t, snapshot.UAOverridePresent)
-	snapshot = resolveCodexIdentitySnapshotContext(context.Background(), account, account, "codex_cli_rs/0.144.0 (Windows 10.0.19045; x86_64) unknown")
+	snapshot = resolveCodexIdentitySnapshot(account, account, "codex_cli_rs/0.144.0 (Windows 10.0.19045; x86_64) unknown")
 	require.Equal(t, "override_ua", snapshot.IdentitySource)
 	require.True(t, snapshot.UAOverridePresent)
 	// An override that does not pair as a Codex identity leaves the canonical
 	// identity in place; the flag is then the only sign that one is configured.
-	snapshot = resolveCodexIdentitySnapshotContext(context.Background(), account, account, "explicit UA override")
+	snapshot = resolveCodexIdentitySnapshot(account, account, "explicit UA override")
 	require.Equal(t, "canonical", snapshot.IdentitySource)
 	require.True(t, snapshot.UAOverridePresent)
 }
@@ -117,10 +120,10 @@ func TestCodexIdentityInvalidVersionCannotSendCanonicalFallback(t *testing.T) {
 		Extra:       map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
 	require.Equal(t, "9.9.9_bad", resolveCodexOutboundIdentity("").version)
 
-	_, err := resolveCodexOutboundIdentityForAccountContext(context.Background(), account, "")
+	_, err := resolveCodexOutboundIdentityForAccount(account, "")
 	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
 	headers := http.Header{"Originator": []string{"fixture-original"}}
-	err = enforceCodexIdentityHeadersForAccountContext(context.Background(), headers, account, "")
+	err = enforceCodexIdentityHeadersForAccount(headers, account, "")
 	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
 	require.Equal(t, "fixture-original", headers.Get("Originator"))
 	require.Empty(t, headers.Get("User-Agent"))
@@ -243,7 +246,9 @@ func TestRefreshAccountTokenSharesForceCodexCLIOverridePolicy(t *testing.T) {
 	stub = &identityRefreshingOAuthClientStub{}
 	_, err = NewOpenAIOAuthService(nil, stub).RefreshAccountToken(context.Background(), account)
 	require.NoError(t, err)
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, stub.userAgent, "ForceCodexCLI 时与推理面一样忽略显式 UA")
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.userAgent, stub.userAgent, "ForceCodexCLI 时与推理面一样忽略显式 UA")
 }
 
 // codexTestSeedForOS 返回一个派生出指定操作系统身份的合法种子（确定性搜索）。
