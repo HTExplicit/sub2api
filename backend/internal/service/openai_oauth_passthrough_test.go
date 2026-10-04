@@ -579,7 +579,9 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamKeepsToolNameAndBodyNormali
 	// 2) only auth is replaced; inbound auth/cookie are not forwarded
 	require.Equal(t, "Bearer oauth-token", upstream.lastReq.Header.Get("Authorization"))
 	// 强制统一出口：客户端自报的 codex_cli_rs/0.1.0 不会到达上游，出站是该账号的 Codex TUI 身份。
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Empty(t, upstream.lastReq.Header.Get("Cookie"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Api-Key"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Goog-Api-Key"))
@@ -1301,7 +1303,9 @@ func TestOpenAIGatewayService_OAuthLegacy_CompositeCodexUAUsesCodexOriginator(t 
 	require.NotNil(t, upstream.lastReq)
 	// 浏览器型复合 UA 被替换为该账号的 Codex TUI 身份 UA，
 	// originator 随最终 UA 配套（issue #3901）。
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.NotEqual(t, "opencode", upstream.lastReq.Header.Get("originator"))
 }
@@ -2522,7 +2526,9 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	require.NoError(t, err)
 	require.Equal(t, false, gjson.GetBytes(upstream.lastBody, "store").Bool())
 	require.Equal(t, true, gjson.GetBytes(upstream.lastBody, "stream").Bool())
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.userAgent, upstream.lastReq.Header.Get("User-Agent"))
 }
 
 // 透传模式的 OAuth 与非透传一致：官方客户端身份同样被强制统一为网关规范身份，
@@ -2570,7 +2576,9 @@ func TestOpenAIGatewayService_OAuthPassthrough_OfficialIdentityUnified(t *testin
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
@@ -2614,7 +2622,9 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityUnified(t *testin
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
+	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
