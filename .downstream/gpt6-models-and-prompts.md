@@ -62,11 +62,11 @@ Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `ena
 
 ## 失效推理密文恢复
 
-一个全局开关，默认开启，没有账号级选项。存为 `settings.reasoning_recovery_config` 一行 JSON（`{"enabled": <bool>}`），没有该行即开启；`GET/PUT /api/v1/admin/reasoning-recovery` 读写 `{"enabled": <bool>}`，管理员认证、无二次验证，保存记入操作审计。请求路径只读内存中的布尔值（保存即替换，60 秒后台刷新以同步多实例），不查询数据库，每次转发开始时读取一次。启动时读取失败或存储值不是严格的 `{"enabled": <bool>}` 则停止启动；运行中刷新失败保留当前值。
+侧栏“扩展功能 → 推理恢复”（`/admin/reasoning-recovery`）：一个全局开关和保存按钮，默认开启，没有账号级选项；页面打开时读取一次，读取失败时显示错误、不显示开关。存为 `settings.reasoning_recovery_config` 一行 JSON（`{"enabled": <bool>}`），没有该行即开启；`GET/PUT /api/v1/admin/reasoning-recovery` 以标准响应封装读写 `{"enabled": <bool>}`，管理员认证、无二次验证，保存记入操作审计，请求体不是严格的 `{"enabled": <bool>}` 时返回 400 且不保存。请求路径只读内存中的布尔值（保存即替换，60 秒后台刷新以同步多实例），不查询数据库，每次转发开始时读取一次。启动时读取失败或存储值不是严格的 `{"enabled": <bool>}` 则停止启动；运行中刷新失败保留当前值。
 
-开启时，OpenAI 平台的 API Key、OAuth 和 Setup Token 账号（含自动透传）在原生 Responses 与 Chat Completions 转 Responses 的 HTTP 请求上生效：上游以结构化错误码 `invalid_encrypted_content` 或 `thinking_signature_invalid` 拒绝、且尚无语义输出时，去掉被拒推理项的 `encrypted_content`，在同一账号重发一次；被拒密文按来源在 Redis 记忆 24 小时，期间同源请求发送前即去掉。Messages 桥接与 WebSocket 不恢复。关闭时不重发也不预先去除，签名拒绝仍作为请求级终态返回，不切换账号。
+开启时，OpenAI 平台的 API Key、OAuth 和 Setup Token 账号（含自动透传）在原生 Responses（含 compact）与 Chat Completions 转 Responses 的 HTTP 请求上生效：上游以结构化错误码 `invalid_encrypted_content` 或 `thinking_signature_invalid` 拒绝、且尚无语义输出时，去掉被拒推理项的 `encrypted_content`，在同一账号重发一次；被拒密文按来源在 Redis 记忆 24 小时，期间同源请求发送前即去掉。Messages 桥接与 WebSocket 不恢复。关闭时不重发也不预先去除，签名拒绝仍作为请求级终态返回，不切换账号。
 
-迁移 `267_purge_account_reasoning_options.sql` 删除 `accounts.extra` 中的 `openai_chat_reasoning_replay_enabled` 与 `openai_reasoning_signature_recovery_enabled`。Chat 工具回合推理回注已移除：Chat Completions 转 Responses 不再保存或回注上一轮的推理项。
+迁移 `267_purge_account_reasoning_options.sql` 一次性删除各账号 `extra` 中原有的两个账号级推理选项键（键名见该文件）；此后没有代码读写它们，已存的账号级取值不带入全局开关。Chat Completions 转 Responses 的请求只由客户端消息转换而来，网关不保存响应中的推理项。
 
 ## 账号连接测试与批量测试
 
