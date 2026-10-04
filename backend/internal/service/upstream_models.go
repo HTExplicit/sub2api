@@ -32,7 +32,7 @@ const (
 // capacity fields (context_window, max_context_window, max_input_tokens,
 // max_output_tokens) always come from one declaration, never completed field
 // by field; CapacitySource says whose: "upstream" (this account's upstream) or
-// "registry" (models.dev reference), observed at ObservedAt.
+// "registry" (provider registry reference), observed at ObservedAt.
 type UpstreamModelMetadata struct {
 	ID                       string                     `json:"id"`
 	DisplayName              string                     `json:"display_name,omitempty"`

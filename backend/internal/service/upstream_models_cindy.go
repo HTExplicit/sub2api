@@ -59,7 +59,7 @@ func (s *AccountTestService) fetchUpstreamRegistryMetadata(ctx context.Context, 
 
 func (s *AccountTestService) fetchCindyModelMetadataRegistry(ctx context.Context, account *Account) (map[string]UpstreamModelMetadata, error) {
 	if s == nil || s.httpUpstream == nil {
-		return nil, fmt.Errorf("Cindy model metadata registry is not configured")
+		return nil, fmt.Errorf("cindy model metadata registry is not configured")
 	}
 	result := s.cindyMetadataRegistryFlight.DoChan("global", func() (any, error) {
 		s.cindyMetadataRegistryMu.Lock()
@@ -79,14 +79,14 @@ func (s *AccountTestService) fetchCindyModelMetadataRegistry(ctx context.Context
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("Cindy model metadata registry returned HTTP %d", resp.StatusCode)
+			return nil, fmt.Errorf("cindy model metadata registry returned HTTP %d", resp.StatusCode)
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, upstreamModelsBodyLimit+1))
 		if err != nil {
 			return nil, err
 		}
 		if int64(len(body)) > upstreamModelsBodyLimit {
-			return nil, fmt.Errorf("Cindy model metadata registry exceeds %d bytes", upstreamModelsBodyLimit)
+			return nil, fmt.Errorf("cindy model metadata registry exceeds %d bytes", upstreamModelsBodyLimit)
 		}
 		metadata, err := parseCindyModelMetadataRegistry(body)
 		if err != nil {
@@ -104,7 +104,11 @@ func (s *AccountTestService) fetchCindyModelMetadataRegistry(ctx context.Context
 		if value.Err != nil {
 			return nil, value.Err
 		}
-		return value.Val.(map[string]UpstreamModelMetadata), nil
+		metadata, ok := value.Val.(map[string]UpstreamModelMetadata)
+		if !ok {
+			return nil, fmt.Errorf("invalid cindy model metadata cache result")
+		}
+		return metadata, nil
 	}
 }
 
@@ -182,7 +186,7 @@ func parseCindyModelMetadataRegistry(body []byte) (map[string]UpstreamModelMetad
 		metadata[id] = entry
 	}
 	if len(metadata) == 0 {
-		return nil, fmt.Errorf("Cindy model metadata has no conversation models")
+		return nil, fmt.Errorf("cindy model metadata has no conversation models")
 	}
 	return metadata, nil
 }
