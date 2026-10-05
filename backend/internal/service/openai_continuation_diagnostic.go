@@ -103,6 +103,9 @@ type openAIContinuationHistory struct {
 	CallIDsSHA256      string `json:"call_ids_sha256,omitempty"`
 	OutputIDsSHA256    string `json:"output_ids_sha256,omitempty"`
 	EncryptedSHA256    string `json:"encrypted_sha256,omitempty"`
+	// NestedEncrypted counts ciphertext held in an item's content parts, such
+	// as an inter-agent message body; Encrypted counts the item-level field.
+	NestedEncrypted int `json:"nested_encrypted"`
 }
 
 func buildOpenAIContinuationDiagnostic(c *gin.Context, incomingBody []byte, upstreamReq *http.Request, preparedBody, upstreamError []byte, classification string) *OpenAIContinuationDiagnostic {
@@ -289,6 +292,14 @@ func continuationDiagnosticHistory(input gjson.Result) openAIContinuationHistory
 		if encrypted := item.Get("encrypted_content"); encrypted.Type == gjson.String && encrypted.String() != "" {
 			shape.Encrypted++
 			continuationDiagnosticHashPart(encryptedDigest, encrypted.String())
+		}
+		if content := item.Get("content"); content.IsArray() {
+			content.ForEach(func(_, part gjson.Result) bool {
+				if nested := part.Get("encrypted_content"); nested.Type == gjson.String && nested.String() != "" {
+					shape.NestedEncrypted++
+				}
+				return true
+			})
 		}
 		return true
 	})

@@ -356,6 +356,13 @@ func (r *continuationDiagnosticTestReadCloser) Close() error {
 	return nil
 }
 
+func TestOpenAIContinuationDiagnosticCountsNestedCiphertext(t *testing.T) {
+	history := continuationDiagnosticHistory(gjson.Parse(`[{"type":"reasoning","encrypted_content":"a"},{"type":"agent_message","content":[{"type":"input_text","text":"Payload:"},{"type":"encrypted_content","encrypted_content":"b"}]},{"type":"message","role":"user","content":"text"}]`))
+	if history.Other != 1 || history.Encrypted != 1 || history.NestedEncrypted != 1 {
+		t.Fatalf("other=%d encrypted=%d nested=%d", history.Other, history.Encrypted, history.NestedEncrypted)
+	}
+}
+
 func TestOpenAIContinuationDiagnosticResourceBounds(t *testing.T) {
 	t.Run("history_scan_has_a_hard_limit", func(t *testing.T) {
 		body := []byte(`{"input":[` + strings.TrimSuffix(strings.Repeat(`{"type":"function_call","call_id":"private-large-history-id-57319"},`, 1100), ",") + `]}`)

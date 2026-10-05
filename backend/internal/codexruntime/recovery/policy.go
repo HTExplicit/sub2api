@@ -50,7 +50,9 @@ func Select(in extensionv1.RecoverySelectionQuery) extensionv1.RecoverySelection
 	if in.ServerContext {
 		return extensionv1.RecoverySelection{Reason: "server_held_context"}
 	}
-	if in.EncryptedFields != len(in.CipherIndices) {
+	// Another ciphertext carrier (compaction, an inter-agent message) may be the
+	// rejected one, unless the upstream names a reasoning item itself.
+	if in.EncryptedFields != len(in.CipherIndices) && !in.NamedCipher {
 		return extensionv1.RecoverySelection{Reason: "ambiguous_encrypted_carriers"}
 	}
 	return extensionv1.RecoverySelection{Indices: append([]int(nil), in.CipherIndices...), Reason: "recovery_not_dispatched"}

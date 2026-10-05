@@ -38,4 +38,8 @@ func TestRecoveryPolicyRequiresExactErrorAndUnambiguousLocalCipherScope(t *testi
 	if Select(query).Reason != "ambiguous_encrypted_carriers" {
 		t.Fatal("compaction ciphertext may be affected")
 	}
+	query.NamedCipher = true
+	if len(Select(query).Indices) != 2 {
+		t.Fatal("a rejection that names a reasoning item is not ambiguous")
+	}
 }
