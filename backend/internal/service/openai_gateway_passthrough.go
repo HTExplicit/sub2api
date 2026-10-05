@@ -437,7 +437,18 @@ retryUpstream:
 			continue
 		}
 		if reasoningRecovery.RecoveryAttempt() {
-			return nil, reasoningRecovery.FailureForResponse(resp.StatusCode, resp.Header, probeBody)
+			failure := reasoningRecovery.FailureForResponse(resp.StatusCode, resp.Header, probeBody)
+			// Only an answer that a first send would move to another account is
+			// the account's failure. Any other ends the request here, unless
+			// StopError hands it on as a ciphertext mismatch.
+			if !shouldFailoverOpenAIPassthroughResponse(account, resp.StatusCode, probeBody) {
+				failure.NextAccountAction = NextAccountStop
+			} else if failure.ShouldRetryNextAccount() {
+				retryMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(probeBody)))
+				failure = s.openAIRecoveryRetryHTTPFailure(account, resp.StatusCode, resp.Header, probeBody, retryMsg,
+					account != nil && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode))
+			}
+			return nil, failure
 		}
 		if _, rejected := parseOpenAIReasoningRejection(probeBody); rejected {
 			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, probeBody)

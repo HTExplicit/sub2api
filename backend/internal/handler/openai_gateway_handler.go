@@ -1046,10 +1046,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					// An account mismatch says nothing against the account: no
-					// same-account retry and no cooldown, the next account is tried.
 					retryAction := openAIFailoverRetrySwitchAccount
-					if !failoverErr.IsOpenAICiphertextAccountMismatch() {
+					switch {
+					case failoverErr.IsOpenAICiphertextAccountMismatch():
+						// A mismatch says nothing against the account: no
+						// same-account retry and no cooldown, the next account is tried.
+					case failoverErr.IsOpenAIRecoveryRetrySpent():
+						// The account failed on its stripped retry and is not asked
+						// again for this request. The retry-exhausted cooldown runs as
+						// for used-up same-account attempts; it does nothing for an
+						// OpenAI API-key account, whose penalties the forwarding
+						// layer writes on a first send.
+						h.gatewayService.CooldownOpenAIRetryExhausted(c.Request.Context(), account, account.GetMappedModel(routingModel), failoverErr)
+					default:
 						retryAction = retryState.HandleHTTP(
 							c.Request.Context(),
 							h.gatewayService,
@@ -1097,6 +1106,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							return
 						}
 						ciphertextSwitchCount++
+						service.ResetOpenAIReasoningRecoveryAttempt(c)
+					}
+					if failoverErr.IsOpenAIRecoveryRetrySpent() {
 						service.ResetOpenAIReasoningRecoveryAttempt(c)
 					}
 					if switchCount >= maxAccountSwitches {
@@ -4071,9 +4083,13 @@ func (h *OpenAIGatewayHandler) handleOpenAINoAccountError(c *gin.Context, classi
 	h.handleStreamingAwareErrorWithCode(c, classification.Status, classification.ErrType, code, classification.Message, streamStarted, false)
 }
 
-// A completed reasoning-recovery attempt is a terminal, not another scheduler
-// candidate. Preserve its classification without allowing refusal, account, or
-// transport retries to re-enter the loop.
+// A recovery terminal ends the request: it is an attempt that spent its
+// stripped retry, or one whose ciphertext rejection arrived after output was
+// committed, and that was not handed on. Preserve its classification without
+// allowing refusal, account, or transport retries to re-enter the loop. An
+// account mismatch and an account failure of the stripped retry, both
+// possible only before anything reached the client, are returned as failovers
+// instead and never reach this function.
 func (h *OpenAIGatewayHandler) handleReasoningRecoveryTerminal(c *gin.Context, err error, selection *service.AccountSelectionResult, account *service.Account, model string, streamStarted bool, reporter openAIFailoverSelectionReporter) bool {
 	var terminal *service.OpenAIReasoningRecoveryTerminalError
 	if !errors.As(err, &terminal) {

@@ -168,6 +168,74 @@ func TestOpenAIReasoningRecoveryStopErrorMarksAccountMismatch(t *testing.T) {
 	}
 }
 
+func TestOpenAIReasoningRecoveryStopErrorHandsAnAccountFailureOfTheStrippedRetryOn(t *testing.T) {
+	provider := func() *UpstreamFailoverError {
+		return &UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: []byte(`{"error":{"code":"credit_balance_exhausted","message":"no credits"}}`), RetryableOnSameAccount: true, SameAccountRetryMax: 2}
+	}
+	tests := []struct {
+		name    string
+		attempt func() error
+		arrange func(*openAIReasoningRecoveryState)
+		want    bool
+	}{
+		{"provider_failure", func() error { return provider() }, nil, true},
+		{"request_rejected", func() error { return NewOpenAIRequestRejectedError(http.StatusBadRequest, nil) }, nil, false},
+		{"refusal", func() error { return NewOpenAIRefusalRecoveryFailoverError(nil) }, nil, false},
+		{"failure_that_stops", func() error { f := provider(); f.NextAccountAction = NextAccountStop; return f }, nil, false},
+		{"unclassified_error", func() error { return errors.New("stream read error") }, nil, false},
+		{"retry_not_sent", func() error { return provider() }, func(r *openAIReasoningRecoveryState) { r.retryDispatched = false }, false},
+		{"output_already_sent", func() error { return provider() }, func(r *openAIReasoningRecoveryState) { r.semanticCommitted = true }, false},
+		{"failure_already_forwarded", func() error { return provider() }, func(r *openAIReasoningRecoveryState) {
+			// A forwarded terminal always follows an observed failure payload.
+			r.ObserveFailure([]byte(`{"type":"response.failed","response":{"status":"failed","error":{"code":"credit_balance_exhausted"}}}`), false)
+			r.failureTerminalForwarded = true
+		}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state, req, _ := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryFixture)
+			state.BindDiagnosticRequest([]byte(reasoningRecoveryFixture), req)
+			_, retry := state.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
+			require.True(t, retry)
+			// The stripped retry is sent; its failure is observed on a new attempt.
+			state.BindDiagnosticRequest([]byte(reasoningRecoveryFixture), req)
+			state.MarkAttemptDispatched()
+			state.redactPayload = func([]byte) []byte { return []byte(`{"error":{"message":"redacted"}}`) }
+			if test.arrange != nil {
+				test.arrange(state)
+			}
+			attempt := test.attempt()
+			stopped := state.StopError(attempt)
+			var failure *UpstreamFailoverError
+			var terminal *OpenAIReasoningRecoveryTerminalError
+			if errors.As(stopped, &terminal) {
+				require.False(t, test.want, "an account failure of the stripped retry is not a terminal")
+				require.False(t, terminal.Failure.ShouldRetryNextAccount())
+				return
+			}
+			require.ErrorAs(t, stopped, &failure)
+			require.Equal(t, test.want, failure.IsOpenAIRecoveryRetrySpent())
+			if !test.want {
+				return
+			}
+			require.True(t, failure.ShouldRetryNextAccount())
+			require.Equal(t, http.StatusBadGateway, failure.StatusCode)
+			// Everything account health reads is what a first send carries.
+			require.True(t, failure.RetryableOnSameAccount)
+			require.Equal(t, 2, failure.SameAccountRetryMax)
+			require.JSONEq(t, `{"error":{"message":"redacted"}}`, string(failure.ResponseBody), "the body leaves the attempt redacted")
+			var original *UpstreamFailoverError
+			require.ErrorAs(t, attempt, &original)
+			require.False(t, original.IsOpenAIRecoveryRetrySpent(), "the attempt's own error value is not modified")
+			require.JSONEq(t, string(provider().ResponseBody), string(original.ResponseBody))
+			events, _ := state.c.Get(OpsUpstreamErrorsKey)
+			recorded := events.([]*OpsUpstreamErrorEvent)
+			require.Equal(t, "recovery_failed", recorded[len(recorded)-1].Message)
+			require.True(t, recorded[len(recorded)-1].ContinuationDiagnostic.Recovery.AccountFailure)
+		})
+	}
+}
+
 func TestResetOpenAIReasoningRecoveryAttemptDetachesTheState(t *testing.T) {
 	state, _, rec := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryFixture)
 	_, retry := state.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
@@ -400,6 +468,129 @@ func TestOpenAIReasoningRecoveryIdentityWithoutReasoningStillIsolatesSources(t *
 	require.Equal(t, one, two, "cache scope uses semantic JSON identity, not reasoning key order")
 }
 
+// A status the pool retries on the same account is the pool's condition, not
+// the account's: the API-key health breaker does not count it on a first send,
+// and must not count it when it answers the stripped retry either.
+func TestOpenAIReasoningRecoveryRetryAccountFailureKeepsThePoolExemption(t *testing.T) {
+	for _, passthrough := range []bool{false, true} {
+		t.Run(map[bool]string{true: "passthrough", false: "native"}[passthrough], func(t *testing.T) {
+			first := newJSONResponse(400, `{"error":{"code":"thinking_signature_invalid","param":"input[1].encrypted_content"}}`)
+			first.Header.Set("Content-Type", "application/json")
+			second := newJSONResponse(http.StatusTooManyRequests, `{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"slow down"}}`)
+			second.Header.Set("Content-Type", "application/json")
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{first, second}}
+			svc := newOpenAIImageGenerationControlTestService(upstream)
+			c, _ := newOpenAIImageGenerationControlTestContext(false, "test-client")
+			account := newOpenAIImageGenerationControlTestAccount()
+			account.Credentials["pool_mode"] = true
+			account.Extra = map[string]any{"openai_passthrough": passthrough, "responses_api_supported": true}
+			require.True(t, account.IsPoolMode() && account.IsPoolModeRetryableStatus(http.StatusTooManyRequests), "fixture: 429 is pool-retryable")
+			_, err := svc.Forward(context.Background(), c, account, []byte(reasoningRecoveryFixture))
+			var failover *UpstreamFailoverError
+			require.ErrorAs(t, err, &failover)
+			require.True(t, failover.IsOpenAIRecoveryRetrySpent())
+			require.True(t, failover.RetryableOnSameAccount)
+			_, _, counted := classifyOpenAIAPIKeyHealthFailure(err)
+			require.False(t, counted, "the breaker exemption of a first send is kept")
+		})
+	}
+}
+
+// An answer a first send classifies by more than its status keeps that
+// classification when it answers the stripped retry, so account health sees
+// the same failure either way.
+func TestOpenAIReasoningRecoveryRetryAccountFailureKeepsTheFirstSendClassification(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		pool   bool
+		check  func(*testing.T, *UpstreamFailoverError, error)
+	}{
+		{
+			name:   "request_budget_rejected",
+			status: http.StatusForbidden,
+			body:   `{"error":{"type":"balance_insufficient_error","code":"balance_insufficient","message":"private balance"}}`,
+			check: func(t *testing.T, failure *UpstreamFailoverError, _ error) {
+				require.Equal(t, GatewayFailureScopeRequest, failure.Scope)
+				require.True(t, failure.SuppressAccountHealthPenalty)
+				require.Equal(t, "upstream_request_budget_rejected", failure.ClientErrorCode)
+			},
+		},
+		{
+			name:   "model_not_supported",
+			status: http.StatusBadRequest,
+			body:   `{"error":{"type":"model_not_supported","code":"400","message":"The requested model is not supported"}}`,
+			check: func(t *testing.T, failure *UpstreamFailoverError, _ error) {
+				require.Equal(t, openAIModelNotSupportedReason, failure.Reason)
+				require.True(t, failure.SuppressAccountHealthPenalty)
+			},
+		},
+		{
+			name:   "budget_exceeded_on_a_pool_account",
+			status: http.StatusTooManyRequests,
+			body:   `{"error":{"type":"budget_exceeded","message":"budget spent"}}`,
+			pool:   true,
+			check: func(t *testing.T, failure *UpstreamFailoverError, err error) {
+				require.Equal(t, GatewayFailureScopeAccount, failure.Scope)
+				require.False(t, failure.RetryableOnSameAccount, "a spent budget is the account's, whatever the pool retries")
+				_, _, counted := classifyOpenAIAPIKeyHealthFailure(err)
+				require.True(t, counted)
+			},
+		},
+	}
+	for _, test := range tests {
+		for _, passthrough := range []bool{false, true} {
+			t.Run(test.name+map[bool]string{true: "/passthrough", false: "/native"}[passthrough], func(t *testing.T) {
+				first := newJSONResponse(400, `{"error":{"code":"thinking_signature_invalid","param":"input[1].encrypted_content"}}`)
+				first.Header.Set("Content-Type", "application/json")
+				second := newJSONResponse(test.status, test.body)
+				second.Header.Set("Content-Type", "application/json")
+				upstream := &httpUpstreamRecorder{responses: []*http.Response{first, second}}
+				svc := newOpenAIImageGenerationControlTestService(upstream)
+				c, _ := newOpenAIImageGenerationControlTestContext(false, "test-client")
+				account := newOpenAIImageGenerationControlTestAccount()
+				account.Credentials["pool_mode"] = test.pool
+				account.Extra = map[string]any{"openai_passthrough": passthrough, "responses_api_supported": true}
+				_, err := svc.Forward(context.Background(), c, account, []byte(reasoningRecoveryFixture))
+				var failover *UpstreamFailoverError
+				require.ErrorAs(t, err, &failover)
+				require.Len(t, upstream.requests, 2)
+				require.True(t, failover.IsOpenAIRecoveryRetrySpent())
+				require.True(t, failover.ShouldRetryNextAccount())
+				require.Equal(t, test.status, failover.StatusCode)
+				test.check(t, failover, err)
+			})
+		}
+	}
+}
+
+// An answer to the stripped retry that a first send would not move to another
+// account, and that is no ciphertext rejection either, is not the account's
+// failure: the request ends on this account.
+func TestOpenAIReasoningRecoveryRetryAnswerThatIsNoFailoverEndsTheRequest(t *testing.T) {
+	for _, passthrough := range []bool{false, true} {
+		t.Run(map[bool]string{true: "passthrough", false: "native"}[passthrough], func(t *testing.T) {
+			first := newJSONResponse(400, `{"error":{"code":"thinking_signature_invalid","param":"input[1].encrypted_content"}}`)
+			first.Header.Set("Content-Type", "application/json")
+			second := newJSONResponse(http.StatusNotFound, `{"error":{"code":"not_found","message":"private upstream detail"}}`)
+			second.Header.Set("Content-Type", "application/json")
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{first, second}}
+			svc := newOpenAIImageGenerationControlTestService(upstream)
+			c, _ := newOpenAIImageGenerationControlTestContext(false, "test-client")
+			account := newOpenAIImageGenerationControlTestAccount()
+			account.Extra = map[string]any{"openai_passthrough": passthrough, "responses_api_supported": true}
+			_, err := svc.Forward(context.Background(), c, account, []byte(reasoningRecoveryFixture))
+			require.Len(t, upstream.requests, 2)
+			var stopped *OpenAIReasoningRecoveryTerminalError
+			require.ErrorAs(t, err, &stopped)
+			require.False(t, stopped.Failure.IsOpenAIRecoveryRetrySpent())
+			require.False(t, stopped.Failure.ShouldRetryNextAccount())
+			require.Equal(t, http.StatusNotFound, stopped.Failure.StatusCode)
+		})
+	}
+}
+
 func TestOpenAIReasoningRecoveryForwardHTTPAndPassthroughSingleRetry(t *testing.T) {
 	for _, passthrough := range []bool{false, true} {
 		for _, secondOK := range []bool{false, true} {
@@ -430,15 +621,19 @@ func TestOpenAIReasoningRecoveryForwardHTTPAndPassthroughSingleRetry(t *testing.
 					require.Contains(t, rec.Body.String(), "resp_final")
 				} else {
 					require.Error(t, err)
-					var failover *UpstreamFailoverError
-					require.False(t, errors.As(err, &failover))
+					// A provider failure of the stripped retry is the account's own:
+					// the request is handed to the next account, as on a first send,
+					// and never back to this one.
 					var stopped *OpenAIReasoningRecoveryTerminalError
-					require.ErrorAs(t, err, &stopped)
-					require.Equal(t, http.StatusServiceUnavailable, stopped.Failure.StatusCode)
-					require.False(t, stopped.Failure.IsOpenAIRequestRejected())
-					require.False(t, stopped.Failure.SuppressAccountHealthPenalty, "a genuine provider failure is not fabricated as a request validation error")
-					require.True(t, stopped.Failure.ShouldReportAccountScheduleFailure())
-					require.False(t, stopped.Failure.ShouldRetryNextAccount())
+					require.False(t, errors.As(err, &stopped))
+					var failover *UpstreamFailoverError
+					require.ErrorAs(t, err, &failover)
+					require.True(t, failover.IsOpenAIRecoveryRetrySpent())
+					require.Equal(t, http.StatusServiceUnavailable, failover.StatusCode)
+					require.False(t, failover.IsOpenAIRequestRejected())
+					require.False(t, failover.SuppressAccountHealthPenalty, "a genuine provider failure is not fabricated as a request validation error")
+					require.True(t, failover.ShouldReportAccountScheduleFailure())
+					require.True(t, failover.ShouldRetryNextAccount())
 					require.NotContains(t, err.Error(), "private upstream failure")
 				}
 			})

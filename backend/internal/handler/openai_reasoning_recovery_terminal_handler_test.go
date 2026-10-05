@@ -80,7 +80,10 @@ func TestOpenAIGatewayHandler_ReasoningFailureAlreadyForwardedIsNotDuplicated(t 
 	}
 }
 
-func TestOpenAIGatewayHandler_ReasoningRecoveryTerminalNeverReentersScheduler(t *testing.T) {
+// After the stripped retry, a request rejection ends the request on that
+// account; a provider failure is the account's own and the request goes to the
+// next account, never back to the first.
+func TestOpenAIGatewayHandler_ReasoningRecoveryOutcomeAfterTheStrippedRetry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, passthrough := range []bool{false, true} {
 		mode := "native"
@@ -92,9 +95,10 @@ func TestOpenAIGatewayHandler_ReasoningRecoveryTerminalNeverReentersScheduler(t 
 			status       int
 			clientStatus int
 			healthEvents int
+			accountIDs   []int64
 		}{
-			{"request_rejected", http.StatusBadRequest, http.StatusBadRequest, 0},
-			{"provider_error", http.StatusInternalServerError, http.StatusBadGateway, 1},
+			{"request_rejected", http.StatusBadRequest, http.StatusBadRequest, 0, []int64{1, 1}},
+			{"provider_error", http.StatusInternalServerError, http.StatusBadGateway, 1, []int64{1, 1, 2}},
 		} {
 			t.Run(mode+"/"+failure.name, func(t *testing.T) {
 				setupOpsErrorLogTestQueue(t, 4)
@@ -104,7 +108,7 @@ func TestOpenAIGatewayHandler_ReasoningRecoveryTerminalNeverReentersScheduler(t 
 						Status: service.StatusActive, Schedulable: true,
 						Credentials: map[string]any{"api_key": "fixture", "base_url": "https://api.example.test", "pool_mode": true, "pool_mode_retry_count": 5},
 						Extra:       map[string]any{"use_responses_api": true, "openai_passthrough": passthrough}},
-					{ID: 2, Name: "must-not-replay", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+					{ID: 2, Name: "next-account", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 						Status: service.StatusActive, Schedulable: true, Priority: 1,
 						Credentials: map[string]any{"api_key": "other-fixture", "base_url": "https://other.example.test"},
 						Extra:       map[string]any{"use_responses_api": true}},
@@ -126,7 +130,7 @@ func TestOpenAIGatewayHandler_ReasoningRecoveryTerminalNeverReentersScheduler(t 
 				request.Header.Set("Content-Type", "application/json")
 				router.ServeHTTP(recorder, request)
 
-				require.Equal(t, []int64{1, 1}, upstream.accountIDs, "no third POST, same-account scheduler retry, or second account")
+				require.Equal(t, failure.accountIDs, upstream.accountIDs, "no third POST or same-account scheduler retry on the first account")
 				require.True(t, gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").Exists())
 				require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
 				require.Equal(t, gjson.GetBytes(upstream.bodies[0], "input.1").Raw, gjson.GetBytes(upstream.bodies[1], "input.1").Raw)
@@ -143,8 +147,10 @@ func TestOpenAIGatewayHandler_ReasoningRecoveryTerminalNeverReentersScheduler(t 
 				require.NotNil(t, job.entry.UpstreamStatusCode)
 				require.Equal(t, failure.status, *job.entry.UpstreamStatusCode)
 				// The minimal router fixture intentionally disables the optional
-				// advanced scheduler. Exercise the same terminal finalizer with an
+				// advanced scheduler. Exercise the terminal finalizer with an
 				// observable reporter instead of treating inert metrics as evidence.
+				// A provider failure still ends as a terminal when the attempt did
+				// not classify it, so both classifications are probed directly.
 				reporter := &recordingFailoverSelectionReporter{}
 				classified := &service.UpstreamFailoverError{StatusCode: failure.status}
 				if failure.clientStatus == http.StatusBadRequest {

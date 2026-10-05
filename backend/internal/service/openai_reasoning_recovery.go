@@ -84,6 +84,9 @@ type openAIReasoningRecoveryState struct {
 	switchAccounts bool
 	// accountMismatch records that this attempt ended as an account mismatch.
 	accountMismatch bool
+	// accountFailure records that the stripped retry failed for a reason of
+	// the account's own.
+	accountFailure bool
 }
 
 func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Context, c *gin.Context, account *Account, token string) *openAIReasoningRecoveryState {
@@ -611,8 +614,10 @@ func openAIReasoningRecoveryProtectedStatus(status int) bool {
 // and account-health accounting, but deliberately does not implement Unwrap.
 // A caller must handle this terminal explicitly, never feed Failure back into
 // scheduling: the single same-source recovery budget has already been spent.
-// An attempt that ended as an account mismatch is not a terminal; StopError
-// returns its failure marked by openAICiphertextAccountMismatch instead.
+// Two outcomes are not terminals, and StopError returns the attempt's failure
+// marked for the next account instead: an account mismatch
+// (openAICiphertextAccountMismatch) and a stripped retry that failed for a
+// reason of the account's own (openAIRecoveryRetryAccountFailure).
 type OpenAIReasoningRecoveryTerminalError struct {
 	Failure *UpstreamFailoverError
 	// FailureTerminalForwarded is explicit parser/write evidence, not a claim
@@ -676,6 +681,10 @@ func (r *openAIReasoningRecoveryState) StopError(err error) error {
 	if errors.As(err, &stopped) {
 		return err
 	}
+	// returned is the failure the attempt itself produced, if any; failure may
+	// be replaced below by one built from the observed payload.
+	var returned *UpstreamFailoverError
+	errors.As(err, &returned)
 	var failure *UpstreamFailoverError
 	var signal *openAIReasoningRecoverySignalError
 	if errors.As(err, &signal) {
@@ -690,6 +699,7 @@ func (r *openAIReasoningRecoveryState) StopError(err error) error {
 	}
 	cacheSkipRejected := r.cacheSkippedItems > 0 && failure != nil && failure.IsOpenAIRequestRejected()
 	r.accountMismatch = r.anotherAccountMayAccept(failure, signatureRejected)
+	r.accountFailure = !r.accountMismatch && r.accountFailedAfterRetry(returned)
 	if !r.retryUsed && !signatureRejected && !cacheSkipRejected && !r.accountMismatch {
 		return err
 	}
@@ -712,6 +722,13 @@ func (r *openAIReasoningRecoveryState) StopError(err error) error {
 	}
 	if r.accountMismatch {
 		return openAICiphertextAccountMismatch(failure)
+	}
+	if r.accountFailure {
+		handOff := openAIRecoveryRetryAccountFailure(returned)
+		if r.redactPayload != nil && len(handOff.ResponseBody) > 0 {
+			handOff.ResponseBody = r.redactPayload(handOff.ResponseBody)
+		}
+		return handOff
 	}
 	if !r.retryUsed && !r.semanticCommitted {
 		return failure
@@ -749,6 +766,21 @@ func (r *openAIReasoningRecoveryState) anotherAccountMayAccept(failure *Upstream
 	}
 }
 
+// accountFailedAfterRetry reports that the stripped retry was sent and the
+// attempt then ended, before anything reached the client, with a failure of
+// the account itself: one the attempt returned as a failover to the next
+// account, which is how the same answer is treated on a first send. A request
+// rejection, continuation state and a refusal are not the account's, and an
+// error the attempt did not classify as a failover ends the request as before.
+func (r *openAIReasoningRecoveryState) accountFailedAfterRetry(returned *UpstreamFailoverError) bool {
+	if returned == nil || !r.switchAccounts || !r.retryUsed || !r.retryDispatched ||
+		r.semanticCommitted || r.failureTerminalForwarded || r.ctx.Err() != nil {
+		return false
+	}
+	return returned.ShouldRetryNextAccount() && !returned.IsOpenAIRequestRejected() &&
+		!returned.IsOpenAIContinuationStateUnavailable() && !returned.IsOpenAIRefusalRecovery()
+}
+
 // ResetOpenAIReasoningRecoveryAttempt detaches the state of a rejected attempt
 // before the request moves to another account, so that a forwarder which
 // creates no state of its own does not read this one. The response header that
@@ -784,6 +816,7 @@ func (r *openAIReasoningRecoveryState) continuationDiagnosticRecovery(payload []
 		RetryAttempted:    r.retryDispatched,
 		Disposition:       r.diagnosticState,
 		AccountMismatch:   r.accountMismatch,
+		AccountFailure:    r.accountFailure,
 	}
 	if shape.Disposition == "" {
 		shape.Disposition = "not_attempted"

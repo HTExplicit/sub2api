@@ -118,7 +118,7 @@ func TestOpenAIReasoningRecoveryOutcomesPreserveClassificationAndDiagnostic(t *t
 					var stopped *OpenAIReasoningRecoveryTerminalError
 					if retried && !mismatch {
 						require.ErrorAs(t, err, &stopped)
-						require.False(t, errors.As(err, &failure), "spent recovery must not reenter failover")
+						require.False(t, errors.As(err, &failure), "a validation rejection of the stripped retry is a terminal")
 						failure = stopped.Failure
 					} else {
 						require.False(t, errors.As(err, &stopped), "an account mismatch is not a terminal")

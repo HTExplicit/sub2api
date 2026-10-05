@@ -746,6 +746,7 @@ type UpstreamFailoverError struct {
 	ClientMessage                string
 	SuppressAccountHealthPenalty bool
 	CiphertextAccountMismatch    bool // 本账号无法校验请求里的密文且无法就地修复；原样请求可能被签发该密文的组织下的其他账号接受
+	RecoveryRetrySpent           bool // 本账号的剥离重发已发出并因账号自身的原因失败；换下一个账号，不得在本账号再试
 }
 
 func (e *UpstreamFailoverError) Error() string {
