@@ -812,7 +812,7 @@ func TestOpenAIGatewayService_Forward_StreamingResponseFailedInvalidEncryptedCon
 	require.NotContains(t, rec.Body.String(), "[DONE]")
 }
 
-func TestOpenAIGatewayService_Forward_ContinuationStateWithToolOutputStopsWithoutReplay(t *testing.T) {
+func TestOpenAIGatewayService_Forward_ContinuationStateWithToolOutputIsNotReplayedOnTheAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{
 		resp: &http.Response{
@@ -847,7 +847,7 @@ func TestOpenAIGatewayService_Forward_ContinuationStateWithToolOutputStopsWithou
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.IsOpenAICiphertextAccountMismatch(), "another account may accept the unchanged request")
 	require.True(t, failoverErr.SuppressAccountHealthPenalty)
 	require.Len(t, upstream.bodies, 1, "tool-output continuation must not be rewritten or replayed")
 	require.Equal(t, "gAAA", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())

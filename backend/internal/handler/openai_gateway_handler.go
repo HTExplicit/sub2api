@@ -224,6 +224,13 @@ type grokMediaEligibilityProber interface {
 
 const maxOpenAIFirstOutputTimeoutSwitches = 1
 
+// maxOpenAICiphertextAccountSwitches bounds how often one request is handed
+// to another account because an account could not read its ciphertext, within
+// the ordinary switch budget. Every rejection costs an upload of the whole
+// history, and when the account that issued the ciphertext is gone no account
+// accepts.
+const maxOpenAICiphertextAccountSwitches = 3
+
 func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bool {
 	return result.SucceededForScheduling()
 }
@@ -723,6 +730,36 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var passthroughFailoverState openAIPassthroughFailoverState
 	var accountTypePreference service.OpenAIAccountTypePreference
 	var sameAccountRetrySelection *service.AccountSelectionResult
+	// An account that cannot read the ciphertext in the request hands it to
+	// the next account. When the accounts or the switch budget run out, the
+	// client receives the first such failure, as it did before accounts were
+	// switched for it; an account that ends the request with an answer of its
+	// own is still the answer.
+	var ciphertextFailoverErr *service.UpstreamFailoverError
+	ciphertextFirstAccountID, ciphertextSessionHash := int64(0), ""
+	ciphertextLaterAccounts := make(map[int64]struct{})
+	ciphertextSwitchCount := 0
+	ciphertextAccepted := false
+	exhaustedFailoverErr := func(current *service.UpstreamFailoverError) *service.UpstreamFailoverError {
+		if ciphertextFailoverErr != nil {
+			return ciphertextFailoverErr
+		}
+		return current
+	}
+	// Selecting one of the later accounts may have moved the session to it.
+	// When none of them answered, they are no better home for the conversation
+	// than the account that first rejected it, so a binding this request moved
+	// goes back there. A binding the scheduler kept elsewhere is not touched.
+	defer func() {
+		if ciphertextFailoverErr == nil || ciphertextAccepted {
+			return
+		}
+		restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 2*time.Second)
+		defer cancel()
+		if err := h.gatewayService.MoveStickySessionIfBoundTo(restoreCtx, apiKey.GroupID, ciphertextSessionHash, ciphertextFirstAccountID, ciphertextLaterAccounts); err != nil {
+			reqLog.Warn("openai.ciphertext_mismatch_session_restore_failed", zap.Int64("account_id", ciphertextFirstAccountID), zap.Error(err))
+		}
+	}()
 
 	// 分组利润控制：请求级装配定价上下文——pricingAt 固定本请求的
 	// D 与计费高峰因子，选号、槽位终检与全部 failover 重入共用同一门与阈值。
@@ -782,7 +819,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if retryingSameAccount && lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
+				h.handleFailoverExhausted(c, exhaustedFailoverErr(lastFailoverErr), streamStarted)
 				return
 			}
 			if len(failedAccountIDs) == 0 {
@@ -799,10 +836,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
+				h.handleFailoverExhausted(c, exhaustedFailoverErr(lastFailoverErr), streamStarted)
 			} else {
 				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 			}
+			return
+		}
+		if (selection == nil || selection.Account == nil) && ciphertextFailoverErr != nil {
+			h.handleFailoverExhausted(c, ciphertextFailoverErr, streamStarted)
 			return
 		}
 		if selection == nil || selection.Account == nil {
@@ -831,6 +872,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		if ciphertextFailoverErr != nil && account.ID != ciphertextFirstAccountID {
+			ciphertextLaterAccounts[account.ID] = struct{}{}
+		}
 
 		var accountReleaseFunc func()
 		var slotResult openAISlotAcquireResult
@@ -853,7 +897,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				c, account, account.GetMappedModel(routingModel), lastFailoverErr, failedAccountIDs,
 				&switchCount, maxAccountSwitches, &oauth429FailoverState,
 				"responses", reqLog, true,
-				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
+				func() { h.handleFailoverExhausted(c, exhaustedFailoverErr(lastFailoverErr), streamStarted) },
 			) {
 				continue
 			}
@@ -922,6 +966,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			})
 		}
 		if err != nil {
+			if ciphertextFailoverErr != nil && service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
+				// This account read the ciphertext and was answering when the
+				// attempt failed: the conversation stays with it.
+				ciphertextAccepted = true
+			}
 			if result != nil && result.ClientDisconnect {
 				reqLog.Info("openai.client_disconnected",
 					zap.Int64("account_id", account.ID),
@@ -997,16 +1046,21 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					retryAction := retryState.HandleHTTP(
-						c.Request.Context(),
-						h.gatewayService,
-						account,
-						account.GetMappedModel(routingModel),
-						failoverErr,
-						true,
-						sameAccountRetryDelay,
-						"responses",
-					)
+					// An account mismatch says nothing against the account: no
+					// same-account retry and no cooldown, the next account is tried.
+					retryAction := openAIFailoverRetrySwitchAccount
+					if !failoverErr.IsOpenAICiphertextAccountMismatch() {
+						retryAction = retryState.HandleHTTP(
+							c.Request.Context(),
+							h.gatewayService,
+							account,
+							account.GetMappedModel(routingModel),
+							failoverErr,
+							true,
+							sameAccountRetryDelay,
+							"responses",
+						)
+					}
 					h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
 					switch retryAction {
 					case openAIFailoverRetryReselect:
@@ -1033,13 +1087,25 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							AllowCompatibleFallback: true,
 						}
 					}
+					if failoverErr.IsOpenAICiphertextAccountMismatch() {
+						if ciphertextFailoverErr == nil {
+							ciphertextFailoverErr = failoverErr
+							ciphertextFirstAccountID, ciphertextSessionHash = account.ID, sessionHash
+						}
+						if ciphertextSwitchCount >= maxOpenAICiphertextAccountSwitches {
+							h.handleFailoverExhausted(c, ciphertextFailoverErr, streamStarted)
+							return
+						}
+						ciphertextSwitchCount++
+						service.ResetOpenAIReasoningRecoveryAttempt(c)
+					}
 					if switchCount >= maxAccountSwitches {
-						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						h.handleFailoverExhausted(c, exhaustedFailoverErr(failoverErr), streamStarted)
 						return
 					}
 					switchCount++
 					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
-						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						h.handleFailoverExhausted(c, exhaustedFailoverErr(failoverErr), streamStarted)
 						return
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
@@ -1048,6 +1114,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						zap.Int("upstream_status", failoverErr.StatusCode),
 						zap.Int("switch_count", switchCount),
 						zap.Int("max_switches", maxAccountSwitches),
+						zap.Bool("ciphertext_account_mismatch", failoverErr.IsOpenAICiphertextAccountMismatch()),
 					}
 					if account.Proxy != nil {
 						failoverSwitchFields = append(failoverSwitchFields,
@@ -1099,6 +1166,15 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		if shouldSubmitOpenAIUsage(err, result) {
 			submitResponsesUsage(result)
+		}
+		ciphertextAccepted = true
+		if ciphertextFailoverErr != nil {
+			// Selection usually bound the session to this account already. Where
+			// it leaves a binding in place, move one that still points at the
+			// account that could not read the conversation.
+			if bindErr := h.gatewayService.MoveStickySessionIfBoundTo(c.Request.Context(), apiKey.GroupID, sessionHash, account.ID, map[int64]struct{}{ciphertextFirstAccountID: {}}); bindErr != nil {
+				reqLog.Warn("openai.ciphertext_mismatch_session_bind_failed", zap.Int64("account_id", account.ID), zap.Error(bindErr))
+			}
 		}
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),

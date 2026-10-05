@@ -105,6 +105,79 @@ func TestOpenAIReasoningRecoveryNamedReasoningLeavesOtherCarriers(t *testing.T) 
 	}
 }
 
+func TestOpenAIReasoningRecoveryStopErrorMarksAccountMismatch(t *testing.T) {
+	const signature = `{"error":{"message":"The encrypted content for item amsg_b could not be verified.","param":null,"code":"invalid_encrypted_content"}}`
+	const undecryptable = `{"error":{"type":"invalid_request_error","message":"Encrypted function output content could not be decrypted or decoded."}}`
+	const validation = `{"error":{"type":"invalid_request_error","code":"missing_required_parameter","message":"input[3].call_id is required"}}`
+	serverHeld := strings.Replace(reasoningRecoveryAgentMessageFixture, `{"model"`, `{"previous_response_id":"resp_old","model"`, 1)
+	tests := []struct {
+		name, body, payload string
+		status              int
+		arrange             func(*openAIReasoningRecoveryState)
+		want                bool
+	}{
+		{"ciphertext_the_strip_cannot_reach", reasoningRecoveryAgentMessageFixture, signature, http.StatusBadRequest, nil, true},
+		{"undecryptable_without_a_code", reasoningRecoveryAgentMessageFixture, undecryptable, http.StatusBadRequest, nil, true},
+		{"ordinary_validation", reasoningRecoveryAgentMessageFixture, validation, http.StatusBadRequest, nil, false},
+		{"history_held_by_the_account", serverHeld, signature, http.StatusBadRequest, nil, false},
+		{"history_held_by_an_account_without_the_stripped_retry", serverHeld, signature, http.StatusBadRequest, func(r *openAIReasoningRecoveryState) { r.enabled, r.wire = false, nil }, false},
+		{"status_about_the_account", reasoningRecoveryAgentMessageFixture, signature, http.StatusForbidden, nil, false},
+		{"switch_off", reasoningRecoveryAgentMessageFixture, signature, http.StatusBadRequest, func(r *openAIReasoningRecoveryState) { r.enabled, r.switchAccounts = false, false }, false},
+		{"output_already_sent", reasoningRecoveryAgentMessageFixture, signature, http.StatusBadRequest, func(r *openAIReasoningRecoveryState) { r.semanticCommitted = true }, false},
+		{"failure_already_forwarded", reasoningRecoveryAgentMessageFixture, signature, http.StatusBadRequest, func(r *openAIReasoningRecoveryState) { r.failureTerminalForwarded = true }, false},
+		{"request_cancelled", reasoningRecoveryAgentMessageFixture, signature, http.StatusBadRequest, func(r *openAIReasoningRecoveryState) {
+			cancelled, cancel := context.WithCancel(context.Background())
+			cancel()
+			r.ctx = cancelled
+		}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state, req, _ := newReasoningRecoveryTestState(t, context.Background(), test.body)
+			state.BindDiagnosticRequest([]byte(test.body), req)
+			_, retry := state.TryRecover(test.status, nil, []byte(test.payload), false)
+			require.False(t, retry)
+			if test.arrange != nil {
+				test.arrange(state)
+			}
+			var attempt error = NewOpenAIRequestRejectedError(test.status, nil)
+			if _, rejected := parseOpenAIReasoningRejection([]byte(test.payload)); rejected {
+				attempt = NewOpenAIContinuationStateUnavailableError(test.status, nil, []byte(test.payload))
+			}
+			var failure *UpstreamFailoverError
+			stopped := state.StopError(attempt)
+			if !errors.As(stopped, &failure) {
+				var terminal *OpenAIReasoningRecoveryTerminalError
+				require.ErrorAs(t, stopped, &terminal)
+				failure = terminal.Failure
+			}
+			require.Equal(t, test.want, failure.IsOpenAICiphertextAccountMismatch())
+			require.Equal(t, test.want, failure.ShouldRetryNextAccount())
+			require.True(t, failure.SuppressAccountHealthPenalty)
+			if test.want {
+				// The hand-off is on the Ops record whichever way it was recognised.
+				events, _ := state.c.Get(OpsUpstreamErrorsKey)
+				recorded := events.([]*OpsUpstreamErrorEvent)
+				require.True(t, recorded[len(recorded)-1].ContinuationDiagnostic.Recovery.AccountMismatch)
+			}
+			var original *UpstreamFailoverError
+			require.ErrorAs(t, attempt, &original)
+			require.Equal(t, original.Reason, failure.Reason, "the mark keeps the failure's own classification")
+			require.False(t, original.IsOpenAICiphertextAccountMismatch(), "the attempt's own error value is not modified")
+		})
+	}
+}
+
+func TestResetOpenAIReasoningRecoveryAttemptDetachesTheState(t *testing.T) {
+	state, _, rec := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryFixture)
+	_, retry := state.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
+	require.True(t, retry)
+	require.Same(t, state, openAIReasoningRecoveryStateFromContext(state.c))
+	ResetOpenAIReasoningRecoveryAttempt(state.c)
+	require.Nil(t, openAIReasoningRecoveryStateFromContext(state.c), "the next account must not read this attempt")
+	require.Equal(t, "retry_without_encrypted_content", rec.Header().Get(openAIReasoningRecoveryHeader), "the header names the last recovery action of the request")
+}
+
 func TestOpenAIReasoningRecoveryPreservesEveryNonCipherField(t *testing.T) {
 	state, _, rec := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryFixture)
 	before := bytes.Clone(state.wire)

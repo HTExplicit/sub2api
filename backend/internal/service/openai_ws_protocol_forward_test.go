@@ -273,7 +273,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressInvalidEncryptedContentIsTermin
 	require.Equal(t, "client_protocol_http", reason)
 }
 
-func TestOpenAIGatewayService_Forward_HTTPIngressWrappedInvalidEncryptedContentIsTerminal(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPIngressWrappedInvalidEncryptedContentIsNotRepairedOnTheAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
@@ -343,9 +343,9 @@ func TestOpenAIGatewayService_Forward_HTTPIngressWrappedInvalidEncryptedContentI
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.IsOpenAICiphertextAccountMismatch(), "原样请求可以交给其他账号")
 	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.Equal(t, 1, upstream.callCount, "wrapped invalid_encrypted_content 也必须终止，不能删状态重试")
+	require.Equal(t, 1, upstream.callCount, "wrapped invalid_encrypted_content 在本账号上不能删状态重试")
 	require.Len(t, upstream.bodies, 1)
 	require.False(t, c.Writer.Written(), "continuation 应交由 handler 输出标准终态，不能伪造成功")
 

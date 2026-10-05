@@ -39,7 +39,10 @@ const (
 )
 
 // openAIReasoningRecoveryState owns the single, explicitly lossy retry for an
-// HTTP Responses request. It never re-enters a protocol converter or scheduler.
+// HTTP Responses request on one account. It never re-enters a protocol
+// converter or scheduler itself; when the account cannot serve the request
+// because of ciphertext it cannot verify, StopError says so and the handler
+// decides whether another account is tried.
 // original is immutable; wire is the exact payload of the latest sent attempt.
 type openAIReasoningRecoveryState struct {
 	ctx      context.Context
@@ -75,6 +78,12 @@ type openAIReasoningRecoveryState struct {
 	// redactPayload applies the upstream Agent Identity credential redaction
 	// before an upstream payload is recorded for administrators.
 	redactPayload func([]byte) []byte
+
+	// switchAccounts is the global switch for this request, whether or not
+	// this account type supports the stripped retry.
+	switchAccounts bool
+	// accountMismatch records that this attempt ended as an account mismatch.
+	accountMismatch bool
 }
 
 func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Context, c *gin.Context, account *Account, token string) *openAIReasoningRecoveryState {
@@ -82,10 +91,11 @@ func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Conte
 		ctx = context.Background()
 	}
 	// The global switch is read here, once for this forwarding attempt.
+	switchedOn := s.reasoningRecovery.Enabled() && !isOpenAICompatMessagesBridgeContext(c)
 	r := &openAIReasoningRecoveryState{
 		ctx: ctx, c: c, account: account, token: token,
-		enabled: s.reasoningRecovery.Enabled() && account.supportsOpenAIReasoningRecovery() && !isOpenAICompatMessagesBridgeContext(c),
-		store:   s.openAIReasoningStateStore(), budget: openAIReasoningCacheBudgetForRequest(c),
+		enabled: switchedOn && account.supportsOpenAIReasoningRecovery(), switchAccounts: switchedOn,
+		store: s.openAIReasoningStateStore(), budget: openAIReasoningCacheBudgetForRequest(c),
 	}
 	r.redactPayload = func(payload []byte) []byte { return s.redactAgentIdentitySensitiveBody(ctx, account, payload) }
 	if c != nil {
@@ -601,6 +611,8 @@ func openAIReasoningRecoveryProtectedStatus(status int) bool {
 // and account-health accounting, but deliberately does not implement Unwrap.
 // A caller must handle this terminal explicitly, never feed Failure back into
 // scheduling: the single same-source recovery budget has already been spent.
+// An attempt that ended as an account mismatch is not a terminal; StopError
+// returns its failure marked by openAICiphertextAccountMismatch instead.
 type OpenAIReasoningRecoveryTerminalError struct {
 	Failure *UpstreamFailoverError
 	// FailureTerminalForwarded is explicit parser/write evidence, not a claim
@@ -677,7 +689,8 @@ func (r *openAIReasoningRecoveryState) StopError(err error) error {
 		failure = r.requestRejectionFromStream(r.failurePayload)
 	}
 	cacheSkipRejected := r.cacheSkippedItems > 0 && failure != nil && failure.IsOpenAIRequestRejected()
-	if !r.retryUsed && !signatureRejected && !cacheSkipRejected {
+	r.accountMismatch = r.anotherAccountMayAccept(failure, signatureRejected)
+	if !r.retryUsed && !signatureRejected && !cacheSkipRejected && !r.accountMismatch {
 		return err
 	}
 	if failure == nil {
@@ -697,12 +710,53 @@ func (r *openAIReasoningRecoveryState) StopError(err error) error {
 		}
 		r.record(action, r.upstreamStatus(failure.StatusCode), rejection.code, r.failurePayload, 0)
 	}
+	if r.accountMismatch {
+		return openAICiphertextAccountMismatch(failure)
+	}
 	if !r.retryUsed && !r.semanticCommitted {
 		return failure
 	}
 	terminal := newOpenAIReasoningRecoveryTerminalError(failure)
 	terminal.FailureTerminalForwarded = r.failureTerminalForwarded
 	return terminal
+}
+
+// anotherAccountMayAccept decides whether this attempt ended as an account
+// mismatch: the upstream said it could not decrypt or verify ciphertext in the
+// request, on the first send or on the stripped one, nothing on this account
+// repaired the request, and no output or failure reached the client. Any other
+// rejection of the request would be the same on every account. The handler
+// still confirms the client-side state before it switches.
+func (r *openAIReasoningRecoveryState) anotherAccountMayAccept(failure *UpstreamFailoverError, signatureRejected bool) bool {
+	if !r.switchAccounts || r.semanticCommitted || r.failureTerminalForwarded || r.ctx.Err() != nil ||
+		openAIReasoningRecoveryProtectedStatus(r.responseStatus) ||
+		// wire is absent when this account type has no stripped retry.
+		openAIRequestHoldsServerContext(r.wire) || openAIRequestHoldsServerContext(r.diagnosticIncoming) {
+		return false
+	}
+	if r.retryUsed && !r.retryDispatched {
+		// The stripped retry was prepared but never sent. That is a fault in
+		// how this request was built, not evidence about the account.
+		return false
+	}
+	switch {
+	case failure == nil:
+		return signatureRejected
+	case !failure.IsOpenAIContinuationStateUnavailable() && !failure.IsOpenAIRequestRejected():
+		return false
+	default:
+		return signatureRejected || openAIUpstreamReportsUndecryptableCiphertext(r.failurePayload)
+	}
+}
+
+// ResetOpenAIReasoningRecoveryAttempt detaches the state of a rejected attempt
+// before the request moves to another account, so that a forwarder which
+// creates no state of its own does not read this one. The response header that
+// names the last recovery action is left as it is.
+func ResetOpenAIReasoningRecoveryAttempt(c *gin.Context) {
+	if c != nil {
+		c.Set(openAIReasoningRecoveryContextKey, (*openAIReasoningRecoveryState)(nil))
+	}
 }
 
 func (r *openAIReasoningRecoveryState) upstreamStatus(fallback int) int {
@@ -729,6 +783,7 @@ func (r *openAIReasoningRecoveryState) continuationDiagnosticRecovery(payload []
 		CacheSkippedItems: r.cacheSkippedItems,
 		RetryAttempted:    r.retryDispatched,
 		Disposition:       r.diagnosticState,
+		AccountMismatch:   r.accountMismatch,
 	}
 	if shape.Disposition == "" {
 		shape.Disposition = "not_attempted"

@@ -47,6 +47,10 @@ type openAIContinuationRecoveryShape struct {
 	RetryAttempted     bool   `json:"retry_attempted"`
 	Disposition        string `json:"disposition"`
 	NotAttemptedReason string `json:"not_attempted_reason,omitempty"`
+	// AccountMismatch marks an attempt in which the account could not read
+	// ciphertext of the request and could not repair it. Such a request is
+	// handed to another account when one is left to try.
+	AccountMismatch bool `json:"account_mismatch,omitempty"`
 }
 
 // Bytes, Characters and SHA256 always describe the complete original value.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -258,10 +259,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Acc
 	if isOpenAIRequestScopedSafetyRejection(upstreamBody) {
 		return false
 	}
-	// A continuation-state rejection is request-scoped: choosing a different
-	// account cannot validate a previous response or provider-specific encrypted
-	// reasoning item. The caller returns a bounded recovery or a terminal client
-	// error before account-health side effects run.
+	// A continuation-state rejection is request-scoped and never an account
+	// failure. The caller returns a bounded recovery, an account mismatch or a
+	// terminal client error before account-health side effects run.
 	if isOpenAIContinuationStateError(upstreamMsg, upstreamBody) {
 		return false
 	}
@@ -378,8 +378,10 @@ const openAIRequestBodyTooLargeReason = GatewayFailureReason("openai_request_bod
 
 // OpenAIContinuationStateUnavailableCode identifies a request whose previous
 // response or encrypted reasoning state is no longer valid on its upstream.
-// It is deliberately non-retryable: retrying on another account can only make
-// the same account-bound state failure fan out across the scheduler pool.
+// A lost previous response is bound to its account and ends the request.
+// Rejected ciphertext is offered to a bounded number of other accounts first
+// (openAICiphertextAccountMismatch); the client receives this code only when
+// none accepts.
 const OpenAIContinuationStateUnavailableCode = "continuation_state_unavailable"
 
 // OpenAIContinuationStateUnavailableClientMessage is safe to surface to a
@@ -642,10 +644,59 @@ func NewOpenAIContinuationStoreUnavailableError() *UpstreamFailoverError {
 	return err
 }
 
-// IsOpenAIContinuationStateUnavailable reports a continuation-state failure
-// that must not switch accounts or reduce selected-account health.
+// IsOpenAIContinuationStateUnavailable reports a continuation-state failure.
+// It never reduces selected-account health, and it stops the request unless it
+// is marked as an account mismatch.
 func (e *UpstreamFailoverError) IsOpenAIContinuationStateUnavailable() bool {
 	return e != nil && e.Reason == openAIContinuationStateUnavailableReason
+}
+
+// openAICiphertextAccountMismatch marks the request-scoped failure of one
+// account as an account mismatch: the request carries ciphertext this account
+// cannot verify and nothing on this account repairs it. Ciphertext is readable
+// only by the upstream organisation that issued it, so the unchanged request
+// may still be accepted by another account. The caller tries the next account;
+// when none accepts, the failure renders with its own classification, exactly
+// as it would have without the mark.
+func openAICiphertextAccountMismatch(failure *UpstreamFailoverError) *UpstreamFailoverError {
+	marked := *failure
+	marked.ResponseHeaders = failure.ResponseHeaders.Clone()
+	marked.CiphertextAccountMismatch = true
+	marked.NextAccountAction = NextAccountRetry
+	marked.Scope = GatewayFailureScopeRequest
+	marked.SuppressAccountHealthPenalty = true
+	marked.RetryableOnSameAccount = false
+	marked.SameAccountRetryDelay = 0
+	marked.SameAccountRetryDeadline = time.Time{}
+	marked.SameAccountRetryMax = 0
+	return &marked
+}
+
+// IsOpenAICiphertextAccountMismatch reports a failure that another account
+// may not have for the same request.
+func (e *UpstreamFailoverError) IsOpenAICiphertextAccountMismatch() bool {
+	return e != nil && e.CiphertextAccountMismatch
+}
+
+// openAIUpstreamReportsUndecryptableCiphertext reads an upstream failure for a
+// statement that ciphertext in the request could not be decrypted or verified.
+// Besides the continuation-state classification it accepts the wording used
+// for inter-agent message bodies and encrypted tool arguments, which arrives
+// without a stable code.
+func openAIUpstreamReportsUndecryptableCiphertext(payload []byte) bool {
+	message := extractOpenAISSEErrorMessage(payload)
+	switch classifyOpenAIContinuationStateError(message, payload) {
+	case openAIContinuationStateErrorInvalidEncryptedContent, openAIContinuationStateErrorThinkingSignatureInvalid:
+		return true
+	}
+	return strings.Contains(strings.ToLower(message), "could not be decrypted")
+}
+
+// openAIRequestHoldsServerContext reports a request whose history lives with
+// the upstream account that created it.
+func openAIRequestHoldsServerContext(body []byte) bool {
+	conversation := gjson.GetBytes(body, "conversation")
+	return gjson.GetBytes(body, "previous_response_id").String() != "" || (conversation.Exists() && conversation.Type != gjson.Null)
 }
 
 func marshalOpenAIUpstreamJSON(v any) ([]byte, error) {
