@@ -18,7 +18,7 @@ vi.mock('vue-i18n', async () => ({
 let wrapper: VueWrapper | undefined
 
 function testPlan(models = structuredClone(contract.expected)) {
-  return { schema_version: 1, account_id: 501, wire_platform: 'openai', default_mode: 'default', models,
+  return { account_id: 501, default_mode: 'default', models,
     mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: models[0]?.id || '' } } }
 }
 

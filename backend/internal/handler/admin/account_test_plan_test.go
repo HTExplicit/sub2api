@@ -54,15 +54,13 @@ func TestAccountTestPlanViewListsTheSameModelsAsThePlainList(t *testing.T) {
 
 	var plan accountTestPlanView
 	require.NoError(t, json.Unmarshal(read("?view=account-test-plan-v1"), &plan))
-	require.Equal(t, 1, plan.SchemaVersion)
 	require.Equal(t, int64(42), plan.AccountID)
-	require.Equal(t, "openai", plan.WirePlatform)
 	require.Equal(t, plainModels, plan.Models)
 	require.Equal(t, []string{"plain-id"}, plan.ModeViews["default"].ModelIDs)
 	require.Equal(t, "plain-id", plan.ModeViews["default"].DefaultModelID)
 }
 
-func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
+func TestAccountTestPlanModelOrderAndDefaults(t *testing.T) {
 	models := func(ids ...string) []map[string]any {
 		rows := make([]map[string]any, 0, len(ids))
 		for _, id := range ids {
@@ -81,12 +79,12 @@ func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
 		{service.PlatformAntigravity, models("sonnet-custom", "gemini-3.1-flash-image"), "sonnet-custom", []string{"gemini-3.1-flash-image", "sonnet-custom"}},
 		{service.PlatformOpenAI, models("codex-auto-review", "first", "sonnet-custom"), "first", []string{"codex-auto-review", "first", "sonnet-custom"}},
 	} {
-		plan, err := ordinaryAccountTestPlan(&service.Account{ID: 42, Platform: tc.platform}, tc.ids)
+		plan, err := buildAccountTestPlan(&service.Account{ID: 42, Platform: tc.platform}, tc.ids)
 		require.NoError(t, err)
 		require.Equal(t, tc.order, plan.ModeViews["default"].ModelIDs)
 		require.Equal(t, tc.want, plan.ModeViews["default"].DefaultModelID)
 	}
-	plan, err := ordinaryAccountTestPlan(&service.Account{ID: 42, Platform: service.PlatformGrok}, models("grok-4.3", "grok", "grok-4.5-custom", "grok-imagine", "grok-imagine-video"))
+	plan, err := buildAccountTestPlan(&service.Account{ID: 42, Platform: service.PlatformGrok}, models("grok-4.3", "grok", "grok-4.5-custom", "grok-imagine", "grok-imagine-video"))
 	require.NoError(t, err)
 	require.Equal(t, "grok-4.3", plan.ModeViews["text"].DefaultModelID, "same automatic choice as batch tests: grok-4.5 when listed, else the first text model")
 	require.Equal(t, []string{"grok-imagine"}, plan.ModeViews["image"].ModelIDs)
@@ -97,7 +95,7 @@ func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
 	}
 	_, err = accountTestPlanRequested("unknown-view")
 	require.Error(t, err)
-	_, err = ordinaryAccountTestPlan(&service.Account{ID: 42}, []map[string]any{{"id": "same"}, {"id": "same"}})
+	_, err = buildAccountTestPlan(&service.Account{ID: 42}, []map[string]any{{"id": "same"}, {"id": "same"}})
 	require.Error(t, err)
 }
 

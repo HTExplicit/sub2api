@@ -513,14 +513,10 @@ const uploadAudioDataURL = ref('')
 const uploadAudioName = ref('')
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const audioFileInput = ref<HTMLInputElement | null>(null)
-const isOpenAIAccount = computed(() =>
-  (currentModelPlan.value?.wire_platform || props.account?.platform) === 'openai'
-)
+const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 // The quality check is offered to OpenAI OAuth accounts only.
-const isOpenAIOAuthAccount = computed(() =>
-  isOpenAIAccount.value && props.account?.platform === 'openai' && props.account?.type === 'oauth'
-)
+const isOpenAIOAuthAccount = computed(() => isOpenAIAccount.value && props.account?.type === 'oauth')
 const isQualityMode = computed(() => testMode.value === 'quality' && isOpenAIOAuthAccount.value)
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
@@ -562,7 +558,7 @@ const supportsGeminiImageTest = computed(() => {
 const supportsOpenAIImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gpt-image-')) return false
-  return isOpenAIAccount.value
+  return props.account?.platform === 'openai'
 })
 
 const supportsGrokImageTest = computed(

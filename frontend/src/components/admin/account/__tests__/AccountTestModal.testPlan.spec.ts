@@ -15,11 +15,11 @@ vi.mock('vue-i18n', async () => ({
 }))
 
 function plan(accountID: number, ids = ['provider/raw-a', 'provider/raw-b'], defaultID = ids[ids.length - 1] || ''): AccountTestPlanView {
-  return { schema_version: 1, account_id: accountID, wire_platform: 'openai', default_mode: 'provider-view',
+  return { account_id: accountID, default_mode: 'default',
     models: ids.map(id => ({ id, type: 'model', created_at: '', display_name: `Label for ${id}` })),
-    mode_views: { 'provider-view': { model_ids: ids, default_model_id: defaultID } } }
+    mode_views: { default: { model_ids: ids, default_model_id: defaultID } } }
 }
-function account(id: number, platform = 'cindy'): Account {
+function account(id: number, platform = 'openai'): Account {
   return { id, name: `Account ${id}`, platform, type: 'apikey', status: 'active', credentials: {} } as Account
 }
 let wrapper: VueWrapper | undefined
@@ -45,8 +45,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('AccountTestModal provider plan consumption', () => {
-  it('renders the provider default in the real Select and sends its original ID through the unchanged SSE endpoint', async () => {
+describe('AccountTestModal test plan consumption', () => {
+  it('renders the plan default in the real Select and sends its original ID to the test endpoint', async () => {
     getAccountTestPlan.mockResolvedValue(plan(88))
     const modal = open()
     await flushPromises()
@@ -107,7 +107,7 @@ describe('AccountTestModal provider plan consumption', () => {
     await (modal.vm as any).startTest()
     expect(global.fetch).not.toHaveBeenCalled()
     const emptyView = { model_ids: [], default_model_id: '' }
-    getAccountTestPlan.mockResolvedValueOnce({ schema_version: 1, account_id: 14, wire_platform: 'grok', default_mode: 'text', models: [], mode_views: { text: emptyView, search: emptyView } })
+    getAccountTestPlan.mockResolvedValueOnce({ account_id: 14, default_mode: 'text', models: [], mode_views: { text: emptyView, search: emptyView } })
     await modal.setProps({ account: account(14, 'grok') })
     await flushPromises()
     ;(modal.vm as any).grokTestMode = 'search'

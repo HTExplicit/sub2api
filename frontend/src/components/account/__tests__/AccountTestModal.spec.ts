@@ -95,7 +95,7 @@ function buildAccount() {
 }
 
 function testPlan(models = [{ id: 'gpt-5.4', display_name: 'GPT-5.4' }], defaultID = models[0]?.id || '') {
-  return { schema_version: 1, account_id: 1, wire_platform: 'openai', default_mode: 'default', models,
+  return { account_id: 1, default_mode: 'default', models,
     mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: defaultID } } }
 }
 
@@ -191,43 +191,5 @@ describe('AccountTestModal', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('已通过 /v1/chat/completions 验证')
-  })
-
-  it('uses the canonical Cindy provider plan without its own default policy', async () => {
-    getAccountTestPlanMock.mockResolvedValue(testPlan([
-      { id: 'provider-choice-a', display_name: 'Choice A' },
-      { id: 'provider-choice-b', display_name: 'Choice B' }
-    ], 'provider-choice-b'))
-    const cindy = {
-      ...buildAccount(),
-      platform: 'cindy',
-      type: 'apikey',
-      credentials: { base_url: 'https://api.laxarouter.ai' }
-    }
-
-    const wrapper = mount(AccountTestModal, {
-      props: {
-        show: false,
-        account: cindy
-      },
-      global: {
-        stubs: {
-          BaseDialog: BaseDialogStub,
-          Select: SelectStub,
-          TextArea: TextAreaStub,
-          Icon: true
-        }
-      }
-    })
-    await wrapper.setProps({ show: true })
-    await flushPromises()
-
-    expect((wrapper.vm as any).availableModels.map((item: { id: string }) => item.id)).toEqual([
-      'provider-choice-a',
-      'provider-choice-b'
-    ])
-    expect((wrapper.vm as any).selectedModelId).toBe('provider-choice-b')
-    expect((wrapper.vm as any).isOpenAIAccount).toBe(true)
-    wrapper.unmount()
   })
 })

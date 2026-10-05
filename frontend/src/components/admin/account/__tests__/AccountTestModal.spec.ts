@@ -64,9 +64,9 @@ function createStreamResponse(lines: string[]) {
   } as Response
 }
 
-function testPlan(accountID: number, models: Array<Pick<AccountAvailableModel, 'id' | 'display_name'> & Partial<AccountAvailableModel>>, defaultID = models[0]?.id || '', wirePlatform = 'openai', defaultMode = 'default'): AccountTestPlanView {
+function testPlan(accountID: number, models: Array<Pick<AccountAvailableModel, 'id' | 'display_name'> & Partial<AccountAvailableModel>>, defaultID = models[0]?.id || '', defaultMode = 'default'): AccountTestPlanView {
   const view = { model_ids: models.map(model => model.id), default_model_id: defaultID }
-  return { schema_version: 1, account_id: accountID, wire_platform: wirePlatform, default_mode: defaultMode,
+  return { account_id: accountID, default_mode: defaultMode,
     models: models.map(model => ({ type: 'model', created_at: '', ...model })), mode_views: { default: view, text: view, compact: view } }
 }
 
@@ -105,7 +105,7 @@ describe('AccountTestModal', () => {
       { id: 'gemini-3.1-flash-image', display_name: 'Gemini 3.1 Flash Image' },
       { id: 'gemini-2.5-flash-image', display_name: 'Gemini 2.5 Flash Image' },
       { id: 'gemini-2.0-flash', display_name: 'Gemini 2.0 Flash' }
-    ], 'gemini-3.1-flash-image', 'gemini'))
+    ], 'gemini-3.1-flash-image'))
     copyToClipboard.mockReset()
     Object.defineProperty(globalThis, 'localStorage', {
       value: {
@@ -162,7 +162,7 @@ describe('AccountTestModal', () => {
     getAccountTestPlan.mockResolvedValue(testPlan(13, [
       { id: 'grok-4.3', display_name: 'Grok 4.3' },
       { id: 'grok-build-0.1', display_name: 'Grok Build 0.1' }
-    ], 'grok-4.3', 'grok', 'text'))
+    ], 'grok-4.3', 'text'))
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
         'data: {"type":"test_start","model":"grok-4.3"}\n',
@@ -232,31 +232,5 @@ describe('AccountTestModal', () => {
       prompt: '',
       mode: 'compact'
     })
-  })
-
-  it('Cindy 账号测试消费 provider 返回的候选和更新后的默认', async () => {
-    getAccountTestPlan.mockResolvedValue(testPlan(88, [
-      { id: 'provider-choice-a', display_name: 'Choice A' },
-      { id: 'provider-choice-b', display_name: 'Choice B' }
-    ], 'provider-choice-b'))
-    const wrapper = mountModal({
-      id: 88,
-      name: 'Cindy API Key',
-      platform: 'cindy',
-      type: 'apikey',
-      status: 'active',
-      credentials: { base_url: 'https://api.laxarouter.ai' },
-      is_cindy: true
-    })
-
-    await wrapper.setProps({ show: true })
-    await flushPromises()
-
-    expect((wrapper.vm as any).availableModels.map((item: { id: string }) => item.id)).toEqual([
-      'provider-choice-a',
-      'provider-choice-b'
-    ])
-    expect((wrapper.vm as any).selectedModelId).toBe('provider-choice-b')
-    wrapper.unmount()
   })
 })

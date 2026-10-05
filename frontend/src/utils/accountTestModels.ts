@@ -8,8 +8,7 @@ export function isAccountTestReasoningValid(model: AccountAvailableModel | undef
 
 export function validateAccountTestPlan(value: unknown, accountID: number): AccountTestPlanView {
   const plan = value as AccountTestPlanView | null
-  if (!plan || plan.schema_version !== 1 || plan.account_id !== accountID || !Number.isSafeInteger(accountID) || accountID <= 0 ||
-      typeof plan.wire_platform !== 'string' || !plan.wire_platform || typeof plan.default_mode !== 'string' ||
+  if (!plan || plan.account_id !== accountID || !Number.isSafeInteger(accountID) || accountID <= 0 || typeof plan.default_mode !== 'string' ||
       !Array.isArray(plan.models) || !plan.mode_views || typeof plan.mode_views !== 'object' || Array.isArray(plan.mode_views) ||
       !Object.prototype.hasOwnProperty.call(plan.mode_views, plan.default_mode)) throw new Error('Invalid account test plan')
   const ids = new Set<string>()
