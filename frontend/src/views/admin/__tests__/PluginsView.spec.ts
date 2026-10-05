@@ -23,7 +23,6 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     plugins: {
       list: listPlugins,
-      listRetired: vi.fn().mockResolvedValue({ receipt: null, installations: [] }),
       upload: uploadPlugin,
       enable: enablePlugin,
       disable: vi.fn(),

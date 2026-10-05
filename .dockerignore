@@ -10,7 +10,6 @@
 # Documentation
 *.md
 !deploy/DOCKER.md
-!deploy/plugin-bundle/README.md
 !THIRD_PARTY_NOTICES.md
 docs/
 # admin-compliance gate (LegalDocumentView.vue) build-time imports
@@ -51,7 +50,7 @@ coverage/
 .env.*
 !.env.example
 
-# Local third-party packages and credentials do not enter the host image.
+# 本地闭源插件目录可能包含发布签名私钥，绝不能进入 Docker 构建上下文。
 /plugins/
 
 # Local config

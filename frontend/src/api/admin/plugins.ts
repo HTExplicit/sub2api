@@ -1,9 +1,5 @@
 import { apiClient } from '../client'
 
-declare module 'axios' {
-  interface AxiosRequestConfig { rawPluginConfig?: boolean }
-}
-
 export interface PluginCapability {
   id: string
   platform: string
@@ -75,43 +71,6 @@ export interface PluginInstallation {
   runtime_message: string
 }
 
-// Read-only view of a first-party installation the host retired when the
-// feature became built in. It is never part of the managed plugin list.
-export interface RetiredPluginInstallation {
-  id: number
-  plugin_key: string
-  name: string
-  version: string
-  description: string
-  author: string
-  manifest: PluginManifest
-  artifact_path: string
-  install_path: string
-  binary_path: string
-  binary_sha256: string
-  signature_status: string
-  state: string
-  last_error: string
-  installed_by?: number | null
-  installed_at: string
-  enabled_at?: string | null
-  updated_at: string
-  bindings: PluginBinding[]
-  config?: unknown
-  config_text?: string
-  config_error?: string
-}
-
-export interface RetiredPluginsView {
-  receipt: {
-    version: number
-    completed: boolean
-    retired_at: string
-    plugins: Record<string, unknown>
-  } | null
-  installations: RetiredPluginInstallation[]
-}
-
 export interface PluginTestResult {
   success: boolean
   message: string
@@ -134,11 +93,6 @@ export interface PluginUISession {
 
 export async function list(): Promise<PluginInstallation[]> {
   const { data } = await apiClient.get<PluginInstallation[]>('/admin/plugins')
-  return data
-}
-
-export async function listRetired(): Promise<RetiredPluginsView> {
-  const { data } = await apiClient.get<RetiredPluginsView>('/admin/plugins/retired')
   return data
 }
 
@@ -174,7 +128,7 @@ export async function remove(id: number): Promise<void> {
 }
 
 export async function getConfig(id: number): Promise<Record<string, unknown>> {
-  const { data } = await apiClient.get<Record<string, unknown>>(`/admin/plugins/${id}/config`, { rawPluginConfig: true })
+  const { data } = await apiClient.get<Record<string, unknown>>(`/admin/plugins/${id}/config`)
   return data
 }
 
@@ -182,7 +136,7 @@ export async function saveConfig(
   id: number,
   config: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const { data } = await apiClient.put<Record<string, unknown>>(`/admin/plugins/${id}/config`, config, { rawPluginConfig: true })
+  const { data } = await apiClient.put<Record<string, unknown>>(`/admin/plugins/${id}/config`, config)
   return data
 }
 
@@ -203,7 +157,6 @@ export async function createUISession(id: number): Promise<PluginUISession> {
 
 export default {
   list,
-  listRetired,
   upload,
   enable,
   disable,

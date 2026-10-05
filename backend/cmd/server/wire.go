@@ -149,6 +149,7 @@ func provideCleanup(
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
 		type cleanupStep struct {
 			name string
 			fn   func() error
@@ -156,6 +157,12 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"PluginManager", func() error {
+				if pluginManager != nil {
+					pluginManager.Stop()
+				}
+				return nil
+			}},
 			{"AccountJobRuntime", func() error {
 				if accountJobs != nil {
 					accountJobs.Stop()
@@ -469,9 +476,6 @@ func provideCleanup(
 		}
 
 		runParallel(parallelSteps)
-		if pluginManager != nil {
-			pluginManager.Stop()
-		}
 		runSequential(infraSteps)
 
 		// Check if context timed out

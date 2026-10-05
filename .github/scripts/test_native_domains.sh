@@ -9,7 +9,7 @@ go -C backend test -p=1 -tags unit \
   ./internal/codexruntime/... \
   -count=1
 
-# Preserve configuration/storage boundaries without starting real IO.
-go -C backend test -p=1 -tags unit ./internal/service ./internal/repository \
-  -run '^(TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault|TestPrepareOpenAICodexWireRequest.*|TestNativeCodexErrorDiagnosticsProjectEveryStoredAttempt|TestNativePluginBoundaryProtectsRetiredRecordsAndAllowsThirdParties|TestNativeFeatureBootstrapPreservesEffectiveConfiguration|TestNativeSettingLoadFailureNeverReenablesSavedSwitches|TestTrafficObservation.*|TestAccountTrafficOutcomeRulesKeepCancellationAboveErrorsAndRequireWSTerminals|TestDecodeSwitchSettingsRejectsUnknownAndNonBooleanValues)$' \
+# Preserve the native configuration contracts without starting real IO.
+go -C backend test -p=1 -tags unit ./internal/service \
+  -run '^(TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault|TestPrepareOpenAICodexWireRequest.*|TestNativeCodexErrorDiagnosticsProjectEveryStoredAttempt|TestNativeSettingLoadFailureNeverReenablesSavedSwitches|TestTrafficObservation.*|TestAccountTrafficOutcomeRulesKeepCancellationAboveErrorsAndRequireWSTerminals|TestDecodeSwitchSettingsRejectsUnknownAndNonBooleanValues)$' \
   -count=1

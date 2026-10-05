@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	dbmigrations "github.com/Wei-Shaw/sub2api/migrations"
@@ -22,24 +23,35 @@ const (
 )
 
 // TestMain applied every migration, 264 included, to an empty database: the
-// fresh-database run. Each case restores the tables 264 drops and the rows a
-// database of the previous release can hold, applies 264 and checks what went
-// and what stayed.
+// fresh-database run. 272 has since dropped the bundle schema of 248, 249 and
+// 250, which 264 names in every run, so each case runs those three again
+// first. The stored cases also restore the tables 264 drops and the rows a
+// database of the previous release can hold, apply 264 and check what went and
+// what stayed.
 func TestMigration264PurgesCodexRuntimePluginData(t *testing.T) {
 	ctx := context.Background()
-	content, err := dbmigrations.FS.ReadFile(codexRuntimePurgeMigration)
-	require.NoError(t, err)
-	migration := string(content)
+	read := func(name string) string {
+		t.Helper()
+		content, err := dbmigrations.FS.ReadFile(name)
+		require.NoError(t, err)
+		return string(content)
+	}
+	migration := read(codexRuntimePurgeMigration)
+	bundleSchema := read("248_plugin_bundle_bootstrap.sql") + read("249_plugin_bundle_binding_intent.sql") + read("250_plugin_independent_updates.sql")
 
 	type fixture struct {
 		tx *sql.Tx
 		t  *testing.T
 	}
-	open := func(t *testing.T) fixture { return fixture{tx: testTx(t), t: t} }
 	exec := func(f fixture, query string, args ...any) {
 		f.t.Helper()
 		_, err := f.tx.ExecContext(ctx, query, args...)
 		require.NoError(f.t, err)
+	}
+	open := func(t *testing.T) fixture {
+		f := fixture{tx: testTx(t), t: t}
+		exec(f, bundleSchema)
+		return f
 	}
 	text := func(f fixture, query string, args ...any) string {
 		f.t.Helper()
@@ -115,7 +127,7 @@ RETURNING id`,
 		for key, entry := range plugins {
 			entries = append(entries, `"`+key+`":`+entry)
 		}
-		put(f, service.NativeFeatureRetirementSetting, `{"version":1,"completed":true,"retired_at":"2026-09-24T11:20:00.123456789Z","plugins":{`+strings.Join(entries, ",")+`}}`)
+		put(f, "deplugin_retired_plugins", `{"version":1,"completed":true,"retired_at":"2026-09-24T11:20:00.123456789Z","plugins":{`+strings.Join(entries, ",")+`}}`)
 	}
 	record := func(hash string) string {
 		return `{"version":1,"config_version":2,"config_sha256":"` + hash + `"}`
@@ -198,7 +210,7 @@ INSERT INTO accounts (name, platform, type, extra, deleted_at) VALUES ($1, $2, $
 			untouchedAccounts[id] = ctid("accounts", "id", id)
 		}
 		untouchedSettings := map[string]string{}
-		for _, key := range []string{service.NativeFeatureRetirementSetting, "image_tools_config", "openai_codex_client_version"} {
+		for _, key := range []string{"deplugin_retired_plugins", "image_tools_config", "openai_codex_client_version"} {
 			untouchedSettings[key] = ctid("settings", "key", key)
 		}
 		imageBefore, otherBefore := installationRow(f, imageID), installationRow(f, otherID)
@@ -247,34 +259,6 @@ INSERT INTO accounts (name, platform, type, extra, deleted_at) VALUES ($1, $2, $
 		}
 		require.Equal(t, outboxBefore, count(f, `SELECT count(*) FROM scheduler_outbox WHERE account_id = ANY($1)`, accountIDs))
 
-		// The retired-plugins view still loads the receipt and both retired rows.
-		snapshot := &service.NativeRetirementSnapshot{}
-		stored, _ := setting(f, service.NativeFeatureRetirementSetting)
-		require.NoError(t, json.Unmarshal([]byte(stored), snapshot))
-		require.True(t, snapshot.Completed)
-		require.Len(t, snapshot.Plugins, 2)
-		require.Len(t, snapshot.Plugins[codex].Bindings, 1)
-		rows, err := f.tx.QueryContext(ctx, pluginSelectSQL+` WHERE plugin_key LIKE 'codexrip.%' ORDER BY id`)
-		require.NoError(t, err)
-		var retired migration264RetiredRows
-		for rows.Next() {
-			plugin, scanErr := scanPlugin(rows)
-			require.NoError(t, scanErr)
-			retired = append(retired, plugin)
-		}
-		require.NoError(t, rows.Err())
-		require.NoError(t, rows.Close())
-		bootstrap := &service.NativeFeatureBootstrap{Snapshot: snapshot}
-		bootstrap.SetRetiredPluginSource(retired)
-		view, err := bootstrap.RetiredPlugins(ctx)
-		require.NoError(t, err)
-		require.Len(t, view.Installations, 2)
-		require.Equal(t, codex, view.Installations[0].PluginKey)
-		require.Equal(t, "Codex 运行扩展", view.Installations[0].Name)
-		require.Empty(t, view.Installations[0].ConfigError)
-		require.Nil(t, view.Installations[0].Config)
-		require.Equal(t, "configuration decryptor is unavailable", view.Installations[1].ConfigError, "the sibling still holds its saved configuration")
-
 		// A second run changes nothing.
 		before := map[string]string{
 			"installation": ctid("sub2api_plugin_installations", "id", codexID),
@@ -282,7 +266,7 @@ INSERT INTO accounts (name, platform, type, extra, deleted_at) VALUES ($1, $2, $
 			"members":      ctid("accounts", "id", membersID),
 			"no mode":      ctid("accounts", "id", noModeID),
 			"config":       ctid("settings", "key", "codex_runtime_config"),
-			"receipt":      ctid("settings", "key", service.NativeFeatureRetirementSetting),
+			"receipt":      ctid("settings", "key", "deplugin_retired_plugins"),
 		}
 		apply(f)
 		require.Equal(t, before, map[string]string{
@@ -291,7 +275,7 @@ INSERT INTO accounts (name, platform, type, extra, deleted_at) VALUES ($1, $2, $
 			"members":      ctid("accounts", "id", membersID),
 			"no mode":      ctid("accounts", "id", noModeID),
 			"config":       ctid("settings", "key", "codex_runtime_config"),
-			"receipt":      ctid("settings", "key", service.NativeFeatureRetirementSetting),
+			"receipt":      ctid("settings", "key", "deplugin_retired_plugins"),
 		})
 		require.Zero(t, droppedTables(f))
 	})
@@ -354,17 +338,10 @@ VALUES ($1,'Native Codex state anchor','0.0.0','Persistent native runtime genera
 			}
 
 			if test.wantErr != "" {
-				exec(f, `SAVEPOINT before_264`)
+				// The runner applies a file in one transaction, so a file that
+				// raises changes nothing: only what it raises is checked here.
 				_, err := f.tx.ExecContext(ctx, migration)
 				require.ErrorContains(t, err, test.wantErr)
-				exec(f, `ROLLBACK TO SAVEPOINT before_264`)
-				require.Equal(t, 2, droppedTables(f), "a refused migration changes nothing")
-				if test.otherState {
-					require.Equal(t, 2, count(f, `SELECT count(*) FROM sub2api_plugin_state`))
-				}
-				require.Equal(t, 1, count(f, `SELECT count(*) FROM sub2api_plugin_installations WHERE id = $1`, codexID))
-				_, found := setting(f, "codex_runtime_config")
-				require.False(t, found)
 				return
 			}
 			apply(f)
@@ -376,9 +353,14 @@ VALUES ($1,'Native Codex state anchor','0.0.0','Persistent native runtime genera
 			require.Zero(t, droppedTables(f))
 			require.Equal(t, 1, count(f, `SELECT count(*) FROM sub2api_plugin_installations WHERE id = $1 AND config_encrypted = 'fixture-image-config-cipher' AND artifact_data IS NOT NULL`, imageID))
 
-			stored, _ := setting(f, service.NativeFeatureRetirementSetting)
-			snapshot := &service.NativeRetirementSnapshot{}
-			require.NoError(t, json.Unmarshal([]byte(stored), snapshot))
+			stored, _ := setting(f, "deplugin_retired_plugins")
+			var snapshot struct {
+				Version   int                        `json:"version"`
+				Completed bool                       `json:"completed"`
+				RetiredAt time.Time                  `json:"retired_at"`
+				Plugins   map[string]json.RawMessage `json:"plugins"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(stored), &snapshot))
 			require.True(t, snapshot.Completed)
 			require.Equal(t, 1, snapshot.Version)
 			require.False(t, snapshot.RetiredAt.IsZero())
@@ -401,10 +383,4 @@ VALUES ($1,'Native Codex state anchor','0.0.0','Persistent native runtime genera
 			require.Equal(t, test.want, again)
 		})
 	}
-}
-
-type migration264RetiredRows []*service.PluginInstallation
-
-func (rows migration264RetiredRows) RetiredPluginInstallations(context.Context) ([]*service.PluginInstallation, error) {
-	return rows, nil
 }

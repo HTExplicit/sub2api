@@ -43,8 +43,8 @@ func (s *SettingService) writeJSONSetting(ctx context.Context, key string, value
 }
 
 // DecodeSwitchSettings decodes a JSON object of boolean switches into target.
-// Unknown keys and non-boolean values are rejected, as the former plugin
-// configuration validators did; omitted switches keep target's values.
+// Unknown keys and non-boolean values are rejected; omitted switches keep
+// target's values.
 func DecodeSwitchSettings(raw []byte, target any, allowed ...string) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {

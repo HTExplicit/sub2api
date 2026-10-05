@@ -7,8 +7,7 @@ import (
 )
 
 // SettingKeyAdminObservabilityConfig stores the account traffic telemetry and
-// flat theme switches formerly kept in the admin-observability plugin
-// configuration.
+// flat theme switches.
 const SettingKeyAdminObservabilityConfig = "admin_observability_config"
 
 // EffectiveAdminObservabilityConfig returns the switches this process applies.

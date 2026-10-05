@@ -53,16 +53,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	settingRepository := repository.NewSettingRepository(client)
 	groupRepository := repository.NewGroupRepository(client, db)
 	proxyRepository := repository.NewProxyRepository(client, db)
-	nativeFeatureBootstrapRepository := repository.NewNativeFeatureBootstrapRepository(db)
-	secretEncryptor, err := repository.NewAESEncryptor(configConfig)
-	if err != nil {
-		return nil, err
-	}
-	nativeFeatureBootstrap, err := service.ProvideNativeFeatureBootstrap(nativeFeatureBootstrapRepository, secretEncryptor)
-	if err != nil {
-		return nil, err
-	}
-	settingService, err := service.ProvideSettingService(settingRepository, groupRepository, proxyRepository, configConfig, nativeFeatureBootstrap)
+	settingService, err := service.ProvideSettingService(settingRepository, groupRepository, proxyRepository, configConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +90,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	userService := service.NewUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache)
 	redeemCache := repository.NewRedeemCache(redisClient)
 	redeemService := service.NewRedeemService(redeemCodeRepository, userRepository, subscriptionService, redeemCache, billingCacheService, client, apiKeyAuthCacheInvalidator, affiliateService)
+	secretEncryptor, err := repository.NewAESEncryptor(configConfig)
+	if err != nil {
+		return nil, err
+	}
 	totpCache := repository.NewTotpCache(redisClient)
 	totpService := service.NewTotpService(userRepository, secretEncryptor, totpCache, settingService, emailService, emailQueueService)
 	userAttributeDefinitionRepository := repository.NewUserAttributeDefinitionRepository(client)
@@ -221,7 +216,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	usageCache := service.NewUsageCache()
 	usageCommitObserver := provideUsageCommitObserver()
 	accountUsageService := service.ProvideAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, grokQuotaFetcher, grokQuotaService, openAIQuotaService, usageCache, identityCache, tlsFingerprintProfileService, gatewayService, openAIGatewayService, usageCommitObserver)
-	pluginRepository := repository.ProvidePluginRepository(db, nativeFeatureBootstrap)
+	pluginRepository := repository.NewPluginRepository(db)
 	pluginHostInfo := providePluginHostInfo(buildInfo)
 	pluginKVStore := repository.NewPluginKVStore(redisClient)
 	pluginManager := service.ProvidePluginManager(pluginRepository, secretEncryptor, configConfig, pluginHostInfo, pluginKVStore, openAIGatewayService)
@@ -279,7 +274,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	errorPassthroughService := service.NewErrorPassthroughService(errorPassthroughRepository, errorPassthroughCache)
 	errorPassthroughHandler := admin.NewErrorPassthroughHandler(errorPassthroughService)
 	tlsFingerprintProfileHandler := admin.NewTLSFingerprintProfileHandler(tlsFingerprintProfileService)
-	pluginHandler := handler.ProvidePluginHandler(pluginManager, nativeFeatureBootstrap)
+	pluginHandler := admin.NewPluginHandler(pluginManager)
 	adminAPIKeyHandler := admin.NewAdminAPIKeyHandler(adminService)
 	scheduledTestPlanRepository := repository.NewScheduledTestPlanRepository(db)
 	scheduledTestResultRepository := repository.NewScheduledTestResultRepository(db)
@@ -485,12 +480,19 @@ func provideCleanup(
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
 		type cleanupStep struct {
 			name string
 			fn   func() error
 		}
 
 		parallelSteps := []cleanupStep{
+			{"PluginManager", func() error {
+				if pluginManager != nil {
+					pluginManager.Stop()
+				}
+				return nil
+			}},
 			{"AccountJobRuntime", func() error {
 				if accountJobs != nil {
 					accountJobs.Stop()
@@ -803,9 +805,6 @@ func provideCleanup(
 		}
 
 		runParallel(parallelSteps)
-		if pluginManager != nil {
-			pluginManager.Stop()
-		}
 		runSequential(infraSteps)
 
 		select {
