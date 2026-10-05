@@ -367,8 +367,9 @@ func TestOpenAIGatewayHandler_ContinuationStrippedRetryAccountFailureIsNotAMisma
 	require.Equal(t, int64(2), continuationMismatchBoundAccount(t, cache), "no mismatch, so no binding is moved back")
 }
 
-// The account that failed on its stripped retry gets the cooldown of an account
-// whose same-account attempts are used up: the next request is not sent to it.
+// An OAuth account that failed on its stripped retry gets the cooldown of an
+// account whose same-account attempts are used up: after a 401 the next request
+// is not sent to it. (For an OpenAI API-key account that cooldown does nothing.)
 func TestOpenAIGatewayHandler_ContinuationStrippedRetryAccountFailureCoolsTheAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &continuationMismatchUpstream{

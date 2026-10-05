@@ -1088,7 +1088,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if reasoningRecovery.RecoveryAttempt() {
 				failure := reasoningRecovery.FailureForResponse(resp.StatusCode, resp.Header, respBody)
 				// Only an answer that a first send would move to another account
-				// is the account's failure; any other ends the request here.
+				// is the account's failure. Any other ends the request here,
+				// unless StopError hands it on as a ciphertext mismatch.
 				retryMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
 				if !s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, retryMsg, respBody) {
 					failure.NextAccountAction = NextAccountStop

@@ -439,7 +439,8 @@ retryUpstream:
 		if reasoningRecovery.RecoveryAttempt() {
 			failure := reasoningRecovery.FailureForResponse(resp.StatusCode, resp.Header, probeBody)
 			// Only an answer that a first send would move to another account is
-			// the account's failure; any other ends the request here.
+			// the account's failure. Any other ends the request here, unless
+			// StopError hands it on as a ciphertext mismatch.
 			if !shouldFailoverOpenAIPassthroughResponse(account, resp.StatusCode, probeBody) {
 				failure.NextAccountAction = NextAccountStop
 			} else if failure.ShouldRetryNextAccount() {

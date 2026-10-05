@@ -566,7 +566,8 @@ func TestOpenAIReasoningRecoveryRetryAccountFailureKeepsTheFirstSendClassificati
 }
 
 // An answer to the stripped retry that a first send would not move to another
-// account is not the account's failure: the request ends on this account.
+// account, and that is no ciphertext rejection either, is not the account's
+// failure: the request ends on this account.
 func TestOpenAIReasoningRecoveryRetryAnswerThatIsNoFailoverEndsTheRequest(t *testing.T) {
 	for _, passthrough := range []bool{false, true} {
 		t.Run(map[bool]string{true: "passthrough", false: "native"}[passthrough], func(t *testing.T) {
