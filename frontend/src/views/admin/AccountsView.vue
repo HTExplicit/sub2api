@@ -3141,7 +3141,6 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  if (route.query.operations === 'history') void accountJobsStore.openDrawer()
   if (typeof document !== 'undefined' && document.fonts) {
     document.fonts.addEventListener('loadingdone', remeasureAccountNames)
     void document.fonts.ready.then(remeasureAccountNames)
