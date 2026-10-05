@@ -60,8 +60,7 @@ The three `238_*` migrations retain separate filenames and checksums.
 - New releases use immutable `vX.Y.Z-codexrip.N` tags on `main`.
 - Images use the tag without `v`: `ghcr.io/htexplicit/sub2api:X.Y.Z-codexrip.N`.
 - Downstream Release authenticates to GHCR, verifies source/build materials and
-  publishes the native host image digest and provenance. It reuses PR validation;
-  first-party package signing and separate plugin release assets are retired.
+  publishes the native host image digest and provenance. It reuses PR validation.
 - Production Deploy resolves the fixed digest through the existing restricted SSH
   updater. Ordinary updates use `operation=deploy-preserve`, preserving runtime
   settings and resources, naturally draining requests, and rebuilding only Sub2API.

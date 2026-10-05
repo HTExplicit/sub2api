@@ -117,7 +117,7 @@ func (h *SettingHandler) GetObservabilitySettings(c *gin.Context) {
 }
 
 // UpdateObservabilitySettings saves the account traffic telemetry and flat theme
-// switches. Omitted switches stay on, as in the former plugin configuration.
+// switches. Omitted switches stay on.
 // PUT /api/v1/admin/settings/observability
 func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
 	req := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}

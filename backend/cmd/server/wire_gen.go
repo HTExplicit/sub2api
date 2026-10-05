@@ -480,12 +480,19 @@ func provideCleanup(
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
 		type cleanupStep struct {
 			name string
 			fn   func() error
 		}
 
 		parallelSteps := []cleanupStep{
+			{"PluginManager", func() error {
+				if pluginManager != nil {
+					pluginManager.Stop()
+				}
+				return nil
+			}},
 			{"AccountJobRuntime", func() error {
 				if accountJobs != nil {
 					accountJobs.Stop()
@@ -798,9 +805,6 @@ func provideCleanup(
 		}
 
 		runParallel(parallelSteps)
-		if pluginManager != nil {
-			pluginManager.Stop()
-		}
 		runSequential(infraSteps)
 
 		select {

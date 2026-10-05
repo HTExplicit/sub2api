@@ -551,8 +551,7 @@ func resolveModelsListCacheTTL(cfg *config.Config) time.Duration {
 }
 
 func modelsListCacheKey(groupID *int64, platform string) string {
-	platform = strings.TrimSpace(platform)
-	return fmt.Sprintf("%d|%s", derefGroupID(groupID), platform)
+	return fmt.Sprintf("%d|%s", derefGroupID(groupID), strings.TrimSpace(platform))
 }
 
 func compositeModelOwnershipCacheKey(groupID int64, model string) string {
@@ -1632,12 +1631,16 @@ func (s *GatewayService) InvalidateAvailableModelsCache(groupID *int64, platform
 	s.invalidateCompositeModelOwnershipCache(groupID)
 
 	normalizedPlatform := strings.TrimSpace(platform)
-	// Match the stable dimensions, not a freshly queried provider namespace.
-	// This also removes any older namespaced entry without consulting a plugin.
+	// 完整匹配时精准失效；否则按维度批量失效。
+	if groupID != nil && normalizedPlatform != "" {
+		s.modelsListCache.Delete(modelsListCacheKey(groupID, normalizedPlatform))
+		return
+	}
+
 	targetGroup := derefGroupID(groupID)
 	for key := range s.modelsListCache.Items() {
-		parts := strings.SplitN(key, "|", 3)
-		if len(parts) < 2 {
+		parts := strings.SplitN(key, "|", 2)
+		if len(parts) != 2 {
 			continue
 		}
 		groupPart, parseErr := strconv.ParseInt(parts[0], 10, 64)

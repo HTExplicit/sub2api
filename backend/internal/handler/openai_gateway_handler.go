@@ -553,7 +553,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 	}
 	// Only authenticated middleware identity may own the response registered
-	// by the existing HTTP response handler; body/plugin fields are not authority.
+	// by the existing HTTP response handler; request body fields are not authority.
 	service.SetOpenAIHTTPResponseOwner(c, subject.UserID, apiKey.ID)
 
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
