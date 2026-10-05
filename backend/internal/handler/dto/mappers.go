@@ -250,7 +250,6 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		openCodeGoUsage = state
 	}
 	out := &Account{
-		AccountViewFacts:        service.AccountViewFactsFromAccount(a, time.Now()),
 		ID:                      a.ID,
 		Name:                    a.Name,
 		Notes:                   a.Notes,
@@ -492,7 +491,6 @@ func AccountListItemFromAccount(a *Account) *AccountListItem {
 		return nil
 	}
 	return &AccountListItem{
-		AccountViewFacts: a.AccountViewFacts,
 		ManagementFolder: a.ManagementFolder,
 		Tags:             a.Tags,
 		ID:               a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,

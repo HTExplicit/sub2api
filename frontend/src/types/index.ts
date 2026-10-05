@@ -1312,13 +1312,6 @@ export interface Account {
 
   // Rate limit & scheduling fields
   schedulable: boolean
-  // Native host projection, not an SDK Account or a client authorization grant.
-  account_view_facts?: {
-    version: 1
-    status: string
-    plan: string
-    privacy_mode: string
-  }
   rate_limited_at: string | null
   rate_limit_reset_at: string | null
   overload_until: string | null
