@@ -954,18 +954,13 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
-		canonical, identityErr := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
-		if identityErr != nil {
-			return s.sendErrorAndEnd(c, "Codex client identity is invalid: "+identityErr.Error())
-		}
+		canonical := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		req.Header.Set("Originator", canonical.originator)
 		req.Header.Set("User-Agent", canonical.userAgent)
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 同样作为管理员
 		// 显式配置传入，否则测试用的身份与该账号真实出站的身份不是同一个。
-		if err := enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
-			return s.sendErrorAndEnd(c, "Codex client identity is invalid: "+err.Error())
-		}
+		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
@@ -2313,9 +2308,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if isOAuth {
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 经 ForceCodexCLI
 		// 策略过滤后作为管理员显式配置传入（同普通 OAuth 连接测试）。
-		if err := enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
-			return s.sendErrorAndEnd(c, "Codex client identity is invalid: "+err.Error())
-		}
+		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	}
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
@@ -3005,18 +2998,13 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	canonical, identityErr := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
-	if identityErr != nil {
-		return s.sendErrorAndEnd(c, "Codex client identity is invalid: "+identityErr.Error())
-	}
+	canonical := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	req.Header.Set("originator", canonical.originator)
 	req.Header.Set("User-Agent", canonical.userAgent)
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	// 与真实转发一致（同普通 OAuth 连接测试）：使用该账号的 Codex TUI 身份，账号级自定义 UA
 	// 经 ForceCodexCLI 策略过滤后作为管理员显式配置传入。
-	if err := enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
-		return s.sendErrorAndEnd(c, "Codex client identity is invalid: "+err.Error())
-	}
+	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

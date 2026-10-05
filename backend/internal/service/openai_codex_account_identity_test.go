@@ -114,9 +114,7 @@ func TestCodexAccountIdentitySourceResolvesShadowAndOverwritesFailoverContext(t 
 		"token", true, "client-session", true,
 	)
 	require.NoError(t, err)
-	identity, err := resolveCodexOutboundIdentityForAccount(parent, "")
-	require.NoError(t, err)
-	require.Equal(t, identity.userAgent, req.Header.Get("user-agent"), "影子账号使用凭据账号的身份")
+	require.Equal(t, resolveCodexOutboundIdentityForAccount(parent, "").userAgent, req.Header.Get("user-agent"), "影子账号使用凭据账号的身份")
 	require.Empty(t, req.Header.Get("session_id"))
 	require.Equal(t, "client-session", req.Header.Get("session-id"), "缺失连字符会话头时以最终 prompt_cache_key 补齐")
 

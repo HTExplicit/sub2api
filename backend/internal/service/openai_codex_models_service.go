@@ -1792,10 +1792,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	identity := resolveCodexOutboundIdentity(overrideUA)
 	if !useAPIKeyUpstream {
 		overrideUA = codexAccountIdentityOverrideUA(credAccount)
-		identity, err = resolveCodexOutboundIdentityForAccount(credAccount, overrideUA)
-		if err != nil {
-			return nil, err
-		}
+		identity = resolveCodexOutboundIdentityForAccount(credAccount, overrideUA)
 	}
 	headers.Set("Originator", identity.originator)
 	headers.Set("User-Agent", identity.userAgent)

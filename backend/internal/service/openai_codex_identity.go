@@ -272,42 +272,35 @@ func pairCodexIdentityHeaders(h http.Header) {
 // 优先级：管理员显式配置的账号级 User-Agent（只贡献客户端名与 OS / 架构 / 终端指纹，
 // 版本段仍由生效版本重建）> 账号持久化 / 种子派生的 Codex TUI 身份 > 全局规范身份。
 // 版本号三处同源：UA 首段、UA 尾部括号组与 version 头都取当前生效的官方版本。
-//
-// 唯一的失败原因：生效版本号无法写进该账号身份的 User-Agent。此时返回错误，
-// 调用方必须让本次发送失败，而不是退回全局规范身份出站。
-func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) (codexOutboundIdentity, error) {
+func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) codexOutboundIdentity {
 	canonical := resolveCodexOutboundIdentity(overrideUA)
 	if overrideUA != "" {
-		return canonical, nil
+		return canonical
 	}
 	identity, ok := account.CodexClientIdentity()
 	if !ok {
-		return canonical, nil
+		return canonical
 	}
-	userAgent, err := identity.buildUserAgent(canonical.version)
-	if err != nil {
-		return codexOutboundIdentity{}, err
+	return codexOutboundIdentity{
+		userAgent:  identity.UserAgent(canonical.version),
+		originator: codexTUIOriginator,
+		version:    canonical.version,
 	}
-	return codexOutboundIdentity{userAgent: userAgent, originator: codexTUIOriginator, version: canonical.version}, nil
 }
 
 // enforceCodexIdentityHeadersForAccount 与 enforceCodexIdentityHeadersWithUA 语义相同，
 // 但强制统一时使用账号级身份而不是全局规范身份，使同一账号的所有出站请求
-// 表现为同一台机器上的同一个 Codex TUI。账号身份解析失败时返回该错误，请求头保持原样。
-func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string) error {
+// 表现为同一台机器上的同一个 Codex TUI。
+func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string) {
 	if h == nil || h.Get("originator") == "" {
-		return nil
+		return
 	}
 	if !codexIdentityEnforcement.Load() {
 		pairCodexIdentityHeaders(h)
-		return nil
+		return
 	}
-	identity, err := resolveCodexOutboundIdentityForAccount(account, overrideUA)
-	if err != nil {
-		return err
-	}
+	identity := resolveCodexOutboundIdentityForAccount(account, overrideUA)
 	h.Set("user-agent", identity.userAgent)
 	h.Set("originator", identity.originator)
 	h.Set("version", identity.version)
-	return nil
 }

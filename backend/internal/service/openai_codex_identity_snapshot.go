@@ -90,9 +90,7 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string) co
 		}()
 	}
 
-	// The snapshot only reports. The send path resolves the same identity for
-	// the request and is where a failure to build it stops the send.
-	identity, _ := resolveCodexOutboundIdentityForAccount(source, overrideUA)
+	identity := resolveCodexOutboundIdentityForAccount(source, overrideUA)
 	snapshot.UserAgent = identity.userAgent
 	snapshot.Originator = identity.originator
 	snapshot.Version = identity.version

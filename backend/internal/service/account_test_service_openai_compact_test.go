@@ -321,9 +321,7 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 	require.NotContains(t, upstream.lastReq.Header.Get("session-id"), "probe_compact",
 		"探测标识不得是可被上游一眼识别的字面量")
 	// 出站 UA = 该账号（种子派生）的 Codex TUI 身份，而不是全局规范身份。
-	identity, err := resolveCodexOutboundIdentityForAccount(&account, "")
-	require.NoError(t, err)
-	require.Equal(t, identity.userAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, resolveCodexOutboundIdentityForAccount(&account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	<-updateCalls
 }
 

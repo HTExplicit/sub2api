@@ -60,9 +60,7 @@ func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *tes
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
 	// Force 优先于自定义 UA；无种子账号使用规范身份。压缩后仍是 image_generation 工具调用。
-	identity, err := resolveCodexOutboundIdentityForAccount(account, "")
-	require.NoError(t, err)
-	require.Equal(t, identity.userAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, "zstd", upstream.lastReq.Header.Get("Content-Encoding"))
 	require.Equal(t, "image_generation", gjson.GetBytes(zstdDecodeForTest(t, upstream.lastBody), "tools.0.type").String())

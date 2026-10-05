@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -106,34 +105,13 @@ func codexSandboxForUserAgent(userAgent string) string {
 	}
 }
 
-// errCodexClientVersionInvalid reports a Codex client version that cannot be
-// written into a User-Agent.
-var errCodexClientVersionInvalid = errors.New("invalid identity version")
-
-// codexClientIdentityVersionPattern allows the two official forms, 0.146.0 and
-// 0.147.0-alpha.4.
-var codexClientIdentityVersionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.]+)?$`)
-
-// buildUserAgent 拼出真实 Codex TUI 的 User-Agent：
+// UserAgent 拼出真实 Codex TUI 的 User-Agent：
 // codex-tui/<ver> (<os> <osver>; <arch>) <terminal> (codex-tui; <ver>)。
 // 首段版本、尾部括号组版本与 version 头必须同源（codex-rs 三处都取同一个
-// CARGO_PKG_VERSION）。身份未通过 schema 校验或版本号形态不合法时返回错误：
-// 二者都不得写进出站请求头。
-func (id codexClientIdentity) buildUserAgent(version string) (string, error) {
-	if !id.valid() {
-		return "", errors.New("invalid identity profile")
-	}
-	if len(version) > codexClientVersionMaxLen || !codexClientIdentityVersionPattern.MatchString(version) {
-		return "", errCodexClientVersionInvalid
-	}
-	return fmt.Sprintf("%s/%s (%s %s; %s) %s (%s; %s)",
-		codexTUIOriginator, version, id.OSType, id.OSVersion, id.Arch, id.Terminal, codexTUIOriginator, version), nil
-}
-
-// UserAgent 返回该身份在给定版本号下的 Codex TUI User-Agent；身份或版本号不合法时返回空串。
+// CARGO_PKG_VERSION）。
 func (id codexClientIdentity) UserAgent(version string) string {
-	userAgent, _ := id.buildUserAgent(version)
-	return userAgent
+	return fmt.Sprintf("%s/%s (%s %s; %s) %s (%s; %s)",
+		codexTUIOriginator, version, id.OSType, id.OSVersion, id.Arch, id.Terminal, codexTUIOriginator, version)
 }
 
 // codexTUIOriginator 是交互式 Codex TUI 的 originator（app-server initialize 的
