@@ -290,7 +290,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewUserAttributeHandler,
 	admin.NewErrorPassthroughHandler,
 	admin.NewTLSFingerprintProfileHandler,
-	ProvidePluginHandler,
+	admin.NewPluginHandler,
 	admin.NewAdminAPIKeyHandler,
 	admin.NewScheduledTestHandler,
 	admin.NewChannelHandler,
@@ -313,10 +313,4 @@ var ProviderSet = wire.NewSet(
 func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) *service.AccountJobRuntime {
 	accountHandler.SetAccountJobService(jobs)
 	return service.NewAccountJobRuntime(jobs, accountHandler)
-}
-
-func ProvidePluginHandler(manager *service.PluginManager, retired *service.NativeFeatureBootstrap) *admin.PluginHandler {
-	handler := admin.NewPluginHandler(manager)
-	handler.SetRetiredPlugins(retired)
-	return handler
 }

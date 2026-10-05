@@ -925,7 +925,7 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 }
 
 // ProvideSettingService wires SettingService with group reader and proxy repo.
-func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config, _ *NativeFeatureBootstrap) (*SettingService, error) {
+func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config) (*SettingService, error) {
 	svc := NewSettingService(settingRepo, cfg)
 	// Observability and Codex request compression switches are read by
 	// package-level gates before the gateway starts.
@@ -996,7 +996,6 @@ func ProvideAPIKeyService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
-	ProvideNativeFeatureBootstrap,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,

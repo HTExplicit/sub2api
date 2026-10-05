@@ -5,7 +5,6 @@
     width="normal"
     @close="handleClose"
   >
-    <p v-if="!accountViewOperation.available.value" role="status" class="mb-3 text-sm text-muted">{{ t('admin.plugins.extensionUnavailable') }}</p>
     <div v-if="account" class="space-y-4" :inert="!accountViewOperation.available.value ? true : undefined">
       <!-- Account Info -->
       <div

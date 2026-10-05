@@ -1,17 +1,7 @@
 export default {
   plugins: {
-    uiVersionChanged: '插件已更新，请重新打开界面；当前输入仍保留',
-    updating: '正在更新',
-    updatePackage: '更新插件包',
-    pinnedVersion: '版本已固定，宿主升级时保留',
-    followsBundle: '跟随宿主内置版本',
-    followBundle: '跟随内置版',
-    updateAccepted: '更新已接收，正在保留配置并替换插件进程',
-    followBundleAccepted: '已选择跟随当前宿主内置版本',
     title: '插件管理',
-    description: '安装、配置并启用独立功能插件。停用后会撤下对应入口，已有数据保留。',
-    extensionUnavailable: '插件暂不可用，请在插件管理中查看原因',
-    accountLimit: '一次最多操作 100 个账号',
+    description: '安装和管理独立运行的 OAuth 出站传输插件。API Key 流程不受影响。',
     upload: '安装插件',
     uploadHint: '仅接受 .s2plugin 包；默认要求可信发布者签名。',
     runtimeNotice: '插件安装、启用、停用和配置由 Sub2API 宿主动态处理，通常不需要重启宿主实例。只有宿主版本或宿主配置本身变化时，才按部署方式执行重启。',
@@ -54,28 +44,7 @@ export default {
     confirmUntested: '该插件兼容当前版本范围，但未声明已测试当前 Sub2API 版本。确定承担风险并启用吗？',
     fileRequired: '请选择 .s2plugin 文件',
     bridgeRejected: '插件 UI 消息校验失败',
-    onlyOpenAI: '按声明能力提供独立功能',
-    noAccountCoupling: '安装与启用分开管理，停用不会删除已有数据。',
-    retired: {
-      title: '已退役的一方插件（只读）',
-      description: '这些安装已由宿主内置功能取代，不在上方的可管理列表中。这里只读显示安装记录、保存的配置（已解密）和退役回执。',
-      empty: '没有已退役的一方插件记录',
-      loadFailed: '已退役插件加载失败',
-      key: '插件标识',
-      state: '当前状态',
-      lastError: '最后错误',
-      installedAt: '安装时间',
-      enabledAt: '启用时间',
-      updatedAt: '更新时间',
-      signature: '包签名',
-      binarySHA256: '二进制 SHA-256',
-      paths: '文件路径',
-      bindings: '能力绑定',
-      config: '保存的配置',
-      configError: '配置无法解密',
-      manifest: '插件清单',
-      receipt: '退役回执',
-      retiredAt: '退役时间'
-    }
+    onlyOpenAI: '初期能力：仅 OpenAI OAuth 出站传输',
+    noAccountCoupling: '作用域为平台与账号类型，不修改账号数据，也不需要在账号页逐个开启。'
   }
 }

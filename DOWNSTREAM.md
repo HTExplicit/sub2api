@@ -12,8 +12,8 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 
 The five first-party domains run inside the host and use native Vue pages.
 The official third-party plugin framework remains available. Domain settings,
-startup data preservation and the legacy-host rollback boundary are described in
-[native domains](.downstream/native-domains.md).
+the stored data the migrations removed and the rollback boundary are described
+in [native domains](.downstream/native-domains.md).
 
 Account bulk operations remain HTTP 202 jobs with progress, cancellation and
 failed-item retry. Both edit entries use the frozen selected IDs whenever there

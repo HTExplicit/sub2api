@@ -34,7 +34,7 @@ jobs:
           python3 .github/scripts/test_release_preflight.py
       - name: Agent protocol contracts
         run: bash .github/scripts/test_agent_protocol.sh
-      - name: Native domain and retirement contracts
+      - name: Native domain contracts
         run: bash .github/scripts/test_native_domains.sh
       - name: Reasoning recovery contracts
         run: bash .github/scripts/test_reasoning_recovery.sh
@@ -74,9 +74,9 @@ jobs:
       - name: Account taxonomy migration integration test
         working-directory: backend
         run: go test -p=1 -tags integration ./internal/repository -run '^Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration$|^TestAPIKeyRepoSuite$/^TestReleaseAcceptanceKeyIsAdminListedReadOnlyAndAuthenticates$' -count=1
-      - name: Repository retirement and audit integration tests
+      - name: Repository audit integration tests
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^Test(PGXBatchInsertAuditAndSystemLogs|Migration236.*|NativeFeatureRetirementIsAtomic)$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^Test(PGXBatchInsertAuditAndSystemLogs|Migration236.*)$' -count=1
       - name: Historical Cindy migration tests
         working-directory: backend
         run: |
