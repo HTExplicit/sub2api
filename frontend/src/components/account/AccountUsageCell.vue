@@ -818,7 +818,6 @@ import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
-import { accountQuotaWindows } from '@/utils/accountQuotaWindows'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber, formatRelativeTime } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
@@ -999,7 +998,7 @@ const geminiUsageAvailable = computed(() => {
   )
 })
 
-const openAIQuotaWindows = computed(() => accountQuotaWindows(usageInfo.value))
+const openAIQuotaWindows = computed(() => usageInfo.value?.quota_windows ?? [])
 const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return openAIQuotaWindows.value.length > 0

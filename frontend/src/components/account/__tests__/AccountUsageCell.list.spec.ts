@@ -55,6 +55,10 @@ const makeOAuthUsage = (
 ): AccountUsageInfo => ({
   source: 'active',
   updated_at: updatedAt,
+  quota_windows: [
+    { id: '5h', window_minutes: 300, utilization: fiveHour, resets_at: '2026-07-29T17:00:00Z', expired: false, remaining_seconds: 18_000 },
+    { id: '7d', window_minutes: 10080, utilization: sevenDay, resets_at: '2026-08-05T12:00:00Z', expired: false, remaining_seconds: 604_800 }
+  ],
   five_hour: {
     utilization: fiveHour,
     resets_at: '2026-07-29T17:00:00Z',
