@@ -151,9 +151,6 @@
 </template>
 
 <script setup lang="ts">
-import { isCancel } from 'axios'
-import { useAccountViewOperation } from '@/composables/useAccountViewContext'
-import { accountAPIForView } from '@/api/admin/accounts'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -166,9 +163,6 @@ const props = defineProps<{
   show: boolean
   account: Account | null
 }>()
-const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
-function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
-
 
 const emit = defineEmits<{
   close: []
@@ -243,20 +237,18 @@ const remainingText = computed(() => {
 
 const loadStatus = async () => {
   if (!props.account) return
-  const accountID = props.account.id, revision = accountViewOperation.revision()
   const version = ++requestVersion
   status.value = null
   loading.value = true
   try {
-    const result = await accountViewOperation.read(view => accountAPIForView(view, adminAPI.accounts).getTempUnschedulableStatus(accountID))
+    const result = await adminAPI.accounts.getTempUnschedulableStatus(props.account.id)
     if (version === requestVersion) status.value = result
   } catch (error: any) {
-    if (isCancel(error)) return
     if (version !== requestVersion) return
     appStore.showError(error?.message || t('admin.accounts.tempUnschedulable.failedToLoad'))
     status.value = null
   } finally {
-    if (version === requestVersion && revision === accountViewOperation.revision()) loading.value = false
+    if (version === requestVersion) loading.value = false
   }
 }
 
@@ -268,7 +260,7 @@ const handleReset = async () => {
   if (!props.account) return
   resetting.value = true
   try {
-    const updated = await scopedAccounts().recoverState(props.account.id)
+    const updated = await adminAPI.accounts.recoverState(props.account.id)
     appStore.showSuccess(t('admin.accounts.recoverStateSuccess'))
     emit('reset', updated)
     handleClose()

@@ -1400,7 +1400,6 @@ export interface AccountFacetOption {
 }
 
 export interface AccountConsoleFacets {
-  view_preset_counts?: Record<string, number>
   total: number
   uncategorized_count: number
   platforms: AccountFacetOption[]

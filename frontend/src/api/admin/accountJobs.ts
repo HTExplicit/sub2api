@@ -1,6 +1,4 @@
 import { apiClient } from '../client'
-import { accountViewClient } from './accountViewClient'
-import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 
 const BASE_PATH = '/admin/account-jobs'
 
@@ -157,8 +155,8 @@ async function retryFailed(jobID: number): Promise<AccountJob> {
   return data
 }
 
-async function reviewDuplicates(accountIDs: number[], view?: CapturedAccountView): Promise<AccountJob> {
-  const { data } = await accountViewClient(view).post<AccountJob>(
+async function reviewDuplicates(accountIDs: number[]): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
     '/admin/accounts/duplicates/review',
     { account_ids: accountIDs },
     accountJobIdempotencyHeaders('account_duplicate_review'),

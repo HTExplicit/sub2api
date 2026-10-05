@@ -3314,8 +3314,6 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-function scopedAccounts() { return adminAPI.accounts }
-
 const emit = defineEmits<{
   close: []
   updated: [account: Account]
@@ -3702,7 +3700,7 @@ const loadGrokMediaEligibility = async (accountID: number): Promise<GrokMediaEli
   grokMediaEligibilityLoading.value = true
   grokMediaEligibilityError.value = ''
   try {
-    const state = await scopedAccounts().getGrokMediaEligibility(accountID)
+    const state = await adminAPI.accounts.getGrokMediaEligibility(accountID)
     if (requestVersion !== grokMediaEligibilityRequestVersion) return null
     grokMediaEligibilityState.value = state
     grokMediaEligibilityMode.value = state.mode
@@ -4773,7 +4771,7 @@ const syncAntigravityUpstreamModels = async () => {
 
   isSyncingAntigravityUpstream.value = true
   try {
-    const result = await synchronizeCapacity(() => scopedAccounts().syncUpstreamModels(accountID))
+    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModels(accountID))
     if (!result) return
     const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
@@ -5194,7 +5192,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
   }
 
   try {
-    const result = await scopedAccounts().checkMixedChannelRisk({
+    const result = await adminAPI.accounts.checkMixedChannelRisk({
       platform: props.account.platform,
       group_ids: form.group_ids,
       account_id: props.account.id
@@ -5237,7 +5235,7 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
   }
 
   try {
-    const state = await scopedAccounts().updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
+    const state = await adminAPI.accounts.updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
     grokMediaEligibilityState.value = state
     grokMediaEligibilityInitialMode.value = state.mode
     const nextExtra = { ...((updatedAccount.extra as Record<string, unknown> | undefined) || {}) }

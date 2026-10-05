@@ -417,10 +417,6 @@
 </template>
 
 <script setup lang="ts">
-import { isCancel } from 'axios'
-import { useAccountViewOperation } from '@/composables/useAccountViewContext'
-import { accountAPIForView } from '@/api/admin/accounts'
-import { accountViewRequestConfig } from '@/api/admin/accountViewClient'
 import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
@@ -463,9 +459,6 @@ const props = defineProps<{
   show: boolean
   account: Account | null
 }>()
-const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
-function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
-
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -797,7 +790,6 @@ const qualityReasonText = computed(() => {
 })
 
 const canStartTest = computed(() => {
-	if (!accountViewOperation.available.value) return false
 	if (!props.show || !currentModelPlan.value || loadingModels.value) return false
   // The quality check sends its fixed question, not the saved custom prompt,
   // and only to a text model.
@@ -885,7 +877,7 @@ const loadAvailableModels = async (): Promise<boolean> => {
   availableModels.value = []
   selectedModelId.value = '' // Reset selection before loading
   try {
-    const result = await scopedAccounts().getAccountTestPlan(accountID, modelLoadController.signal)
+    const result = await adminAPI.accounts.getAccountTestPlan(accountID, modelLoadController.signal)
     if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return false
     modelPlan.value = validateAccountTestPlan(result, accountID)
     availableModels.value = modelPlan.value.models
@@ -942,12 +934,6 @@ const abortStream = () => {
     abortController = null
   }
 }
-watch(accountViewOperation.available, available => {
-  if (available) return
-  abortStream()
-  invalidateModelLoad()
-  if (status.value === 'connecting') status.value = 'idle'
-})
 onBeforeUnmount(abortStream)
 
 const addLine = (text: string, className: string = 'text-gray-300') => {
@@ -989,7 +975,7 @@ const startTest = async () => {
   const accountID = props.account.id
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   const isCurrentStream = () => abortController === requestController && !requestController.signal.aborted &&
-    props.show && props.account?.id === accountID && accountViewOperation.available.value
+    props.show && props.account?.id === accountID
 
   try {
     const requestBody: {
@@ -1032,21 +1018,17 @@ const startTest = async () => {
     const url = buildApiUrl(`/admin/accounts/${props.account.id}/test`)
 
     // Use fetch with streaming for SSE since EventSource doesn't support POST
-    const view = accountViewOperation.capture()
-    const bound = view ? accountViewRequestConfig(view, { method: 'POST', data: requestBody }) : undefined
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         'Content-Type': 'application/json',
-        [ADMIN_UI_REQUEST_HEADER]: '1',
-        ...(bound?.headers as Record<string, string> | undefined)
+        [ADMIN_UI_REQUEST_HEADER]: '1'
       },
-      body: JSON.stringify(bound?.data || requestBody),
+      body: JSON.stringify(requestBody),
       signal: requestController.signal
     })
     reader = response.body?.getReader()
-    view?.assertCurrent()
     if (!isCurrentStream()) return
 
     if (!response.ok) {
@@ -1062,7 +1044,6 @@ const startTest = async () => {
 
     while (true) {
       const { done, value } = await reader.read()
-      view?.assertCurrent()
       if (!isCurrentStream()) { await reader.cancel(); return }
       if (done) break
 
@@ -1091,7 +1072,7 @@ const startTest = async () => {
     }
   } catch (error: unknown) {
     if (!isCurrentStream()) return
-    if (isCancel(error) || (error instanceof DOMException && error.name === 'AbortError')) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
       status.value = 'idle'
       return
     }
