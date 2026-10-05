@@ -121,9 +121,6 @@ type OpsErrorLogFilter struct {
 	// Optional correlation keys for exact matching.
 	RequestID       string
 	ClientRequestID string
-	// ExcludeClientRequestIDPrefix drops rows whose client request ID starts
-	// with it (the user-facing list hides admin-only Image Studio rows).
-	ExcludeClientRequestIDPrefix string
 
 	// User-scoped filters (used by the user-facing error requests endpoint and
 	// by admin drill-down from the usage page).

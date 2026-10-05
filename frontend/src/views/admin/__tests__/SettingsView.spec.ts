@@ -82,7 +82,6 @@ const {
 const localeRef = vi.hoisted(() => ({ value: "zh-CN" }));
 
 const nativeSettings = vi.hoisted(() => ({
-  image: { studio_enabled: false },
   observability: { telemetry_enabled: true, theme_enabled: true },
 }));
 
@@ -93,8 +92,6 @@ vi.mock("@/stores/auth", () => ({
 vi.mock("@/api/admin/settings", async () => {
   const actual = await vi.importActual<typeof import("@/api/admin/settings")>("@/api/admin/settings");
   const native = {
-    getImageToolsSettings: vi.fn(async () => ({ ...nativeSettings.image })),
-    updateImageToolsSettings: vi.fn(async (value) => value),
     getObservabilitySettings: vi.fn(async () => ({ ...nativeSettings.observability })),
     updateObservabilitySettings: vi.fn(async (value) => value),
     getOfficialModelCapacityCatalog: vi.fn(async () => ({ entries: [] })),
@@ -766,10 +763,8 @@ describe("admin SettingsView payment visible method controls", () => {
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
-    expect(wrapper.get('[data-testid="image-tools-settings"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="observability-settings"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="official-model-catalog"]').exists()).toBe(true);
-    expect(wrapper.get<HTMLInputElement>('[data-testid="image-tools-studio"]').element.checked).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
     expect(updateSettings).toHaveBeenCalledOnce();

@@ -67,16 +67,7 @@ describe('AppSidebar extensions section', () => {
   it('keeps downstream tools in a dedicated section', () => {
     expect(componentSource).toContain("{{ t('nav.extensions') }}")
     expect(componentSource).not.toContain('/admin/cindy-accounts')
-    expect(componentSource).toContain("items.push({ path: '/admin/codex-runtime'")
-    expect(componentSource).toContain("path: '/image-studio'")
-  })
-
-  it('does not hide Image Studio in simple mode', () => {
-    const imageStudioItem = componentSource.match(/\{ path: '\/image-studio'[^\n]+\}/)?.[0]
-
-    expect(imageStudioItem).toBeDefined()
-    expect(imageStudioItem).toContain('featureFlag: flagImageStudio')
-    expect(imageStudioItem).not.toContain('hideInSimpleMode')
+    expect(componentSource).toContain("{ path: '/admin/codex-runtime'")
   })
 
   it('gives 推理恢复 an icon no other entry uses, in both themes', () => {

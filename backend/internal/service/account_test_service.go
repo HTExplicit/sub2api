@@ -410,10 +410,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
 	c.Set("account_test_allow_media", !accountTestUsesTextPrompt(modelID, mode))
-	if err := validateAccountPromptExtension(ctx, prompt, modelID, mode); err != nil {
-		return s.sendErrorAndEnd(c, err.Error())
-	}
-	if err := ValidateAccountTestReasoningContext(ctx, account, modelID, mode, testOpts.ReasoningEffort); err != nil {
+	if err := ValidateAccountTestReasoning(account, modelID, mode, testOpts.ReasoningEffort); err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
 	c.Set(accountTestReasoningContextKey, testOpts.ReasoningEffort)

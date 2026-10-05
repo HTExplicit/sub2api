@@ -281,18 +281,6 @@ func openAIRuntimeBreakerBaseKey(accountID int64, model string) string {
 	return fmt.Sprintf("%s%d:%s", openAIRuntimeBreakerPrefix, accountID, openAIRuntimeBreakerScope(model))
 }
 
-func openAIRuntimeBreakerBlockKey(accountID int64, model string) string {
-	return openAIRuntimeBreakerBaseKey(accountID, model) + ":block"
-}
-
-func openAIRuntimeBreakerMarkerKey(accountID int64, model string) string {
-	return openAIRuntimeBreakerBaseKey(accountID, model) + ":marker"
-}
-
-func openAIRuntimeBreakerClaimKey(accountID int64, model string) string {
-	return openAIRuntimeBreakerBaseKey(accountID, model) + ":claim"
-}
-
 func openAIRuntimeBreakerIndexKey(accountID int64) string {
 	return fmt.Sprintf("%s%d:index", openAIRuntimeBreakerPrefix, accountID)
 }

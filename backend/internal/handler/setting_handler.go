@@ -111,7 +111,6 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
-		ImageStudioEnabled:       settings.ImageStudioEnabled,
 		FlatThemeEnabled:         settings.FlatThemeEnabled,
 		SubscriptionEnabled:      settings.SubscriptionEnabled,
 

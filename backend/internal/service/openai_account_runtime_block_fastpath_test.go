@@ -914,7 +914,7 @@ func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveCooldown(t *testing.T
 	account := &Account{ID: 4706, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
 	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "concurrent_failure")
-	svc.ReportOpenAIAccountScheduleResult(account.ID, "gpt-5.4", true, nil)
+	svc.ReportOpenAIAccountScheduleResultForSelection(nil, account.ID, "gpt-5.4", true, nil)
 
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	cache.mu.Lock()
@@ -932,7 +932,7 @@ func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveModelCooldown(t *test
 		StatusCode: http.StatusServiceUnavailable,
 	})
 	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute))
-	svc.ReportOpenAIAccountScheduleResult(account.ID, "gpt-5.4", true, nil)
+	svc.ReportOpenAIAccountScheduleResultForSelection(nil, account.ID, "gpt-5.4", true, nil)
 
 	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "cleared DB cooldown must release only the stale account scope")

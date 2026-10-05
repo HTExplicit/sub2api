@@ -277,7 +277,6 @@ export interface PublicSettings {
   /** When true, user monitor hides the user ranking tab and /users payload. */
   channel_monitor_hide_user_ranking?: boolean
   available_channels_enabled: boolean
-  image_studio_enabled?: boolean
   /** When false, the flat site theme is off. Absent means on. */
   flat_theme_enabled?: boolean
   /** When false, the whole user-facing subscription surface is hidden. Default true. */
@@ -973,7 +972,6 @@ export interface AccountTestPlanView {
   default_mode: string
   models: AccountAvailableModel[]
   mode_views: Record<string, AccountTestModeView>
-  policy_stamp?: string
 }
 
 export interface Proxy {

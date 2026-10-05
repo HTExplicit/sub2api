@@ -224,7 +224,7 @@ export const lucideIcons = {
   brain: glyph('brain'), // by name (the Heroicons glyph was a flask stand-in)
   // layout chrome (AppSidebar / AppHeader; ui-el icons/ICONS.md §5)
   dashboard: glyph('layout-dashboard'),
-  camera: glyph('images'), // the batch-image and image-studio entries: pictures, by function
+  camera: glyph('images'), // the batch-image entry: pictures, by function
   folder: glyph('folder'),
   layers: glyph('layers'), // the reference's channel glyph
   coins: glyph('coins'), // the recharge / subscribe entry (upstream draws a custom coin mark)

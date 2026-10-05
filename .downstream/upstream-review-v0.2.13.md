@@ -98,7 +98,7 @@ Every official commit is adopted with its official behaviour. Where upstream and
   - the Codex models manifest selects through the scheduler as well, where upstream uses `SelectAccountForModelWithExclusions`, which installs no gate; its handler sets the suppress marker before the selection loop, so the manifest stays outside the gate as upstream (`TestCodexModelsIgnoresGroupProfitControl`);
   - the eligibility helpers return `(bool, reason)` for the downstream selection diagnostics, and the handlers pass the pricing instant through the downstream usage snapshot;
   - the auth snapshot version is the downstream counter (28; upstream 24).
-- Image Studio and the Responses image bridge stay off, the public model page stays retired and reasoning recovery stays a downstream addition (one global switch, see Integration decisions); no upstream change in this range touches them.
+- The public model page stays retired and reasoning recovery stays a downstream addition (one global switch, see Integration decisions); no upstream change in this range touches them.
 
 ## Conflict resolutions
 

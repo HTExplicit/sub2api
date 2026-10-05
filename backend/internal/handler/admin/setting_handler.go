@@ -109,32 +109,6 @@ func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
 	})
 }
 
-// GetImageToolsSettings returns the Image Studio switch this process applies.
-// GET /api/v1/admin/settings/image-tools
-func (h *SettingHandler) GetImageToolsSettings(c *gin.Context) {
-	response.Success(c, service.EffectiveImageToolsConfig())
-}
-
-// UpdateImageToolsSettings saves the Image Studio switch. An omitted switch is
-// off, as in the former plugin configuration.
-// PUT /api/v1/admin/settings/image-tools
-func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
-	var req extensionv1.ImageToolsConfig
-	raw, err := c.GetRawData()
-	if err == nil {
-		err = service.DecodeSwitchSettings(raw, &req, "studio_enabled")
-	}
-	if err != nil {
-		response.BadRequest(c, "Invalid image tools settings: "+err.Error())
-		return
-	}
-	if err := h.settingService.UpdateImageToolsConfig(c.Request.Context(), req); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, req)
-}
-
 // GetObservabilitySettings returns the account traffic telemetry and flat theme
 // switches this process applies.
 // GET /api/v1/admin/settings/observability

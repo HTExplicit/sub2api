@@ -567,3 +567,50 @@ func TestPreviewDataImportKeepsRejectReasons(t *testing.T) {
 	require.Equal(t, dataImportCodePayloadInvalid, preview.Items[1].Code)
 	require.Equal(t, "tag: name must contain between 1 and 100 characters", preview.Items[1].Message)
 }
+
+// No identity match creates the account, exactly one updates it, and an invalid
+// entry is rejected even when its identity matches an existing account.
+func TestPreviewDataImportDecidesEachEntryByItsIdentityMatches(t *testing.T) {
+	svc := newDataV2AdminService()
+	svc.accounts = []service.Account{
+		{ID: 21, Name: "Known", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+			Credentials: map[string]any{"chatgpt_account_id": "workspace-2", "chatgpt_user_id": "user-2"}, Status: service.StatusActive},
+	}
+	invalid := testDataAccount("InvalidKnown", "workspace-2", "user-2", "invalid@example.com")
+	invalid["tags"] = []any{" "}
+	raw, err := json.Marshal(map[string]any{"data": map[string]any{
+		"type": dataType, "version": dataVersion, "proxies": []any{},
+		"accounts": []any{
+			testDataAccount("Fresh", "workspace-3", "user-3", "fresh@example.com"),
+			testDataAccount("Known", "workspace-2", "user-2", "known@example.com"),
+			invalid,
+		},
+	}})
+	require.NoError(t, err)
+	var req DataImportRequest
+	require.NoError(t, json.Unmarshal(raw, &req))
+
+	preview, decisions, err := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).previewDataImport(context.Background(), req)
+	require.NoError(t, err)
+	require.Len(t, preview.Items, 3)
+	require.Equal(t, 1, preview.CreateCount)
+	require.Equal(t, 1, preview.UpdateCount)
+	require.Equal(t, 1, preview.RejectCount)
+
+	require.Equal(t, dataImportActionCreate, preview.Items[0].Action)
+	require.Equal(t, dataImportCodeCreate, preview.Items[0].Code)
+	require.Nil(t, preview.Items[0].AccountID)
+	require.Equal(t, "account will be created", preview.Items[0].Message)
+
+	require.Equal(t, dataImportActionUpdate, preview.Items[1].Action)
+	require.Equal(t, dataImportCodeUpdate, preview.Items[1].Code)
+	require.NotNil(t, preview.Items[1].AccountID)
+	require.EqualValues(t, 21, *preview.Items[1].AccountID)
+	require.Equal(t, "account will be updated", preview.Items[1].Message)
+
+	require.Equal(t, dataImportActionReject, preview.Items[2].Action)
+	require.Equal(t, dataImportCodePayloadInvalid, preview.Items[2].Code)
+	require.Nil(t, preview.Items[2].AccountID)
+	require.Equal(t, []int64{21}, preview.Items[2].MatchedAccountIDs)
+	require.True(t, decisions[2].rejected())
+}

@@ -1,12 +1,10 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"unicode/utf8"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -45,13 +43,6 @@ func accountTestUsesTextPrompt(model, mode string) bool {
 		return false
 	}
 	return !strings.Contains(strings.ToLower(model), "image")
-}
-
-func validateAccountPromptExtension(ctx context.Context, prompt, model, mode string) error {
-	if strings.TrimSpace(prompt) == "" || !accountTestUsesTextPrompt(model, mode) || mode == "search" {
-		return nil
-	}
-	return accountToolsOperation(ctx, "test.prompt", extensionv1.TextPromptSelection{Characters: utf8.RuneCountInString(prompt), ValidUTF8: utf8.ValidString(prompt)}, nil)
 }
 
 func ValidateAccountTestPrompt(prompt string) error {

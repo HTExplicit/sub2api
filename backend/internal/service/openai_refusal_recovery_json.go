@@ -24,13 +24,9 @@ type openAIResponsesRewriteContentItem struct {
 	Refusal string `json:"refusal,omitempty"`
 }
 
-func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]byte, bool, string, error) {
-	rewritten, matched, evidence, err := rewriteOpenAIResponsesJSONWithEvidence(body, matcher)
-	return rewritten, matched, evidence.Keyword, err
-}
-
-// rewriteOpenAIResponsesJSONWithEvidence also returns the leading original text
-// the matcher inspected, so the rewrite can be audited by administrators.
+// rewriteOpenAIResponsesJSONWithEvidence replaces a matched refusal and returns
+// the keyword with the leading original text the matcher inspected, so the
+// rewrite can be audited by administrators.
 func rewriteOpenAIResponsesJSONWithEvidence(body []byte, matcher *OpenAIRefusalMatcher) ([]byte, bool, openAIRefusalEvidence, error) {
 	var none openAIRefusalEvidence
 	var envelope openAIResponsesRewriteEnvelope

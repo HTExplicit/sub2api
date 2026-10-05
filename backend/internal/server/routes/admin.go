@@ -627,8 +627,6 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
 		adminSettings.GET("/model-context-catalog", h.Admin.Setting.GetOfficialModelContextCatalog)
-		adminSettings.GET("/image-tools", h.Admin.Setting.GetImageToolsSettings)
-		adminSettings.PUT("/image-tools", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateImageToolsSettings)
 		adminSettings.GET("/observability", h.Admin.Setting.GetObservabilitySettings)
 		adminSettings.PUT("/observability", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateObservabilitySettings)
 		adminSettings.GET("/codex-runtime", h.Admin.Setting.GetCodexRuntimeSettings)

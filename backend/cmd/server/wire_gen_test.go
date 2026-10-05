@@ -111,7 +111,6 @@ func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *serv
 		autoReset,
 		nil, // promptAudit
 		nil, // accountJobRuntime
-		nil, // imageStudioRuntime
 		nil, // pluginManager
 	)
 }

@@ -212,7 +212,6 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
-	imageStudioHandler *ImageStudioJobHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -238,7 +237,6 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
-		ImageStudio:      imageStudioHandler,
 	}
 }
 
@@ -265,10 +263,6 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
-	NewImageStudioJobHandler,
-	NewImageStudioGatewayExecutor,
-	wire.Bind(new(imageStudioImagesInvoker), new(*OpenAIGatewayHandler)),
-	ProvideImageStudioRuntime,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
@@ -325,13 +319,4 @@ func ProvidePluginHandler(manager *service.PluginManager, retired *service.Nativ
 	handler := admin.NewPluginHandler(manager)
 	handler.SetRetiredPlugins(retired)
 	return handler
-}
-
-func ProvideImageStudioRuntime(
-	repo service.ImageStudioRepository,
-	studio *service.ImageStudioService,
-	store service.ImageStudioFileStorage,
-	executor *ImageStudioGatewayExecutor,
-) *service.ImageStudioRuntime {
-	return service.NewImageStudioRuntime(repo, studio, store, executor, service.ImageStudioRuntimeOptions{})
 }

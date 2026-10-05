@@ -4533,7 +4533,6 @@
               </h2>
             </div>
             <div class="p-6 space-y-4">
-                <ImageToolsSettingsPanel />
                 <ObservabilitySettingsPanel />
                 <OfficialModelCatalogPanel />
                 <div>
@@ -9165,7 +9164,6 @@
 </template>
 
 <script setup lang="ts">
-import ImageToolsSettingsPanel from '@/components/admin/ImageToolsSettingsPanel.vue'
 import ObservabilitySettingsPanel from '@/components/admin/ObservabilitySettingsPanel.vue'
 import OfficialModelCatalogPanel from '@/components/admin/OfficialModelCatalogPanel.vue'
 import { ref, reactive, computed, onMounted, watch, nextTick } from "vue";

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -15,11 +14,13 @@ func TestAccountTestReasoningValidatedAgainstMappedModel(t *testing.T) {
 	a := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"model_mapping": map[string]any{"friendly": "gpt-6-astra"}}}
 	levels, _ := AccountTestReasoningOptions(a, "friendly")
 	require.Contains(t, levels, "ultra")
-	require.NoError(t, ValidateAccountTestReasoningContext(context.Background(), a, "friendly", "default", "ultra"))
-	require.Error(t, ValidateAccountTestReasoningContext(context.Background(), a, "friendly", "compact", "ultra"))
-	require.Error(t, ValidateAccountTestReasoningContext(context.Background(), a, "friendly", "default", "invented"))
-	require.Error(t, ValidateAccountTestReasoningContext(context.Background(), a, "gpt-image-2", "default", "high"))
-	require.NoError(t, ValidateAccountTestReasoningContext(context.Background(), a, "unknown-model", "default", ""))
+	require.NoError(t, ValidateAccountTestReasoning(a, "friendly", "default", "ultra"))
+	require.NoError(t, ValidateAccountTestReasoning(a, "friendly", "text", "ultra"))
+	require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", "compact", "ultra"), "reasoning effort is unsupported for this test mode")
+	require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", "default", " ultra "), "reasoning effort is unsupported for this test mode")
+	require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", "default", "invented"), "reasoning effort is not supported by the selected account model")
+	require.Error(t, ValidateAccountTestReasoning(a, "gpt-image-2", "default", "high"))
+	require.NoError(t, ValidateAccountTestReasoning(a, "unknown-model", "default", ""))
 }
 
 func TestAccountTestReasoningFinalPayload(t *testing.T) {
@@ -47,8 +48,8 @@ func TestAccountTestReasoningDoesNotAdvertiseUnsupportedProtocol(t *testing.T) {
 		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"test-model": {Reasoning: &supported, SupportedReasoningLevels: []string{"high"}}}})
 		levels, _ := AccountTestReasoningOptions(account, "test-model")
 		require.Empty(t, levels)
-		require.Error(t, ValidateAccountTestReasoningContext(context.Background(), account, "test-model", "default", "high"))
-		require.NoError(t, ValidateAccountTestReasoningContext(context.Background(), account, "test-model", "default", ""))
+		require.Error(t, ValidateAccountTestReasoning(account, "test-model", "default", "high"))
+		require.NoError(t, ValidateAccountTestReasoning(account, "test-model", "default", ""))
 	}
 }
 

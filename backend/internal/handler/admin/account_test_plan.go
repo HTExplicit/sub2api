@@ -24,7 +24,6 @@ type accountTestPlanView struct {
 	DefaultMode   string                         `json:"default_mode"`
 	Models        []map[string]any               `json:"models"`
 	ModeViews     map[string]accountTestModeView `json:"mode_views"`
-	PolicyStamp   string                         `json:"policy_stamp,omitempty"`
 }
 
 func accountTestPlanRequested(view string) (bool, error) {
@@ -42,8 +41,6 @@ func (h *AccountHandler) accountTestPlan(ctx context.Context, account *service.A
 	if account == nil || account.ID <= 0 {
 		return nil, errors.New("account test target is unavailable")
 	}
-	// Official providers do not acquire an account-tools dependency merely to
-	// display a model list or perform a basic connection test.
 	raw, err := h.accountTestModels(ctx, account)
 	if err != nil {
 		return nil, err
@@ -116,8 +113,7 @@ func accountTestPlanModels(raw any) ([]map[string]any, error) {
 func basicAccountTestPlan(account *service.Account, models []map[string]any, defaultID string) *accountTestPlanView {
 	ids := make([]string, 0, len(models))
 	for _, model := range models {
-		// Both callers validate these freshly decoded maps with accountTestPlanModels.
-		id, _ := model["id"].(string)
+		id, _ := model["id"].(string) // Validated by accountTestPlanModels.
 		ids = append(ids, id)
 	}
 	view := accountTestModeView{ModelIDs: ids, DefaultModelID: defaultID}
@@ -140,7 +136,7 @@ func connectionTestDefault(account *service.Account, ids []string) string {
 }
 
 // These choices originate in the official single-account test UI. Keep their
-// current behavior in one core view producer, not in two frontend bundles.
+// current behavior in this one view producer.
 func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPlanView, error) {
 	models, err := accountTestPlanModels(raw)
 	if err != nil {

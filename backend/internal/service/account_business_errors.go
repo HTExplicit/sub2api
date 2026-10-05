@@ -1,9 +1,6 @@
 package service
 
-import (
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
-	"strings"
-)
+import "strings"
 
 const (
 	AccountJobCodePayloadExpired      = "payload_expired"
@@ -13,11 +10,11 @@ const (
 	AccountJobCodeCompletionFailed    = "item_completion_failed"
 	AccountJobCodeResultRedacted      = "result_redacted"
 	AccountJobCodeExecutionFailed     = "execution_failed"
-	AccountImportCodeCreate           = extensionv1.AccountImportCodeCreate
-	AccountImportCodeUpdate           = extensionv1.AccountImportCodeUpdate
-	AccountImportCodePayloadInvalid   = extensionv1.AccountImportCodePayloadInvalid
-	AccountImportCodeIdentityConflict = extensionv1.AccountImportCodeIdentityConflict
-	AccountImportCodeExecutionFailed  = extensionv1.AccountImportCodeExecutionFailed
+	AccountImportCodeCreate           = "account_import_create"
+	AccountImportCodeUpdate           = "account_import_update"
+	AccountImportCodePayloadInvalid   = "account_import_payload_invalid"
+	AccountImportCodeIdentityConflict = "account_import_identity_conflict"
+	AccountImportCodeExecutionFailed  = "account_import_execution_failed"
 )
 
 type accountBusinessMessage struct {
