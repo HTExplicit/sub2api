@@ -728,7 +728,7 @@ describe('EditAccountModal', () => {
     expect(bindingOffered(buildTypeSafeAccount())).toBe(false)
   })
 
-  it('account.edit keeps an OpenAI API-key account on the Laxa endpoint editable like any other', async () => {
+  it('keeps an OpenAI API-key account on the Laxa endpoint editable and saves its stored passthrough and protocol-mode keys unchanged', async () => {
     const account = buildAccount()
     account.credentials.base_url = 'https://api.laxarouter.ai'
     account.credentials.model_mapping = { 'custom-source': 'custom-target' }
@@ -756,14 +756,14 @@ describe('EditAccountModal', () => {
     [{ openai_compact_mode: 'auto', openai_compact_supported: true }, 'admin.accounts.openai.compactSupported'],
     [{ openai_compact_mode: 'auto', openai_compact_supported: false }, 'admin.accounts.openai.compactUnsupported'],
     [{}, 'admin.accounts.openai.compactAuto']
-  ])('account.edit renders a finite compact status for canonical state %j', async (extra, expected) => {
+  ])('renders the compact status for stored extra %j', async (extra, expected) => {
     const wrapper = mountModal({ ...buildAccount(), extra })
     await flushPromises()
     expect(wrapper.text()).toContain(expected)
     wrapper.unmount()
   })
 
-  it('account.edit keeps ordinary mode intent and basic input across same-ID row replacement', async () => {
+  it('keeps unsaved notes and an edited Responses mode across a same-ID row replacement and saves that mode', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset().mockResolvedValue(account)
     const wrapper = mountModal(account)
@@ -780,7 +780,7 @@ describe('EditAccountModal', () => {
     wrapper.unmount()
   })
 
-  it('account.edit preserves a custom __proto__ alias in model mappings', async () => {
+  it('keeps a model mapping named __proto__ as an own key when it is edited and saved', async () => {
     const account = { ...buildAccount(), credentials_status: { has_api_key: true }, credentials: { base_url: 'https://api.laxarouter.ai', model_mapping: JSON.parse('{"managed":"wire-managed","__proto__":"custom-target"}') } }
     updateAccountMock.mockReset().mockResolvedValue(account)
     const wrapper = mountModal(account)

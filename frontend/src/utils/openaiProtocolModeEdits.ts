@@ -28,8 +28,6 @@ export function applyOpenAIProtocolModeEdits(
   for (const mode of Object.keys(openAIProtocolModes) as OpenAIProtocolMode[]) {
     const value = edits[mode]
     if (!value) continue
-    if (!(openAIProtocolModes[mode].values as readonly string[]).includes(value)) throw new Error('Invalid protocol mode edit')
-    if (mode === 'responses_mode' && type !== 'apikey') throw new Error('Responses mode is not applicable')
     const key = mode === 'responses_websocket_mode' && type !== 'apikey'
       ? 'openai_oauth_responses_websockets_v2_mode' : openAIProtocolModes[mode].key
     next[key] = value
