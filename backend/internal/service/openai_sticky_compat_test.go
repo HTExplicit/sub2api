@@ -115,3 +115,22 @@ func TestSnapshotOpenAICompatibilityFallbackMetrics(t *testing.T) {
 	require.GreaterOrEqual(t, after.MetadataLegacyFallbackTotal, before.MetadataLegacyFallbackTotal+1)
 	require.GreaterOrEqual(t, after.MetadataLegacyFallbackThinkingEnabledTotal, before.MetadataLegacyFallbackThinkingEnabledTotal+1)
 }
+
+func TestMoveStickySessionIfBoundTo_OnlyMovesABindingTheCallerMoved(t *testing.T) {
+	cache := &stubGatewayCache{sessionBindings: map[string]int64{"openai:conversation": 6}}
+	svc := &OpenAIGatewayService{cache: cache, cfg: &config.Config{}}
+	later := map[int64]struct{}{2: {}, 3: {}}
+
+	// The scheduler kept the session on its own account while it routed this
+	// request elsewhere: that binding stays.
+	require.NoError(t, svc.MoveStickySessionIfBoundTo(context.Background(), nil, "conversation", 1, later))
+	require.Equal(t, int64(6), cache.sessionBindings["openai:conversation"])
+
+	cache.sessionBindings["openai:conversation"] = 3
+	require.NoError(t, svc.MoveStickySessionIfBoundTo(context.Background(), nil, "conversation", 1, later))
+	require.Equal(t, int64(1), cache.sessionBindings["openai:conversation"])
+
+	delete(cache.sessionBindings, "openai:conversation")
+	require.NoError(t, svc.MoveStickySessionIfBoundTo(context.Background(), nil, "conversation", 1, later))
+	require.NotContains(t, cache.sessionBindings, "openai:conversation", "a session without a binding gets none")
+}

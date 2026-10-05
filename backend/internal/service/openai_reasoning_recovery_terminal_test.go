@@ -57,7 +57,11 @@ func lastReasoningRecoveryDiagnostic(t *testing.T, c *gin.Context) *OpsUpstreamE
 	return last
 }
 
-func TestOpenAIReasoningRecoveryTerminalsPreserveClassificationAndDiagnostic(t *testing.T) {
+// Every outcome keeps its classification and diagnostic. Where the upstream
+// said it could not verify ciphertext, the attempt ends as an account mismatch,
+// a failure the handler may hand to another account; a validation rejection is
+// the same on every account and ends where it happened.
+func TestOpenAIReasoningRecoveryOutcomesPreserveClassificationAndDiagnostic(t *testing.T) {
 	const signature = `{"code":"thinking_signature_invalid","param":"input[1].encrypted_content","message":"private-signature-detail-8162"}`
 	const wrongTarget = `{"code":"thinking_signature_invalid","param":"input[2].encrypted_content","message":"private-signature-detail-8162"}`
 	const validation = `{"type":"invalid_request_error","code":"missing_required_parameter","param":"input[3].call_id","message":"private-validation-detail-7514"}`
@@ -109,22 +113,28 @@ func TestOpenAIReasoningRecoveryTerminalsPreserveClassificationAndDiagnostic(t *
 					result, err := svc.Forward(context.Background(), c, account, []byte(input))
 					require.Error(t, err)
 					require.Nil(t, result)
+					mismatch := classification != "request_validation"
 					var failure *UpstreamFailoverError
-					if retried {
-						var stopped *OpenAIReasoningRecoveryTerminalError
+					var stopped *OpenAIReasoningRecoveryTerminalError
+					if retried && !mismatch {
 						require.ErrorAs(t, err, &stopped)
 						require.False(t, errors.As(err, &failure), "spent recovery must not reenter failover")
 						failure = stopped.Failure
-						require.Len(t, upstream.requests, 2, "no third POST")
 					} else {
+						require.False(t, errors.As(err, &stopped), "an account mismatch is not a terminal")
 						require.ErrorAs(t, err, &failure)
+					}
+					if retried {
+						require.Len(t, upstream.requests, 2, "no third POST on this account")
+					} else {
 						require.Len(t, upstream.requests, 1)
 					}
 					require.Equal(t, status, failure.StatusCode, "retain actual HTTP status separately from client semantics")
 					require.Equal(t, http.StatusBadRequest, failure.ClientStatusCode)
 					require.Equal(t, classification == "request_validation", failure.IsOpenAIRequestRejected())
 					require.Equal(t, classification != "request_validation", failure.IsOpenAIContinuationStateUnavailable())
-					require.False(t, failure.ShouldRetryNextAccount())
+					require.Equal(t, mismatch, failure.IsOpenAICiphertextAccountMismatch())
+					require.Equal(t, mismatch, failure.ShouldRetryNextAccount())
 					require.False(t, failure.RetryableOnSameAccount)
 					require.True(t, failure.SuppressAccountHealthPenalty)
 					require.False(t, failure.ShouldReportAccountScheduleFailure())
@@ -146,6 +156,7 @@ func TestOpenAIReasoningRecoveryTerminalsPreserveClassificationAndDiagnostic(t *
 					require.Equal(t, len(upstream.lastBody), diagnostic.Wire.BodyBytes)
 					require.Equal(t, 1, diagnostic.Incoming.History.Encrypted)
 					require.NotNil(t, diagnostic.Recovery)
+					require.Equal(t, mismatch, diagnostic.Recovery.AccountMismatch)
 					require.Equal(t, retried, diagnostic.Recovery.RetryAttempted)
 					if retried {
 						require.Equal(t, "budget_exhausted", diagnostic.Recovery.Disposition)

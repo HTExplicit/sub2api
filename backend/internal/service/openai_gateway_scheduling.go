@@ -229,6 +229,26 @@ func (s *OpenAIGatewayService) BindStickySession(ctx context.Context, groupID *i
 	return s.setStickySessionAccountID(ctx, groupID, sessionHash, accountID, ttl)
 }
 
+// MoveStickySessionIfBoundTo binds the session to accountID only when it is
+// bound to one of from at this moment. A binding that points anywhere else,
+// and a session without a binding, are left as they are: the scheduler keeps a
+// session on its account through a request it routes elsewhere, and only a
+// binding the caller knows it moved may be moved again.
+func (s *OpenAIGatewayService) MoveStickySessionIfBoundTo(ctx context.Context, groupID *int64, sessionHash string, accountID int64, from map[int64]struct{}) error {
+	if sessionHash == "" || accountID <= 0 || len(from) == 0 {
+		return nil
+	}
+	current, err := s.getStickySessionAccountID(ctx, groupID, sessionHash)
+	if err != nil || current <= 0 {
+		// Without a readable binding nothing is known to have been moved.
+		return nil
+	}
+	if _, moved := from[current]; !moved {
+		return nil
+	}
+	return s.BindStickySession(ctx, groupID, sessionHash, accountID)
+}
+
 // SelectAccount selects an OpenAI account with sticky session support
 func (s *OpenAIGatewayService) SelectAccount(ctx context.Context, groupID *int64, sessionHash string) (*Account, error) {
 	return s.SelectAccountForModel(ctx, groupID, sessionHash, "")

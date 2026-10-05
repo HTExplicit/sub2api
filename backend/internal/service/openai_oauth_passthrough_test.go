@@ -2126,13 +2126,17 @@ func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentFirstErro
 	require.Empty(t, repo.overloadCalls)
 }
 
-func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsStopBeforeAccountSideEffects(t *testing.T) {
+func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsHaveNoAccountSideEffects(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name         string
 		statusCode   int
 		responseBody string
 		requestBody  string
+		// accountMismatch: the rejection concerns ciphertext another account may
+		// read. A lost previous response, or a status that concerns the
+		// account's own access, ends the request on this account.
+		accountMismatch bool
 	}{
 		{
 			name:         "structured previous response 400",
@@ -2153,10 +2157,11 @@ func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsStopBeforeAcco
 			requestBody:  `{"model":"gpt-5.2","stream":false,"previous_response_id":"resp_stale","input":"hi"}`,
 		},
 		{
-			name:         "narrow invalid encrypted message 503",
-			statusCode:   http.StatusServiceUnavailable,
-			responseBody: `{"error":{"message":"Encrypted content could not be verified"}}`,
-			requestBody:  `{"model":"gpt-5.2","stream":false,"input":"hi"}`,
+			name:            "narrow invalid encrypted message 503",
+			statusCode:      http.StatusServiceUnavailable,
+			responseBody:    `{"error":{"message":"Encrypted content could not be verified"}}`,
+			requestBody:     `{"model":"gpt-5.2","stream":false,"input":"hi"}`,
+			accountMismatch: true,
 		},
 	}
 
@@ -2200,7 +2205,8 @@ func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsStopBeforeAcco
 			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
 			require.Equal(t, http.StatusBadRequest, failoverErr.ClientStatusCode)
 			require.Equal(t, GatewayFailureScopeRequest, failoverErr.Scope)
-			require.False(t, failoverErr.ShouldRetryNextAccount())
+			require.Equal(t, tt.accountMismatch, failoverErr.IsOpenAICiphertextAccountMismatch())
+			require.Equal(t, tt.accountMismatch, failoverErr.ShouldRetryNextAccount())
 			require.True(t, failoverErr.SuppressAccountHealthPenalty)
 			require.Len(t, upstream.bodies, 1, "unsafe continuation requests must not be replayed")
 			require.False(t, c.Writer.Written(), "continuation classification must happen before downstream response commitment")
@@ -2212,6 +2218,13 @@ func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsStopBeforeAcco
 			events, ok := value.([]*OpsUpstreamErrorEvent)
 			require.True(t, ok)
 			require.NotEmpty(t, events)
+			if tt.accountMismatch {
+				// The hand-off to another account is one more event of the attempt.
+				handOff := events[len(events)-1]
+				require.Equal(t, "reasoning_recovery", handOff.Kind)
+				require.True(t, handOff.ContinuationDiagnostic.Recovery.AccountMismatch)
+				events = events[:len(events)-1]
+			}
 			require.Equal(t, "continuation_state", events[len(events)-1].Kind)
 			require.True(t, events[len(events)-1].Passthrough)
 			require.Equal(t, openAIOpsUpstreamErrorMessage([]byte(tt.responseBody)), events[len(events)-1].Message)
