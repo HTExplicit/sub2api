@@ -86,7 +86,6 @@ type AccountJobItem struct {
 	ID              int64           `json:"id"`
 	JobID           int64           `json:"job_id"`
 	Ordinal         int             `json:"ordinal"`
-	Action          string          `json:"action,omitempty"`
 	TargetAccountID *int64          `json:"target_account_id,omitempty"`
 	Status          string          `json:"status"`
 	Metadata        json.RawMessage `json:"metadata"`
@@ -100,7 +99,6 @@ type AccountJobItem struct {
 
 type AccountJobItemSeed struct {
 	Ordinal         int
-	Action          string
 	TargetAccountID *int64
 	Metadata        json.RawMessage
 }

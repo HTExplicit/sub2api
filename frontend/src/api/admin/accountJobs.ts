@@ -42,7 +42,6 @@ export interface AccountJobItem {
   id: number
   job_id: number
   ordinal: number
-  action?: string
   target_account_id?: number
   status: AccountJobItemStatus
   metadata: Record<string, unknown>

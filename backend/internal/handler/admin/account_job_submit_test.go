@@ -105,7 +105,6 @@ func executeSubmittedAccountJobItems(handler *AccountHandler, params service.Cre
 		results = append(results, handler.executeAccountJobItem(context.Background(), params.Kind, json.RawMessage(params.PayloadCipher), service.AccountJobItem{
 			ID:              int64(index + 1),
 			Ordinal:         seed.Ordinal,
-			Action:          seed.Action,
 			TargetAccountID: seed.TargetAccountID,
 			Metadata:        seed.Metadata,
 		}))

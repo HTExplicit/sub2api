@@ -362,7 +362,7 @@ func executeCodexImportJobTestItems(t *testing.T, handler *AccountHandler, param
 	results := make([]service.AccountJobExecutionResult, 0, len(params.Items))
 	for index, seed := range params.Items {
 		result, executeErr := handler.ExecuteAccountJob(ctx, job, raw, []service.AccountJobItem{{
-			ID: int64(index + 1), Ordinal: seed.Ordinal, Action: seed.Action,
+			ID: int64(index + 1), Ordinal: seed.Ordinal,
 			TargetAccountID: seed.TargetAccountID, Metadata: seed.Metadata,
 		}})
 		require.NoError(t, executeErr)

@@ -83,7 +83,7 @@ func (r *accountJobTestRepo) Create(_ context.Context, params CreateAccountJobPa
 	items := make([]AccountJobItem, len(params.Items))
 	for index, seed := range params.Items {
 		items[index] = AccountJobItem{ID: int64(index + 1), JobID: id, Ordinal: seed.Ordinal,
-			Action: seed.Action, TargetAccountID: seed.TargetAccountID, Status: AccountJobItemStatusPending,
+			TargetAccountID: seed.TargetAccountID, Status: AccountJobItemStatusPending,
 			Metadata: seed.Metadata}
 	}
 	r.items[id] = items
@@ -201,8 +201,7 @@ func (r *accountJobTestRepo) FailedItemSeeds(_ context.Context, jobID, createdBy
 	for _, item := range r.items[jobID] {
 		if item.Status == AccountJobItemStatusFailed {
 			seeds = append(seeds, AccountJobItemSeed{
-				Ordinal: item.Ordinal, Action: item.Action,
-				TargetAccountID: item.TargetAccountID, Metadata: item.Metadata,
+				Ordinal: item.Ordinal, TargetAccountID: item.TargetAccountID, Metadata: item.Metadata,
 			})
 		}
 	}
@@ -342,7 +341,7 @@ func TestAccountJobRetryRequiresKeyAndReplaysFailedItems(t *testing.T) {
 	jobs := NewAccountJobService(repo, accountJobTestCipher{})
 	original, _, err := jobs.Submit(context.Background(), 9, AccountJobKindBatchDelete, "original",
 		json.RawMessage(`{"account_ids":[7]}`), nil,
-		[]AccountJobItemSeed{{Ordinal: 1, Action: "delete"}})
+		[]AccountJobItemSeed{{Ordinal: 1}})
 	require.NoError(t, err)
 	repo.jobs[original.ID].Status = AccountJobStatusFailed
 	repo.items[original.ID][0].Status = AccountJobItemStatusFailed
