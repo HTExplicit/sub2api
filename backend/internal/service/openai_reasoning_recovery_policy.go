@@ -2,60 +2,70 @@ package service
 
 import (
 	"encoding/json"
+	"regexp"
+	"strconv"
 	"strings"
 
-	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/tidwall/gjson"
 )
 
-// openAIRecoveryErrorSource locates the error object of an upstream payload.
-func openAIRecoveryErrorSource(root gjson.Result) (string, gjson.Result) {
-	switch {
-	case root.Get("response.error").IsObject():
-		return "response", root.Get("response.error")
-	case root.Get("error").IsObject():
-		return "error", root.Get("error")
-	default:
-		return "root", root
-	}
-}
+// openAIReasoningRejection is an upstream error that rejects reasoning
+// ciphertext of the request. message is the upstream error text; selection
+// reads it only for the id of the rejected item.
+type openAIReasoningRejection struct{ code, param, message string }
 
-// openAIRecoveryEnvelope reduces an upstream error payload to the protocol
-// shape the recovery policy decides on.
-func openAIRecoveryEnvelope(payload []byte) extensionv1.RecoveryEnvelope {
-	var envelope extensionv1.RecoveryEnvelope
+// parseOpenAIReasoningRejection recognizes an upstream error, response.failed or
+// failed response.done payload whose error code is thinking_signature_invalid
+// or invalid_encrypted_content. A payload that carries a protected status is
+// never one. This reads protocol framing only; whether the request can be
+// repaired is decided by selectOpenAIRecoveryIndices.
+func parseOpenAIReasoningRejection(payload []byte) (openAIReasoningRejection, bool) {
 	if _, err := canonicalReasoningCacheJSON(payload); err != nil {
-		return envelope
+		return openAIReasoningRejection{}, false
 	}
-	envelope.ValidJSON = true
 	root := gjson.ParseBytes(payload)
 	for _, path := range []string{"status_code", "error.status_code", "error.status", "response.error.status_code", "response.error.status"} {
-		if value := root.Get(path); value.Type == gjson.Number || value.Type == gjson.String {
-			envelope.Statuses = append(envelope.Statuses, int(value.Int()))
+		if value := root.Get(path); (value.Type == gjson.Number || value.Type == gjson.String) && openAIReasoningRecoveryProtectedStatus(int(value.Int())) {
+			return openAIReasoningRejection{}, false
 		}
 	}
-	envelope.Event, envelope.Status, envelope.ResponseStatus = root.Get("type").String(), root.Get("status").String(), root.Get("response.status").String()
+	event, responseStatus := root.Get("type").String(), root.Get("response.status").String()
+	if event != "" && event != "error" && event != "response.failed" && event != "response.done" {
+		return openAIReasoningRejection{}, false
+	}
+	if event == "response.done" && responseStatus != "failed" {
+		return openAIReasoningRejection{}, false
+	}
+	if status := root.Get("status").String(); status != "" && status != "failed" {
+		return openAIReasoningRejection{}, false
+	}
 	var source gjson.Result
-	envelope.ErrorLocation, source = openAIRecoveryErrorSource(root)
-	if code := source.Get("code"); code.Type == gjson.String {
-		value := code.String()
-		envelope.Code = &value
+	switch {
+	case root.Get("response.error").IsObject():
+		if event != "response.failed" && responseStatus != "failed" {
+			return openAIReasoningRejection{}, false
+		}
+		source = root.Get("response.error")
+	case root.Get("error").IsObject():
+		source = root.Get("error")
+	case event == "error":
+		source = root
+	default:
+		return openAIReasoningRejection{}, false
+	}
+	code := source.Get("code")
+	if code.Type != gjson.String || (code.String() != "thinking_signature_invalid" && code.String() != "invalid_encrypted_content") {
+		return openAIReasoningRejection{}, false
 	}
 	param := source.Get("param")
-	envelope.ParamValid = !param.Exists() || param.Type == gjson.String || param.Type == gjson.Null
-	envelope.Param = param.String()
-	return envelope
-}
-
-// openAIRecoveryErrorMessage returns the message of the error object the
-// envelope takes its code and param from.
-func openAIRecoveryErrorMessage(payload []byte) string {
-	_, source := openAIRecoveryErrorSource(gjson.ParseBytes(payload))
-	if message := source.Get("message"); message.Type == gjson.String {
-		return message.String()
+	if param.Exists() && param.Type != gjson.String && param.Type != gjson.Null {
+		return openAIReasoningRejection{}, false
 	}
-	return ""
+	rejection := openAIReasoningRejection{code: code.String(), param: param.String()}
+	if message := source.Get("message"); message.Type == gjson.String {
+		rejection.message = message.String()
+	}
+	return rejection, true
 }
 
 // openAIRecoveryMessageNamesItem reports whether the upstream message contains
@@ -83,25 +93,59 @@ func openAIRecoveryMessageNamesItem(message, id string) bool {
 	}
 }
 
-// selectOpenAIRecoveryIndices asks the recovery policy which reasoning items of
-// the sent body may lose their ciphertext for the rejection.
-func selectOpenAIRecoveryIndices(body []byte, rejection openAIReasoningRejection) extensionv1.RecoverySelection {
-	query := extensionv1.RecoverySelectionQuery{Param: rejection.param}
-	if _, err := canonicalReasoningCacheJSON(body); err == nil {
-		query.BodyValid = true
-		query.ToolHistoryValid = openAIReasoningToolHistoryAllowsRecovery(body)
-		for _, item := range openAIReasoningCipherItems(body) {
-			query.CipherIndices = append(query.CipherIndices, item.index)
-			if !query.NamedCipher && rejection.message != "" && openAIRecoveryMessageNamesItem(rejection.message, item.id) {
-				query.NamedCipher = true
+var openAIReasoningErrorInputParam = regexp.MustCompile(`^input(?:\[(\d+)\]|\.(\d+))(?:\.encrypted_content)?$`)
+
+// selectOpenAIRecoveryIndices returns the reasoning items of the sent body that
+// may lose their ciphertext for the rejection, and the reason the continuation
+// diagnostic reports while no stripped retry has been sent: why nothing is
+// selected, or recovery_not_dispatched when something is.
+func selectOpenAIRecoveryIndices(body []byte, rejection openAIReasoningRejection) ([]int, string) {
+	if _, err := canonicalReasoningCacheJSON(body); err != nil {
+		return nil, "invalid_request_snapshot"
+	}
+	// Removing ciphertext cannot repair a locally provable orphan tool result.
+	if !openAIReasoningToolHistoryAllowsRecovery(body) {
+		return nil, "invalid_tool_history"
+	}
+	items := openAIReasoningCipherItems(body)
+	if len(items) == 0 {
+		return nil, "no_reasoning_ciphertext"
+	}
+	if match := openAIReasoningErrorInputParam.FindStringSubmatch(rejection.param); match != nil {
+		text := match[1]
+		if text == "" {
+			text = match[2]
+		}
+		if index, err := strconv.Atoi(text); err == nil {
+			for _, item := range items {
+				if item.index == index {
+					return []int{index}, "recovery_not_dispatched"
+				}
 			}
 		}
-		conversation := gjson.GetBytes(body, "conversation")
-		query.ServerContext = gjson.GetBytes(body, "previous_response_id").String() != "" || (conversation.Exists() && conversation.Type != gjson.Null)
-		var parsed any
-		if json.Unmarshal(body, &parsed) == nil {
-			query.EncryptedFields = countOpenAIEncryptedFields(parsed)
-		}
+		return nil, "target_not_reasoning_ciphertext"
 	}
-	return codexrecovery.Select(query)
+	if rejection.param != "" && rejection.param != "input" && rejection.param != "reasoning.encrypted_content" {
+		return nil, "unsupported_error_param"
+	}
+	if openAIRequestHoldsServerContext(body) {
+		return nil, "server_held_context"
+	}
+	indices := make([]int, 0, len(items))
+	named := false
+	for _, item := range items {
+		indices = append(indices, item.index)
+		named = named || (rejection.message != "" && openAIRecoveryMessageNamesItem(rejection.message, item.id))
+	}
+	encryptedFields := 0
+	var parsed any
+	if json.Unmarshal(body, &parsed) == nil {
+		encryptedFields = countOpenAIEncryptedFields(parsed)
+	}
+	// Another ciphertext carrier (compaction, an inter-agent message) may be the
+	// rejected one, unless the upstream names a reasoning item itself.
+	if encryptedFields != len(items) && !named {
+		return nil, "ambiguous_encrypted_carriers"
+	}
+	return indices, "recovery_not_dispatched"
 }

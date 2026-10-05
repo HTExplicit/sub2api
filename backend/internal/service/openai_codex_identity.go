@@ -7,8 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/google/uuid"
 )
@@ -286,7 +284,7 @@ func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string)
 	if !ok {
 		return canonical, nil
 	}
-	userAgent, err := codexprofile.UserAgent(extensionv1.CodexClientProfile(identity), canonical.version)
+	userAgent, err := identity.buildUserAgent(canonical.version)
 	if err != nil {
 		return codexOutboundIdentity{}, err
 	}

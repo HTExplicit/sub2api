@@ -2,23 +2,29 @@ package service
 
 import (
 	"context"
-
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // SettingKeyAdminObservabilityConfig stores the account traffic telemetry and
 // flat theme switches.
 const SettingKeyAdminObservabilityConfig = "admin_observability_config"
 
+// AdminObservabilityConfig is the stored value of
+// SettingKeyAdminObservabilityConfig and the body of the observability settings
+// endpoints.
+type AdminObservabilityConfig struct {
+	TelemetryEnabled bool `json:"telemetry_enabled"`
+	ThemeEnabled     bool `json:"theme_enabled"`
+}
+
 // EffectiveAdminObservabilityConfig returns the switches this process applies.
-func EffectiveAdminObservabilityConfig() extensionv1.AdminObservabilityConfig {
+func EffectiveAdminObservabilityConfig() AdminObservabilityConfig {
 	return currentAdminObservabilityConfig()
 }
 
 // LoadAdminObservabilityConfig installs the effective switches for this process
 // at startup: the stored value, or the deploy-time default when none is stored.
 func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) error {
-	config := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
+	config := AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
 	found, err := s.readNativeSwitchSetting(ctx, SettingKeyAdminObservabilityConfig, &config, "telemetry_enabled", "theme_enabled")
 	if err != nil {
 		return err
@@ -36,7 +42,7 @@ func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) error
 
 // UpdateAdminObservabilityConfig persists the switches and applies them to this
 // process.
-func (s *SettingService) UpdateAdminObservabilityConfig(ctx context.Context, config extensionv1.AdminObservabilityConfig) error {
+func (s *SettingService) UpdateAdminObservabilityConfig(ctx context.Context, config AdminObservabilityConfig) error {
 	if err := s.writeJSONSetting(ctx, SettingKeyAdminObservabilityConfig, config); err != nil {
 		return err
 	}

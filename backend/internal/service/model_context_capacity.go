@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -31,15 +30,44 @@ const (
 
 // ModelContextCapacity keeps an upstream's distinct limits intact. A zero is
 // unknown, never a promise of an unlimited window.
-type ModelContextCapacity = extensionv1.ModelContextCapacity
+type ModelContextCapacity struct {
+	ContextWindow    int64  `json:"context_window,omitempty"`
+	MaxContextWindow int64  `json:"max_context_window,omitempty"`
+	MaxInputTokens   int64  `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens  int64  `json:"max_output_tokens,omitempty"`
+	CapacityBasis    string `json:"capacity_basis,omitempty"`
+	ObservedAt       string `json:"observed_at,omitempty"`
+}
 
 // ModelContextCapacityReference preserves the raw product reference of a
 // catalog entry.
-type ModelContextCapacityReference = extensionv1.ModelContextCapacityReference
+type ModelContextCapacityReference struct {
+	Product          string `json:"product"`
+	SourceURL        string `json:"source_url"`
+	Release          string `json:"release"`
+	VerifiedAt       string `json:"verified_at"`
+	ContextWindow    int64  `json:"context_window"`
+	MaxContextWindow int64  `json:"max_context_window"`
+}
 
 // OfficialModelContextCapacity is release-owned evidence. Match constraints and
 // reference values are not client-writeable.
-type OfficialModelContextCapacity = extensionv1.OfficialModelContextCapacity
+type OfficialModelContextCapacity struct {
+	ModelContextCapacity
+	ModelID            string                         `json:"model_id"`
+	Aliases            []string                       `json:"aliases,omitempty"`
+	Provider           string                         `json:"provider"`
+	Product            string                         `json:"product"`
+	SourceURL          string                         `json:"source_url"`
+	SourceURLs         []string                       `json:"source_urls,omitempty"`
+	VerifiedAt         string                         `json:"verified_at"`
+	OriginalText       string                         `json:"original_text"`
+	NormalizationBasis string                         `json:"normalization_basis,omitempty"`
+	Conditions         string                         `json:"conditions,omitempty"`
+	Reference          *ModelContextCapacityReference `json:"reference,omitempty"`
+	MatchHosts         []string                       `json:"match_hosts,omitempty"`
+	MatchAccountModes  []string                       `json:"match_account_modes,omitempty"`
+}
 
 // ResolvedModelContextCapacity is one answer for one model. An empty Source
 // means unknown; callers must not advertise it.

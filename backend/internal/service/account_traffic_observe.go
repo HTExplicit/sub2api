@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -99,7 +98,17 @@ const AccountTrafficObserveTTLSeconds = 24 * 60 * 60
 const accountTrafficObserveRedisTimeout = 2 * time.Second
 
 // AccountTrafficObserveState is the per-protocol counter snapshot of one account.
-type AccountTrafficObserveState = extensionv1.AccountTrafficCounters
+type AccountTrafficObserveState struct {
+	Started         int64 `json:"started"`
+	Completed2xx    int64 `json:"completed_2xx"`
+	Upstream429     int64 `json:"upstream_429"`
+	Upstream5xx     int64 `json:"upstream_5xx"`
+	Cancelled       int64 `json:"cancelled"`
+	FailedOther     int64 `json:"failed_other"`
+	PeakInFlight    int   `json:"peak_in_flight"`
+	RequestsLast60s int   `json:"requests_last_60s"`
+	ObservedSinceMs int64 `json:"observed_since_ms"`
+}
 
 // AccountTrafficObserveCache is the Redis-backed counter store (repository).
 type AccountTrafficObserveCache interface {
@@ -173,7 +182,7 @@ func (o *AccountTrafficObserver) Snapshot(ctx context.Context, account *Account)
 
 // AccountTrafficTurn is one started turn awaiting its single Finish.
 type AccountTrafficTurn struct {
-	classification extensionv1.DecisionTable
+	classification DecisionTable
 	cache          AccountTrafficObserveCache
 	accountID      int64
 	protocol       AccountTrafficProtocol
@@ -206,7 +215,7 @@ func (t *AccountTrafficTurn) Finish(result *OpenAIForwardResult, err error, clie
 	})
 }
 
-func evaluateAccountTrafficOutcome(table extensionv1.DecisionTable, result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {
+func evaluateAccountTrafficOutcome(table DecisionTable, result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {
 	facts := map[string]string{"client_cancelled": strconv.FormatBool(clientCancelled || (result != nil && result.ClientDisconnect)), "has_result": strconv.FormatBool(result != nil), "has_error": strconv.FormatBool(err != nil), "ws": "false", "terminal": "", "terminal_status": "0", "error_status": "0"}
 	if result != nil {
 		facts["ws"] = strconv.FormatBool(result.OpenAIWSMode)

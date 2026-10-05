@@ -3,8 +3,6 @@ package service
 import (
 	"slices"
 	"strings"
-
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // officialCatalogQuery carries the real upstream model spellings and the
@@ -39,7 +37,7 @@ func lookupOfficialModelCatalog(query officialCatalogQuery) *OfficialModelContex
 			if !officialCatalogEntryMatches(entry, key) || !officialCatalogApplies(query, entry) {
 				continue
 			}
-			if !validOfficialCatalogCapacity(entry.ContextWindow) && !validOfficialCatalogCapacity(entry.MaxInputTokens) && !validOfficialCatalogCapacity(entry.MaxContextWindow) {
+			if !validModelContextTokens(entry.ContextWindow) && !validModelContextTokens(entry.MaxInputTokens) && !validModelContextTokens(entry.MaxContextWindow) {
 				continue
 			}
 			if found != nil && found.ModelContextCapacity != entry.ModelContextCapacity {
@@ -104,10 +102,6 @@ func OfficialModelCatalogSnapshot() []OfficialModelContextCapacity {
 		result[i] = cloneOfficialModelContextCapacity(entry)
 	}
 	return result
-}
-
-func validOfficialCatalogCapacity(value int64) bool {
-	return value > 0 && value <= extensionv1.MaxModelContextTokens
 }
 
 func officialCatalogContainsFold(values []string, target string) bool {

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +27,7 @@ func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 		ConfigureAdminObservability(&oldObservability)
 		SetCodexRequestZstdEnabled(oldCodexRuntime.RequestZstd)
 	})
-	ConfigureAdminObservability(&extensionv1.AdminObservabilityConfig{})
+	ConfigureAdminObservability(&AdminObservabilityConfig{})
 	SetCodexRequestZstdEnabled(false)
 	for _, test := range []struct {
 		name  string
@@ -45,8 +44,8 @@ func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 			for _, load := range []func(context.Context) error{svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig} {
 				require.Error(t, load(context.Background()))
 			}
-			require.Equal(t, extensionv1.AdminObservabilityConfig{}, EffectiveAdminObservabilityConfig())
-			require.Equal(t, extensionv1.CodexRuntimeConfig{}, EffectiveCodexRuntimeConfig())
+			require.Equal(t, AdminObservabilityConfig{}, EffectiveAdminObservabilityConfig())
+			require.Equal(t, CodexRuntimeConfig{}, EffectiveCodexRuntimeConfig())
 		})
 	}
 	svc := NewSettingService(&nativeSwitchReadRepository{err: ErrSettingNotFound}, nil)
@@ -81,7 +80,7 @@ func TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault(t *testing.T) {
 	old := EffectiveCodexRuntimeConfig()
 	t.Cleanup(func() { SetCodexRequestZstdEnabled(old.RequestZstd) })
 	ctx := context.Background()
-	load := func(deploy bool, stored ...string) (extensionv1.CodexRuntimeConfig, error) {
+	load := func(deploy bool, stored ...string) (CodexRuntimeConfig, error) {
 		repo := &codexRuntimeSettingRepository{values: map[string]string{}}
 		if len(stored) > 0 {
 			repo.values["codex_runtime_config"] = stored[0]
@@ -107,7 +106,7 @@ func TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault(t *testing.T) {
 			SetCodexRequestZstdEnabled(!test.expected)
 			got, err := load(test.deploy, test.stored...)
 			require.NoError(t, err)
-			require.Equal(t, extensionv1.CodexRuntimeConfig{RequestZstd: test.expected}, got)
+			require.Equal(t, CodexRuntimeConfig{RequestZstd: test.expected}, got)
 		})
 	}
 	for _, stored := range []string{`{"request_zstd":"true"}`, `{"request_zstd":null}`, `{"request_zstd":true,"other":true}`, `{"other":true}`, `null`, `[]`, `true`, ``} {
@@ -119,10 +118,10 @@ func TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault(t *testing.T) {
 
 	repo := &codexRuntimeSettingRepository{values: map[string]string{}}
 	svc := NewSettingService(repo, &config.Config{})
-	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, extensionv1.CodexRuntimeConfig{RequestZstd: true}))
+	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, CodexRuntimeConfig{RequestZstd: true}))
 	require.Equal(t, map[string]string{"codex_runtime_config": `{"request_zstd":true}`}, repo.values)
 	require.True(t, EffectiveCodexRuntimeConfig().RequestZstd)
-	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, extensionv1.CodexRuntimeConfig{}))
+	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, CodexRuntimeConfig{}))
 	require.Equal(t, map[string]string{"codex_runtime_config": `{"request_zstd":false}`}, repo.values)
 	require.False(t, EffectiveCodexRuntimeConfig().RequestZstd)
 }

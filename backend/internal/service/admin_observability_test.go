@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"testing"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +27,7 @@ func (c *trafficScopeCache) Snapshot(_ context.Context, id int64) (map[AccountTr
 	return map[AccountTrafficProtocol]AccountTrafficObserveState{AccountTrafficProtocolHTTP: {Started: 1}}, nil
 }
 
-func useAdminObservability(t *testing.T, config extensionv1.AdminObservabilityConfig) {
+func useAdminObservability(t *testing.T, config AdminObservabilityConfig) {
 	t.Helper()
 	previous := adminObservabilityConfigOverride.Load()
 	t.Cleanup(func() { adminObservabilityConfigOverride.Store(previous) })
@@ -39,7 +38,7 @@ func TestTrafficObservationFollowsTelemetrySwitch(t *testing.T) {
 	account := &Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
-			useAdminObservability(t, extensionv1.AdminObservabilityConfig{TelemetryEnabled: enabled})
+			useAdminObservability(t, AdminObservabilityConfig{TelemetryEnabled: enabled})
 			cache := &trafficScopeCache{}
 			observer := NewAccountTrafficObserver(cache)
 			turn := observer.Begin(context.Background(), account, AccountTrafficProtocolWS)
@@ -61,7 +60,7 @@ func TestTrafficObservationFollowsTelemetrySwitch(t *testing.T) {
 }
 
 func TestTrafficObservationRejectsMissingAccountIdentity(t *testing.T) {
-	useAdminObservability(t, extensionv1.AdminObservabilityConfig{TelemetryEnabled: true})
+	useAdminObservability(t, AdminObservabilityConfig{TelemetryEnabled: true})
 	cache := &trafficScopeCache{}
 	observer := NewAccountTrafficObserver(cache)
 	for _, account := range []*Account{
@@ -82,13 +81,13 @@ func TestTrafficObservationRejectsMissingAccountIdentity(t *testing.T) {
 }
 
 func TestTrafficObservationFinishesStartedTurnAfterTelemetryIsSwitchedOff(t *testing.T) {
-	useAdminObservability(t, extensionv1.AdminObservabilityConfig{TelemetryEnabled: true})
+	useAdminObservability(t, AdminObservabilityConfig{TelemetryEnabled: true})
 	cache := &trafficScopeCache{}
 	observer := NewAccountTrafficObserver(cache)
 	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	turn := observer.Begin(context.Background(), account, AccountTrafficProtocolHTTP)
 	require.NotNil(t, turn)
-	ConfigureAdminObservability(&extensionv1.AdminObservabilityConfig{})
+	ConfigureAdminObservability(&AdminObservabilityConfig{})
 	turn.Finish(&OpenAIForwardResult{}, nil, false)
 	turn.Finish(nil, nil, false)
 	require.Equal(t, []AccountTrafficOutcome{AccountTrafficOutcomeCompleted2xx}, cache.outcomes)
@@ -115,9 +114,9 @@ func TestAccountTrafficOutcomeRulesKeepCancellationAboveErrorsAndRequireWSTermin
 }
 
 func TestDecodeSwitchSettingsRejectsUnknownAndNonBooleanValues(t *testing.T) {
-	config := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
+	config := AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
 	require.NoError(t, DecodeSwitchSettings([]byte(`{"theme_enabled":false}`), &config, "telemetry_enabled", "theme_enabled"))
-	require.Equal(t, extensionv1.AdminObservabilityConfig{TelemetryEnabled: true}, config, "omitted switches keep their defaults")
+	require.Equal(t, AdminObservabilityConfig{TelemetryEnabled: true}, config, "omitted switches keep their defaults")
 	for _, raw := range []string{`{"theme_enabled":null}`, `{"theme":true}`, `{"theme_enabled":"false"}`, `[]`, `null`} {
 		require.Error(t, DecodeSwitchSettings([]byte(raw), &config, "telemetry_enabled", "theme_enabled"), raw)
 	}

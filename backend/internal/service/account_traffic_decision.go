@@ -1,4 +1,4 @@
-package nativeapi
+package service
 
 import (
 	"errors"

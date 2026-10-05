@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"testing"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -47,7 +46,7 @@ func TestAccountHandlerTrafficTelemetryFollowsTelemetrySwitch(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
 			t.Cleanup(func() { service.ConfigureAdminObservability(nil) })
-			service.ConfigureAdminObservability(&extensionv1.AdminObservabilityConfig{TelemetryEnabled: enabled})
+			service.ConfigureAdminObservability(&service.AdminObservabilityConfig{TelemetryEnabled: enabled})
 			stub := &scopedTrafficAdminService{stubAdminService: newStubAdminService()}
 			stub.getAccountResult = &service.Account{ID: 18, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Concurrency: 3, Credentials: map[string]any{"api_key": "never-return-secret"}}
 			cache := &stubAccountTrafficObserveCache{snapshot: map[service.AccountTrafficProtocol]service.AccountTrafficObserveState{service.AccountTrafficProtocolHTTP: {Started: 3, Completed2xx: 2}}}

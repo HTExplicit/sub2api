@@ -4,25 +4,24 @@ import (
 	"sync/atomic"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
-var adminObservabilityConfigOverride atomic.Pointer[extensionv1.AdminObservabilityConfig]
+var adminObservabilityConfigOverride atomic.Pointer[AdminObservabilityConfig]
 
 // LegacyAdminObservabilityConfig is the deploy-time default: account traffic
 // telemetry follows the legacy gateway flag and the flat theme is on.
-func LegacyAdminObservabilityConfig(cfg *config.Config) extensionv1.AdminObservabilityConfig {
-	return extensionv1.AdminObservabilityConfig{TelemetryEnabled: cfg == nil || !cfg.Gateway.AccountTrafficTelemetryDisabled, ThemeEnabled: true}
+func LegacyAdminObservabilityConfig(cfg *config.Config) AdminObservabilityConfig {
+	return AdminObservabilityConfig{TelemetryEnabled: cfg == nil || !cfg.Gateway.AccountTrafficTelemetryDisabled, ThemeEnabled: true}
 }
 
 // ConfigureAdminObservability installs the effective telemetry and theme
 // switches (startup load, admin update, tests). A nil value restores the
 // built-in default.
-func ConfigureAdminObservability(config *extensionv1.AdminObservabilityConfig) {
+func ConfigureAdminObservability(config *AdminObservabilityConfig) {
 	adminObservabilityConfigOverride.Store(config)
 }
 
-func currentAdminObservabilityConfig() extensionv1.AdminObservabilityConfig {
+func currentAdminObservabilityConfig() AdminObservabilityConfig {
 	if config := adminObservabilityConfigOverride.Load(); config != nil {
 		return *config
 	}
@@ -34,30 +33,35 @@ func FlatThemeEnabled() bool {
 	return currentAdminObservabilityConfig().ThemeEnabled
 }
 
+type TrafficObservationPolicy struct {
+	Enabled        bool          `json:"enabled"`
+	Classification DecisionTable `json:"classification"`
+}
+
 // currentAccountTrafficObservationPolicy returns the telemetry switch and the
 // outcome rules for one account. Accounts without a concrete identity are never
 // observed.
-func currentAccountTrafficObservationPolicy(account *Account) (extensionv1.TrafficObservationPolicy, bool) {
+func currentAccountTrafficObservationPolicy(account *Account) (TrafficObservationPolicy, bool) {
 	if account == nil || account.ID <= 0 || account.Platform == "" || account.Platform == "*" || account.Type == "" || account.Type == "*" {
-		return extensionv1.TrafficObservationPolicy{}, false
+		return TrafficObservationPolicy{}, false
 	}
-	return extensionv1.TrafficObservationPolicy{Enabled: currentAdminObservabilityConfig().TelemetryEnabled, Classification: accountTrafficOutcomeRules}, true
+	return TrafficObservationPolicy{Enabled: currentAdminObservabilityConfig().TelemetryEnabled, Classification: accountTrafficOutcomeRules}, true
 }
 
 // accountTrafficOutcomeRules classifies a finished turn. Client cancellation
 // outranks errors, and a WebSocket turn counts as completed only with a
 // demonstrable terminal event. Every result is an AccountTrafficOutcome.
-var accountTrafficOutcomeRules = func() extensionv1.DecisionTable {
-	eq := func(field, value string) extensionv1.DecisionCondition {
-		return extensionv1.DecisionCondition{Field: field, Operator: "eq", Value: value}
+var accountTrafficOutcomeRules = func() DecisionTable {
+	eq := func(field, value string) DecisionCondition {
+		return DecisionCondition{Field: field, Operator: "eq", Value: value}
 	}
-	num := func(field, op, value string) extensionv1.DecisionCondition {
-		return extensionv1.DecisionCondition{Field: field, Operator: op, Value: value}
+	num := func(field, op, value string) DecisionCondition {
+		return DecisionCondition{Field: field, Operator: op, Value: value}
 	}
-	rule := func(result AccountTrafficOutcome, when ...extensionv1.DecisionCondition) extensionv1.DecisionRule {
-		return extensionv1.DecisionRule{When: when, Result: string(result)}
+	rule := func(result AccountTrafficOutcome, when ...DecisionCondition) DecisionRule {
+		return DecisionRule{When: when, Result: string(result)}
 	}
-	return extensionv1.DecisionTable{Default: string(AccountTrafficOutcomeFailedOther), Rules: []extensionv1.DecisionRule{
+	return DecisionTable{Default: string(AccountTrafficOutcomeFailedOther), Rules: []DecisionRule{
 		rule(AccountTrafficOutcomeCancelled, eq("client_cancelled", "true")),
 		rule(AccountTrafficOutcomeCancelled, eq("ws", "true"), eq("terminal", "response.cancelled")),
 		rule(AccountTrafficOutcomeCancelled, eq("ws", "true"), eq("terminal", "response.incomplete")),

@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
-	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
@@ -121,15 +121,15 @@ func TestCodexIdentityInvalidVersionCannotSendCanonicalFallback(t *testing.T) {
 	require.Equal(t, "9.9.9_bad", resolveCodexOutboundIdentity("").version)
 
 	_, err := resolveCodexOutboundIdentityForAccount(account, "")
-	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
+	require.ErrorIs(t, err, errCodexClientVersionInvalid)
 	headers := http.Header{"Originator": []string{"fixture-original"}}
 	err = enforceCodexIdentityHeadersForAccount(headers, account, "")
-	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
+	require.ErrorIs(t, err, errCodexClientVersionInvalid)
 	require.Equal(t, "fixture-original", headers.Get("Originator"))
 	require.Empty(t, headers.Get("User-Agent"))
 	client := &identityRefreshingOAuthClientStub{}
 	_, err = NewOpenAIOAuthService(nil, client).RefreshAccountToken(context.Background(), account)
-	require.ErrorIs(t, err, codexprofile.ErrInvalidVersion)
+	require.ErrorIs(t, err, errCodexClientVersionInvalid)
 	require.Empty(t, client.userAgent)
 }
 
@@ -226,6 +226,30 @@ func TestCodexClientIdentityIsSystemManagedAndSchemaChecked(t *testing.T) {
 func (id codexClientIdentity) withoutGeneratedAt() codexClientIdentity {
 	id.GeneratedAt = ""
 	return id
+}
+
+// 同一种子派生同一身份；UA 的两处版本与 sandbox 都和身份自洽；带 CR/LF 的终端或版本号
+// 不得写进 User-Agent。
+func TestCodexClientIdentityPreservesDeterminismAndProtocolPairing(t *testing.T) {
+	const seed = "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"
+	first := deriveCodexClientIdentity(seed)
+	require.Equal(t, first, deriveCodexClientIdentity(seed))
+	require.True(t, first.valid())
+
+	ua, err := first.buildUserAgent("0.150.0")
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(ua, "codex-tui/0.150.0 "), ua)
+	require.True(t, strings.HasSuffix(ua, "(codex-tui; 0.150.0)"), ua)
+	require.Equal(t, first.Sandbox, codexSandboxForUserAgent(ua))
+	require.Equal(t, ua, first.UserAgent("0.150.0"))
+
+	bad := first
+	bad.Terminal = "terminal\r\nx-header: value"
+	require.False(t, bad.valid(), "header injection accepted")
+	_, err = first.buildUserAgent("0.150.0\r\nx: value")
+	require.ErrorIs(t, err, errCodexClientVersionInvalid)
+	_, err = bad.buildUserAgent("0.150.0")
+	require.Error(t, err, "invalid profile accepted")
 }
 
 // 凭据面与推理面共用显式 UA 策略：ForceCodexCLI 开启时忽略账号自定义 UA，刷新 token 也用派生身份。
