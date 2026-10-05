@@ -24,13 +24,7 @@ type officialCatalogQuery struct {
 // look-alike ID from inheriting a vendor product's capacity; two applicable
 // entries with different limits are ambiguous and match nothing.
 func lookupOfficialModelCatalog(query officialCatalogQuery) *OfficialModelContextCapacity {
-	if len(query.Candidates) == 0 || len(query.Candidates) > 16 {
-		return nil
-	}
 	for _, candidate := range query.Candidates {
-		if len(candidate) > 512 || strings.TrimSpace(candidate) == "" {
-			return nil
-		}
 		key := modelReferenceKey(candidate)
 		var found *OfficialModelContextCapacity
 		for _, entry := range officialModelContextCapacityCatalog {

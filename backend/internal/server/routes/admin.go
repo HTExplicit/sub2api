@@ -277,7 +277,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Error logs (legacy)
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorLogByID)
-		ops.GET("/errors/:id/diagnostics", h.Admin.Account.CodexErrorDiagnostics(h.Admin.Ops))
+		ops.GET("/errors/:id/diagnostics", h.Admin.Ops.GetCodexErrorDiagnostics)
 		ops.PUT("/errors/:id/resolve", h.Admin.Ops.UpdateErrorResolution)
 
 		// Request errors (client-visible failures)
