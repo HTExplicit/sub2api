@@ -463,9 +463,6 @@
 </template>
 
 <script setup lang="ts">
-import { isCancel } from 'axios'
-import { useAccountViewOperation } from '@/composables/useAccountViewContext'
-import { scheduledTestsForView } from '@/api/admin/scheduledTests'
 import { ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -488,9 +485,6 @@ const props = defineProps<{
   accountId: number | null
   modelOptions: SelectOption[]
 }>()
-const accountViewOperation = useAccountViewOperation(() => props.show, () => props.accountId)
-function scopedAccounts() { return scheduledTestsForView(accountViewOperation.capture(), adminAPI.scheduledTests) }
-
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -533,10 +527,14 @@ const resetNewPlan = () => {
   newPlan.auto_recover = false
 }
 
+// Advanced when the panel closes or changes account; responses requested before that are dropped.
+let requestVersion = 0
+
 // Load plans when dialog opens
 watch(
   () => [props.show, props.accountId],
-  async ([visible]) => {
+  async ([visible], _, onCleanup) => {
+    onCleanup(() => { requestVersion++ })
     if (visible && props.accountId) {
       await loadPlans()
     } else {
@@ -552,15 +550,16 @@ watch(
 
 const loadPlans = async () => {
   if (!props.accountId) return
-  const accountID = props.accountId, revision = accountViewOperation.revision()
+  const version = requestVersion
   loading.value = true
   try {
-    plans.value = await accountViewOperation.read(view => scheduledTestsForView(view, adminAPI.scheduledTests).listByAccount(accountID))
+    const result = await adminAPI.scheduledTests.listByAccount(props.accountId)
+    if (version === requestVersion) plans.value = result
   } catch (error: any) {
-    if (isCancel(error)) return
+    if (version !== requestVersion) return
     appStore.showError(error?.message || 'Failed to load plans')
   } finally {
-    if (revision === accountViewOperation.revision()) loading.value = false
+    if (version === requestVersion) loading.value = false
   }
 }
 
@@ -569,7 +568,7 @@ const handleCreate = async () => {
   creating.value = true
   try {
     const maxResults = Number(newPlan.max_results) || 100
-    await scopedAccounts().create({
+    await adminAPI.scheduledTests.create({
       account_id: props.accountId,
       model_id: newPlan.model_id,
       cron_expression: newPlan.cron_expression,
@@ -590,7 +589,7 @@ const handleCreate = async () => {
 
 const handleToggleEnabled = async (plan: ScheduledTestPlan, enabled: boolean) => {
   try {
-    const updated = await scopedAccounts().update(plan.id, { enabled })
+    const updated = await adminAPI.scheduledTests.update(plan.id, { enabled })
     const index = plans.value.findIndex((p) => p.id === plan.id)
     if (index !== -1) {
       plans.value[index] = updated
@@ -618,7 +617,7 @@ const handleEdit = async () => {
   if (!editingPlanId.value || !editForm.model_id || !editForm.cron_expression) return
   updating.value = true
   try {
-    const updated = await scopedAccounts().update(editingPlanId.value, {
+    const updated = await adminAPI.scheduledTests.update(editingPlanId.value, {
       model_id: editForm.model_id,
       cron_expression: editForm.cron_expression,
       max_results: Number(editForm.max_results) || 100,
@@ -646,7 +645,7 @@ const confirmDeletePlan = (plan: ScheduledTestPlan) => {
 const handleDelete = async () => {
   if (!deletingPlan.value) return
   try {
-    await scopedAccounts().delete(deletingPlan.value.id)
+    await adminAPI.scheduledTests.delete(deletingPlan.value.id)
     appStore.showSuccess(t('admin.scheduledTests.deleteSuccess'))
     plans.value = plans.value.filter((p) => p.id !== deletingPlan.value!.id)
     if (expandedPlanId.value === deletingPlan.value.id) {
@@ -662,6 +661,7 @@ const handleDelete = async () => {
 }
 
 const toggleExpand = async (planId: number) => {
+  if (!props.show) return
   if (expandedPlanId.value === planId) {
     expandedPlanId.value = null
     results.value = []
@@ -671,17 +671,17 @@ const toggleExpand = async (planId: number) => {
 
   expandedPlanId.value = planId
   expandedResultIds.clear()
-  const revision = accountViewOperation.revision()
+  const version = requestVersion
   loadingResults.value = true
   try {
-    const next = await accountViewOperation.read(view => scheduledTestsForView(view, adminAPI.scheduledTests).listResults(planId, 20))
-    if (expandedPlanId.value === planId) results.value = next
+    const result = await adminAPI.scheduledTests.listResults(planId, 20)
+    if (version === requestVersion && expandedPlanId.value === planId) results.value = result
   } catch (error: any) {
-    if (isCancel(error) || expandedPlanId.value !== planId) return
+    if (version !== requestVersion || expandedPlanId.value !== planId) return
     appStore.showError(error?.message || 'Failed to load results')
     results.value = []
   } finally {
-    if (revision === accountViewOperation.revision() && expandedPlanId.value === planId) loadingResults.value = false
+    if (version === requestVersion && expandedPlanId.value === planId) loadingResults.value = false
   }
 }
 
