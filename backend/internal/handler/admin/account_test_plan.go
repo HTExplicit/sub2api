@@ -36,9 +36,6 @@ func accountTestPlanRequested(view string) (bool, error) {
 }
 
 func (h *AccountHandler) accountTestPlan(ctx context.Context, account *service.Account) (*accountTestPlanView, error) {
-	if account == nil || account.ID <= 0 {
-		return nil, errors.New("account test target is unavailable")
-	}
 	raw, err := h.accountTestModels(ctx, account)
 	if err != nil {
 		return nil, err
