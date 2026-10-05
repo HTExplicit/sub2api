@@ -139,7 +139,7 @@ jobs:
             src/views/user/__tests__/StripePaymentView.spec.ts \
             src/views/admin/__tests__/ReasoningRecoveryView.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
-            src/utils/__tests__/accountEditCodec.spec.ts \
+            src/utils/__tests__/openaiProtocolModeEdits.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
             src/components/account/__tests__/ModelContextCapacityField.spec.ts \
             src/utils/__tests__/modelContextCapacity.spec.ts \

@@ -179,6 +179,18 @@ describe('useModelWhitelist', () => {
     })
   })
 
+  it('keeps plain-object, trimming, wildcard and last-entry rules with safe data keys', () => {
+    const value = buildModelMappingObject('combined', [' __proto__ ', ' exact ', 'bad*'], [
+      { from: ' request* ', to: ' upstream ' }, { from: 'exact', to: 'first' }, { from: 'exact', to: 'last' }, { from: '__proto__', to: 'custom-target' }
+    ])!
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype)
+    expect(Object.keys(value)).toEqual(['__proto__', 'exact', 'request*'])
+    expect(value.__proto__).toBe('custom-target')
+    expect(value.exact).toBe('last')
+    expect(value['request*']).toBe('upstream')
+    expect(buildModelMappingObject('mapping', [], [])).toBeNull()
+  })
+
   it('split mapping keeps only identity entries in the whitelist after reopening', () => {
     expect(splitModelMappingObject({ 'gpt-latest': 'deepseek-chat', 'gpt-5.4': 'gpt-5.4' })).toEqual({
       allowedModels: ['gpt-5.4'],
