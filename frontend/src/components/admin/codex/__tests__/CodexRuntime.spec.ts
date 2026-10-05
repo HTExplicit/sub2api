@@ -30,7 +30,7 @@ beforeEach(() => {
 })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()) })
 
-describe('native Codex controls', () => {
+describe('Codex runtime settings and continuation diagnostics', () => {
   it('reads request compression and saves request_zstd through step-up', async () => {
     get.mockResolvedValue({ data: { request_zstd: false } })
     const wrapper = mount(CodexRuntimeSettings, { global }); wrappers.push(wrapper)
@@ -63,7 +63,7 @@ describe('native Codex controls', () => {
     expect(wrapper.text()).not.toContain('Settings saved')
   })
 
-  it('uses native diagnostics and ignores the result for an older error ID', async () => {
+  it('reads the diagnostics of the current error and ignores the result for an older error ID', async () => {
     const earlier = deferred<{ data: unknown }>()
     get.mockReturnValueOnce(earlier.promise).mockResolvedValueOnce({ data: [{ account_id: 11, attempt: 1, diagnostic: { recovery: { not_attempted_reason: 'source_changed' } } }] })
     const wrapper = mount(CodexContinuationDiagnostics, { props: { errorId: 41 } }); wrappers.push(wrapper)
