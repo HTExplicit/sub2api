@@ -24,7 +24,7 @@ func EffectiveCodexRuntimeConfig() CodexRuntimeConfig {
 // stored.
 func (s *SettingService) LoadCodexRuntimeConfig(ctx context.Context) error {
 	config := CodexRuntimeConfig{RequestZstd: true}
-	found, err := s.readNativeSwitchSetting(ctx, SettingKeyCodexRuntimeConfig, &config, "request_zstd")
+	found, err := s.readSwitchSetting(ctx, SettingKeyCodexRuntimeConfig, &config, "request_zstd")
 	if err != nil {
 		return err
 	}

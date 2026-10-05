@@ -10,17 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type nativeSwitchReadRepository struct {
+type switchReadRepository struct {
 	SettingRepository
 	value string
 	err   error
 }
 
-func (r *nativeSwitchReadRepository) GetValue(context.Context, string) (string, error) {
+func (r *switchReadRepository) GetValue(context.Context, string) (string, error) {
 	return r.value, r.err
 }
 
-func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
+func TestSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 	oldObservability := EffectiveAdminObservabilityConfig()
 	oldCodexRuntime := EffectiveCodexRuntimeConfig()
 	t.Cleanup(func() {
@@ -40,7 +40,7 @@ func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 		{name: "empty existing key", value: ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			svc := NewSettingService(&nativeSwitchReadRepository{value: test.value, err: test.err}, nil)
+			svc := NewSettingService(&switchReadRepository{value: test.value, err: test.err}, nil)
 			for _, load := range []func(context.Context) error{svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig} {
 				require.Error(t, load(context.Background()))
 			}
@@ -48,9 +48,9 @@ func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 			require.Equal(t, CodexRuntimeConfig{}, EffectiveCodexRuntimeConfig())
 		})
 	}
-	svc := NewSettingService(&nativeSwitchReadRepository{err: ErrSettingNotFound}, nil)
+	svc := NewSettingService(&switchReadRepository{err: ErrSettingNotFound}, nil)
 	var value map[string]json.RawMessage
-	found, err := svc.readNativeSwitchSetting(context.Background(), SettingKeyAdminObservabilityConfig, &value, "telemetry_enabled", "theme_enabled")
+	found, err := svc.readSwitchSetting(context.Background(), SettingKeyAdminObservabilityConfig, &value, "telemetry_enabled", "theme_enabled")
 	require.NoError(t, err)
 	require.False(t, found)
 }

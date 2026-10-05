@@ -69,7 +69,7 @@ func (s *accountTaxonomyHandlerStub) SetAccountTaxonomy(context.Context, int64, 
 	return &service.Account{}, nil
 }
 
-func TestTaxonomyNativeResponsePreservesRedactedAccount(t *testing.T) {
+func TestTaxonomyResponsePreservesRedactedAccount(t *testing.T) {
 	stub := newAccountTaxonomyHandlerStub()
 	stub.assignedAccount = &service.Account{ID: 7, Credentials: map[string]any{"api_key": "synthetic-secret"}}
 	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)

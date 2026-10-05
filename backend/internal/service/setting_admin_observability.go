@@ -16,25 +16,16 @@ type AdminObservabilityConfig struct {
 	ThemeEnabled     bool `json:"theme_enabled"`
 }
 
-// EffectiveAdminObservabilityConfig returns the switches this process applies.
-func EffectiveAdminObservabilityConfig() AdminObservabilityConfig {
-	return currentAdminObservabilityConfig()
-}
-
 // LoadAdminObservabilityConfig installs the effective switches for this process
 // at startup: the stored value, or the deploy-time default when none is stored.
 func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) error {
 	config := AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
-	found, err := s.readNativeSwitchSetting(ctx, SettingKeyAdminObservabilityConfig, &config, "telemetry_enabled", "theme_enabled")
+	found, err := s.readSwitchSetting(ctx, SettingKeyAdminObservabilityConfig, &config, "telemetry_enabled", "theme_enabled")
 	if err != nil {
 		return err
 	}
 	if !found {
-		if s == nil {
-			config = LegacyAdminObservabilityConfig(nil)
-		} else {
-			config = LegacyAdminObservabilityConfig(s.cfg)
-		}
+		config = defaultAdminObservabilityConfig(s.cfg)
 	}
 	ConfigureAdminObservability(&config)
 	return nil

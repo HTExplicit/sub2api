@@ -6,11 +6,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
-var adminObservabilityConfigOverride atomic.Pointer[AdminObservabilityConfig]
+var adminObservabilityConfig atomic.Pointer[AdminObservabilityConfig]
 
-// LegacyAdminObservabilityConfig is the deploy-time default: account traffic
-// telemetry follows the legacy gateway flag and the flat theme is on.
-func LegacyAdminObservabilityConfig(cfg *config.Config) AdminObservabilityConfig {
+// defaultAdminObservabilityConfig is the deploy-time default: account traffic
+// telemetry follows gateway.account_traffic_telemetry_disabled and the flat
+// theme is on.
+func defaultAdminObservabilityConfig(cfg *config.Config) AdminObservabilityConfig {
 	return AdminObservabilityConfig{TelemetryEnabled: cfg == nil || !cfg.Gateway.AccountTrafficTelemetryDisabled, ThemeEnabled: true}
 }
 
@@ -18,19 +19,20 @@ func LegacyAdminObservabilityConfig(cfg *config.Config) AdminObservabilityConfig
 // switches (startup load, admin update, tests). A nil value restores the
 // built-in default.
 func ConfigureAdminObservability(config *AdminObservabilityConfig) {
-	adminObservabilityConfigOverride.Store(config)
+	adminObservabilityConfig.Store(config)
 }
 
-func currentAdminObservabilityConfig() AdminObservabilityConfig {
-	if config := adminObservabilityConfigOverride.Load(); config != nil {
+// EffectiveAdminObservabilityConfig returns the switches this process applies.
+func EffectiveAdminObservabilityConfig() AdminObservabilityConfig {
+	if config := adminObservabilityConfig.Load(); config != nil {
 		return *config
 	}
-	return LegacyAdminObservabilityConfig(nil)
+	return defaultAdminObservabilityConfig(nil)
 }
 
 // FlatThemeEnabled reports whether the flat site theme is switched on.
 func FlatThemeEnabled() bool {
-	return currentAdminObservabilityConfig().ThemeEnabled
+	return EffectiveAdminObservabilityConfig().ThemeEnabled
 }
 
 type TrafficObservationPolicy struct {
@@ -45,7 +47,7 @@ func currentAccountTrafficObservationPolicy(account *Account) (TrafficObservatio
 	if account == nil || account.ID <= 0 || account.Platform == "" || account.Platform == "*" || account.Type == "" || account.Type == "*" {
 		return TrafficObservationPolicy{}, false
 	}
-	return TrafficObservationPolicy{Enabled: currentAdminObservabilityConfig().TelemetryEnabled, Classification: accountTrafficOutcomeRules}, true
+	return TrafficObservationPolicy{Enabled: EffectiveAdminObservabilityConfig().TelemetryEnabled, Classification: accountTrafficOutcomeRules}, true
 }
 
 // accountTrafficOutcomeRules classifies a finished turn. Client cancellation

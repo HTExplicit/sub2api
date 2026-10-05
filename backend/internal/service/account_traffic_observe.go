@@ -128,7 +128,7 @@ type AccountTrafficObserver struct {
 }
 
 // Whether turns are recorded follows the admin_observability_config setting,
-// whose default is the legacy gateway flag.
+// whose default follows gateway.account_traffic_telemetry_disabled.
 func NewAccountTrafficObserver(cache AccountTrafficObserveCache) *AccountTrafficObserver {
 	return &AccountTrafficObserver{
 		cache: cache,

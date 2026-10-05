@@ -15,7 +15,7 @@ import (
 
 const accountJobTestActorID int64 = 77
 
-func TestAccountJobSubmissionRetainsActorAndNativeMetadata(t *testing.T) {
+func TestAccountJobSubmissionRetainsActorAndMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler := &AccountHandler{}

@@ -29,8 +29,8 @@ func (c *trafficScopeCache) Snapshot(_ context.Context, id int64) (map[AccountTr
 
 func useAdminObservability(t *testing.T, config AdminObservabilityConfig) {
 	t.Helper()
-	previous := adminObservabilityConfigOverride.Load()
-	t.Cleanup(func() { adminObservabilityConfigOverride.Store(previous) })
+	previous := adminObservabilityConfig.Load()
+	t.Cleanup(func() { adminObservabilityConfig.Store(previous) })
 	ConfigureAdminObservability(&config)
 }
 
