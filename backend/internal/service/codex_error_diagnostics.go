@@ -21,9 +21,8 @@ type CodexErrorDiagnostic struct {
 	Diagnostic         *OpenAIContinuationDiagnostic `json:"diagnostic"`
 }
 
-// ProjectCodexErrorDiagnostics returns every stored attempt diagnostic of one
-// Ops error. The stored upstream_errors document is already bounded by the Ops
-// queue limits, so no further count or account-state filter applies.
+// ProjectCodexErrorDiagnostics returns every attempt diagnostic stored on one
+// Ops error, each with its attempt's context.
 func ProjectCodexErrorDiagnostics(detail *OpsErrorLogDetail) []CodexErrorDiagnostic {
 	result := make([]CodexErrorDiagnostic, 0)
 	if detail == nil {

@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Every stored attempt diagnostic is projected with its own attempt context,
-// including the bounded original values; account state no longer filters it.
+// Every stored attempt diagnostic is projected, whatever its account or
+// platform, with its own attempt context and the bounded original values.
 func TestCodexErrorDiagnosticsProjectEveryStoredAttempt(t *testing.T) {
 	detail := &OpsErrorLogDetail{UpstreamErrors: `[
 		{"account_id":1,"account_name":"primary","platform":"openai","kind":"request_rejected","upstream_status_code":400,"upstream_request_id":"req_1","message":"Missing required parameter","continuation_diagnostic":{"classification":"thinking_signature_invalid","upstream_error":{"error_code":{"kind":"string","value":"thinking_signature_invalid"},"message":{"kind":"string","value":"signature invalid for input[3]"},"hints":["unlisted-hint","call_id"]},"incoming":{"instructions":{"kind":"string","value":"You are Codex"}}}},

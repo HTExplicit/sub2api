@@ -1,7 +1,5 @@
 import type { AccountAvailableModel, AccountTestPlanView } from '@/types'
 
-// Presentation validates a data contract; provider/model selection rules are
-// evaluated once by the server and never reconstructed in this bundle.
 export function isAccountTestReasoningValid(model: AccountAvailableModel | undefined, effort: string): boolean {
   return effort === '' || model?.reasoning_efforts?.includes(effort) === true
 }
