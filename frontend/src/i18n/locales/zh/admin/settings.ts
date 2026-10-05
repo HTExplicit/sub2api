@@ -523,7 +523,6 @@ export default {
         description: '容量优先级：账号自定义 > 适用的官方 API 规格 > 有效上游声明 > models.dev 目录。选中来源未声明的字段保持未知。',
         search: '搜索模型或供应商',
         count: '共 {count} 项匹配。',
-        context: '上下文',
         maxOutput: '最大输出',
         subscriptionMaximum: '订阅参考最大窗口',
         verified: '核对日期',

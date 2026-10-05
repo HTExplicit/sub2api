@@ -530,7 +530,6 @@ export default {
         description: 'Capacity priority: account override > applicable official API specification > valid upstream declaration > models.dev registry. Values missing from the selected source remain unknown.',
         search: 'Search model or provider',
         count: '{count} matches.',
-        context: 'Context',
         maxOutput: 'Max output',
         subscriptionMaximum: 'Subscription reference maximum',
         verified: 'Verified',

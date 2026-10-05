@@ -66,7 +66,7 @@
     </div>
   </Teleport>
   <BaseDialog :show="!!promptBindingAccount" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingAccount = null">
-    <AccountSystemPromptBinding v-if="promptBindingAccount" :account-ids="[promptBindingAccount.id]" :current="promptBindingAccount.extra?.system_prompt" @changed="onPromptBindingChanged" />
+    <AccountSystemPromptBinding v-if="promptBindingAccount" :account-ids="[promptBindingAccount.id]" :current="promptBindingAccount.extra?.system_prompt" @changed="promptBindingAccount = null" />
   </BaseDialog>
 </template>
 
@@ -80,7 +80,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import { takesSystemPrompt } from '@/utils/systemPromptBinding'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; busy?: boolean }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'resource-complete', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
 // Loaded when the dialog first opens; the menu itself stays light.
@@ -89,10 +89,6 @@ const promptBindingAccount = ref<Account | null>(null)
 function openPromptBinding(account: Account) {
   promptBindingAccount.value = account
   emit('close')
-}
-function onPromptBindingChanged() {
-  promptBindingAccount.value = null
-  emit('resource-complete')
 }
 const { width: viewportWidth, height: viewportHeight } = useWindowSize()
 const viewportPadding = 8
