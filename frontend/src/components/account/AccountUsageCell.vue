@@ -800,21 +800,18 @@
 
 <script lang="ts">
 // These caches must live at module scope so table/card/drawer instances share them.
-const _usageCache = new Map<string, {
+const _usageCache = new Map<number, {
   data: import('@/types').AccountUsageInfo
   ts: number
   failedAt?: number
 }>()
-const _usageRequests = new Map<string, {
+const _usageRequests = new Map<number, {
   force: boolean
   promise: Promise<import('@/types').AccountUsageInfo>
 }>()
 </script>
 
 <script setup lang="ts">
-import { CanceledError, isCancel } from 'axios'
-import { useAccountViewContext } from '@/composables/useAccountViewContext'
-import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
@@ -834,10 +831,6 @@ import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
 import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
 import OpenCodeGoUsageCell from './OpenCodeGoUsageCell.vue'
-const accountViewController = useAccountViewContext()
-const usageContextKey = () => accountViewController?.revision() || 'native-core'
-const usageCacheKey = (id: number) => `${usageContextKey()}:${id}`
-
 
 const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 const USAGE_STALE_AFTER = 15 * 60 * 1000
@@ -849,21 +842,9 @@ const requestUsage = async (
   source?: 'passive' | 'active',
   force = false
 ): Promise<AccountUsageInfo> => {
-  const revision = usageContextKey()
-  const key = usageCacheKey(account.id)
-  const view = accountViewController?.capture()
-  const api = accountAPIForView(view, adminAPI.accounts)
-  const ensureCurrent = () => {
-    view?.assertCurrent()
-    if (revision !== usageContextKey()) throw new CanceledError('Account view query changed')
-  }
-  const existing = _usageRequests.get(key)
+  const existing = _usageRequests.get(account.id)
   if (existing) {
-    if (!force || existing.force) {
-      const result = await existing.promise
-      ensureCurrent()
-      return result
-    }
+    if (!force || existing.force) return existing.promise
     // A manual force refresh must not be swallowed by an older passive request.
     try {
       await existing.promise
@@ -872,21 +853,17 @@ const requestUsage = async (
     }
   }
 
-  const promise = enqueueUsageRequest(account, async () => {
-    ensureCurrent()
-    const result = force ? await api.getUsage(account.id, source, true)
-      : source ? await api.getUsage(account.id, source) : await api.getUsage(account.id)
-    ensureCurrent()
-    return result
+  const promise = enqueueUsageRequest(account, () => {
+    if (force) return adminAPI.accounts.getUsage(account.id, source, true)
+    if (source) return adminAPI.accounts.getUsage(account.id, source)
+    return adminAPI.accounts.getUsage(account.id)
   })
-  _usageRequests.set(key, { force, promise })
+  _usageRequests.set(account.id, { force, promise })
   try {
-    const result = await promise
-    ensureCurrent()
-    return result
+    return await promise
   } finally {
-    if (_usageRequests.get(key)?.promise === promise) {
-      _usageRequests.delete(key)
+    if (_usageRequests.get(account.id)?.promise === promise) {
+      _usageRequests.delete(account.id)
     }
   }
 }
@@ -1643,12 +1620,12 @@ const isAnthropicOAuthOrSetupToken = computed(() => {
 
 const applyUsageResult = (result: AccountUsageInfo) => {
   const fetchedAt = Date.now()
-  const cached = _usageCache.get(usageCacheKey(props.account.id))
+  const cached = _usageCache.get(props.account.id)
 
   if (result.error) {
     error.value = t('admin.accounts.usageFetchFailed')
     if (cached) {
-      _usageCache.set(usageCacheKey(props.account.id), { ...cached, failedAt: fetchedAt })
+      _usageCache.set(props.account.id, { ...cached, failedAt: fetchedAt })
       usageLastSuccessAt.value = cached.ts
       // Details still expose the latest diagnostic state; list views retain the last good quota.
       usageInfo.value = props.variant === 'detail' ? result : cached.data
@@ -1661,13 +1638,13 @@ const applyUsageResult = (result: AccountUsageInfo) => {
   usageInfo.value = result
   usageLastSuccessAt.value = fetchedAt
   error.value = null
-  _usageCache.set(usageCacheKey(props.account.id), { data: result, ts: fetchedAt })
+  _usageCache.set(props.account.id, { data: result, ts: fetchedAt })
 }
 
 const markUsageRequestFailed = () => {
-  const cached = _usageCache.get(usageCacheKey(props.account.id))
+  const cached = _usageCache.get(props.account.id)
   if (cached) {
-    _usageCache.set(usageCacheKey(props.account.id), { ...cached, failedAt: Date.now() })
+    _usageCache.set(props.account.id, { ...cached, failedAt: Date.now() })
   }
   error.value = t('admin.accounts.usageFetchFailed')
 }
@@ -1689,16 +1666,15 @@ const loadUsage = async (options?: {
   bypassCache?: boolean
   force?: boolean
 }) => {
-  if (!shouldFetchUsage.value || accountViewController?.available() === false) return
+  if (!shouldFetchUsage.value) return
   if (isBatchManaged.value) {
     requestParentBatchUsage({ force: options?.force === true || options?.bypassCache === true })
     return
   }
 
-  const revision = usageContextKey()
   const accountID = props.account.id
   // An expired value is still useful while a refresh is running or failing.
-  const cached = _usageCache.get(usageCacheKey(props.account.id))
+  const cached = _usageCache.get(props.account.id)
   if (cached) {
     usageInfo.value = cached.data
     usageLastSuccessAt.value = cached.ts
@@ -1714,16 +1690,16 @@ const loadUsage = async (options?: {
 
   try {
     const result = await requestUsage(props.account, options?.source, options?.force)
-    if (!unmounted.value && revision === usageContextKey() && props.account.id === accountID) {
+    if (!unmounted.value && props.account.id === accountID) {
       applyUsageResult(result)
     }
   } catch (e: any) {
-    if (!isCancel(e) && !unmounted.value && revision === usageContextKey() && props.account.id === accountID) {
+    if (!unmounted.value && props.account.id === accountID) {
       markUsageRequestFailed()
       console.error('Failed to load usage:', e)
     }
   } finally {
-    if (!unmounted.value && revision === usageContextKey() && props.account.id === accountID) loading.value = false
+    if (!unmounted.value && props.account.id === accountID) loading.value = false
   }
 }
 
@@ -1844,7 +1820,7 @@ const handleGrokProbed = (result: GrokQuotaProbeResult) => {
   const fetchedAt = Date.now()
   usageLastSuccessAt.value = fetchedAt
   error.value = null
-  _usageCache.set(usageCacheKey(props.account.id), { data: merged, ts: fetchedAt })
+  _usageCache.set(props.account.id, { data: merged, ts: fetchedAt })
 }
 
 // ===== API Key quota progress bars =====
@@ -2236,17 +2212,6 @@ watch(isBatchManaged, (managed, wasManaged) => {
     requestParentBatchUsage()
   }
 })
-
-watch(usageContextKey, () => {
-  loading.value = false
-  pendingAutoLoad.value = false
-  if (accountViewController?.available() === false) return
-  if (isBatchManaged.value) { syncManagedUsageState(); requestParentBatchUsage(); return }
-  usageInfo.value = null
-  usageLastSuccessAt.value = null
-  error.value = null
-  if (shouldAutoLoadUsageOnMount.value) requestAutoLoad(isAnthropicOAuthOrSetupToken.value ? 'passive' : undefined)
-}, { flush: 'post' })
 
 watch(
   () => [props.account.id, props.account.platform, props.account.type, isBatchManaged.value] as const,
