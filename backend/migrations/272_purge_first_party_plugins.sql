@@ -34,9 +34,9 @@
 --   250 added), or two enabled bindings share a capability, platform and
 --   account type: the check and the unique index of 229 do not admit them.
 --   Disabling or uninstalling the plugin in v0.2.13-codexrip.8 clears both.
--- Migrations 270 and 271 are committed by then. .downstream/native-domains.md
--- says what v0.2.13-codexrip.8 needs on such a database and how a receipt no
--- release repairs is resolved.
+-- Migrations 270 and 271 are committed by then. DOWNSTREAM.md leads to what
+-- v0.2.13-codexrip.8 needs on such a database and how a receipt no release
+-- repairs is resolved.
 --
 -- Both plugin tables stay locked until the migration commits; lock_timeout
 -- bounds the wait. There is no down path: an earlier image finds no receipt,
@@ -67,9 +67,9 @@ BEGIN
                OR COALESCE(jsonb_typeof(receipt -> 'plugins' -> plugin_key), '') <> 'object');
         -- settings.value is NOT NULL: receipt is NULL only while no row is stored.
         IF refused IS NOT NULL AND receipt IS NULL THEN
-            RAISE EXCEPTION 'migration 272: first-party plugin installations were never retired (%); start v0.2.13-codexrip.8 once as .downstream/native-domains.md describes, then upgrade', refused;
+            RAISE EXCEPTION 'migration 272: first-party plugin installations were never retired (%); start v0.2.13-codexrip.8 once as DOWNSTREAM.md describes, then upgrade', refused;
         ELSIF refused IS NOT NULL THEN
-            RAISE EXCEPTION 'migration 272: the retirement receipt is not completed or has no entry for first-party plugin installations (%); no release repairs it, resolve it as .downstream/native-domains.md describes, then upgrade', refused;
+            RAISE EXCEPTION 'migration 272: the retirement receipt is not completed or has no entry for first-party plugin installations (%); no release repairs it, resolve it as DOWNSTREAM.md describes, then upgrade', refused;
         END IF;
     END IF;
 
@@ -78,7 +78,7 @@ BEGIN
     WHERE plugin_key <> ALL (first_party)
       AND state NOT IN ('disabled', 'starting', 'enabled', 'error', 'incompatible');
     IF refused IS NOT NULL THEN
-        RAISE EXCEPTION 'migration 272: plugin installations are in a state the plugin manager does not have (%); disable or uninstall them in v0.2.13-codexrip.8 as .downstream/native-domains.md describes, then upgrade', refused;
+        RAISE EXCEPTION 'migration 272: plugin installations are in a state the plugin manager does not have (%); disable or uninstall them in v0.2.13-codexrip.8 as DOWNSTREAM.md describes, then upgrade', refused;
     END IF;
 
     SELECT string_agg(scope, ', ' ORDER BY scope) INTO refused
@@ -93,7 +93,7 @@ BEGIN
         LIMIT 5
     ) AS shared;
     IF refused IS NOT NULL THEN
-        RAISE EXCEPTION 'migration 272: more than one enabled plugin binding shares a scope (%); disable all but one of the plugins in v0.2.13-codexrip.8 as .downstream/native-domains.md describes, then upgrade', refused;
+        RAISE EXCEPTION 'migration 272: more than one enabled plugin binding shares a scope (%); disable all but one of the plugins in v0.2.13-codexrip.8 as DOWNSTREAM.md describes, then upgrade', refused;
     END IF;
 
     DELETE FROM sub2api_plugin_installations WHERE plugin_key = ANY (first_party);

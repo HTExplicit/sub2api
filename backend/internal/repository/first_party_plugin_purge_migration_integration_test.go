@@ -242,9 +242,9 @@ RETURNING id`, values...).Scan(&id))
 	// Only an installation without any receipt is retired by an earlier release;
 	// a receipt that is stored but does not cover an installation is not.
 	const (
-		earlier   = " in v0.2.13-codexrip.8 as .downstream/native-domains.md describes, then upgrade"
-		unretired = "; start v0.2.13-codexrip.8 once as .downstream/native-domains.md describes, then upgrade"
-		uncovered = "; no release repairs it, resolve it as .downstream/native-domains.md describes, then upgrade"
+		earlier   = " in v0.2.13-codexrip.8 as DOWNSTREAM.md describes, then upgrade"
+		unretired = "; start v0.2.13-codexrip.8 once as DOWNSTREAM.md describes, then upgrade"
+		uncovered = "; no release repairs it, resolve it as DOWNSTREAM.md describes, then upgrade"
 	)
 	for _, test := range []struct {
 		name      string
