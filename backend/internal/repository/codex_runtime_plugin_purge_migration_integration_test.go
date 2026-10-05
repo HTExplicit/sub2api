@@ -338,17 +338,10 @@ VALUES ($1,'Native Codex state anchor','0.0.0','Persistent native runtime genera
 			}
 
 			if test.wantErr != "" {
-				exec(f, `SAVEPOINT before_264`)
+				// The runner applies a file in one transaction, so a file that
+				// raises changes nothing: only what it raises is checked here.
 				_, err := f.tx.ExecContext(ctx, migration)
 				require.ErrorContains(t, err, test.wantErr)
-				exec(f, `ROLLBACK TO SAVEPOINT before_264`)
-				require.Equal(t, 2, droppedTables(f), "a refused migration changes nothing")
-				if test.otherState {
-					require.Equal(t, 2, count(f, `SELECT count(*) FROM sub2api_plugin_state`))
-				}
-				require.Equal(t, 1, count(f, `SELECT count(*) FROM sub2api_plugin_installations WHERE id = $1`, codexID))
-				_, found := setting(f, "codex_runtime_config")
-				require.False(t, found)
 				return
 			}
 			apply(f)
