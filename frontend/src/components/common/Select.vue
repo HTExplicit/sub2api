@@ -4,7 +4,7 @@
       ref="triggerRef"
       type="button"
       @click="toggle"
-      :disabled="interactionDisabled"
+      :disabled="disabled"
       :aria-expanded="isOpen"
       :aria-haspopup="true"
       :id="id"
@@ -14,7 +14,7 @@
         'select-trigger',
         isOpen && 'select-trigger-open',
         error && 'select-trigger-error',
-        interactionDisabled && 'select-trigger-disabled'
+        disabled && 'select-trigger-disabled'
       ]"
       @keydown.down.prevent="onTriggerKeyDown"
       @keydown.up.prevent="onTriggerKeyDown"
@@ -25,7 +25,7 @@
         </slot>
       </span>
       <span
-        v-if="clearable && hasValue && !interactionDisabled"
+        v-if="clearable && hasValue && !disabled"
         class="select-clear"
         role="button"
         tabindex="-1"
@@ -181,7 +181,6 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<Emits>()
-const interactionDisabled = computed(() => props.disabled)
 
 const isOpen = ref(false)
 const searchQuery = ref('')
@@ -379,12 +378,9 @@ const calculateDropdownPosition = () => {
 }
 
 const toggle = () => {
-  if (interactionDisabled.value) return
+  if (props.disabled) return
   isOpen.value = !isOpen.value
 }
-
-// Close teleported options when disabled without changing the selected value.
-watch(interactionDisabled, (disabled) => { if (disabled) isOpen.value = false })
 
 watch(isOpen, (open) => {
   if (open) {
@@ -432,7 +428,6 @@ watch(searchQuery, (query) => {
 })
 
 const selectOption = (option: any) => {
-  if (interactionDisabled.value || isOptionDisabled(option)) return
   const value = getOptionValue(option) ?? null
   emit('update:modelValue', value)
   emit('change', value, option)
@@ -441,21 +436,19 @@ const selectOption = (option: any) => {
 }
 
 const clearSelection = () => {
-  if (interactionDisabled.value) return
+  if (props.disabled) return
   emit('update:modelValue', null)
   emit('change', null, null)
 }
 
 // Keyboards
 const onTriggerKeyDown = () => {
-  if (interactionDisabled.value) return
   if (!isOpen.value) {
     isOpen.value = true
   }
 }
 
 const onDropdownKeyDown = (e: KeyboardEvent) => {
-  if (interactionDisabled.value) { e.preventDefault(); isOpen.value = false; return }
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault()

@@ -113,7 +113,6 @@ jobs:
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
             src/components/common/__tests__/BaseDialog.spec.ts \
-            src/components/common/__tests__/Select.disabled.spec.ts \
             src/views/admin/__tests__/PluginsView.spec.ts \
             src/components/admin/codex/__tests__/CodexRuntime.native.spec.ts \
             src/api/__tests__/downstreamStatus.spec.ts \
