@@ -16,8 +16,6 @@ const (
 
 type DataImportIdentityMatch struct {
 	AccountID int64
-	Name      string
-	MatchedBy string
 }
 
 type dataIdentityKey struct {
@@ -171,9 +169,7 @@ func (index *dataIdentityIndex) Find(keys []dataIdentityKey) []DataImportIdentit
 			if dataAccountIdentityUserConflicts(key.Label, incomingUserID, storedUserID) {
 				continue
 			}
-			if _, exists := byID[account.ID]; !exists {
-				byID[account.ID] = DataImportIdentityMatch{AccountID: account.ID, Name: account.Name, MatchedBy: key.Label}
-			}
+			byID[account.ID] = DataImportIdentityMatch{AccountID: account.ID}
 		}
 	}
 	out := make([]DataImportIdentityMatch, 0, len(byID))

@@ -104,11 +104,6 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Available Channels',
   }),
-  imageStudio: defineFlag({
-    key: 'image_studio_enabled',
-    mode: 'opt-in',
-    label: 'Image Studio',
-  }),
   subscription: defineFlag({
     key: 'subscription_enabled',
     mode: 'opt-out',

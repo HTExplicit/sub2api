@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -89,7 +88,6 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 		identityIndex = buildDataIdentityIndex(existing)
 	}
 
-	request := extensionv1.AccountImportPlanningRequest{Items: make([]extensionv1.AccountImportItemFacts, len(req.Data.Accounts))}
 	decisions := make([]dataImportDecision, len(req.Data.Accounts))
 	for index := range req.Data.Accounts {
 		item := req.Data.Accounts[index]
@@ -99,28 +97,23 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 		if validationErr != nil {
 			decision.ValidationError = validationErr.Error()
 		}
-		facts := extensionv1.AccountImportItemFacts{PayloadValid: validationErr == nil}
-		keys := dataAccountIdentityKeys(item.Platform, item.Credentials, item.Extra)
-		for _, match := range identityIndex.Find(keys) {
+		matches := identityIndex.Find(dataAccountIdentityKeys(item.Platform, item.Credentials, item.Extra))
+		for _, match := range matches {
 			decision.MatchedAccountIDs = append(decision.MatchedAccountIDs, match.AccountID)
-			if len(facts.Matches) < 2 {
-				facts.Matches = append(facts.Matches, match.AccountID)
-			} // Two witnesses already prove ambiguity to the policy.
 		}
-		request.Items[index], decisions[index] = facts, decision
-	}
-	plans, err := service.PlanAccountImport(ctx, request)
-	if err != nil {
-		return preview, nil, err
-	}
-	for index, plan := range plans {
-		decision := &decisions[index]
-		decision.Action, decision.Code = plan.Action, plan.Code
-		decision.Message = dataImportDecisionMessage(*decision)
-		if plan.AccountID > 0 {
-			id := plan.AccountID
-			decision.AccountID = &id
+		switch {
+		case validationErr != nil:
+			decision.Action, decision.Code = dataImportActionReject, dataImportCodePayloadInvalid
+		case len(matches) == 0:
+			decision.Action, decision.Code = dataImportActionCreate, dataImportCodeCreate
+		case len(matches) == 1:
+			accountID := matches[0].AccountID
+			decision.Action, decision.Code, decision.AccountID = dataImportActionUpdate, dataImportCodeUpdate, &accountID
+		default:
+			decision.Action, decision.Code = dataImportActionReject, dataImportCodeIdentityConflict
 		}
+		decision.Message = dataImportDecisionMessage(decision)
+		decisions[index] = decision
 	}
 
 	for index := range decisions {

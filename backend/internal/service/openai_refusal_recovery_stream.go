@@ -25,7 +25,6 @@ const (
 type openAIRefusalStreamState struct {
 	matcher          *OpenAIRefusalMatcher
 	visibleText      strings.Builder
-	matched          bool
 	passthrough      bool
 	earlyEligible    bool
 	earlyEmitted     bool
@@ -87,7 +86,6 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 	case "response.output_text.delta", "response.refusal.delta":
 		_, _ = s.visibleText.WriteString(gjson.GetBytes(payload, "delta").String())
 		if matched, keyword := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
-			s.matched = true
 			s.matchedEvidence = newOpenAIRefusalEvidence(keyword, s.visibleText.String())
 			return s.startEarlyReplacement()
 		}
@@ -106,7 +104,6 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 			_, _ = s.visibleText.WriteString(text)
 		}
 		if matched, keyword := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
-			s.matched = true
 			s.matchedEvidence = newOpenAIRefusalEvidence(keyword, s.visibleText.String())
 			return s.startEarlyReplacement()
 		}

@@ -1,12 +1,11 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
@@ -104,15 +103,20 @@ func accountTestSupportsReasoningWire(account *Account, model string) bool {
 	}
 }
 
-func ValidateAccountTestReasoningContext(ctx context.Context, account *Account, model, mode, effort string) error {
+// ValidateAccountTestReasoning accepts a reasoning effort only in the text
+// test modes and only when the tested account model offers it.
+func ValidateAccountTestReasoning(account *Account, model, mode, effort string) error {
 	if effort == "" {
 		return nil
 	}
-	if account == nil {
-		return errors.New("account is unavailable")
+	if effort != strings.TrimSpace(effort) || len(effort) > 32 || (mode != "" && mode != AccountTestModeDefault && mode != AccountTestModeGrokText) {
+		return errors.New("reasoning effort is unsupported for this test mode")
 	}
 	levels, _ := AccountTestReasoningOptions(account, model)
-	return accountToolsOperation(ctx, "test.reasoning", extensionv1.ReasoningSelection{Mode: mode, Effort: effort, Levels: levels}, nil)
+	if !slices.Contains(levels, effort) {
+		return errors.New("reasoning effort is not supported by the selected account model")
+	}
+	return nil
 }
 
 func applyAccountTestReasoning(c *gin.Context, payload map[string]any, chat bool) {

@@ -130,18 +130,11 @@ func ValidateOpenAIRefusalRecoverySettings(settings *SystemSettings) error {
 	return nil
 }
 
-func (m *OpenAIRefusalMatcher) MatchFirstParagraph(text string) (bool, string) {
-	if m == nil {
-		return false, ""
-	}
-	return m.matchText(firstOpenAIRefusalParagraph(text))
-}
-
 func (m *OpenAIRefusalMatcher) MatchLeadingParagraphs(text string) (bool, string) {
 	if m == nil {
 		return false, ""
 	}
-	return m.matchText(leadingOpenAIRefusalParagraphs(text, maxOpenAIRefusalScanParagraphs))
+	return m.matchText(leadingOpenAIRefusalParagraphs(text))
 }
 
 func (m *OpenAIRefusalMatcher) matchText(text string) (bool, string) {
@@ -176,14 +169,10 @@ func normalizeOpenAIRefusalText(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
-func firstOpenAIRefusalParagraph(value string) string {
-	return leadingOpenAIRefusalParagraphs(value, 1)
-}
-
-func leadingOpenAIRefusalParagraphs(value string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
+// leadingOpenAIRefusalParagraphs returns the window the matcher inspects: the
+// first maxOpenAIRefusalScanParagraphs paragraphs, capped at
+// maxOpenAIRefusalParagraphRunes.
+func leadingOpenAIRefusalParagraphs(value string) string {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
 	lines := strings.Split(value, "\n")
@@ -196,7 +185,7 @@ func leadingOpenAIRefusalParagraphs(value string, limit int) string {
 				continue
 			}
 			paragraphsComplete++
-			if paragraphsComplete >= limit {
+			if paragraphsComplete >= maxOpenAIRefusalScanParagraphs {
 				break
 			}
 			selected = append(selected, "")
@@ -222,7 +211,7 @@ type openAIRefusalEvidence struct {
 }
 
 func newOpenAIRefusalEvidence(keyword, visibleText string) openAIRefusalEvidence {
-	return openAIRefusalEvidence{Keyword: keyword, Text: leadingOpenAIRefusalParagraphs(visibleText, maxOpenAIRefusalScanParagraphs)}
+	return openAIRefusalEvidence{Keyword: keyword, Text: leadingOpenAIRefusalParagraphs(visibleText)}
 }
 
 const (

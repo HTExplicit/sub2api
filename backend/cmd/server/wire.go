@@ -31,7 +31,6 @@ type Application struct {
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
 	AccountJobs   *service.AccountJobRuntime
-	ImageStudio   *service.ImageStudioRuntime
 	CodexIdentity *service.CodexClientIdentityBackfillService
 	Cleanup       func()
 }
@@ -64,7 +63,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "CodexIdentity", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "CodexIdentity", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -145,7 +144,6 @@ func provideCleanup(
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
 	accountJobs *service.AccountJobRuntime,
-	imageStudioRuntime *service.ImageStudioRuntime,
 	pluginManager *service.PluginManager,
 ) func() {
 	return func() {
@@ -158,12 +156,6 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
-			{"ImageStudioRuntime", func() error {
-				if imageStudioRuntime != nil {
-					return imageStudioRuntime.Stop(ctx)
-				}
-				return nil
-			}},
 			{"AccountJobRuntime", func() error {
 				if accountJobs != nil {
 					accountJobs.Stop()

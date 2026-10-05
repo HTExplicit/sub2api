@@ -28,9 +28,9 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:   "disabled image installation stays off",
-			plugin: NativeRetirementPlugin{Key: "codexrip.image-tools", State: "disabled", ConfigEncrypted: `{"studio_enabled":true,"responses_image_enabled":true}`},
-			key:    SettingKeyImageToolsConfig, expected: `{"studio_enabled":false}`,
+			name:   "disabled observability installation stays off",
+			plugin: NativeRetirementPlugin{Key: "codexrip.admin-observability", State: "disabled", ConfigEncrypted: `{"telemetry_enabled":true,"theme_enabled":true}`},
+			key:    SettingKeyAdminObservabilityConfig, expected: `{"telemetry_enabled":false,"theme_enabled":false}`,
 		},
 		{
 			name: "separate theme and telemetry bindings",
@@ -93,11 +93,11 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 			}
 		})
 	}
-	_, err := nativeFeatureSettings(NativeRetirementPlugin{Key: "codexrip.image-tools", State: "disabled", ConfigEncrypted: "private"}, retirementTestEncryptor{fail: true})
+	_, err := nativeFeatureSettings(NativeRetirementPlugin{Key: "codexrip.admin-observability", State: "disabled", ConfigEncrypted: "private"}, retirementTestEncryptor{fail: true})
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "sensitive ciphertext")
-	require.Error(t, ValidateNativeFeatureSetting(SettingKeyImageToolsConfig, []byte(`{"studio_enabled":"false"}`)))
-	require.Error(t, ValidateNativeFeatureSetting(SettingKeyImageToolsConfig, nil))
+	require.Error(t, ValidateNativeFeatureSetting(SettingKeyAdminObservabilityConfig, []byte(`{"telemetry_enabled":"false"}`)))
+	require.Error(t, ValidateNativeFeatureSetting(SettingKeyAdminObservabilityConfig, nil))
 }
 
 type retiredPluginSourceStub []*PluginInstallation
@@ -108,17 +108,17 @@ func (s retiredPluginSourceStub) RetiredPluginInstallations(context.Context) ([]
 
 func TestNativeFeatureBootstrapListsRetiredPluginsWithDecryptedConfig(t *testing.T) {
 	snapshot := &NativeRetirementSnapshot{Version: 1, Completed: true, Plugins: map[string]NativeRetirementPlugin{
-		"codexrip.image-tools": {ID: 3, Key: "codexrip.image-tools", State: "enabled"},
+		"codexrip.admin-observability": {ID: 3, Key: "codexrip.admin-observability", State: "enabled"},
 	}}
 	bootstrap := &NativeFeatureBootstrap{Snapshot: snapshot, encryptor: retirementTestEncryptor{}}
 	bootstrap.SetRetiredPluginSource(retiredPluginSourceStub{{
-		ID: 3, PluginKey: "codexrip.image-tools", State: "disabled", LastError: "stopped by retirement",
-		ConfigEncrypted: `{"studio_enabled":true,"api_key":"saved-secret"}`,
+		ID: 3, PluginKey: "codexrip.admin-observability", State: "disabled", LastError: "stopped by retirement",
+		ConfigEncrypted: `{"telemetry_enabled":true,"api_key":"saved-secret"}`,
 	}})
 	view, err := bootstrap.RetiredPlugins(context.Background())
 	require.NoError(t, err)
 	require.Same(t, snapshot, view.Receipt)
 	require.Len(t, view.Installations, 1)
 	require.Equal(t, "stopped by retirement", view.Installations[0].LastError)
-	require.JSONEq(t, `{"studio_enabled":true,"api_key":"saved-secret"}`, string(view.Installations[0].Config))
+	require.JSONEq(t, `{"telemetry_enabled":true,"api_key":"saved-secret"}`, string(view.Installations[0].Config))
 }

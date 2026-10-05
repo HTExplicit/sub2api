@@ -728,9 +728,6 @@ func (s *OpsService) ListUserErrorRequests(ctx context.Context, userID int64, fi
 	//（error_phase='upstream' 但 status<400,最终成功返回）记录对用户不可见——符合预期。
 	filter.Phase = ""
 	filter.IncludeRecoveredUpstream = false
-	// Image Studio gateway rows keep the upstream response for administrators;
-	// the Image Studio job itself shows the user its message.
-	filter.ExcludeClientRequestIDPrefix = ImageStudioClientRequestIDPrefix
 
 	list, err := s.opsRepo.ListErrorLogs(ctx, filter)
 	if err != nil {
@@ -790,7 +787,7 @@ func (s *OpsService) GetUserErrorRequestDetail(ctx context.Context, userID, id i
 	}
 	// 归属只能由通过鉴权时写入的 user_id 确定。
 	ownedDirectly := detail.UserID != nil && *detail.UserID == userID
-	if !ownedDirectly || strings.HasPrefix(detail.ClientRequestID, ImageStudioClientRequestIDPrefix) {
+	if !ownedDirectly {
 		return nil, infraerrors.NotFound("OPS_ERROR_NOT_FOUND", "ops error log not found")
 	}
 	return ToUserErrorRequestDetail(detail), nil

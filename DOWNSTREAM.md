@@ -10,7 +10,7 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 
 ## Native domains and account operations
 
-The seven first-party domains now run inside the host and use native Vue pages.
+The five first-party domains run inside the host and use native Vue pages.
 The official third-party plugin framework remains available. Domain settings,
 startup data preservation and the legacy-host rollback boundary are described in
 [native domains](.downstream/native-domains.md).
@@ -45,9 +45,8 @@ only that account/model. The account option `openai_prompt_cache_key_mode`
 64 characters with its SHA-256 hex. Continuation, refusal recovery and
 destination-specific reasoning summaries remain supported. Account test model
 choices persist; API-key reveal requires the configured password. The account test
-dialog keeps list position. Image Studio defaults off and lists no eligible key
-until a generic image model source exists. Public model management remains
-retired; catalog changes do not restore its routes or navigation.
+dialog keeps list position. Public model management remains retired; catalog
+changes do not restore its routes or navigation.
 
 Quota storage, aggregation, cleanup and resets follow official semantics. Missing
 quota rows represent unlimited access; rows with three NULL limits are purged by

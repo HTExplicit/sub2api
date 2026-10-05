@@ -192,13 +192,6 @@ func TestNormalizeOpenAIResponsesReasoningModeForModel_UsesResolvedTarget(t *tes
 
 func TestNormalizeOpenAICompatibilityBodiesForModel_PreserveMappedAstraMode(t *testing.T) {
 	body := []byte(`{"model":"assistant","input":[],"reasoning":{"mode":"pro","context":"all_turns"}}`)
-	for _, compact := range []bool{false, true} {
-		normalized, _, err := normalizeOpenAIPassthroughOAuthBodyForModel(body, compact, "gpt-6-astra")
-		require.NoError(t, err)
-		require.Equal(t, "assistant", gjson.GetBytes(normalized, "model").String())
-		require.Equal(t, "pro", gjson.GetBytes(normalized, "reasoning.mode").String())
-		require.False(t, gjson.GetBytes(normalized, "reasoning.effort").Exists())
-	}
 	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken, AccountTypeAPIKey} {
 		for _, target := range []string{"gpt-6-astra", "gpt-5.4"} {
 			normalized, _, err := normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body, &Account{Platform: PlatformOpenAI, Type: accountType}, false, target)

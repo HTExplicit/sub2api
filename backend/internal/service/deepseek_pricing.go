@@ -7,13 +7,12 @@ import (
 	"time"
 )
 
-const deepseekPricingSource = "https://api-docs.deepseek.com/quick_start/pricing/"
-
 var deepseekPeakHours = [][2]int{{9, 12}, {14, 18}}
 
 // The registry is the single source of DeepSeek identity and official off-peak
-// USD rates. Verified 2026-09-16: Pro remains available at Pro rates; the
-// previously announced September 14 migration to Flash was withdrawn.
+// USD rates (https://api-docs.deepseek.com/quick_start/pricing/). Verified
+// 2026-09-16: Pro remains available at Pro rates; the previously announced
+// September 14 migration to Flash was withdrawn.
 var deepseekPricingRegistry = []struct {
 	canonical                string
 	aliases                  []string
@@ -26,7 +25,6 @@ var deepseekPricingRegistry = []struct {
 type deepseekPricingIdentity struct {
 	CanonicalModel string
 	Match          string // exact, alias, or fallback; fallback is never identified pricing
-	Source         string
 	OfficialPeak   bool
 }
 
@@ -42,7 +40,7 @@ func deepseekBillingIdentity(model string, allowFallback bool) (deepseekPricingI
 				if name == card.canonical {
 					match = "exact"
 				}
-				return deepseekPricingIdentity{card.canonical, match, deepseekPricingSource, true}, true
+				return deepseekPricingIdentity{card.canonical, match, true}, true
 			}
 		}
 	}
@@ -51,7 +49,7 @@ func deepseekBillingIdentity(model string, allowFallback bool) (deepseekPricingI
 		if strings.HasPrefix(bare, "deepseek-v4-pro") {
 			canonical = "deepseek-v4-pro"
 		}
-		return deepseekPricingIdentity{canonical, "fallback", deepseekPricingSource, true}, true
+		return deepseekPricingIdentity{canonical, "fallback", true}, true
 	}
 	return deepseekPricingIdentity{}, false
 }
@@ -136,7 +134,6 @@ func (s *PricingService) mergeDeepSeekPricing(data map[string]*LiteLLMModelPrici
 					_ = json.Unmarshal(patch, &fields)
 					for field := range fields {
 						if strings.Contains(field, "_cost_") || strings.HasSuffix(field, "_cost") {
-							identity.Source = "override"
 							identity.OfficialPeak = false
 						}
 					}

@@ -7,15 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/Wei-Shaw/sub2api/internal/testextensions"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
-
-type testPlanOuterKey struct{}
 
 type testPlanAdmin struct {
 	service.AdminService
@@ -29,73 +25,41 @@ func (s testPlanAdmin) GetAccountsByIDs(context.Context, []int64) ([]*service.Ac
 	return []*service.Account{s.account}, nil
 }
 
-type testPlanOperations struct {
-	rejectAll bool
-	calls     []extensionv1.Invocation
-	contexts  []any
-}
-
-func (f *testPlanOperations) InvokeOperation(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
-	f.calls = append(f.calls, in)
-	f.contexts = append(f.contexts, ctx.Value(testPlanOuterKey{}))
-	if f.rejectAll {
-		return extensionv1.Result{}, service.ErrExtensionOperationDisabled
-	}
-	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
-}
-
-func TestAccountTestPlanOrdinaryAndLegacyKeepCoreWithoutPlugins(t *testing.T) {
+func TestAccountTestPlanViewListsTheSameModelsAsThePlainList(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, tc := range []struct {
-		name    string
-		baseURL string
-	}{
-		{"ordinary", "https://api.openai.com"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			fixture := &testPlanOperations{rejectAll: true}
-			service.ConfigureNativePolicyOperations(fixture)
-			t.Cleanup(testextensions.Install)
-			account := &service.Account{ID: 42, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
-				Credentials: map[string]any{"base_url": tc.baseURL, "model_mapping": map[string]any{"plain-id": "plain-wire"}}}
-			// Only local mapping metadata is available: no test/discovery client,
-			// model IO route, or live extension is installed in this fixture.
-			h := &AccountHandler{adminService: testPlanAdmin{account: account}}
-			require.Nil(t, h.accountTestService)
-			router := gin.New()
-			router.GET("/accounts/:id/models", h.GetAvailableModels)
-			read := func(suffix string) json.RawMessage {
-				out := httptest.NewRecorder()
-				router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/accounts/42/models"+suffix, nil))
-				require.Equal(t, http.StatusOK, out.Code, out.Body.String())
-				var body struct {
-					Data json.RawMessage `json:"data"`
-				}
-				require.NoError(t, json.Unmarshal(out.Body.Bytes(), &body))
-				return body.Data
-			}
-			oldData := read("")
-			require.True(t, len(oldData) > 0 && oldData[0] == '[', "old GET must remain an array")
-			var oldModels []map[string]any
-			require.NoError(t, json.Unmarshal(oldData, &oldModels))
-			require.Len(t, oldModels, 1)
-			require.Equal(t, "plain-id", oldModels[0]["id"])
-			oldCalls := fixture.calls
-			fixture.calls = nil
-
-			var plan accountTestPlanView
-			require.NoError(t, json.Unmarshal(read("?view=account-test-plan-v1"), &plan))
-			require.Equal(t, 1, plan.SchemaVersion)
-			require.Equal(t, int64(42), plan.AccountID)
-			require.Equal(t, "openai", plan.WirePlatform)
-			require.Equal(t, oldModels, plan.Models)
-			require.Equal(t, []string{"plain-id"}, plan.ModeViews["default"].ModelIDs)
-			require.Equal(t, "plain-id", plan.ModeViews["default"].DefaultModelID)
-			require.Empty(t, plan.PolicyStamp)
-			require.Equal(t, oldCalls, fixture.calls, "the view must not add calls or change optional metadata queries relative to the same legacy GET")
-			require.Empty(t, fixture.calls, "ordinary OpenAI has no account-tools dependency")
-		})
+	account := &service.Account{ID: 42, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.openai.com", "model_mapping": map[string]any{"plain-id": "plain-wire"}}}
+	// Only local mapping metadata is available: no test or discovery client is
+	// installed in this fixture.
+	h := &AccountHandler{adminService: testPlanAdmin{account: account}}
+	require.Nil(t, h.accountTestService)
+	router := gin.New()
+	router.GET("/accounts/:id/models", h.GetAvailableModels)
+	read := func(suffix string) json.RawMessage {
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/accounts/42/models"+suffix, nil))
+		require.Equal(t, http.StatusOK, out.Code, out.Body.String())
+		var body struct {
+			Data json.RawMessage `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(out.Body.Bytes(), &body))
+		return body.Data
 	}
+	plainData := read("")
+	require.True(t, len(plainData) > 0 && plainData[0] == '[', "the plain GET must remain an array")
+	var plainModels []map[string]any
+	require.NoError(t, json.Unmarshal(plainData, &plainModels))
+	require.Len(t, plainModels, 1)
+	require.Equal(t, "plain-id", plainModels[0]["id"])
+
+	var plan accountTestPlanView
+	require.NoError(t, json.Unmarshal(read("?view=account-test-plan-v1"), &plan))
+	require.Equal(t, 1, plan.SchemaVersion)
+	require.Equal(t, int64(42), plan.AccountID)
+	require.Equal(t, "openai", plan.WirePlatform)
+	require.Equal(t, plainModels, plan.Models)
+	require.Equal(t, []string{"plain-id"}, plan.ModeViews["default"].ModelIDs)
+	require.Equal(t, "plain-id", plan.ModeViews["default"].DefaultModelID)
 }
 
 func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {

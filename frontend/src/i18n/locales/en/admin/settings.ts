@@ -515,15 +515,6 @@ export default {
         saved: 'OpenCode Go usage refresh settings saved',
         saveFailed: 'Failed to save OpenCode Go usage refresh settings'
       },
-      imageTools: {
-        title: 'Image tools',
-        description: 'Image Studio uses existing account image capabilities and group permissions. Each upstream request generates one image, with up to four images per job. Disabling the feature stops new generation work and preserves saved results.',
-        studioEnabled: 'Enable Image Studio',
-        save: 'Save settings',
-        saved: 'Settings saved',
-        loadFailed: 'Failed to load image tool settings',
-        saveFailed: 'Save failed'
-      },
       observability: {
         title: 'Appearance and observations',
         description: 'Account traffic observations record real gateway attempts without running test requests. They do not restrict accounts or change billing.',

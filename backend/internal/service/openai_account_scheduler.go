@@ -2715,10 +2715,6 @@ func (s *OpenAIGatewayService) isOpenAIAccountTransportCompatible(account *Accou
 	return s.getOpenAIWSProtocolResolver().Resolve(account).Transport == requiredTransport
 }
 
-func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64, model string, success bool, firstTokenMs *int) {
-	s.reportOpenAIAccountScheduleResult("", accountID, model, success, firstTokenMs)
-}
-
 func (s *OpenAIGatewayService) ReleaseOpenAIRuntimeBreakerProbeForSelection(selection *AccountSelectionResult) {
 	if selection == nil {
 		return

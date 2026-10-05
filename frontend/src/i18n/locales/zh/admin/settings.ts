@@ -508,15 +508,6 @@ export default {
         saved: 'OpenCode Go 用量刷新设置已保存',
         saveFailed: '保存 OpenCode Go 用量刷新设置失败'
       },
-      imageTools: {
-        title: '图像工具',
-        description: 'Image Studio 使用账号现有的图像能力与分组权限。每次上游请求生成一张图像，一项任务最多四张。关闭功能会停止新的生成操作，已保存的结果保留。',
-        studioEnabled: '启用 Image Studio',
-        save: '保存设置',
-        saved: '设置已保存',
-        loadFailed: '图像工具设置加载失败',
-        saveFailed: '保存失败'
-      },
       observability: {
         title: '界面与观测',
         description: '账号流量观测只记录实际业务转发的结果，不触发测试请求，也不用于限制账号或改变计费。',

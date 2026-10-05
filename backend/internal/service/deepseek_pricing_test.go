@@ -249,7 +249,7 @@ func TestDeepseekEffectiveCatalogAndIdentity(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, card.canonical, price.deepseekIdentity.CanonicalModel)
 					require.NotEqual(t, "fallback", price.deepseekIdentity.Match)
-					require.Equal(t, deepseekPricingSource, price.deepseekIdentity.Source)
+					require.True(t, price.deepseekIdentity.OfficialPeak)
 					require.InDelta(t, card.input, price.InputPricePerToken, 1e-15)
 					require.InDelta(t, card.output, price.OutputPricePerToken, 1e-15)
 					require.InDelta(t, card.cacheRead, price.CacheReadPricePerToken, 1e-15)
@@ -281,7 +281,6 @@ func TestDeepseekPriceLoadAndHotReload(t *testing.T) {
 	price := svc.GetModelPricing(alias)
 	require.InDelta(t, 4e-6, price.InputCostPerToken, 1e-15)
 	require.InDelta(t, 6e-7, price.OutputCostPerToken, 1e-15)
-	require.Equal(t, "override", price.deepseekIdentity.Source)
 	require.False(t, price.deepseekIdentity.OfficialPeak)
 	anchor := svc.localHash
 	require.NoError(t, os.WriteFile(svc.cfg.Pricing.OverrideFile, []byte(`{"deepseek-flash":{"input_cost_per_token":0,"output_cost_per_token":0,"cache_read_input_token_cost":0}}`), 0644))
@@ -422,5 +421,5 @@ func TestDeepseekCacheOnlyAdminOverride(t *testing.T) {
 	cost, err := bs.CalculateCostUnified(CostInput{Model: "deepseek/deepseek-v4.1-flash", Tokens: UsageTokens{CacheReadTokens: 1000}, RateMultiplier: 1, PricingAt: time.Date(2026, 9, 16, 2, 0, 0, 0, time.UTC)})
 	require.NoError(t, err)
 	require.InDelta(t, .004, cost.TotalCost, 1e-12)
-	require.Equal(t, "override", svc.GetModelPricing("deepseek-flash").deepseekIdentity.Source)
+	require.False(t, svc.GetModelPricing("deepseek-flash").deepseekIdentity.OfficialPeak)
 }

@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
@@ -14,7 +16,6 @@ import (
 	dbaccounttag "github.com/Wei-Shaw/sub2api/ent/accounttag"
 	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 
 	entsql "entgo.io/ent/dialect/sql"
@@ -39,13 +40,11 @@ type AccountTaxonomyAssignment struct {
 }
 
 type BulkAccountTaxonomyInput struct {
-	AccountIDs         []int64
-	Filters            *BulkUpdateAccountFilters
-	ExpectedMatchCount *int
-	FolderAction       string
-	FolderID           *int64
-	TagAddIDs          []int64
-	TagRemoveIDs       []int64
+	AccountIDs   []int64
+	FolderAction string
+	FolderID     *int64
+	TagAddIDs    []int64
+	TagRemoveIDs []int64
 }
 
 type BulkAccountTaxonomyResult struct {
@@ -87,6 +86,16 @@ type AccountConsoleFacets struct {
 	Proxies            []AccountFacetOption      `json:"proxies"`
 	Folders            []AccountManagementFolder `json:"folders"`
 	Tags               []AccountManagementTag    `json:"tags"`
+}
+
+// normalizeAccountTaxonomyName returns a folder or tag name as displayed and
+// the case-insensitive key that keeps names unique.
+func normalizeAccountTaxonomyName(value string) (string, string, error) {
+	name := strings.TrimSpace(value)
+	if !utf8.ValidString(name) || name == "" || utf8.RuneCountInString(name) > 100 || strings.ContainsRune(name, '\x00') {
+		return "", "", infraerrors.BadRequest("ACCOUNT_TAXONOMY_NAME_INVALID", "name must contain between 1 and 100 characters")
+	}
+	return name, strings.ToLower(name), nil
 }
 
 func (s *adminServiceImpl) ListAccountFolders(ctx context.Context) ([]AccountManagementFolder, error) {
@@ -132,7 +141,7 @@ func (s *adminServiceImpl) listAccountFolders(ctx context.Context, includeCounts
 }
 
 func (s *adminServiceImpl) CreateAccountFolder(ctx context.Context, input AccountTaxonomyInput) (*AccountManagementFolder, error) {
-	name, normalized, err := normalizeAccountTaxonomyNameContext(ctx, input.Name)
+	name, normalized, err := normalizeAccountTaxonomyName(input.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +168,7 @@ func (s *adminServiceImpl) CreateAccountFolder(ctx context.Context, input Accoun
 }
 
 func (s *adminServiceImpl) UpdateAccountFolder(ctx context.Context, id int64, input AccountTaxonomyInput) (*AccountManagementFolder, error) {
-	name, normalized, err := normalizeAccountTaxonomyNameContext(ctx, input.Name)
+	name, normalized, err := normalizeAccountTaxonomyName(input.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -182,8 +191,8 @@ func (s *adminServiceImpl) UpdateAccountFolder(ctx context.Context, id int64, in
 }
 
 func (s *adminServiceImpl) DeleteAccountFolder(ctx context.Context, id int64, moveAccounts bool) error {
-	if err := accountToolsOperation(ctx, "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
-		return err
+	if id <= 0 {
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_ID_INVALID", "ID must be positive")
 	}
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
@@ -269,7 +278,7 @@ func (s *adminServiceImpl) listAccountTags(ctx context.Context, includeCounts bo
 }
 
 func (s *adminServiceImpl) CreateAccountTag(ctx context.Context, input AccountTaxonomyInput) (*AccountManagementTag, error) {
-	name, normalized, err := normalizeAccountTaxonomyNameContext(ctx, input.Name)
+	name, normalized, err := normalizeAccountTaxonomyName(input.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +305,7 @@ func (s *adminServiceImpl) CreateAccountTag(ctx context.Context, input AccountTa
 }
 
 func (s *adminServiceImpl) UpdateAccountTag(ctx context.Context, id int64, input AccountTaxonomyInput) (*AccountManagementTag, error) {
-	name, normalized, err := normalizeAccountTaxonomyNameContext(ctx, input.Name)
+	name, normalized, err := normalizeAccountTaxonomyName(input.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -319,14 +328,31 @@ func (s *adminServiceImpl) UpdateAccountTag(ctx context.Context, id int64, input
 }
 
 func (s *adminServiceImpl) DeleteAccountTag(ctx context.Context, id int64) error {
-	if err := accountToolsOperation(ctx, "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
-		return err
+	if id <= 0 {
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_ID_INVALID", "ID must be positive")
 	}
 	err := s.entClient.AccountTag.DeleteOneID(id).Exec(ctx)
 	if dbent.IsNotFound(err) {
 		return ErrAccountTagNotFound
 	}
 	return err
+}
+
+// validateTaxonomyOrderIDs accepts an order only when it lists every existing
+// folder or tag exactly once.
+func validateTaxonomyOrderIDs(actual, ordered []int64) error {
+	if len(actual) != len(ordered) {
+		return infraerrors.Conflict("ACCOUNT_TAXONOMY_ORDER_CHANGED", "account taxonomy changed; reload and try again")
+	}
+	if !positiveUniqueIDs(ordered) {
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_ORDER_INVALID", "ordered_ids must contain positive unique IDs")
+	}
+	for _, id := range actual {
+		if !slices.Contains(ordered, id) {
+			return infraerrors.Conflict("ACCOUNT_TAXONOMY_ORDER_CHANGED", "account taxonomy changed; reload and try again")
+		}
+	}
+	return nil
 }
 
 func (s *adminServiceImpl) ReorderAccountFolders(ctx context.Context, orderedIDs []int64) ([]AccountManagementFolder, error) {
@@ -343,7 +369,7 @@ func (s *adminServiceImpl) ReorderAccountFolders(ctx context.Context, orderedIDs
 	for _, row := range rows {
 		actual = append(actual, row.ID)
 	}
-	if err = validateTaxonomyOrderIDsContext(ctx, actual, orderedIDs); err != nil {
+	if err = validateTaxonomyOrderIDs(actual, orderedIDs); err != nil {
 		return nil, err
 	}
 	for index, id := range orderedIDs {
@@ -371,7 +397,7 @@ func (s *adminServiceImpl) ReorderAccountTags(ctx context.Context, orderedIDs []
 	for _, row := range rows {
 		actual = append(actual, row.ID)
 	}
-	if err = validateTaxonomyOrderIDsContext(ctx, actual, orderedIDs); err != nil {
+	if err = validateTaxonomyOrderIDs(actual, orderedIDs); err != nil {
 		return nil, err
 	}
 	for index, id := range orderedIDs {
@@ -401,36 +427,60 @@ func uniquePositiveIDs(ids []int64) []int64 {
 	return out
 }
 
-func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input BulkAccountTaxonomyInput) (*BulkAccountTaxonomyResult, error) {
-	plan := extensionv1.TaxonomyBulkPlan{AccountIDs: input.AccountIDs, HasFilters: input.Filters != nil, ExpectedMatchCount: input.ExpectedMatchCount, FolderAction: input.FolderAction, FolderID: input.FolderID, TagAddIDs: input.TagAddIDs, TagRemoveIDs: input.TagRemoveIDs}
-	if err := accountToolsOperation(ctx, "taxonomy.bulk", plan, nil); err != nil {
-		return nil, err
-	}
-	filteredTarget := input.Filters != nil
-	var err error
-	if filteredTarget {
-		if input.ExpectedMatchCount == nil || *input.ExpectedMatchCount < 0 {
-			return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_EXPECTED_COUNT_REQUIRED", "expected_match_count is required for filter targets")
-		}
-		input.AccountIDs, err = s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
-		if err != nil {
-			return nil, err
-		}
-		input.AccountIDs = uniquePositiveIDs(input.AccountIDs)
-		if len(input.AccountIDs) != *input.ExpectedMatchCount {
-			return nil, infraerrors.Conflict("ACCOUNT_TAXONOMY_TARGET_CHANGED", "matching accounts changed; reload and confirm again").WithMetadata(map[string]string{
-				"expected_match_count": strconv.Itoa(*input.ExpectedMatchCount),
-				"actual_match_count":   strconv.Itoa(len(input.AccountIDs)),
-			})
-		}
-	}
+// positiveUniqueIDs reports whether every ID is positive and listed once.
+func positiveUniqueIDs(ids []int64) bool {
+	return len(uniquePositiveIDs(ids)) == len(ids)
+}
+
+// ValidateBulkAccountTaxonomy checks a bulk folder and tag change before any
+// account is read. The admin handler also runs it before queuing the change,
+// so a malformed request fails at once instead of in every queued account.
+func ValidateBulkAccountTaxonomy(input BulkAccountTaxonomyInput) error {
 	if len(input.AccountIDs) == 0 {
-		return &BulkAccountTaxonomyResult{}, nil
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_TARGET_INVALID", "account_ids must not be empty")
+	}
+	if !positiveUniqueIDs(input.AccountIDs) {
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_ACCOUNT_IDS_INVALID", "IDs must be positive and unique")
+	}
+	if !positiveUniqueIDs(input.TagAddIDs) || !positiveUniqueIDs(input.TagRemoveIDs) {
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_TAG_IDS_INVALID", "IDs must be positive and unique")
+	}
+	for _, id := range input.TagAddIDs {
+		if slices.Contains(input.TagRemoveIDs, id) {
+			return infraerrors.BadRequest("ACCOUNT_TAXONOMY_TAG_OPERATION_CONFLICT", "a tag cannot be added and removed in the same request")
+		}
+	}
+	switch input.FolderAction {
+	case "":
+		if input.FolderID != nil {
+			return infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ACTION_INVALID", "folder_id requires folder_action=set")
+		}
+	case "set":
+		if input.FolderID == nil || *input.FolderID <= 0 {
+			return infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ID_INVALID", "folder_id must be positive when folder_action=set")
+		}
+	case "clear":
+		if input.FolderID != nil {
+			return infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ACTION_INVALID", "folder_id must be omitted when folder_action=clear")
+		}
+	default:
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ACTION_INVALID", "folder_action must be set, clear, or omitted")
+	}
+	if input.FolderAction == "" && len(input.TagAddIDs) == 0 && len(input.TagRemoveIDs) == 0 {
+		return infraerrors.BadRequest("ACCOUNT_TAXONOMY_OPERATION_REQUIRED", "at least one taxonomy operation is required")
+	}
+	return nil
+}
+
+func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input BulkAccountTaxonomyInput) (*BulkAccountTaxonomyResult, error) {
+	if err := ValidateBulkAccountTaxonomy(input); err != nil {
+		return nil, err
 	}
 
 	contextTx := dbent.TxFromContext(ctx)
 	var txClient *dbent.Client
 	var ownedTx *dbent.Tx
+	var err error
 	if contextTx != nil {
 		txClient = contextTx.Client()
 	} else {
@@ -449,9 +499,6 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 		return nil, err
 	}
 	if len(lockedAccounts) != len(input.AccountIDs) {
-		if filteredTarget {
-			return nil, infraerrors.Conflict("ACCOUNT_TAXONOMY_TARGET_CHANGED", "matching accounts changed; reload and confirm again")
-		}
 		return nil, ErrAccountNotFound
 	}
 	if input.FolderAction == "set" {
@@ -595,14 +642,15 @@ func (s *adminServiceImpl) hydrateAccountTaxonomy(ctx context.Context, accounts 
 }
 
 func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int64, assignment AccountTaxonomyAssignment) (*Account, error) {
-	var plan extensionv1.TaxonomyAssignmentPlan
-	if err := accountToolsOperation(ctx, "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: assignment.FolderID, TagIDs: assignment.TagIDs}, &plan); err != nil {
-		return nil, err
+	if assignment.FolderID != nil && *assignment.FolderID <= 0 {
+		return nil, infraerrors.BadRequest("ACCOUNT_FOLDER_ID_INVALID", "folder_id must be positive or null")
 	}
-	if err := validateTaxonomyAssignmentIntent(assignment, plan); err != nil {
-		return nil, err
+	for _, id := range assignment.TagIDs {
+		if id <= 0 {
+			return nil, infraerrors.BadRequest("ACCOUNT_TAG_ID_INVALID", "tag_ids must contain positive IDs")
+		}
 	}
-	assignment.FolderID, assignment.TagIDs = plan.FolderID, plan.TagIDs
+	assignment.TagIDs = uniquePositiveIDs(assignment.TagIDs)
 	contextTx := dbent.TxFromContext(ctx)
 	var txClient *dbent.Client
 	var ownedTx *dbent.Tx
@@ -623,9 +671,6 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 		return nil, ErrAccountNotFound
 	}
 	if assignment.FolderID != nil {
-		if *assignment.FolderID <= 0 {
-			return nil, infraerrors.BadRequest("ACCOUNT_FOLDER_ID_INVALID", "folder_id must be positive or null")
-		}
 		if exists, queryErr := txClient.AccountFolder.Query().Where(dbaccountfolder.IDEQ(*assignment.FolderID)).Exist(ctx); queryErr != nil {
 			return nil, queryErr
 		} else if !exists {
@@ -659,30 +704,6 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 		}
 	}
 	return s.GetAccount(ctx, accountID)
-}
-
-// A policy may normalize repeated tag IDs, but it cannot change the requested
-// folder or tag membership. Validation and normalization remain in the plugin;
-// this check protects the immutable mutation targets before opening a transaction.
-func validateTaxonomyAssignmentIntent(input AccountTaxonomyAssignment, plan extensionv1.TaxonomyAssignmentPlan) error {
-	if (input.FolderID == nil) != (plan.FolderID == nil) ||
-		(input.FolderID != nil && *input.FolderID != *plan.FolderID) {
-		return ErrExtensionOperationUnavailable
-	}
-	requested := make(map[int64]struct{}, len(input.TagIDs))
-	for _, id := range input.TagIDs {
-		requested[id] = struct{}{}
-	}
-	if len(requested) != len(plan.TagIDs) {
-		return ErrExtensionOperationUnavailable
-	}
-	for _, id := range plan.TagIDs {
-		if _, ok := requested[id]; !ok || id <= 0 {
-			return ErrExtensionOperationUnavailable
-		}
-		delete(requested, id)
-	}
-	return nil
 }
 
 func (s *adminServiceImpl) accountConsoleQuery(filters AccountConsoleFilters) *dbent.AccountQuery {

@@ -232,21 +232,6 @@ func runMainServer() {
 			os.Exit(1)
 		}
 	}
-	if app.ImageStudio != nil {
-		studio := app.ImageStudio
-		service.SetImageStudioStarter(func() {
-			if err := studio.Start(context.Background()); err != nil {
-				log.Printf("Image Studio could not start: %v", err)
-			}
-		})
-	}
-	if app.ImageStudio != nil && service.ImageStudioFeatureEnabled() {
-		if err := app.ImageStudio.Start(context.Background()); err != nil {
-			log.Printf("Image Studio could not start: %v", err)
-			app.Cleanup()
-			os.Exit(1)
-		}
-	}
 
 	// 启动服务器
 	go func() {

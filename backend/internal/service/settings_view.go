@@ -407,7 +407,6 @@ type PublicSettings struct {
 
 	// Available Channels feature (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
-	ImageStudioEnabled       bool `json:"image_studio_enabled"`
 	FlatThemeEnabled         bool `json:"flat_theme_enabled"`
 
 	// Subscription feature switch (see SystemSettings.SubscriptionEnabled)

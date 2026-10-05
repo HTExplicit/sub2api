@@ -85,7 +85,7 @@ func TestOpenAIRefusalStreamKeepsCheckingAcrossSingleLineBreak(t *testing.T) {
 	)
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamHold, action)
-	require.True(t, state.matched)
+	require.Equal(t, "cannot", state.evidence().Keyword)
 }
 
 func TestOpenAIRefusalStreamKeepsCheckingAfterFirstParagraph(t *testing.T) {
@@ -99,7 +99,7 @@ func TestOpenAIRefusalStreamKeepsCheckingAfterFirstParagraph(t *testing.T) {
 	)
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamHold, action)
-	require.False(t, state.matched)
+	require.Empty(t, state.evidence().Keyword)
 	require.False(t, state.passthrough)
 
 	action, _, observeErr = state.observe(
@@ -108,7 +108,7 @@ func TestOpenAIRefusalStreamKeepsCheckingAfterFirstParagraph(t *testing.T) {
 	)
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamHold, action)
-	require.True(t, state.matched)
+	require.Equal(t, "不能", state.evidence().Keyword)
 }
 
 func TestOpenAIRefusalStreamPassesBeforeThirdParagraph(t *testing.T) {
@@ -130,7 +130,7 @@ func TestOpenAIRefusalStreamPassesBeforeThirdParagraph(t *testing.T) {
 	)
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamPass, action)
-	require.False(t, state.matched)
+	require.Empty(t, state.evidence().Keyword)
 }
 
 func TestOpenAIRefusalStreamFailsOpenAtRuneScanLimit(t *testing.T) {
@@ -163,7 +163,7 @@ func TestOpenAIRefusalStreamMatchesStructuredRefusalEvents(t *testing.T) {
 	)
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamHold, action)
-	require.True(t, state.matched)
+	require.Equal(t, "不能", state.evidence().Keyword)
 
 	action, _, observeErr = state.observe(
 		"response.refusal.done",
@@ -171,7 +171,7 @@ func TestOpenAIRefusalStreamMatchesStructuredRefusalEvents(t *testing.T) {
 	)
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamHold, action)
-	require.True(t, state.matched)
+	require.Equal(t, "不能", state.evidence().Keyword)
 }
 
 func TestOpenAIRefusalStreamEmitsReplacementBeforeTerminalAndCompletesWithUsage(t *testing.T) {
@@ -279,7 +279,7 @@ func TestOpenAIRefusalStreamRewritesNonEarlyEmptyTerminalFromCompletedMessage(t 
 			require.NoError(t, observeErr)
 			require.Equal(t, openAIRefusalStreamHold, action)
 			require.Nil(t, replacement)
-			require.True(t, state.matched)
+			require.Equal(t, "不能", state.evidence().Keyword)
 			require.False(t, state.earlyEmitted)
 
 			donePayload := fmt.Sprintf(

@@ -191,22 +191,6 @@ func nativeFeatureSettings(plugin NativeRetirementPlugin, encryptor SecretEncryp
 		return err
 	}
 	switch plugin.Key {
-	case "codexrip.image-tools":
-		if err := validateNativeUnmappedBindings(plugin, "extensions.request.v1"); err != nil {
-			return nil, err
-		}
-		var value extensionv1.ImageToolsConfig
-		// responses_image_enabled (the removed Responses image bridge) is
-		// accepted in a saved plugin configuration and dropped.
-		if err := DecodeSwitchSettings(raw, &value, "studio_enabled", "responses_image_enabled"); err != nil {
-			return nil, fmt.Errorf("invalid saved image tool configuration: %w", err)
-		}
-		enabled, err := nativeRetirementBindingEnabled(plugin, "extensions.request.v1", "*", "*")
-		if err != nil {
-			return nil, err
-		}
-		value.StudioEnabled = value.StudioEnabled && enabled
-		return settings, put(SettingKeyImageToolsConfig, value)
 	case "codexrip.admin-observability":
 		if err := validateNativeUnmappedBindings(plugin, "extensions.observability.v1", "extensions.ui.v1"); err != nil {
 			return nil, err
@@ -290,8 +274,6 @@ func nativeCapabilityScopeKnown(key, capability, platform, accountType string) b
 		return global && (capability == "extensions.admin.v1" || capability == "extensions.ui.v1" || capability == "extensions.observability.v1")
 	case "codexrip.model-policy":
 		return global && (capability == "extensions.admin.v1" || capability == "extensions.catalog.v1")
-	case "codexrip.image-tools":
-		return global && (capability == "extensions.admin.v1" || capability == "extensions.request.v1")
 	case "codexrip.prompt-skills":
 		return (global && capability == "extensions.admin.v1") || (capability == "extensions.request.v1" && platform == PlatformOpenAI && accountType == "*")
 	}
@@ -320,8 +302,6 @@ func nativeRetirementBindingEnabled(plugin NativeRetirementPlugin, capability, p
 // database read failure with defaults.
 func ValidateNativeFeatureSetting(key string, raw []byte) error {
 	switch key {
-	case SettingKeyImageToolsConfig:
-		return DecodeSwitchSettings(raw, &extensionv1.ImageToolsConfig{}, "studio_enabled")
 	case SettingKeyAdminObservabilityConfig:
 		return DecodeSwitchSettings(raw, &extensionv1.AdminObservabilityConfig{}, "telemetry_enabled", "theme_enabled")
 	default:

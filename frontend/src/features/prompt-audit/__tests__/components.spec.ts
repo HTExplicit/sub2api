@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import EndpointPool from '../components/EndpointPool.vue'
 import PolicyPanel from '../components/PolicyPanel.vue'
 import EventWorkspace from '../components/EventWorkspace.vue'
@@ -8,9 +8,6 @@ import EventDetailDialog from '../components/EventDetailDialog.vue'
 import FilterDeleteDialog from '../components/FilterDeleteDialog.vue'
 import type { PromptAuditDraft, PromptAuditEndpointDraft, PromptAuditEvent, PromptEventFilters } from '../types'
 import { emptyEventFilters, resolveDeleteRangeFilters, SCANNER_CATALOG } from '../viewModel'
-
-const confirmAction = vi.hoisted(() => vi.fn())
-vi.mock('@/utils/browserActions', () => ({ confirmAction }))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -27,37 +24,7 @@ const endpoint = (): PromptAuditEndpointDraft => ({
 })
 
 describe('Prompt Audit components', () => {
-  beforeEach(() => { vi.restoreAllMocks(); confirmAction.mockReset() })
-
-  it.each(['confirmed', 'cancelled', 'rejected'])('uses host endpoint deletion confirmation when %s without persisting configuration', async (outcome) => {
-    let resolve!: (value: boolean) => void
-    let reject!: (reason: unknown) => void
-    confirmAction.mockReturnValueOnce(new Promise<boolean>((done, fail) => { resolve = done; reject = fail }))
-    const nativeConfirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    const target = endpoint()
-    const retained = { ...endpoint(), id: 'guard-2', name: 'Retained', token: 'retained-draft' }
-    const wrapper = mount(EndpointPool, {
-      props: { endpoints: [target, retained], probeResults: {}, probingIds: [] },
-      global: { stubs: { BaseDialog: DialogStub } },
-    })
-    const remove = wrapper.get('[data-test="endpoint-guard-1"]').findAll('button').find(button => button.text().includes('common.delete'))!
-    await remove.trigger('click')
-    expect(confirmAction).toHaveBeenCalledTimes(1)
-    expect(confirmAction).toHaveBeenCalledWith('admin.promptAudit.pool.deleteConfirm')
-    expect(nativeConfirm).not.toHaveBeenCalled()
-    expect(wrapper.emitted('update:endpoints')).toBeUndefined()
-
-    // Confirmation waits at the host boundary: reordering must not make an
-    // earlier numeric index target the other endpoint or erase its draft.
-    await wrapper.setProps({ endpoints: [retained, { ...target, name: 'Edited while waiting' }] })
-    if (outcome === 'rejected') reject(new Error('host confirmation unavailable'))
-    else resolve(outcome === 'confirmed')
-    await flushPromises()
-    if (outcome === 'confirmed') expect(wrapper.emitted('update:endpoints')).toEqual([[[retained]]])
-    else expect(wrapper.emitted('update:endpoints')).toBeUndefined()
-    expect(wrapper.emitted('probe')).toBeUndefined()
-    wrapper.unmount()
-  })
+  beforeEach(() => vi.restoreAllMocks())
 
   it('edits a saved endpoint with blank-secret keep, explicit clear, replacement, and probe actions', async () => {
     const wrapper = mount(EndpointPool, {

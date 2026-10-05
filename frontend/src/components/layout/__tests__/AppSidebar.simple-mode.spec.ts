@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
     publicSettingsLoaded: true,
     backendModeEnabled: false,
     cachedPublicSettings: {
-      image_studio_enabled: true,
       custom_menu_items: [],
     },
     toggleSidebar: vi.fn(),
@@ -63,10 +62,9 @@ vi.mock('vue-i18n', async importOriginal => {
   }
 })
 
-async function renderSidebar(options: { admin?: boolean; imageStudio?: boolean } = {}) {
+async function renderSidebar(options: { admin?: boolean } = {}) {
   mocks.authStore.isAdmin = options.admin === true
   mocks.authStore.isSimpleMode = true
-  mocks.appStore.cachedPublicSettings.image_studio_enabled = options.imageStudio !== false
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -99,24 +97,17 @@ describe('AppSidebar simple mode extensions', () => {
     document.documentElement.classList.remove('dark')
   })
 
-  it('renders Image Studio for a regular user when the opt-in flag is enabled', async () => {
-    const wrapper = await renderSidebar({ imageStudio: true })
+  it('renders no extensions section for a regular user', async () => {
+    const wrapper = await renderSidebar()
 
-    expect(extensionLinks(wrapper)).toEqual(['/image-studio'])
+    expect(wrapper.find('[data-testid="sidebar-extensions"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/usage"]').exists()).toBe(false)
   })
 
-  it('renders admin extensions and Image Studio for an admin in simple mode', async () => {
-    const wrapper = await renderSidebar({ admin: true, imageStudio: true })
-
-    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime', '/admin/reasoning-recovery', '/image-studio'])
-    expect(wrapper.text()).not.toContain('nav.myAccount')
-  })
-
-  it('keeps admin extensions visible while hiding Image Studio when its flag is disabled', async () => {
-    const wrapper = await renderSidebar({ admin: true, imageStudio: false })
+  it('renders admin extensions for an admin in simple mode', async () => {
+    const wrapper = await renderSidebar({ admin: true })
 
     expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime', '/admin/reasoning-recovery'])
-    wrapper.unmount()
+    expect(wrapper.text()).not.toContain('nav.myAccount')
   })
 })

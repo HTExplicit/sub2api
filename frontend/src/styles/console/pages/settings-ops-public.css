@@ -2412,7 +2412,7 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  *   views/admin/BackupView.vue:347                   data-ui="r2-table-box"   (the R2 guide's settings table frame)
  *   views/admin/SettingsView.vue:7836, BackupView.vue:203  data-ui="settings-list-box" (6.3 the two lists that can be empty)
  * Existing hooks used: .settings-tabs-* (SettingsView), #provider-form (PaymentProviderDialog), data-testid
- * "official-model-catalog*", "image-tools-settings", "observability-settings", "backup-schedule", "retired-plugins",
+ * "official-model-catalog*", "observability-settings", "backup-schedule", "retired-plugins",
  * data-test="account-system-prompt-binding" (the per-account binding in the accounts dialogs).
  * Selectors start with html.flat-theme and one of those roots; the theme switched off renders upstream. */
 
@@ -2805,23 +2805,23 @@ html.flat-theme [data-ui~="settings"] .card table tr[data-ui~="quota-row"]:not(u
 
 /* ================================================================== settings · 5 panels inside a card */
 
-/* 5.1 The Codex card stacks three fork panels (Image Studio, observation, the model catalogue) and the client rules:
-   one hairline between them, as between the rows of a card. */
-html.flat-theme [data-ui~="settings"] .card > div[class~="p-6"] > :is([data-testid="image-tools-settings"], [data-testid="observability-settings"], [data-testid="official-model-catalog"]) + * {
+/* 5.1 The Codex card stacks two fork panels (observation, the model catalogue) and the client rules: one hairline
+   between them, as between the rows of a card. */
+html.flat-theme [data-ui~="settings"] .card > div[class~="p-6"] > :is([data-testid="observability-settings"], [data-testid="official-model-catalog"]) + * {
   margin-top: var(--set-row);
   border-top: 1px solid rgb(var(--ui-line));
   padding-top: var(--set-row);
 }
 
-/* their checkbox options: 13px ink beside the 14px box, 8px apart */
-html.flat-theme [data-ui~="settings"] :is([data-testid="image-tools-settings"], [data-testid="observability-settings"]) > label {
+/* the observation panel's checkbox options: 13px ink beside the 14px box, 8px apart */
+html.flat-theme [data-ui~="settings"] [data-testid="observability-settings"] > label {
   gap: 0.5rem;
   font-size: 0.8125rem;
   line-height: 1.21875rem;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="settings"] :is([data-testid="image-tools-settings"], [data-testid="observability-settings"]) > :not([hidden]) ~ :not([hidden]) {
+html.flat-theme [data-ui~="settings"] [data-testid="observability-settings"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: 0.625rem;
 }
 

@@ -24,19 +24,16 @@
  *   data-ui="plan-card"                components/payment/SubscriptionPlanCard.vue:3  plan card root
  *   data-ui="active-sub"               views/user/PaymentView.vue:201                 an active subscription's row
  *   data-ui="balance-tile"             components/user/dashboard/UserDashboardStats.vue:5  the balance KPI tile
- *   data-ui="image-studio"             features/image-studio/ImageStudioPage.vue:2    page root
  * Identity hooks (data.css §6.4 contract, decision 2): data-ui="platform-chip" on KeysView.vue:515 (the create
  * dialog's provider tiles), PaymentView.vue:107 and :207, SubscriptionsView.vue:45, SubscriptionPlanCard.vue:34,
  * PlazaModelPricingTable.vue:82, ProfileIdentityBindingsSection.vue:33 (the sign-in providers' letter squares);
  * data-ui="platform-text" on the platform marks PaymentView.vue:203, SubscriptionsView.vue:39,
  * SubscriptionPlanCard.vue:11.
- * Existing hooks used: data-table="keys", #key-form, the profile's data-testid, .custom-page-layout, data-testid
- * on the image studio, data-ui="pagination" / "empty-state" recipes of data.css.
+ * Existing hooks used: data-table="keys", #key-form, the profile's data-testid, .custom-page-layout,
+ * data-ui="pagination" / "empty-state" recipes of data.css.
  * Performance (PERF.md, before v0.2.9-codexrip.3): every data-ui hook here is static (never bound to data). A style that
  * depends on what an element contains is carried by a static hook on that element, :focus-within or a sibling position
- * (:not(:last-child)); the one relational pseudo-class (has()) left is the image studio's page root testing whether its
- * header holds the clear-history button (7.2: the button shows while a history exists, data), in the subject compound
- * of the hooked root with a child argument, handing its values down as custom properties. Every rewritten selector keeps the weight of the
+ * (:not(:last-child)); the file has no relational pseudo-class (has()). Every rewritten selector keeps the weight of the
  * one it replaced: a hook that has to weigh nothing is wrapped in :where(), missing weight is added by a pad that never
  * filters anything (:not(uipad) = 0,0,1, :not([data-uipad]) = 0,1,0, :not(#uipad) = 1,0,0). */
 
@@ -1365,65 +1362,12 @@ html.flat-theme [data-ui="user-subscriptions"] > div[class~="grid"] div[class~="
   color: rgb(var(--ui-ink-soft));
 }
 
-/* ================================================================== 7 · available channels, custom pages, image tools, model plaza */
+/* ================================================================== 7 · available channels, custom pages, model plaza */
 
 /* 7.1 Custom pages: the frame is the reference's card; the open-in-new-window button sits in the card's corner */
 html.flat-theme .custom-page-layout > .card {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
-}
-
-/* 7.2 Image studio: the form is a card (8px, 1px line, 16px); the mode switch is the segmented control. The page's
-   own h1 repeats the title the header prints at every width (the desktop header row; below 1024px the 47px bar,
-   shell.css), so it is kept for assistive technology only; the intro under it repeats the header row's description
-   on a desktop only (the phone bar shows the title alone), so it steps back there. */
-html.flat-theme [data-testid="image-studio-layout"] > form {
-  padding: 16px;
-  border-color: rgb(var(--ui-line));
-  border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
-}
-
-html.flat-theme div[data-ui="image-studio"] > header > div:first-child > h1 {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-@media (min-width: 1024px) {
-  html.flat-theme div[data-ui="image-studio"] > header > div:first-child > p {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  /* the header's words are hidden: with the clear-history button the header keeps its row, the button at its end, and
-     the layout keeps the page's 24px step; without it the header has no height and the layout starts the page. The
-     button shows while a history exists (data): the page root tests its own header and hands both values down. */
-  html.flat-theme div[data-ui="image-studio"]:has(> header > button) {
-    --ui-studio-head-justify: flex-end;
-    --ui-studio-layout-gap: 1.5rem;
-  }
-
-  html.flat-theme div[data-ui="image-studio"] > header:not(uipad):not(uipad) {
-    justify-content: var(--ui-studio-head-justify, space-between);
-  }
-
-  html.flat-theme div[data-ui="image-studio"] > header:not(uipad) + [data-testid="image-studio-layout"] {
-    margin-top: var(--ui-studio-layout-gap, 0px);
-  }
-}
-
-/* the form's fields sit in a display:contents fieldset, so the form's 20px rhythm never reached them (upstream draws
-   them touching); they take the console's field rhythm, 16px */
-html.flat-theme [data-testid="image-studio-layout"] > form > fieldset[class~="contents"] > :not([hidden]) ~ :not([hidden]) {
-  margin-top: 16px;
 }
 
 /* 7.3 Model plaza (standalone, data-ui="model-plaza"): the public pages' top bar (settings-ops-public.css: sticky
@@ -1703,8 +1647,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
 @media (max-width: 1023.98px) {
   /* 8.0 Below 1024px the 47px bar prints the page title (shell.css), so a page's own heading that repeats it word for
      word is kept for assistive technology only, as the pages already do from 1024px: 系统提示词 (its route title is
-     Chinese), 推理恢复, Codex 运行设置, 插件管理, 风控中心, 提示词审计, 渠道监控 (the image studio: 7.2). The intros
-     under them stay. */
+     Chinese), 推理恢复, Codex 运行设置, 插件管理, 风控中心, 提示词审计, 渠道监控. The intros under them stay. */
   html.flat-theme:lang(zh) [data-ui~="system-prompts"] > header h1,
   html.flat-theme [data-ui~="reasoning-recovery"] > header h1,
   html.flat-theme [data-ui~="codex-runtime"] > h2:first-child,

@@ -79,41 +79,6 @@ func TestLoadServerTimingConfig(t *testing.T) {
 	})
 }
 
-func TestResolveImageStudioEnabledFromEnvironment(t *testing.T) {
-	tests := []struct {
-		name       string
-		primary    string
-		want       bool
-		wantErrEnv string
-	}{
-		{name: "unset", primary: "", want: false},
-		{name: "primary", primary: "true", want: true},
-		{name: "disabled", primary: "false", want: false},
-		{name: "invalid primary", primary: "sometimes", wantErrEnv: ImageStudioEnabledEnv},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(ImageStudioEnabledEnv, tt.primary)
-			got, err := ResolveImageStudioEnabledFromEnvironment()
-			if tt.wantErrEnv != "" {
-				require.ErrorContains(t, err, tt.wantErrEnv)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestLoadRejectsInvalidImageStudioEnvironment(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	t.Setenv(ImageStudioEnabledEnv, "not-a-boolean")
-
-	_, err := LoadForBootstrap()
-	require.ErrorContains(t, err, ImageStudioEnabledEnv+" must be a boolean")
-}
-
 func TestLoadSimpleModeKeyRateLimitEnabledFromEnvironment(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED", "true")

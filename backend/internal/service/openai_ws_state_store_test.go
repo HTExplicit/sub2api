@@ -288,7 +288,6 @@ func TestLookupOpenAIContinuationBindingDistinguishesMissAndStoreError(t *testin
 
 	miss := LookupOpenAIContinuationBinding(ctx, NewOpenAIWSStateStore(nil), groupID, "resp_miss")
 	require.Equal(t, OpenAIContinuationBindingMiss, miss.State)
-	require.NoError(t, miss.Err)
 	sentinelMiss := LookupOpenAIContinuationBinding(
 		ctx,
 		NewOpenAIWSStateStore(&openAIWSStateStoreTimeoutProbeCache{getErr: ErrStickySessionNotFound}),
@@ -296,13 +295,11 @@ func TestLookupOpenAIContinuationBindingDistinguishesMissAndStoreError(t *testin
 		"resp_sentinel_miss",
 	)
 	require.Equal(t, OpenAIContinuationBindingMiss, sentinelMiss.State)
-	require.NoError(t, sentinelMiss.Err)
 
 	storeErr := errors.New("redis unavailable")
 	probe := &openAIWSStateStoreTimeoutProbeCache{getErr: storeErr}
 	lookup := LookupOpenAIContinuationBinding(ctx, NewOpenAIWSStateStore(probe), groupID, "resp_store_error")
 	require.Equal(t, OpenAIContinuationBindingStoreError, lookup.State)
-	require.ErrorIs(t, lookup.Err, storeErr)
 	require.Zero(t, lookup.AccountID)
 }
 

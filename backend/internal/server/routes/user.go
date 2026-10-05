@@ -95,18 +95,6 @@ func RegisterUserRoutes(
 			channels.GET("/available", h.AvailableChannel.List)
 		}
 
-		imageStudio := authenticated.Group("/image-studio")
-		{
-			imageStudio.GET("/eligible-keys", h.ImageStudio.EligibleKeys)
-			imageStudio.POST("/jobs", h.ImageStudio.Create)
-			imageStudio.GET("/jobs", h.ImageStudio.List)
-			imageStudio.GET("/jobs/:id", h.ImageStudio.Get)
-			imageStudio.GET("/jobs/:id/items", h.ImageStudio.Items)
-			imageStudio.POST("/jobs/:id/cancel", h.ImageStudio.Cancel)
-			imageStudio.POST("/jobs/:id/retry", h.ImageStudio.Retry)
-			imageStudio.GET("/jobs/:id/artifacts/:artifact_id", h.ImageStudio.Artifact)
-		}
-
 		// 使用记录（聚合统计属重查询，叠加更严格的按用户限流）
 		usage := authenticated.Group("/usage")
 		usage.Use(panelRateLimiter.Heavy())

@@ -48,12 +48,12 @@ if (missing.length) {
 
 function ownerOf(file) {
   if (file.startsWith('plugins/')) return file.split('/')[1] === 'bundle.source.json' ? 'core-extension-and-job-host' : file.split('/')[1]
-  if (/\/plugin[^/]*\.(?:go|ts|vue)$|\/plugins\/|backend\/pkg\/(?:extensionapi|pluginapi)\/|internal\/testextensions\//.test(file)) return 'core-extension-and-job-host'
+  if (/\/plugin[^/]*\.(?:go|ts|vue)$|\/plugins\/|backend\/pkg\/(?:extensionapi|pluginapi)\//.test(file)) return 'core-extension-and-job-host'
   if (/^\.github\/|^Dockerfile|^deploy\/|^\.dockerignore$|^\.gitignore$|refresh-coverage\.mjs$/.test(file)) return 'operations'
   if (/remote_skill|business_system_prompt|systemPrompt|SystemPrompt/.test(file)) return 'prompt-skills'
   if (/^\.downstream\/|^\.superpowers\/|\.md$/.test(file)) return 'documentation-and-history'
   if (/cindy/i.test(file)) return 'cindy-provider'
-  if (/image_studio|ImageStudio|codex_image_generation_bridge/.test(file)) return 'image-tools'
+  if (/image_studio|codex_image_generation_bridge/.test(file)) return 'image-tools'
   if (/account_traffic_observe|styles\/theme\.css|tailwind\.config/.test(file)) return 'admin-observability'
   if (/account_quota|quota_estimate|quota_activity/.test(file)) return 'core-quota-and-protocol'
   return priorOwners.get(file) || 'mixed-requires-review'

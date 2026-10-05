@@ -15,12 +15,12 @@ import (
 func TestNativeFeatureRetirementIsAtomic(t *testing.T) {
 	ctx := context.Background()
 	var present int
-	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT count(*) FROM sub2api_plugin_installations WHERE plugin_key IN ('codexrip.model-policy','codexrip.image-tools')`).Scan(&present))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT count(*) FROM sub2api_plugin_installations WHERE plugin_key IN ('codexrip.model-policy','codexrip.admin-observability')`).Scan(&present))
 	require.Zero(t, present, "this fixture requires an isolated test database")
 	t.Cleanup(func() {
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM settings WHERE key IN ('deplugin_retired_plugins','image_tools_config')`)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM sub2api_plugin_bootstrap WHERE plugin_key='codexrip.image-tools'`)
-		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM sub2api_plugin_installations WHERE plugin_key IN ('codexrip.model-policy','codexrip.image-tools')`)
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM settings WHERE key IN ('deplugin_retired_plugins','admin_observability_config')`)
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM sub2api_plugin_bootstrap WHERE plugin_key='codexrip.admin-observability'`)
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM sub2api_plugin_installations WHERE plugin_key IN ('codexrip.model-policy','codexrip.admin-observability')`)
 	})
 	insert := func(key string, generation int64) int64 {
 		t.Helper()
@@ -30,18 +30,18 @@ func TestNativeFeatureRetirementIsAtomic(t *testing.T) {
 			VALUES($1,'retirement fixture','1.0.0','{}','','','','fixture','enabled','original encrypted config',$2,decode('010203','hex')) RETURNING id`, key, generation).Scan(&id))
 		return id
 	}
-	imageID := insert("codexrip.image-tools", 3)
+	observabilityID := insert("codexrip.admin-observability", 3)
 	policyID := insert("codexrip.model-policy", 9)
-	_, err := integrationDB.ExecContext(ctx, `INSERT INTO sub2api_plugin_bindings(plugin_id,capability,platform,account_type,enabled,rollout_percent) VALUES($1,'extensions.request.v1','*','*',true,100)`, imageID)
+	_, err := integrationDB.ExecContext(ctx, `INSERT INTO sub2api_plugin_bindings(plugin_id,capability,platform,account_type,enabled,rollout_percent) VALUES($1,'extensions.observability.v1','*','*',true,100)`, observabilityID)
 	require.NoError(t, err)
-	_, err = integrationDB.ExecContext(ctx, `INSERT INTO sub2api_plugin_bootstrap(plugin_key,bundle_sha256,migration_profile,desired_enabled,completed,state_imported) VALUES('codexrip.image-tools','fixture','image-tools-v1',true,true,true)`)
+	_, err = integrationDB.ExecContext(ctx, `INSERT INTO sub2api_plugin_bootstrap(plugin_key,bundle_sha256,migration_profile,desired_enabled,completed,state_imported) VALUES('codexrip.admin-observability','fixture','admin-observability-v1',true,true,true)`)
 	require.NoError(t, err)
-	_, err = integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value,updated_at) VALUES('image_tools_config','{"studio_enabled":false}',NOW())`)
+	_, err = integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value,updated_at) VALUES('admin_observability_config','{"telemetry_enabled":false,"theme_enabled":false}',NOW())`)
 	require.NoError(t, err)
 	repo := NewNativeFeatureBootstrapRepository(integrationDB)
 	convert := func(plugin service.NativeRetirementPlugin) (map[string]json.RawMessage, error) {
-		if plugin.Key == "codexrip.image-tools" {
-			return map[string]json.RawMessage{service.SettingKeyImageToolsConfig: json.RawMessage(`{"studio_enabled":true}`)}, nil
+		if plugin.Key == "codexrip.admin-observability" {
+			return map[string]json.RawMessage{service.SettingKeyAdminObservabilityConfig: json.RawMessage(`{"telemetry_enabled":true,"theme_enabled":true}`)}, nil
 		}
 		return nil, nil
 	}
@@ -53,7 +53,7 @@ func TestNativeFeatureRetirementIsAtomic(t *testing.T) {
 	})
 	require.Error(t, err)
 	var state string
-	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT state FROM sub2api_plugin_installations WHERE id=$1`, imageID).Scan(&state))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT state FROM sub2api_plugin_installations WHERE id=$1`, observabilityID).Scan(&state))
 	require.Equal(t, "enabled", state, "an earlier disable must roll back with a later failed conversion")
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT count(*) FROM settings WHERE key='deplugin_retired_plugins'`).Scan(&present))
 	require.Zero(t, present)
@@ -70,12 +70,12 @@ func TestNativeFeatureRetirementIsAtomic(t *testing.T) {
 	require.Equal(t, "original encrypted config", cipher)
 	require.Equal(t, "010203", artifact)
 	var setting string
-	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key='image_tools_config'`).Scan(&setting))
-	require.JSONEq(t, `{"studio_enabled":false}`, setting)
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key='admin_observability_config'`).Scan(&setting))
+	require.JSONEq(t, `{"telemetry_enabled":false,"theme_enabled":false}`, setting)
 	var bindingEnabled, removed bool
-	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT enabled FROM sub2api_plugin_bindings WHERE plugin_id=$1`, imageID).Scan(&bindingEnabled))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT enabled FROM sub2api_plugin_bindings WHERE plugin_id=$1`, observabilityID).Scan(&bindingEnabled))
 	require.False(t, bindingEnabled)
-	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT user_removed FROM sub2api_plugin_bootstrap WHERE plugin_key='codexrip.image-tools'`).Scan(&removed))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT user_removed FROM sub2api_plugin_bootstrap WHERE plugin_key='codexrip.admin-observability'`).Scan(&removed))
 	require.True(t, removed)
 	second, err := repo.RetireNativeFeatures(ctx, func(service.NativeRetirementPlugin) (map[string]json.RawMessage, error) {
 		t.Fatal("a completed retirement must not repeat decryption or import")

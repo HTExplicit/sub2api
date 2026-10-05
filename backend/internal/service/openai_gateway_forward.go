@@ -823,7 +823,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	wsRetryLoop:
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
 			wsAttempts = attempt
-			wsResult, wsErr = s.forwardOpenAIWSV2WithScope(
+			wsResult, wsErr = s.forwardOpenAIWSV2(
 				ctx,
 				c,
 				account,
