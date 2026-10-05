@@ -1111,9 +1111,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, respBody)
 			if continuationStateError != openAIContinuationStateErrorNone {
-				// The failure describes request history, not account health. Do not
-				// let a compatibility proxy's 4xx/5xx wrapper fan this one request
-				// out across the remaining scheduler pool.
+				// The failure describes request history, not account health, whatever
+				// status a compatibility proxy wraps it in. Whether rejected
+				// ciphertext is offered to another account is decided once, when the
+				// attempt ends (StopError).
 				s.recordOpenAIRequestTerminalUpstreamError(ctx, c, account, resp.StatusCode, resp.Header, body, respBody,
 					"continuation_state", false,
 					buildOpenAIContinuationDiagnostic(c, diagnosticIncomingBody, upstreamReq, body, respBody, string(continuationStateError)),
