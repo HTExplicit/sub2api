@@ -4175,9 +4175,19 @@ html.flat-theme [data-ui~="prompt-audit-page"] div[class~="overflow-x-auto"][cla
   border-radius: var(--ui-radius-lg);
 }
 
-/* the save bar (config tab): a surface band on the structural line, the reference's quiet footer (no drop shadow) */
-html.flat-theme [data-ui~="prompt-audit-page"] + div[class~="sticky"][class~="bottom-0"] {
+/* the save bar (config tab; upstream fixes it to the window's bottom): a surface band on the structural line, the
+   reference's quiet footer (no drop shadow, no blur behind the opaque fill) */
+html.flat-theme [data-ui~="prompt-audit-page"] + div[class~="fixed"][class~="bottom-0"] {
   border-color: rgb(var(--ui-line));
   background-color: rgb(var(--ui-surface));
   box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* from 1024px upstream starts the bar at its own 16rem sidebar (lg:left-64): here at the shell's (shell.css) */
+@media (min-width: 1024px) {
+  html.flat-theme [data-ui~="prompt-audit-page"] + div[class~="fixed"][class~="bottom-0"] {
+    left: var(--ui-shell-sidebar-w);
+  }
 }
