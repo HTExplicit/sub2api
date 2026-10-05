@@ -175,23 +175,6 @@ type UpdateAccountRequest struct {
 	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
-func (r *UpdateAccountRequest) UnmarshalJSON(raw []byte) error {
-	type plain UpdateAccountRequest
-	var decoded plain
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return err
-	}
-	if value, present := fields["provider_edit"]; present && strings.TrimSpace(string(value)) == "null" {
-		return errors.New("invalid provider edit input")
-	}
-	*r = UpdateAccountRequest(decoded)
-	return nil
-}
-
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
 type BulkUpdateAccountsRequest struct {
 	AccountIDs              []int64                   `json:"account_ids"`
