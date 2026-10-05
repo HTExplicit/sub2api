@@ -20,6 +20,7 @@ type SettingHandler struct {
 	version                  string
 }
 
+// NewSettingHandler 创建公开设置处理器
 func NewSettingHandler(settingService *service.SettingService, version string) *SettingHandler {
 	return &SettingHandler{
 		settingService: settingService,
