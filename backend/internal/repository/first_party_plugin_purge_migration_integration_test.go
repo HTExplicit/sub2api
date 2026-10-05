@@ -239,7 +239,13 @@ RETURNING id`, values...).Scan(&id))
 		}
 	})
 
-	const upgrade = "; start v0.2.13-codexrip.7 once, then upgrade"
+	// Only an installation without any receipt is retired by an earlier release;
+	// a receipt that is stored but does not cover an installation is not.
+	const (
+		earlier   = " in v0.2.13-codexrip.8 as .downstream/native-domains.md describes, then upgrade"
+		unretired = "; start v0.2.13-codexrip.8 once as .downstream/native-domains.md describes, then upgrade"
+		uncovered = "; no release repairs it, resolve it as .downstream/native-domains.md describes, then upgrade"
+	)
 	for _, test := range []struct {
 		name      string
 		installed []string // first-party installations the database holds
@@ -249,24 +255,24 @@ RETURNING id`, values...).Scan(&id))
 		refusal   string // what 272 raises; "" when it applies
 	}{
 		{name: "installation without a receipt", installed: []string{"codexrip.admin-observability"},
-			refusal: "first-party plugin installations were never retired (codexrip.admin-observability)" + upgrade},
+			refusal: "first-party plugin installations were never retired (codexrip.admin-observability)" + unretired},
 		{name: "receipt that is not completed", installed: []string{"codexrip.admin-observability"}, completed: "false", entries: []string{"codexrip.admin-observability"},
-			refusal: "first-party plugin installations were never retired (codexrip.admin-observability)" + upgrade},
+			refusal: "the retirement receipt is not completed or has no entry for first-party plugin installations (codexrip.admin-observability)" + uncovered},
 		{name: "receipt without an entry for an installation", installed: []string{"codexrip.admin-observability", "codexrip.model-policy", "codexrip.account-tools"},
 			completed: "true", entries: []string{"codexrip.admin-observability"},
-			refusal: "first-party plugin installations were never retired (codexrip.account-tools, codexrip.model-policy)" + upgrade},
+			refusal: "the retirement receipt is not completed or has no entry for first-party plugin installations (codexrip.account-tools, codexrip.model-policy)" + uncovered},
 		{name: "receipt without an installation", completed: "false", entries: []string{"codexrip.admin-observability"}},
 		{name: "third-party installation in the state updating", completed: "true",
 			store: func(f fixture, otherID int64) {
 				exec(f, `UPDATE sub2api_plugin_installations SET state = 'updating' WHERE id = $1`, otherID)
 			},
-			refusal: "plugin installations are in a state the plugin manager does not have (acme.transport is updating); disable or uninstall them in v0.2.13-codexrip.7, then upgrade"},
+			refusal: "plugin installations are in a state the plugin manager does not have (acme.transport is updating); disable or uninstall them" + earlier},
 		{name: "two third-party bindings enabled for one scope", completed: "true",
 			store: func(f fixture, otherID int64) {
 				bind(f, otherID, "extensions.request.v1", "openai", "oauth", true, 100)
 				bind(f, install(f, second, "enabled", false), "extensions.request.v1", "openai", "oauth", true, 100)
 			},
-			refusal: "more than one enabled plugin binding shares a scope (extensions.request.v1 openai/oauth); disable all but one of the plugins in v0.2.13-codexrip.7, then upgrade"},
+			refusal: "more than one enabled plugin binding shares a scope (extensions.request.v1 openai/oauth); disable all but one of the plugins" + earlier},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f, upstream := open(t)
@@ -282,18 +288,14 @@ RETURNING id`, values...).Scan(&id))
 			if test.store != nil {
 				test.store(f, otherID)
 			}
-			before, stored, schema := kept(f, otherID), purged(f), tables(f, "public")
-
 			if test.refusal != "" {
-				exec(f, `SAVEPOINT before_272`)
+				// The runner applies a file in one transaction, so a file that
+				// raises changes nothing: only what it raises is checked here.
 				_, err := f.tx.ExecContext(ctx, migration)
 				require.ErrorContains(t, err, "migration 272: "+test.refusal)
-				exec(f, `ROLLBACK TO SAVEPOINT before_272`)
-				require.Equal(t, stored, purged(f), "a refused migration changes nothing")
-				require.Equal(t, schema, tables(f, "public"))
-				require.Equal(t, before, kept(f, otherID))
 				return
 			}
+			before := kept(f, otherID)
 			apply(f)
 			require.Zero(t, purged(f))
 			require.Equal(t, upstream, tables(f, "public"))

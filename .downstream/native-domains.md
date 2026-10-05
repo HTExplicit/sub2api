@@ -35,23 +35,42 @@ saved Codex runtime configuration has no hash recorded by v0.2.11-codexrip.6,
 key. Starting one of those three releases once satisfies the first two
 conditions.
 
-Migration 272 stops startup, changing nothing, in three cases:
+Migration 272 stops startup, changing nothing itself, in four cases:
 
-1. One of the seven first-party plugin installations exists and the receipt of
-   the retirement, a `settings` row, is missing, is not completed or has no
-   entry for it: that installation was never retired. Starting
-   v0.2.13-codexrip.7 once retires it.
-2. Another installation is in the state `updating`.
-3. Two enabled bindings share a capability, platform and account type.
+1. One of the seven first-party plugin installations exists and no receipt of
+   the retirement, the `settings` row `deplugin_retired_plugins`, is stored:
+   that installation was never retired. Starting v0.2.13-codexrip.8 once
+   retires it.
+2. One of them exists and the stored receipt is not completed or has no entry
+   for it. No release writes such a receipt and none repairs it:
+   v0.2.13-codexrip.8 exits at start on a receipt that is not completed and
+   retires nothing once a completed one is stored. Whether the configuration
+   saved in such an installation is still needed is decided by hand; 272
+   applies once the installations it names are deleted.
+3. Another installation is in the state `updating`.
+4. Two enabled bindings share a capability, platform and account type.
 
-Upstream's schema admits neither 2 nor 3 and the plugin manager writes neither;
-disabling or uninstalling the plugin in v0.2.13-codexrip.7 clears both.
+Upstream's schema admits neither 3 nor 4 and the plugin manager writes neither;
+disabling or uninstalling the plugin in v0.2.13-codexrip.8 clears both.
 
-The host does not retire plugin installations at startup and keeps no list of
-retired plugins. The plugin tables, the plugin manager and its admin interfaces
-are upstream's: the manager lists and manages every installation row. Missing
-settings may use deployment defaults. Database errors and malformed saved
-settings stop startup; they never silently enable features.
+Each migration commits on its own, so a database on which 272 has stopped
+already has 270 and 271, which v0.2.13-codexrip.8 and every earlier release
+lack. Such an image starts on that database only with Image Studio off, which
+the deleted `image_tools_config` setting leaves to
+`GATEWAY_IMAGE_STUDIO_ENABLED`: with that variable `true` it exits at start,
+and its Image Studio job routes fail on the dropped tables. It names
+`usage_billing_dedup.account_id` in every billing claim, so its usage billing
+fails until the column is added again
+(`ALTER TABLE usage_billing_dedup ADD COLUMN account_id BIGINT`). Migration 271
+is recorded by then and does not run a second time: after returning to this
+release, drop the column by hand
+(`ALTER TABLE usage_billing_dedup DROP COLUMN IF EXISTS account_id`). Billing
+works with the column present until that is done.
+
+The plugin tables, the plugin manager and its admin interfaces are upstream's:
+the manager lists and manages every installation row. Missing settings may use
+deployment defaults. Database errors and malformed saved settings stop startup;
+they never silently enable features.
 
 ## Release and rollback boundary
 
@@ -88,8 +107,16 @@ columns `revision`, `runtime_generation`, `package_sha256` and `update_policy`,
 the state `updating`, the trigger and function `sub2api_plugin_revision`, and
 the limit of the unique index on enabled bindings to two capabilities. Other
 installations, their bindings and the `admin_observability_config` setting are
-not written. The plugin files under `<data dir>/plugins` and the Redis keys
-`plugin:kv:v1:*` are not in the database and are not removed.
+not written.
+
+A migration does not reach what the seven plugins stored outside the database:
+their package files `<plugin dir>/packages/codexrip.*.s2plugin`, their unpacked
+trees `<plugin dir>/installed/codexrip.*/` and any Redis key
+`plugin:kv:v1:codexrip.*`, where `<plugin dir>` is `plugins.data_dir` or, when
+that is not set, `<data dir>/plugins`. Nothing reads these once 272 has
+applied; they are deleted by hand at the release that applies it. The files
+and keys of other plugins in the same directory and under the same prefix are
+in use and stay.
 
 After migration 272 no earlier image starts on the database. Every earlier
 release since v0.2.8-codexrip.5 retires first-party plugin installations at
