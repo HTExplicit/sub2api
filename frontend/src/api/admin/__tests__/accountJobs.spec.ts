@@ -46,39 +46,20 @@ describe('accountJobsAPI', () => {
     expect(post).toHaveBeenNthCalledWith(1, '/admin/account-jobs/41/cancel')
   })
 
-  it('adds a fresh Idempotency-Key to retry and duplicate job submissions', async () => {
+  it('adds a fresh Idempotency-Key to each retry submission', async () => {
     await accountJobsAPI.retryFailed(41)
-    await accountJobsAPI.reviewDuplicates([7, 8])
-    await accountJobsAPI.mergeDuplicates({
-      survivor_account_id: 7,
-      loser_account_ids: [8],
-      confirmation_hash: 'a'.repeat(64),
-    })
+    await accountJobsAPI.retryFailed(41)
 
-    expect(post).toHaveBeenNthCalledWith(
-      1,
-      '/admin/account-jobs/41/retry-failed',
-      undefined,
-      { headers: { 'Idempotency-Key': expect.stringMatching(/^account_job_retry-/) } },
-    )
-    expect(post).toHaveBeenNthCalledWith(
-      2,
-      '/admin/accounts/duplicates/review',
-      { account_ids: [7, 8] },
-      { headers: { 'Idempotency-Key': expect.stringMatching(/^account_duplicate_review-/) } },
-    )
-    expect(post).toHaveBeenNthCalledWith(
-      3,
-      '/admin/accounts/duplicates/merge',
-      {
-        survivor_account_id: 7,
-        loser_account_ids: [8],
-        confirmation_hash: 'a'.repeat(64),
-      },
-      { headers: { 'Idempotency-Key': expect.stringMatching(/^account_duplicate_merge-/) } },
-    )
+    for (const call of [1, 2]) {
+      expect(post).toHaveBeenNthCalledWith(
+        call,
+        '/admin/account-jobs/41/retry-failed',
+        undefined,
+        { headers: { 'Idempotency-Key': expect.stringMatching(/^account_job_retry-/) } },
+      )
+    }
 
     const keys = post.mock.calls.map((call) => call[2]?.headers?.['Idempotency-Key'])
-    expect(new Set(keys).size).toBe(3)
+    expect(new Set(keys).size).toBe(2)
   })
 })

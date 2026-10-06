@@ -49,8 +49,7 @@ vi.mock('@/stores/accountJobs', () => ({
   isTerminalAccountJob: () => false,
   useAccountJobsStore: () => ({
     recentJobs: [],
-    track: vi.fn(),
-    reviewDuplicates: vi.fn()
+    track: vi.fn()
   })
 }))
 

@@ -5,7 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AccountsView from '../AccountsView.vue'
 
 vi.mock('@/stores/accountJobs', () => ({
-  useAccountJobsStore: () => ({ track: vi.fn(), reviewDuplicates: vi.fn() })
+  useAccountJobsStore: () => ({ track: vi.fn() })
 }))
 
 const {

@@ -23,7 +23,6 @@ const {
   showError,
   showSuccess,
   jobTrack,
-  reviewDuplicates,
   getAllProxies,
   getAllGroups,
   updateAccount,
@@ -43,7 +42,6 @@ const {
   showError: vi.fn(),
   showSuccess: vi.fn(),
   jobTrack: vi.fn(),
-  reviewDuplicates: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
   updateAccount: vi.fn(),
@@ -58,7 +56,7 @@ vi.mock('@/api/admin/accounts', async (importOriginal) => ({
 
 vi.mock('@/stores/accountJobs', async () => {
   const { reactive } = await vi.importActual<typeof import('vue')>('vue')
-  const store = reactive({ recentJobs: [] as any[], track: jobTrack, reviewDuplicates })
+  const store = reactive({ recentJobs: [] as any[], track: jobTrack })
   accountJobsState.store = store
   return {
     isTerminalAccountJob: (job: { status?: string }) => ['succeeded', 'partially_succeeded', 'failed', 'canceled'].includes(job.status || ''),
@@ -338,7 +336,6 @@ describe('admin AccountsView Cockpit console', () => {
     showError.mockReset()
     showSuccess.mockReset()
     jobTrack.mockReset()
-    reviewDuplicates.mockReset()
     accountJobsState.store.recentJobs.splice(0)
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([])

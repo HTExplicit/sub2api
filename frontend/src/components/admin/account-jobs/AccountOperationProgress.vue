@@ -23,17 +23,7 @@
     <p v-if="store.connectionLost" role="status" class="border-l-2 border-amber-500 bg-raised px-3 py-2 text-sm text-amber-700 dark:text-amber-300">{{ t('admin.accountTasks.reconnecting') }}</p>
     <p v-if="error || job.error_message" role="alert" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400"><span v-if="!error && job.error_code" class="mr-1 font-mono">[{{ job.error_code }}]</span>{{ error || job.error_message }}</p>
 
-    <section v-if="duplicateReview" class="space-y-3">
-      <p class="text-sm text-muted">{{ t('admin.accountTasks.duplicate.selectSurvivor') }}</p>
-      <label v-for="account in duplicateReview.accounts" :key="account.account_id" class="flex cursor-pointer items-center gap-3 border border-line p-3 transition-colors hover:bg-raised" :class="survivorID === account.account_id && 'border-primary-500 bg-raised'">
-        <input v-model="survivorID" type="radio" name="duplicate-survivor" :value="account.account_id" :data-test="`duplicate-survivor-${account.account_id}`" />
-        <span class="min-w-0"><span class="block truncate text-sm font-medium text-ink">{{ account.name }}</span><span class="mt-1 block text-xs text-muted">{{ t('admin.accountTasks.duplicate.summary', { id: account.account_id, groups: account.group_count, tags: account.tag_count, score: account.configuration_score }) }}</span></span>
-      </label>
-      <p v-if="confirmMerge" class="text-sm text-red-600">{{ t('admin.accountTasks.duplicate.confirmMerge') }}</p>
-      <button type="button" data-test="duplicate-merge-submit" class="btn btn-danger" :disabled="!survivorID || busy" @click="merge">{{ t(confirmMerge ? 'admin.accountTasks.duplicate.merge' : 'admin.accountTasks.duplicate.reviewMerge') }}</button>
-    </section>
-
-    <section v-else class="space-y-3">
+    <section class="space-y-3">
       <div class="flex items-center justify-between gap-3 border-b border-line">
         <div class="flex gap-5 text-sm" role="group" :aria-label="t('admin.accountTasks.results')">
           <button v-for="filter in ['', 'failed']" :key="filter" type="button" class="border-b-2 px-0.5 pb-2 transition-colors" :class="store.itemFilter === filter ? 'border-primary-500 font-medium text-ink' : 'border-transparent text-muted hover:text-ink'" :aria-pressed="store.itemFilter === filter" @click="setFilter(filter)">{{ t(filter ? 'admin.accountTasks.failedOnly' : 'admin.accountTasks.allResults') }}</button>
@@ -82,7 +72,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { list as listAccounts } from '@/api/admin/accounts'
-import type { AccountJobItem, DuplicateReviewMetadata } from '@/api/admin/accountJobs'
+import type { AccountJobItem } from '@/api/admin/accountJobs'
 import { extractApiErrorMessage } from '@/utils/apiError'
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
@@ -90,7 +80,7 @@ const store = useAccountJobsStore()
 const job = computed(() => store.currentJob)
 const terminal = computed(() => !!job.value && isTerminalAccountJob(job.value))
 const progress = computed(() => job.value?.target_count ? Math.min(100, Math.round(job.value.processed_count / job.value.target_count * 100)) : 0)
-const busy = ref(false), error = ref(''), retryExpired = ref(false), survivorID = ref<number | null>(null), confirmMerge = ref(false)
+const busy = ref(false), error = ref(''), retryExpired = ref(false)
 const names = ref<Record<number, string>>({})
 // Every stored metadata key is shown; only values already rendered above
 // (name and message) are not repeated, and result_keys is the server's list of
@@ -101,8 +91,7 @@ function metadataEntries(item: AccountJobItem): Array<{ key: string; value: stri
     .map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }))
 }
 let nameVersion = 0
-watch(() => job.value?.id, () => { error.value = ''; retryExpired.value = false; survivorID.value = null; confirmMerge.value = false })
-watch(survivorID, () => { confirmMerge.value = false })
+watch(() => job.value?.id, () => { error.value = ''; retryExpired.value = false })
 watch(() => store.items.map(item => item.target_account_id).filter(Boolean).join(','), async ids => {
   const version = ++nameVersion
   if (!ids) return
@@ -111,17 +100,6 @@ watch(() => store.items.map(item => item.target_account_id).filter(Boolean).join
     if (version === nameVersion) for (const account of page.items) names.value[account.id] = account.name
   } catch { /* Deleted accounts still have their durable account ID in results. */ }
 }, { immediate: true })
-const duplicateReview = computed<DuplicateReviewMetadata | null>(() => {
-  if (job.value?.kind !== 'account_duplicate_review' || job.value.status !== 'succeeded') return null
-  for (const item of store.items) {
-    const metadata = item.metadata
-    if (item.status !== 'succeeded' || typeof metadata.confirmation_hash !== 'string' || !metadata.confirmation_hash || !Array.isArray(metadata.accounts)) continue
-    const accounts = metadata.accounts
-    if (accounts.length < 2 || accounts.length > 100 || !accounts.every(a => a && Number.isSafeInteger(a.account_id) && a.account_id > 0 && typeof a.name === 'string' && Number.isFinite(a.group_count) && Number.isFinite(a.tag_count) && Number.isFinite(a.configuration_score))) continue
-    return { confirmation_hash: metadata.confirmation_hash, accounts }
-  }
-  return null
-})
 function statusLabel(status: string) { return t(`admin.accountTasks.statuses.${status}`) }
 function statusClass(status: string) {
   return status === 'failed' ? 'text-red-600 dark:text-red-400' : ['partially_succeeded', 'canceled'].includes(status) ? 'text-amber-600 dark:text-amber-400' : 'text-primary-600 dark:text-primary-400'
@@ -141,12 +119,6 @@ async function action(callback: () => Promise<unknown>) {
 }
 async function stop() { if (job.value) await action(() => store.cancelJob(job.value!.id)) }
 async function retry() { if (job.value) await action(() => store.retryJob(job.value!.id)) }
-async function merge() {
-  if (!duplicateReview.value || !survivorID.value) return
-  if (!confirmMerge.value) { confirmMerge.value = true; return }
-  const review = duplicateReview.value
-  await action(() => store.mergeDuplicates({ survivor_account_id: survivorID.value!, loser_account_ids: review.accounts.map(a => a.account_id).filter(id => id !== survivorID.value), confirmation_hash: review.confirmation_hash }))
-}
 async function setFilter(status: string) { if (job.value) await action(() => store.loadCurrent(job.value!.id, { page: 1, status })) }
 async function changePage(offset: number) { if (job.value) await action(() => store.loadCurrent(job.value!.id, { page: store.itemPage.page + offset })) }
 async function refresh() { if (job.value) await action(() => store.loadCurrent(job.value!.id)) }

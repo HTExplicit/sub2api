@@ -642,7 +642,6 @@ export default {accounts: {
         resetStatus: 'Reset Status',
         refreshToken: 'Refresh Token',
         refreshTier: 'Refresh Tier',
-        duplicateReview: 'Review Duplicates',
         probeUpstreamBilling: 'Probe Upstream Rate',
         testConnection: 'Batch Test Connection',
         resetStatusSuccess: 'Successfully reset {count} account(s) status',

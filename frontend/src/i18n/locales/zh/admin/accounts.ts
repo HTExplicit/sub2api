@@ -790,7 +790,6 @@ export default {accounts: {
         resetStatus: '批量重置状态',
         refreshToken: '批量刷新令牌',
         refreshTier: '批量刷新等级',
-        duplicateReview: '检查重复账号',
         probeUpstreamBilling: '探测上游倍率',
         testConnection: '批量测试连接',
         resetStatusSuccess: '已成功重置 {count} 个账号状态',

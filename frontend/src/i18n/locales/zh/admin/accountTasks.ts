@@ -43,8 +43,6 @@ export default {
       account_batch_refresh: '刷新账号',
       account_batch_refresh_tier: '刷新等级',
       account_batch_update_credentials: '更新凭据',
-      account_duplicate_review: '重复账号复核',
-      account_duplicate_merge: '重复账号合并',
     },
     statuses: {
       pending: '等待中',
@@ -62,12 +60,5 @@ export default {
     },
     loadFailed: '加载账号任务失败',
     actionFailed: '任务操作失败',
-    duplicate: {
-      reviewMerge: '检查合并',
-      confirmMerge: '确认后将合并其他已复核账号，仅保留所选账号。',
-      selectSurvivor: '选择要保留的账号，其余已复核账号将合并到该账号。',
-      summary: '账号 #{id} · {groups} 个分组 · {tags} 个标签 · 完整度 {score}',
-      merge: '确认合并',
-    },
   },
 }

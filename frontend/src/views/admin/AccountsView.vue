@@ -254,7 +254,6 @@
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
           @refresh-tier="handleBulkRefreshTier"
-          @duplicate-review="handleDuplicateReview"
           @probe-upstream-billing="handleBulkProbeUpstreamBilling"
           @test-connection="openBatchTest"
           @edit-selected="openBulkEditSelected"
@@ -581,7 +580,6 @@
             @reset-status="handleBulkResetStatus"
             @refresh-token="handleBulkRefreshToken"
             @refresh-tier="handleBulkRefreshTier"
-            @duplicate-review="handleDuplicateReview"
             @probe-upstream-billing="handleBulkProbeUpstreamBilling"
             @test-connection="openBatchTest"
             @edit-selected="openBulkEditSelected"
@@ -2469,11 +2467,6 @@ const handleBulkRefreshTier = async () => {
   const ids = [...selIds.value]
   confirmAccountOperation('account_batch_refresh_tier', ids, () => adminAPI.accounts.batchRefreshTier(ids))
 }
-const handleDuplicateReview = async () => {
-  const accountIDs = [...selIds.value]
-  if (accountIDs.length < 2 || accountIDs.length > 100) return
-  confirmAccountOperation('account_duplicate_review', accountIDs, () => accountJobsAPI.reviewDuplicates(accountIDs))
-}
 const handleBulkProbeUpstreamBilling = async () => {
   const accountIDs = [...selIds.value]
   if (accountIDs.length === 0) {
@@ -2684,8 +2677,8 @@ watch(
     for (const job of observedAccountJobs.value) {
       if (isTerminalAccountJob(job) && accountJobsStore.completedJobs?.some(done => done.id === job.id) && !refreshedOperations.has(job.id)) {
         refreshedOperations.add(job.id)
-        if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_duplicate_review') {
-          void reloadChangedAccounts(load, ['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge'].includes(job.kind))
+        if (!pendingDataImportJobIDs.has(job.id)) {
+          void reloadChangedAccounts(load, ['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete'].includes(job.kind))
         }
       }
       const revision = pendingDataImportJobIDs.get(job.id)

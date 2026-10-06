@@ -43,7 +43,7 @@ vi.mock('@/api/admin', async () => {
 })
 
 vi.mock('@/stores/accountJobs', () => ({
-  useAccountJobsStore: () => ({ track: trackJob, reviewDuplicates: vi.fn() })
+  useAccountJobsStore: () => ({ track: trackJob })
 }))
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError, showSuccess: vi.fn(), showInfo: vi.fn() })

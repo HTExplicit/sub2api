@@ -43,8 +43,6 @@ export default {
       account_batch_refresh: 'Refresh accounts',
       account_batch_refresh_tier: 'Refresh tiers',
       account_batch_update_credentials: 'Update credentials',
-      account_duplicate_review: 'Duplicate review',
-      account_duplicate_merge: 'Duplicate merge',
     },
     statuses: {
       pending: 'Pending',
@@ -62,12 +60,5 @@ export default {
     },
     loadFailed: 'Failed to load account tasks',
     actionFailed: 'Task action failed',
-    duplicate: {
-      reviewMerge: 'Review merge',
-      confirmMerge: 'Confirm to merge the reviewed accounts into the selected account.',
-      selectSurvivor: 'Choose the account to keep. The other reviewed accounts will be merged into it.',
-      summary: 'Account #{id} · {groups} groups · {tags} tags · score {score}',
-      merge: 'Confirm merge',
-    },
   },
 }

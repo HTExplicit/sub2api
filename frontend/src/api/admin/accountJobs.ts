@@ -77,25 +77,6 @@ export interface AccountJobItemListParams {
   page_size?: number
 }
 
-export interface DuplicateMergeRequest {
-  survivor_account_id: number
-  loser_account_ids: number[]
-  confirmation_hash: string
-}
-
-export interface DuplicateReviewAccount {
-  account_id: number
-  name: string
-  group_count: number
-  tag_count: number
-  configuration_score: number
-}
-
-export interface DuplicateReviewMetadata {
-  confirmation_hash: string
-  accounts: DuplicateReviewAccount[]
-}
-
 export function createAccountJobIdempotencyKey(scope: string): string {
   const suffix = globalThis.crypto?.randomUUID?.()
     ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -154,24 +135,6 @@ async function retryFailed(jobID: number): Promise<AccountJob> {
   return data
 }
 
-async function reviewDuplicates(accountIDs: number[]): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
-    '/admin/accounts/duplicates/review',
-    { account_ids: accountIDs },
-    accountJobIdempotencyHeaders('account_duplicate_review'),
-  )
-  return data
-}
-
-async function mergeDuplicates(request: DuplicateMergeRequest): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
-    '/admin/accounts/duplicates/merge',
-    request,
-    accountJobIdempotencyHeaders('account_duplicate_merge'),
-  )
-  return data
-}
-
 const accountJobsAPI = {
   async resultAccountIDs(jobID: number): Promise<number[]> {
     const { data } = await apiClient.get<{ account_ids: number[] }>(`${BASE_PATH}/${jobID}/result-account-ids`)
@@ -182,8 +145,6 @@ const accountJobsAPI = {
   listItems,
   cancel,
   retryFailed,
-  reviewDuplicates,
-  mergeDuplicates,
 }
 
 export default accountJobsAPI

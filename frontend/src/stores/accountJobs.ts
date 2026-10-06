@@ -5,7 +5,6 @@ import accountJobsAPI, {
   type AccountJobItem,
   type AccountJobItemListParams,
   type AccountJobListParams,
-  type DuplicateMergeRequest,
 } from '@/api/admin/accountJobs'
 import { useAppStore } from '@/stores/app'
 import { i18n } from '@/i18n'
@@ -396,20 +395,6 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     return replacement
   }
 
-  async function reviewDuplicates(accountIDs: number[]): Promise<AccountJob> {
-    const job = await accountJobsAPI.reviewDuplicates(accountIDs)
-    track(job, { embedded: embeddedOpen.value })
-    void loadCurrent(job.id).catch(() => { connectionLost.value = true })
-    return job
-  }
-
-  async function mergeDuplicates(request: DuplicateMergeRequest): Promise<AccountJob> {
-    const job = await accountJobsAPI.mergeDuplicates(request)
-    track(job, { embedded: embeddedOpen.value })
-    void loadCurrent(job.id).catch(() => { connectionLost.value = true })
-    return job
-  }
-
   function clear(): void {
     clearAccountOperationKeys()
     stopPolling()
@@ -474,8 +459,6 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     closeDrawer,
     cancelJob,
     retryJob,
-    reviewDuplicates,
-    mergeDuplicates,
     startPolling,
     stopPolling,
     clear,
