@@ -47,7 +47,6 @@ type OpenAIGatewayHandler struct {
 	grokMediaEligibilityProber    grokMediaEligibilityProber
 	opsService                    *service.OpsService
 	concurrencyHelper             *ConcurrencyHelper
-	trafficObserver               *service.AccountTrafficObserver
 	imageLimiter                  *imageConcurrencyLimiter
 	maxAccountSwitches            int
 	cfg                           *config.Config
@@ -59,14 +58,6 @@ type OpenAIGatewayHandler struct {
 func (h *OpenAIGatewayHandler) SetNativeAnthropicGatewayService(gateway *service.GatewayService) {
 	if h != nil {
 		h.nativeAnthropicGatewayService = gateway
-	}
-}
-
-// SetAccountTrafficObserver attaches the observe-only per-account traffic
-// telemetry. Nil is allowed: every seam is nil-safe and simply records nothing.
-func (h *OpenAIGatewayHandler) SetAccountTrafficObserver(observer *service.AccountTrafficObserver) {
-	if h != nil {
-		h.trafficObserver = observer
 	}
 }
 
@@ -914,13 +905,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
-		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
+		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()
 				}
-				trafficTurn.Finish(res, ferr, c.Request.Context().Err() != nil)
 			}()
 			return h.gatewayService.Forward(c.Request.Context(), c, account, attemptBody)
 		}()
@@ -1600,13 +1589,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		// 应用渠道模型映射到请求体
 		forwardBody := mappedBodyForMessages(channelMappingMsg.Mapped, channelMappingMsg.MappedModel)
 		writerSizeBeforeForward := c.Writer.Size()
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
-		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
+		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()
 				}
-				trafficTurn.Finish(res, ferr, c.Request.Context().Err() != nil)
 			}()
 			return h.gatewayService.ForwardAsAnthropic(c.Request.Context(), c, account, forwardBody, promptCacheKey, defaultMappedModel)
 		}()
@@ -2838,27 +2825,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	var currentUserRelease func()
 	var currentAccountRelease func()
 	var currentAccountSelection *service.AccountSelectionResult
-	// Observe-only traffic telemetry: exactly one open turn per connection. Turn 1
-	// begins right before ProxyResponsesWebSocketFromClient (passthrough never calls
-	// BeforeTurn(1)), later turns begin in BeforeTurn, and AfterTurn finishes the
-	// turn as its first statement. Relay ordering guarantees AfterTurn(prev) runs
-	// before BeforeTurn(next) can be admitted, so a single pointer suffices.
-	// releaseAccountSlot is the safety net for the passthrough zero-turn returns
-	// (retry-same-account / transport error) that return without AfterTurn.
-	var wsTrafficTurn atomic.Pointer[service.AccountTrafficTurn]
-	finishOpenWSTrafficTurn := func(result *service.OpenAIForwardResult, turnErr error) {
-		if turn := wsTrafficTurn.Swap(nil); turn != nil {
-			turn.Finish(result, turnErr, clientLifecycleCtx.Err() != nil)
-		}
-	}
-	beginWSTrafficTurn := func(account *service.Account) {
-		// A turn still open here never reported; reconcile it first so that
-		// started == sum(outcomes) always holds.
-		finishOpenWSTrafficTurn(nil, nil)
-		wsTrafficTurn.Store(h.trafficObserver.Begin(ctx, account, service.AccountTrafficProtocolWS))
-	}
 	releaseAccountSlot := func() {
-		finishOpenWSTrafficTurn(nil, nil)
 		if currentAccountSelection != nil {
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(currentAccountSelection)
 			currentAccountSelection = nil
@@ -3347,17 +3314,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
 				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
-				if err := checkSimpleModeTurnBilling(); err != nil {
-					return err
-				}
-				beginWSTrafficTurn(account)
-				return nil
+				return checkSimpleModeTurnBilling()
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
 				turnUsageCtx := quotaUsageCtx
-				// Telemetry first: the deferred releaseTurnSlots safety net below
-				// must find no open turn for a normally reported turn.
-				finishOpenWSTrafficTurn(result, turnErr)
 				turnStart := getTurnStart(turn)
 				cyberBlockBody := takeCyberTurnBody(turn)
 				// 每次 attempt 都清 cyber mark；failover 链结束前保留 recorded guard，
@@ -3479,7 +3439,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// WebSocket 首包可能很大，hash 必须在 hooks 外算成字符串，避免 AfterTurn 闭包保活请求体。
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
 
-		beginWSTrafficTurn(account)
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			if closeErr, postOutputCyber := openAIWSPostOutputCyberClose(err); postOutputCyber {
 				reqLog.Info("openai.websocket_post_output_cyber_closed",

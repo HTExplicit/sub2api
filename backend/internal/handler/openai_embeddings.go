@@ -228,13 +228,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		writerSizeBeforeForward := c.Writer.Size()
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
-		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
+		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()
 				}
-				trafficTurn.Finish(res, ferr, c.Request.Context().Err() != nil)
 			}()
 			return h.gatewayService.ForwardEmbeddings(c.Request.Context(), c, account, forwardBody, "")
 		}()
