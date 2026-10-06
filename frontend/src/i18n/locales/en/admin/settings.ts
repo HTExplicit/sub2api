@@ -516,11 +516,11 @@ export default {
         saveFailed: 'Failed to save OpenCode Go usage refresh settings'
       },
       observability: {
-        title: 'Appearance and observations',
+        title: 'Appearance',
         themeEnabled: 'Enable flat theme',
         save: 'Save settings',
         saved: 'Settings saved',
-        loadFailed: 'Failed to load appearance and observation settings',
+        loadFailed: 'Failed to load appearance settings',
         saveFailed: 'Save failed'
       },
       officialModelCatalog: {

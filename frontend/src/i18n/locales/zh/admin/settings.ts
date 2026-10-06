@@ -509,11 +509,11 @@ export default {
         saveFailed: '保存 OpenCode Go 用量刷新设置失败'
       },
       observability: {
-        title: '界面与观测',
+        title: '界面',
         themeEnabled: '启用平面主题',
         save: '保存设置',
         saved: '设置已保存',
-        loadFailed: '界面与观测设置加载失败',
+        loadFailed: '界面设置加载失败',
         saveFailed: '保存失败'
       },
       officialModelCatalog: {
