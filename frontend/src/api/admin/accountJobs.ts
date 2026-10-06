@@ -66,7 +66,6 @@ export interface AccountJobItemPage {
 }
 
 export interface AccountJobListParams {
-  kind?: string
   status?: string
   page?: number
   page_size?: number

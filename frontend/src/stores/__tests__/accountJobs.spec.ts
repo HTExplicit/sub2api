@@ -104,7 +104,7 @@ describe('useAccountJobsStore', () => {
     })
     const store = useAccountJobsStore()
 
-    await store.loadRecent({ page: 2, page_size: 2 })
+    await store.loadRecent({ page: 2 })
     await store.openJob(19, { page: 2, page_size: 1 })
 
     expect(store.recentJobs.map((item) => item.id)).toEqual([19, 20])
@@ -222,10 +222,10 @@ describe('useAccountJobsStore', () => {
     expect(store.itemPage.page).toBe(2)
   })
 
-  it('refreshes the selected page and filters on an explicit request', async () => {
+  it('refreshes the selected page and status filter on an explicit request', async () => {
     const store = useAccountJobsStore()
     list.mockResolvedValue({ items: [], total: 0, page: 3, page_size: 25 })
-    await store.loadRecent({ page: 3, page_size: 25, kind: 'account_import', status: 'running' })
+    await store.loadRecent({ page: 3, status: 'running' })
     list.mockClear()
 
     await store.loadRecent()
@@ -233,7 +233,6 @@ describe('useAccountJobsStore', () => {
     expect(list).toHaveBeenCalledWith({
       page: 3,
       page_size: 25,
-      kind: 'account_import',
       status: 'running',
     }, { signal: expect.any(AbortSignal) })
   })
@@ -317,7 +316,7 @@ describe('useAccountJobsStore', () => {
   it('does not insert off-page detail or submitted tasks into a filtered list', async () => {
     const store = useAccountJobsStore()
     list.mockResolvedValue({ items: [job('failed', { id: 22 })], total: 4, page: 2, page_size: 1 })
-    await store.loadRecent({ page: 2, page_size: 1, status: 'failed' })
+    await store.loadRecent({ page: 2, status: 'failed' })
     await store.openJob(19)
     store.track(job('pending', { id: 23 }))
 

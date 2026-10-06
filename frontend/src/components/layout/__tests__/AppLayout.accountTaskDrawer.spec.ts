@@ -72,7 +72,7 @@ describe('AppLayout account task drawer', () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
     expect(listJobs).toHaveBeenCalledTimes(1)
     expect(listJobs).toHaveBeenCalledWith(
-      { page: 1, page_size: 20, kind: undefined, status: undefined },
+      { page: 1, page_size: 20, status: undefined },
       { signal: expect.any(AbortSignal) },
     )
     auth.user = { ...auth.user!, role: 'user' }

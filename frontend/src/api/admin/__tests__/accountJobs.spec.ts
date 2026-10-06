@@ -21,7 +21,7 @@ describe('accountJobsAPI', () => {
     const controller = new AbortController()
 
     await accountJobsAPI.list(
-      { kind: 'account_import', status: 'running', page: 2, page_size: 25 },
+      { status: 'running', page: 2, page_size: 25 },
       { signal: controller.signal },
     )
     await accountJobsAPI.get(41, { signal: controller.signal })
@@ -33,7 +33,7 @@ describe('accountJobsAPI', () => {
     await accountJobsAPI.cancel(41)
 
     expect(get).toHaveBeenNthCalledWith(1, '/admin/account-jobs', {
-      params: { kind: 'account_import', status: 'running', page: 2, page_size: 25 },
+      params: { status: 'running', page: 2, page_size: 25 },
       signal: controller.signal,
     })
     expect(get).toHaveBeenNthCalledWith(2, '/admin/account-jobs/41', {

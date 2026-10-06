@@ -43,7 +43,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   const loadingCurrent = ref(false)
   const jobPage = reactive({ total: 0, page: 1, pageSize: 20 })
   const itemPage = reactive({ total: 0, page: 1, pageSize: 20 })
-  const listFilters = reactive({ kind: '', status: '' })
+  let listStatus = ''
   const trackedStatuses = new Map<number, AccountJob['status']>()
   const notifiedJobs = new Set<number>()
   const failuresFocused = new Set<number>()
@@ -118,18 +118,17 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   }
 
   function updateRecent(job: AccountJob, allowInsert = false): void {
-    const matchesFilters = (!listFilters.kind || listFilters.kind === job.kind)
-      && (!listFilters.status || listFilters.status === job.status)
+    const matchesStatus = !listStatus || listStatus === job.status
     const index = recentJobs.value.findIndex((candidate) => candidate.id === job.id)
     if (index >= 0) {
-      if (matchesFilters) recentJobs.value[index] = job
+      if (matchesStatus) recentJobs.value[index] = job
       else {
         recentJobs.value.splice(index, 1)
         jobPage.total = Math.max(0, jobPage.total - 1)
       }
       return
     }
-    if (allowInsert && matchesFilters && jobPage.page === 1) {
+    if (allowInsert && matchesStatus && jobPage.page === 1) {
       recentJobs.value = [job, ...recentJobs.value].slice(0, jobPage.pageSize)
       jobPage.total += 1
     }
@@ -158,22 +157,20 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     if (!isTerminalAccountJob(job)) startPolling(false)
   }
 
-  async function loadRecent(params: AccountJobListParams = {}): Promise<void> {
+  async function loadRecent(params: Pick<AccountJobListParams, 'page' | 'status'> = {}): Promise<void> {
     const requestGeneration = generation
     const detailSerial = currentRequestSerial
     const requestSerial = ++listRequestSerial
     listRequest?.abort()
     const controller = new AbortController()
     listRequest = controller
-    if (Object.prototype.hasOwnProperty.call(params, 'kind')) listFilters.kind = params.kind ?? ''
-    if (Object.prototype.hasOwnProperty.call(params, 'status')) listFilters.status = params.status ?? ''
+    if (Object.prototype.hasOwnProperty.call(params, 'status')) listStatus = params.status ?? ''
     loadingJobs.value = true
     try {
       const page = await accountJobsAPI.list({
         page: params.page ?? jobPage.page,
-        page_size: params.page_size ?? jobPage.pageSize,
-        kind: listFilters.kind || undefined,
-        status: listFilters.status || undefined,
+        page_size: jobPage.pageSize,
+        status: listStatus || undefined,
       }, { signal: controller.signal })
       if (generation !== requestGeneration || requestSerial !== listRequestSerial) return
       for (const job of page.items) if (trackedJobs.value[job.id]) observeTrackedTransition(job)
@@ -380,7 +377,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
 
   async function openDrawer(): Promise<void> {
     historyOpen.value = true
-    try { await loadRecent({ page: 1, kind: '', status: '' }) }
+    try { await loadRecent({ page: 1, status: '' }) }
     catch (error) { showLoadFailure(error) }
   }
 
@@ -444,8 +441,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     itemPage.total = 0
     itemPage.page = 1
     itemPage.pageSize = 20
-    listFilters.kind = ''
-    listFilters.status = ''
+    listStatus = ''
     trackedStatuses.clear()
     notifiedJobs.clear()
     failuresFocused.clear()
