@@ -1671,7 +1671,6 @@ const loadUsage = async (options?: {
     return
   }
 
-  const accountID = props.account.id
   // An expired value is still useful while a refresh is running or failing.
   const cached = _usageCache.get(props.account.id)
   if (cached) {
@@ -1689,16 +1688,16 @@ const loadUsage = async (options?: {
 
   try {
     const result = await requestUsage(props.account, options?.source, options?.force)
-    if (!unmounted.value && props.account.id === accountID) {
+    if (!unmounted.value) {
       applyUsageResult(result)
     }
   } catch (e: any) {
-    if (!unmounted.value && props.account.id === accountID) {
+    if (!unmounted.value) {
       markUsageRequestFailed()
       console.error('Failed to load usage:', e)
     }
   } finally {
-    if (!unmounted.value && props.account.id === accountID) loading.value = false
+    if (!unmounted.value) loading.value = false
   }
 }
 
