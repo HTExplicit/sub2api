@@ -82,7 +82,7 @@ const {
 const localeRef = vi.hoisted(() => ({ value: "zh-CN" }));
 
 const panelSettings = vi.hoisted(() => ({
-  observability: { telemetry_enabled: true, theme_enabled: true },
+  observability: { theme_enabled: true },
 }));
 
 vi.mock("@/stores/auth", () => ({

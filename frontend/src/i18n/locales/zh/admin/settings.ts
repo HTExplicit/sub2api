@@ -510,8 +510,6 @@ export default {
       },
       observability: {
         title: '界面与观测',
-        description: '账号流量观测只记录实际业务转发的结果，不触发测试请求，也不用于限制账号或改变计费。',
-        telemetryEnabled: '启用账号流量观测',
         themeEnabled: '启用平面主题',
         save: '保存设置',
         saved: '设置已保存',

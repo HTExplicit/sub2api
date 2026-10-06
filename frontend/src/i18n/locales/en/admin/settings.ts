@@ -517,8 +517,6 @@ export default {
       },
       observability: {
         title: 'Appearance and observations',
-        description: 'Account traffic observations record real gateway attempts without running test requests. They do not restrict accounts or change billing.',
-        telemetryEnabled: 'Enable account traffic observations',
         themeEnabled: 'Enable flat theme',
         save: 'Save settings',
         saved: 'Settings saved',

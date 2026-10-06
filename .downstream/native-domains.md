@@ -13,7 +13,7 @@ authentication and the existing step-up policy.
 | Interface | Contract |
 | --- | --- |
 | `GET/PUT /admin/settings/codex-runtime` | Codex request body compression switch (`request_zstd`; a missing key is on). |
-| `GET/PUT /admin/settings/observability` | Telemetry and native theme switches. |
+| `GET/PUT /admin/settings/observability` | Native theme switch (`theme_enabled`; a missing key is on). |
 
 Each of the two is stored as one `settings` row holding a JSON object of
 boolean switches; `GET` and `PUT` answer with the switches in the standard
@@ -127,6 +127,19 @@ plugin-based host needs the dropped schema and the deleted plugin data as well.
 Going back to an earlier release is therefore not an image change: it requires a
 database dump taken before the migrations that release does not have. Such a
 rollback has not been run and is not an automatic failure path.
+
+Migration 273 removes the key `telemetry_enabled` from the stored
+`admin_observability_config` row; `theme_enabled` keeps its value. The key
+switched the per-account traffic counters, which are deleted with their route
+`GET /admin/accounts/:id/traffic-telemetry`. The counters were the Redis keys
+`account_traffic_observe:{<account id>}:<http|ws>` and the same with the
+suffix `:minute`; each expires 24 hours after its last write and nothing
+writes them any more. v0.2.13-codexrip.10 and .11 start on the migrated row and
+take the missing switch as on. Saving the observability settings in one of
+them stores the key again, and 273 is recorded by then: this release then
+exits at start with `invalid setting admin_observability_config` until the key
+is removed by hand
+(`UPDATE settings SET value = (value::jsonb - 'telemetry_enabled')::text WHERE key = 'admin_observability_config'`).
 
 ## Verification
 

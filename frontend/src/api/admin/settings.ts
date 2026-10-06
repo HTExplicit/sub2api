@@ -1141,11 +1141,10 @@ export interface OfficialModelCapacityCatalog {
 }
 
 export interface ObservabilitySettings {
-  telemetry_enabled: boolean
   theme_enabled: boolean
 }
 
-/** Account traffic telemetry and flat site theme switches. */
+/** Flat site theme switch. */
 export async function getObservabilitySettings(): Promise<ObservabilitySettings> {
   const { data } = await apiClient.get<ObservabilitySettings>("/admin/settings/observability");
   return data;

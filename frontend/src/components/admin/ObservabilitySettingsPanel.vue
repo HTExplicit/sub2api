@@ -4,14 +4,9 @@
       <h3 id="observability-settings-title" class="text-base font-semibold text-gray-900 dark:text-white">
         {{ t('admin.settings.observability.title') }}
       </h3>
-      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.observability.description') }}</p>
     </div>
     <p v-if="loadError" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400">{{ t('admin.settings.observability.loadFailed') }}: {{ loadError }}</p>
     <template v-else-if="form">
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input v-model="form.telemetry_enabled" type="checkbox" data-testid="observability-telemetry" />
-        {{ t('admin.settings.observability.telemetryEnabled') }}
-      </label>
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input v-model="form.theme_enabled" type="checkbox" data-testid="observability-theme" />
         {{ t('admin.settings.observability.themeEnabled') }}

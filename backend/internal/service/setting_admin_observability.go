@@ -2,36 +2,53 @@ package service
 
 import (
 	"context"
+	"sync/atomic"
 )
 
-// SettingKeyAdminObservabilityConfig stores the account traffic telemetry and
-// flat theme switches.
+// SettingKeyAdminObservabilityConfig stores the flat theme switch.
 const SettingKeyAdminObservabilityConfig = "admin_observability_config"
 
 // AdminObservabilityConfig is the stored value of
 // SettingKeyAdminObservabilityConfig and the body of the observability settings
 // endpoints.
 type AdminObservabilityConfig struct {
-	TelemetryEnabled bool `json:"telemetry_enabled"`
-	ThemeEnabled     bool `json:"theme_enabled"`
+	ThemeEnabled bool `json:"theme_enabled"`
 }
 
-// LoadAdminObservabilityConfig installs the effective switches for this process
-// at startup: the stored value, or the deploy-time default when none is stored.
-func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) error {
-	config := AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
-	found, err := s.readSwitchSetting(ctx, SettingKeyAdminObservabilityConfig, &config, "telemetry_enabled", "theme_enabled")
-	if err != nil {
-		return err
+var adminObservabilityConfig atomic.Pointer[AdminObservabilityConfig]
+
+// ConfigureAdminObservability installs the effective theme switch (startup
+// load, admin update, tests). A nil value restores the built-in default.
+func ConfigureAdminObservability(config *AdminObservabilityConfig) {
+	adminObservabilityConfig.Store(config)
+}
+
+// EffectiveAdminObservabilityConfig returns the switch this process applies.
+// The built-in default is the flat theme on.
+func EffectiveAdminObservabilityConfig() AdminObservabilityConfig {
+	if config := adminObservabilityConfig.Load(); config != nil {
+		return *config
 	}
-	if !found {
-		config = defaultAdminObservabilityConfig(s.cfg)
+	return AdminObservabilityConfig{ThemeEnabled: true}
+}
+
+// FlatThemeEnabled reports whether the flat site theme is switched on.
+func FlatThemeEnabled() bool {
+	return EffectiveAdminObservabilityConfig().ThemeEnabled
+}
+
+// LoadAdminObservabilityConfig installs the effective switch for this process
+// at startup: the stored value, or the flat theme on when none is stored.
+func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) error {
+	config := AdminObservabilityConfig{ThemeEnabled: true}
+	if _, err := s.readSwitchSetting(ctx, SettingKeyAdminObservabilityConfig, &config, "theme_enabled"); err != nil {
+		return err
 	}
 	ConfigureAdminObservability(&config)
 	return nil
 }
 
-// UpdateAdminObservabilityConfig persists the switches and applies them to this
+// UpdateAdminObservabilityConfig persists the switch and applies it to this
 // process.
 func (s *SettingService) UpdateAdminObservabilityConfig(ctx context.Context, config AdminObservabilityConfig) error {
 	if err := s.writeJSONSetting(ctx, SettingKeyAdminObservabilityConfig, config); err != nil {
