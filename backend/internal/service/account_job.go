@@ -143,7 +143,7 @@ type AccountJobRepository interface {
 	Create(context.Context, CreateAccountJobParams) (*AccountJob, bool, error)
 	FindIdempotent(context.Context, int64, string, string) (*AccountJob, error)
 	Get(context.Context, int64) (*AccountJob, error)
-	List(context.Context, int64, string, string, int, int) (*AccountJobList, error)
+	List(context.Context, string, int, int) (*AccountJobList, error)
 	ListItems(context.Context, int64, string, int, int) (*AccountJobItemList, error)
 	MarkInterrupted(context.Context) error
 	Claim(context.Context) (*AccountJob, error)
@@ -258,8 +258,8 @@ func (s *AccountJobService) Get(ctx context.Context, jobID int64) (*AccountJob, 
 	return job, err
 }
 
-func (s *AccountJobService) List(ctx context.Context, createdBy int64, kind, status string, page, pageSize int) (*AccountJobList, error) {
-	list, err := s.repo.List(ctx, createdBy, kind, status, page, pageSize)
+func (s *AccountJobService) List(ctx context.Context, status string, page, pageSize int) (*AccountJobList, error) {
+	list, err := s.repo.List(ctx, status, page, pageSize)
 	if err == nil && list != nil {
 		for i := range list.Items {
 			s.decorateRetryEligibility(ctx, &list.Items[i])

@@ -111,7 +111,7 @@ func (r *accountJobTestRepo) Get(_ context.Context, id int64) (*AccountJob, erro
 	return cloneAccountJob(job), nil
 }
 
-func (r *accountJobTestRepo) List(context.Context, int64, string, string, int, int) (*AccountJobList, error) {
+func (r *accountJobTestRepo) List(context.Context, string, int, int) (*AccountJobList, error) {
 	return &AccountJobList{}, nil
 }
 

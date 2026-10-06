@@ -22,7 +22,7 @@ func NewAccountJobHandler(jobs *service.AccountJobService) *AccountJobHandler {
 func (h *AccountJobHandler) List(c *gin.Context) {
 	page := positiveAccountJobQuery(c.Query("page"), 1)
 	pageSize := positiveAccountJobQuery(c.Query("page_size"), 20)
-	jobs, err := h.jobs.List(c.Request.Context(), 0, c.Query("kind"), c.Query("status"), page, pageSize)
+	jobs, err := h.jobs.List(c.Request.Context(), c.Query("status"), page, pageSize)
 	if err != nil {
 		response.ErrorFrom(c, accountJobHTTPError(err))
 		return

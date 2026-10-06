@@ -225,29 +225,20 @@ func normalizeAccountJobPage(page, size int) (int, int) {
 	return page, size
 }
 
-func (r *accountJobRepository) List(ctx context.Context, createdBy int64, kind, status string, page, pageSize int) (*service.AccountJobList, error) {
+func (r *accountJobRepository) List(ctx context.Context, status string, page, pageSize int) (*service.AccountJobList, error) {
 	page, pageSize = normalizeAccountJobPage(page, pageSize)
-	where := []string{"1=1"}
-	args := make([]any, 0, 5)
-	if createdBy > 0 {
-		args = append(args, createdBy)
-		where = append(where, "created_by=$"+strconv.Itoa(len(args)))
-	}
-	if kind = strings.TrimSpace(kind); kind != "" {
-		args = append(args, kind)
-		where = append(where, "kind=$"+strconv.Itoa(len(args)))
-	}
+	args := make([]any, 0, 3)
+	where := "1=1"
 	if status = strings.TrimSpace(status); status != "" {
 		args = append(args, status)
-		where = append(where, "status=$"+strconv.Itoa(len(args)))
+		where += " AND status=$1"
 	}
-	whereSQL := strings.Join(where, " AND ")
 	var total int64
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM admin_account_jobs WHERE "+whereSQL, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM admin_account_jobs WHERE "+where, args...).Scan(&total); err != nil {
 		return nil, err
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := r.db.QueryContext(ctx, `SELECT `+accountJobSelectColumns+` FROM admin_account_jobs WHERE `+whereSQL+
+	rows, err := r.db.QueryContext(ctx, `SELECT `+accountJobSelectColumns+` FROM admin_account_jobs WHERE `+where+
 		` ORDER BY created_at DESC, id DESC LIMIT $`+strconv.Itoa(len(args)-1)+` OFFSET $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return nil, err
