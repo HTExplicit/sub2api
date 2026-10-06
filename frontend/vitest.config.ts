@@ -4,8 +4,6 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
-  // Match the production build: runtime-only i18n uses CSP-safe JIT.
-  define: { __INTLIFY_JIT_COMPILATION__: true },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
