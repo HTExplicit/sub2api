@@ -4,7 +4,6 @@ import accountJobsAPI, {
   type AccountJob,
   type AccountJobItem,
   type AccountJobItemListParams,
-  type AccountJobListParams,
 } from '@/api/admin/accountJobs'
 import { useAppStore } from '@/stores/app'
 import { i18n } from '@/i18n'
@@ -156,18 +155,18 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     if (!isTerminalAccountJob(job)) startPolling(false)
   }
 
-  async function loadRecent(params: Pick<AccountJobListParams, 'page' | 'status'> = {}): Promise<void> {
+  async function loadRecent(params: { page: number; status: string }): Promise<void> {
     const requestGeneration = generation
     const detailSerial = currentRequestSerial
     const requestSerial = ++listRequestSerial
     listRequest?.abort()
     const controller = new AbortController()
     listRequest = controller
-    if (Object.prototype.hasOwnProperty.call(params, 'status')) listStatus = params.status ?? ''
+    listStatus = params.status
     loadingJobs.value = true
     try {
       const page = await accountJobsAPI.list({
-        page: params.page ?? jobPage.page,
+        page: params.page,
         page_size: jobPage.pageSize,
         status: listStatus || undefined,
       }, { signal: controller.signal })
@@ -311,18 +310,6 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     if (epoch === generation) recoveryNeeded = false
   }
 
-  async function refreshDrawer(): Promise<void> {
-    try {
-      const jobID = selectedJobID.value
-      await Promise.all([
-        loadRecent(),
-        jobID === null ? Promise.resolve() : loadCurrent(jobID),
-      ])
-    } catch (error) {
-      showLoadFailure(error)
-    }
-  }
-
   async function poll(): Promise<void> {
     if (!pollingEnabled || pollInFlight) return
     const epoch = generation
@@ -455,7 +442,6 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     loadCurrent,
     openJob,
     openDrawer,
-    refreshDrawer,
     closeDrawer,
     cancelJob,
     retryJob,

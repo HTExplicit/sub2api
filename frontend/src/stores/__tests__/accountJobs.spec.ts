@@ -63,8 +63,8 @@ describe('useAccountJobsStore', () => {
       .mockResolvedValueOnce({ items: [job('succeeded')], total: 1, page: 1, page_size: 20 })
       .mockResolvedValueOnce({ items: [job('succeeded')], total: 1, page: 1, page_size: 20 })
 
-    await store.loadRecent()
-    await store.loadRecent()
+    await store.loadRecent({ page: 1, status: '' })
+    await store.loadRecent({ page: 1, status: '' })
 
     expect(app.toasts).toHaveLength(1)
     expect(app.toasts[0].type).toBe('success')
@@ -75,7 +75,7 @@ describe('useAccountJobsStore', () => {
     const store = useAccountJobsStore()
     const app = useAppStore()
 
-    await store.loadRecent()
+    await store.loadRecent({ page: 1, status: '' })
 
     expect(app.toasts).toHaveLength(0)
   })
@@ -104,7 +104,7 @@ describe('useAccountJobsStore', () => {
     })
     const store = useAccountJobsStore()
 
-    await store.loadRecent({ page: 2 })
+    await store.loadRecent({ page: 2, status: '' })
     await store.openJob(19, { page: 2, page_size: 1 })
 
     expect(store.recentJobs.map((item) => item.id)).toEqual([19, 20])
@@ -222,18 +222,18 @@ describe('useAccountJobsStore', () => {
     expect(store.itemPage.page).toBe(2)
   })
 
-  it('refreshes the selected page and status filter on an explicit request', async () => {
+  it('requests the given page and status filter with the page size the server last reported', async () => {
     const store = useAccountJobsStore()
     list.mockResolvedValue({ items: [], total: 0, page: 3, page_size: 25 })
     await store.loadRecent({ page: 3, status: 'running' })
     list.mockClear()
 
-    await store.loadRecent()
+    await store.loadRecent({ page: 4, status: 'failed' })
 
     expect(list).toHaveBeenCalledWith({
-      page: 3,
+      page: 4,
       page_size: 25,
-      status: 'running',
+      status: 'failed',
     }, { signal: expect.any(AbortSignal) })
   })
 
@@ -260,10 +260,10 @@ describe('useAccountJobsStore', () => {
     list.mockImplementationOnce((_params, { signal }: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => reject({ code: 'ERR_CANCELED' }))
     }))
-    const canceled = store.loadRecent({ page: 2 })
+    const canceled = store.loadRecent({ page: 2, status: '' })
     let resolveNew!: (value: unknown) => void
     list.mockImplementationOnce(() => new Promise(resolve => { resolveNew = resolve }))
-    const current = store.loadRecent({ page: 3 })
+    const current = store.loadRecent({ page: 3, status: '' })
     await canceled
     expect(store.loadingJobs).toBe(true)
     resolveNew({ items: [], total: 0, page: 3, page_size: 20 })
@@ -309,7 +309,7 @@ describe('useAccountJobsStore', () => {
     expect(store.itemPage.page).toBe(1)
     expect(store.loadingCurrent).toBe(false)
     get.mockClear()
-    await store.refreshDrawer()
+    await vi.advanceTimersByTimeAsync(3_000)
     expect(get).not.toHaveBeenCalled()
   })
 
@@ -328,7 +328,7 @@ describe('useAccountJobsStore', () => {
     const store = useAccountJobsStore()
     let resolveOld!: (value: unknown) => void
     list.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
-    const pending = store.loadRecent()
+    const pending = store.loadRecent({ page: 1, status: '' })
     const signal = list.mock.calls[0][1].signal as AbortSignal
     store.clear()
     resolveOld({ items: [job('running')], total: 1, page: 1, page_size: 20 })
