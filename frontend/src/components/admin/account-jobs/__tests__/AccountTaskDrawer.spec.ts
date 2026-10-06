@@ -36,7 +36,7 @@ describe('account operation presentation', () => {
     expect(host.find('[data-test="operation-dock"]').exists()).toBe(true)
     api.get.mockResolvedValue({ ...base, status: 'succeeded', processed_count: 2, succeeded_count: 2 })
     await vi.advanceTimersByTimeAsync(3000)
-    expect(store.activeCount).toBe(0)
+    expect(store.activeJobs).toHaveLength(0)
     expect(store.drawerOpen).toBe(false)
     expect(host.text()).toContain('statuses.succeeded')
   })

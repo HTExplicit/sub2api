@@ -55,7 +55,6 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   let currentRequestSerial = 0
 
   const activeJobs = computed(() => Object.values(trackedJobs.value).filter((job) => !isTerminalAccountJob(job)))
-  const activeCount = computed(() => activeJobs.value.length)
   const visibleJobs = computed(() => Object.values(trackedJobs.value)
     .filter(job => !dismissedJobs.value.has(job.id))
     .sort((a, b) => b.id - a.id))
@@ -423,7 +422,6 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     recentJobs,
     completedJobs,
     activeJobs,
-    activeCount,
     currentJob,
     items,
     drawerOpen,
