@@ -52,6 +52,74 @@ quota rows represent unlimited access; rows with three NULL limits are purged by
 the official migration.
 The three `238_*` migrations retain separate filenames and checksums.
 
+## Model discovery and context capacity
+
+The account test picker reads raw upstream model IDs and applies the saved mapping
+itself. Configured request names remain testable when the upstream catalog omits
+their target; wildcard mappings select request IDs from that raw catalog. The
+ordinary account-model projection keeps official mapping and passthrough semantics.
+Capacity resolves the real account/channel targets, rather than public aliases.
+
+Every provider and account type uses
+`custom > applicable official API > source-bound upstream > registry > unknown`.
+One complete automatic evidence record wins: omitted input/output limits are not
+filled from another source. A custom window overlays that record and keeps only
+its compatible independently declared input/output limits. The effective window
+is `max_context_window`, then `context_window`, then the input limit; a smaller
+explicit maximum is still authoritative. Group capacity is the minimum of the
+resolved targets of active accounts, independent of their schedulable toggle.
+Unknown capacity stays unknown, with no invented fallback or hard expiry.
+
+`upstream_model_metadata.source_identity` binds capacity observations and registry
+enrichment to the normalized endpoint and protocol, including Responses mode and
+escaped URL paths. An unbound or old-endpoint snapshot remains visible to
+administrators but supplies no current capacity. Asynchronous writes use the
+account revision gate; one reread/retry is allowed only when the source and complete
+stored snapshot, including an empty catalog, are unchanged. Persistence retries
+never fetch the upstream catalog again or resurrect a superseded observation.
+
+Administrator rows, `/v1/models` and Codex manifests share this resolver. Locally
+generated Codex descriptors have no capacity defaults, including the GPT-5.6,
+GPT-6 and GPT-6.1 Sol families; real upstream fields remain when no effective
+evidence supersedes them. OpenCode exports limits only from resolver-tagged
+manifest rows (`custom`, `official`, `upstream`, `registry`) when the client schema's
+required values are known, without a separate hard-coded capacity table. The
+capacity self-test remains version 4 with
+`priority=custom,official,upstream,registry`.
+
+The Use Key catalog panel and fetch remain available for Codex tabs, including
+OpenAI groups, and for the OpenCode tab. Codex configuration defaults to
+`model_catalog_url = "{root}/v1/models"`; Codex appends its own `client_version` to
+reach the same manifest handler. Fetching and downloading the catalog uses
+`{root}/backend-api/codex/models` without a pinned client version. The alternative
+is the downloaded `model_catalog_json` file; a response over 1 MiB switches the
+Codex configuration to that file mode. OpenCode continues reading the manifest
+regardless of the Codex remote/file selection.
+
+## OpenAI forwarding and model identity
+
+Explicit `reasoning.effort=none` is preserved on OpenAI-wire accounts, including
+compatible hosts, subject to the selected model's validation. Downstream effort
+accounting preserves the requested canonical effort rather than substituting the
+provider-normalized value. Explicit cross-protocol normalization retains `max`,
+except that legacy GPT-5.4/5.5 models map it to `xhigh`. GPT-6 Sol's Codex catalog
+keeps the six-level workflow including `ultra`; Luna keeps five levels.
+
+Finite known model/effort aliases are normalized, while undocumented dated GPT-6
+snapshots, including GPT-6.1 Sol, pass through unchanged. Unrecognized `gpt-6-*`
+and `gpt-6.*` names do not borrow the default model's price; exact configured
+price cards are still considered first.
+
+Responses streams require an authoritative terminal event. Chat Completions
+streams require a supported `finish_reason`; `[DONE]` and transport EOF alone
+cannot turn an incomplete stream into success. Raw Chat Completions does not
+write Ops `upstream_model` before dispatch: the forwarding result keeps the
+resolved target and separately records the model declared by the response and
+any conflicting response declarations. WebSocket composite routing uses the
+resolved forward target for scheduling. A Codex WebSocket window rollover removes
+the previous response ID without inferring an anchor from the old window; owner,
+identity and verified-replay checks remain in force.
+
 ## Release and production deployment
 
 - `main` is admitted through the normal required PR checks.
@@ -75,3 +143,14 @@ The three `238_*` migrations retain separate filenames and checksums.
 Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
+
+`.downstream/upstream-risk.json` is the recorded integration snapshot, not a live
+worktree conflict report. Its current classifier inputs are upstream `v0.2.11`
+through `v0.2.13` and downstream commit
+`291d25e7f8a8c82d45072a1eee742c21ba3b8d21`. `initial_conflict_files` supplements
+the classifier output with paths reviewed during the merge, including files
+resolved automatically; it is historical review evidence rather than a list of
+remaining unmerged paths. The final `merge_conflicts: []` records the resolved
+merge. The risk gate recomputes from the tags and downstream commit in that
+snapshot, rather than the current PR head, so later-deleted paths remain in its
+classification; `review_required` still requires the `upstream-reviewed` label.

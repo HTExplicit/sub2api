@@ -23,7 +23,6 @@ services:
       - "${BIND_HOST:-127.0.0.1}:${SERVER_PORT:-8080}:8080"
     volumes:
       - ./data:/app/data:Z
-      - ./skill-registry-data:/app/skill-registry:Z
     environment:
       - AUTO_SETUP=true
       - SERVER_HOST=0.0.0.0

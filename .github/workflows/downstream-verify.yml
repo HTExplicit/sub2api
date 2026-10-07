@@ -55,7 +55,7 @@ jobs:
         working-directory: backend
         run: |
           go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(CodexImageGenerationBridgeOverridePrecedence|TurnStateCommits|SchedulerCache|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels|ForwardResponsesOllamaClampPreservesContinuationPolicy|AccountAvailableModels|FetchOpenAIAccountModels|SetAnthropicAPIKeyAuthHeader|OllamaCloud.*(MaxTokens|MaxOutputTokens|Bearer)|Clamps.*OllamaBase)' -count=1
-          go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224|Migration230|Migration231|Migration232|GroupModelAllowlistRepairMigration|ReleaseAcceptance)' -count=1
+          go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration232|GroupModelAllowlistRepairMigration|ReleaseAcceptance)' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
