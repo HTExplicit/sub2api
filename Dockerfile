@@ -150,8 +150,8 @@ COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/
 COPY --chown=sub2api:sub2api THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 
 # Create the writable paired registry directory used by the runtime snapshot.
-RUN mkdir -p /app/data /app/skill-registry && \
-    chown sub2api:sub2api /app/data /app/skill-registry
+RUN mkdir -p /app/data && \
+    chown sub2api:sub2api /app/data
 
 # Copy entrypoint script (fixes volume permissions then drops to sub2api)
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
