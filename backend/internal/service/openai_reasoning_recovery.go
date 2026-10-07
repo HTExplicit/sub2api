@@ -397,9 +397,13 @@ func (r *openAIReasoningRecoveryState) skipRejectedHistory(body []byte) []byte {
 // stripped by this attempt. After the repair the id goes with the ciphertext.
 func (r *openAIReasoningRecoveryState) strip(body []byte, items []openAIReasoningCipherItem) ([]byte, error) {
 	edit := openAIReasoningRecoveryEdit{}
+	var sent []gjson.Result
+	if r.dropItemIDs {
+		sent = gjson.GetBytes(body, "input").Array()
+	}
 	for _, item := range items {
 		edit.cipher = append(edit.cipher, item.index)
-		if r.dropItemIDs && item.id != "" && openAIReasoningItemStandsWithoutID(gjson.GetBytes(body, fmt.Sprintf("input.%d", item.index))) {
+		if r.dropItemIDs && item.id != "" && item.index < len(sent) && openAIReasoningItemStandsWithoutID(sent[item.index]) {
 			edit.ids = append(edit.ids, item.index)
 		}
 	}
@@ -534,7 +538,64 @@ func stripOpenAIReasoningCipherIndices(body []byte, indices []int) ([]byte, erro
 	return deleteOpenAIReasoningItemField(body, indices, "encrypted_content")
 }
 
+// deleteOpenAIReasoningItemField deletes one field from the reasoning items at
+// the listed input positions. A long history holds hundreds of them, and
+// editing the whole body once for each costs seconds, so the items are edited
+// on their own and the body is written once. The result is byte for byte that
+// of deleting the fields one by one.
 func deleteOpenAIReasoningItemField(body []byte, indices []int, field string) ([]byte, error) {
+	input := gjson.GetBytes(body, "input")
+	if len(indices) == 0 || !input.IsArray() {
+		return deleteOpenAIReasoningItemFieldOneByOne(body, indices, field)
+	}
+	listed := make(map[int]bool, len(indices))
+	for _, index := range indices {
+		if listed[index] {
+			// Listed twice, an item is edited twice; no caller does that.
+			return deleteOpenAIReasoningItemFieldOneByOne(body, indices, field)
+		}
+		listed[index] = true
+	}
+	out := make([]byte, 0, len(body))
+	position, copied, met, located := 0, 0, 0, true
+	var failed error
+	input.ForEach(func(_, item gjson.Result) bool {
+		if listed[position] {
+			if item.Get("type").String() != "reasoning" {
+				failed = errors.New("reasoning recovery target mismatch")
+				return false
+			}
+			end := item.Index + len(item.Raw)
+			if item.Index < copied || end > len(body) || string(body[item.Index:end]) != item.Raw {
+				// The item is not where its offset says: edit the slow way.
+				located = false
+				return false
+			}
+			edited, err := sjson.Delete(item.Raw, field)
+			if err != nil {
+				failed = err
+				return false
+			}
+			out = append(out, body[copied:item.Index]...)
+			out = append(out, edited...)
+			copied = end
+			met++
+		}
+		position++
+		return true
+	})
+	switch {
+	case failed != nil:
+		return nil, failed
+	case !located:
+		return deleteOpenAIReasoningItemFieldOneByOne(body, indices, field)
+	case met != len(listed):
+		return nil, errors.New("reasoning recovery target mismatch")
+	}
+	return append(out, body[copied:]...), nil
+}
+
+func deleteOpenAIReasoningItemFieldOneByOne(body []byte, indices []int, field string) ([]byte, error) {
 	out := bytes.Clone(body)
 	for _, index := range indices {
 		path := fmt.Sprintf("input.%d", index)
@@ -682,11 +743,19 @@ func (r *openAIReasoningRecoveryState) TryRepairUnfoundItemIDs(status int, heade
 	if !strings.Contains(message, "Item with id '") {
 		return nil, false
 	}
+	input := gjson.GetBytes(r.wire, "input")
+	if !input.IsArray() {
+		return nil, false
+	}
+	items := input.Array()
 	found := false
 	ids := make([]int, 0, len(r.stripped))
 	for _, item := range r.stripped {
+		if item.index >= len(items) {
+			continue
+		}
 		// What was stripped is checked against what was sent.
-		sent := gjson.GetBytes(r.wire, fmt.Sprintf("input.%d", item.index))
+		sent := items[item.index]
 		id := sent.Get("id")
 		if item.id == "" || sent.Get("type").String() != "reasoning" || openAIReasoningItemHasCipher(sent) ||
 			id.Type != gjson.String || id.String() != item.id || !openAIReasoningItemStandsWithoutID(sent) ||
@@ -707,14 +776,17 @@ func (r *openAIReasoningRecoveryState) TryRepairUnfoundItemIDs(status int, heade
 	r.itemIDsRemoved += len(ids)
 	if r.retryUsed {
 		// The stripped retry was already sent; the send boundary accepts only
-		// the body it knows, and this one is not sent yet.
+		// the body it knows.
 		r.retryBody = bytes.Clone(repaired)
-		r.retryDispatched, r.diagnosticState = false, "retry_prepared"
 	}
+	// The answer is recorded with its own status and request id, and leaves
+	// neither behind for a caller that does not observe each response.
+	observedStatus, observedHeaders := r.responseStatus, r.responseHeaders
 	if r.responseStatus == 0 {
 		r.responseStatus, r.responseHeaders = status, headers.Clone()
 	}
 	r.record("retry_without_item_ids", status, "", payload, len(ids))
+	r.responseStatus, r.responseHeaders = observedStatus, observedHeaders
 	return repaired, true
 }
 

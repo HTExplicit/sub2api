@@ -377,18 +377,89 @@ func TestOpenAIReasoningRecoveryRepairChecksWhatItStrippedAgainstWhatWasSent(t *
 			require.False(t, repaired)
 		})
 	}
+	t.Run("an_entry_that_no_longer_holds_does_not_block_the_others", func(t *testing.T) {
+		const second = "rs_fedcba9876543210fedcba9876543210"
+		body := strings.Replace(reasoningRecoveryRelayFixture, `"output":"[]"}`,
+			`"output":"[]"},{"type":"reasoning","id":"`+second+`","summary":[],"encrypted_content":"opaque-second"}`, 1)
+		state, _, _ := newReasoningRecoveryTestState(t, context.Background(), body)
+		_, retry := state.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
+		require.True(t, retry)
+		state.wire, _ = sjson.SetBytes(state.retryBody, "input.1.type", "message")
+
+		repaired, ok := state.TryRepairUnfoundItemIDs(http.StatusNotFound, nil, []byte(`{"error":{"message":"Item with id '`+second+`' not found."}}`))
+		require.True(t, ok)
+		require.Equal(t, reasoningRecoveryRelayItemID, gjson.GetBytes(repaired, "input.1.id").String())
+		require.False(t, gjson.GetBytes(repaired, "input.4.id").Exists())
+	})
 	t.Run("sent_as_stripped", func(t *testing.T) {
 		state := prepared(t)
 		state.MarkAttemptDispatched()
 		state.wire = bytes.Clone(state.retryBody)
-		body, repaired := state.TryRepairUnfoundItemIDs(http.StatusNotFound, nil, unfound)
+		state.responseStatus, state.responseHeaders = 0, nil
+		body, repaired := state.TryRepairUnfoundItemIDs(http.StatusNotFound, http.Header{"X-Request-Id": []string{"req_unfound"}}, unfound)
 		require.True(t, repaired)
 		require.False(t, gjson.GetBytes(body, "input.1.id").Exists())
 		require.Equal(t, string(body), string(state.retryBody), "the send boundary accepts the repaired body")
-		require.False(t, state.retryDispatched, "which is not sent yet")
+		require.True(t, state.retryDispatched, "the stripped retry stays recorded as sent")
+		require.Equal(t, "retry_attempted", state.diagnosticState)
+		require.Zero(t, state.responseStatus, "the repaired answer is not left behind as the attempt's status")
+		require.Nil(t, state.responseHeaders)
 		_, again := state.TryRepairUnfoundItemIDs(http.StatusNotFound, nil, unfound)
 		require.False(t, again)
 	})
+}
+
+// The fields are deleted in one pass over the body. The bytes are those of
+// deleting them one whole-body edit at a time, which is what a request was
+// sent with before, and the same targets are refused.
+func TestOpenAIReasoningRecoveryDeletesFieldsInOnePassAsOneByOne(t *testing.T) {
+	const (
+		compact = `{"type":"reasoning","id":"rs_a","summary":[{"type":"summary_text","text":"id \"quoted\" \\ é"}],"encrypted_content":"a"}`
+		idFirst = `{"id":"rs_b","type":"reasoning","encrypted_content":"b","summary":[]}`
+		idLast  = `{"type":"reasoning","summary":[],"encrypted_content":"c","id":"rs_c"}`
+		idOnly  = `{"type":"reasoning","id":"rs_d"}`
+		bare    = `{"type":"reasoning","summary":[{"id":"nested","encrypted_content":"nested"}]}`
+		spaced  = "{\n    \"type\" : \"reasoning\" ,\n    \"id\" : \"rs_e\" ,\n    \"encrypted_content\" : \"e\" ,\n    \"summary\" : [ ]\n  }"
+		message = `{"type":"message","id":"msg_1","role":"user","content":"hello"}`
+	)
+	bodies := map[string]string{
+		"compact": `{"model":"m","input":[` + strings.Join([]string{message, compact, idFirst, message, idLast, idOnly, bare, spaced}, ",") + `],"store":false}`,
+		"spaced":  "{\n  \"input\" : [\n  " + strings.Join([]string{message, compact, idFirst, message, idLast, idOnly, bare, spaced}, " ,\n  ") + "\n  ] ,\n  \"model\" : \"m\"\n}",
+		"object":  `{"input":{"0":` + compact + `}}`,
+		"absent":  `{"model":"m"}`,
+	}
+	targets := map[string][]int{
+		"none": nil, "one": {1}, "all": {1, 2, 4, 5, 6, 7}, "unsorted_and_repeated": {7, 2, 2, 1, 7},
+		"a_message": {1, 3}, "out_of_range": {1, 8}, "negative": {-1}, "first": {0},
+	}
+	for bodyName, body := range bodies {
+		for targetName, indices := range targets {
+			for _, field := range []string{"encrypted_content", "id"} {
+				t.Run(strings.Join([]string{bodyName, targetName, field}, "/"), func(t *testing.T) {
+					want, wantErr := deleteOpenAIReasoningItemFieldOneByOne([]byte(body), indices, field)
+					got, gotErr := deleteOpenAIReasoningItemField([]byte(body), indices, field)
+					require.Equal(t, wantErr == nil, gotErr == nil, "one refuses what the other refuses")
+					require.Equal(t, string(want), string(got))
+				})
+			}
+		}
+	}
+	// A history of the size seen in production stays one pass.
+	items := make([]string, 0, 400)
+	for index := range 400 {
+		items = append(items, strings.Replace(compact, "rs_a", "rs_"+strings.Repeat("0", 28)+string(rune('a'+index%26))+string(rune('a'+index/26)), 1))
+	}
+	long := []byte(`{"model":"m","input":[` + strings.Join(items, ",") + `]}`)
+	all := make([]int, 400)
+	for index := range all {
+		all[index] = index
+	}
+	want, err := deleteOpenAIReasoningItemFieldOneByOne(long, all, "id")
+	require.NoError(t, err)
+	got, err := deleteOpenAIReasoningItemField(long, all, "id")
+	require.NoError(t, err)
+	require.Equal(t, string(want), string(got))
+	require.NotContains(t, string(got), `"id":"rs_`)
 }
 
 // A Responses-shaped body on the Chat Completions endpoint is stripped by the
@@ -473,6 +544,11 @@ func TestOpenAIReasoningRecoveryProjectionRepeatsOnlyRecoveryEdits(t *testing.T)
 			name:  "an_item_the_clean_body_does_not_hold",
 			clean: body(message), before: body(bare("rs_a"), message),
 			after: body(idless, message),
+		},
+		{
+			name:  "an_item_removed",
+			clean: body(message, cipher("rs_a", "a")), before: body(message, cipher("rs_a", "a")),
+			after: body(message),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

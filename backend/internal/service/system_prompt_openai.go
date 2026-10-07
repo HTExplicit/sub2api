@@ -235,8 +235,12 @@ func projectReasoningRecoveryEdits(clean, before, after []byte) ([]byte, error) 
 	if len(wireItems) != len(cleanItems) {
 		return nil, errReasoningWireProjection
 	}
+	var afterItems []gjson.Result
+	if input := gjson.GetBytes(after, "input"); input.IsArray() {
+		afterItems = input.Array()
+	}
 	lost := func(index int, field string) bool {
-		return !gjson.GetBytes(after, fmt.Sprintf("input.%d.%s", index, field)).Exists()
+		return index >= len(afterItems) || !afterItems[index].Get(field).Exists()
 	}
 	var wireEdit, cleanEdit openAIReasoningRecoveryEdit
 	for index, item := range wireItems {
