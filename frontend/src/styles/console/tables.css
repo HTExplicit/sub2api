@@ -583,6 +583,13 @@ html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="t
   margin-right: 0;
 }
 
+/* The longer English rate label may wrap at spaces when the column narrows; the rate and its controls stay whole. */
+html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="priority"] [data-ui="cell-line"][data-line="upstream_billing_rate"] > [data-ui="cell-line-label"] {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: normal;
+}
+
 @media (max-width: 1439.98px) {
   html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] th[data-column="taxonomy_route"] {
     min-width: 7rem;
