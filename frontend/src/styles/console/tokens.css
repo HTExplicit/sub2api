@@ -288,9 +288,9 @@
   --theme-text-dark-600: 75 85 99;
 }
 
-/* upstream dims separators and empty-state glyphs in dark with dark:text-gray-600 (#4b5563, decorative, as official);
-   the shade itself stays a readable grey for templates that have no dark variant */
-:root.flat-theme.dark [class~="dark:text-gray-600"] {
+/* Upstream dims separators and decorative glyphs with dark:text-gray-600 (#4b5563). Limit that shade to those
+   elements: the same utility on a table's empty-value text must keep the readable meta grey. */
+:root.flat-theme.dark [class~="dark:text-gray-600"]:is(svg, span[class~="text-gray-300"], div[class~="flex"][class~="items-center"][class~="justify-center"]) {
   --theme-text-gray-600: 75 85 99;
 }
 
