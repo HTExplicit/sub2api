@@ -1,6 +1,6 @@
 # GPT-6 模型、Codex 运行与提示词
 
-官方基线见 [upstream-base](upstream-base)。内置提示词能力在宿主内原生运行，随宿主交付；第三方插件框架独立保留。GPT-6 Sol/Luna 的定价与识别沿用官方实现，指令模板、实时容量和日期快照约定见下文。
+官方基线见 [upstream-base](upstream-base)。GPT-6 Sol/Luna 的定价与识别沿用官方实现，指令模板、实时容量和日期快照约定见下文。
 
 ## 模型同步与容量
 
@@ -26,7 +26,7 @@ API Key 使用完整 Responses。OAuth 目录保留实际 Lite 与上下文字�
 
 ## Codex 流式响应
 
-ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流式响应发送 `Content-Type`。宿主对声明接受 SSE 的 200 响应补回 `text/event-stream`。
+ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流式响应发送 `Content-Type`。网关对声明接受 SSE 的 200 响应补回 `text/event-stream`。
 
 ## 系统提示词
 
@@ -60,7 +60,7 @@ Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `ena
 
 ## Codex 运行设置
 
-侧栏“Codex 运行设置”（`/admin/codex-runtime`）有一个开关“压缩 Codex Responses 请求体”：开启时 OAuth 账号发往 ChatGPT Codex 后端的流式 `/responses` 请求体以 zstd 压缩发送，compact、models 等其他请求保持明文。保存沿用 TOTP 二次验证，对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约与未保存时的默认值见 [native domains](native-domains.md)。
+侧栏“Codex 运行设置”（`/admin/codex-runtime`）有一个开关“压缩 Codex Responses 请求体”：开启时 OAuth 账号发往 ChatGPT Codex 后端的流式 `/responses` 请求体以 zstd 压缩发送，compact、models 等其他请求保持明文。保存沿用 TOTP 二次验证，对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约与未保存时的默认值见 [Settings, stored data and rollback](native-domains.md)。
 
 ## 失效推理密文恢复
 
@@ -77,11 +77,3 @@ Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `ena
 批量测试移植上游 PR #6522：`POST /api/v1/admin/accounts/batch-test`（`account_ids`，`model_id` 可空）以 SSE 逐账号返回 `batch_start`/`account_started`/`account_result`/`batch_complete`，含首字延迟、上游实际模型和原始错误；关闭窗口或页面即停止。下游只增加：同时最多 10 个、同一上游主机（base_url 主机，无则平台+类型）最多 3 个、每账号 90 秒上限、15 秒 SSE 保活；`model_id` 为空时由服务端逐账号选模型——账号支持平台默认测试模型时用它，否则取模型列表或映射中第一个文本对话模型（排除图像、音频、嵌入、实时、语音和 `codex-auto-review`），单账号测试弹窗的默认模型用同一规则。结果只保存在页面和浏览器本地快照；重试即重新提交失败账号。
 
 测试成功后走上游 `RecoverAccountState`：清除 error 状态及可恢复的限流和临时不可调度，不改手动停用和调度开关。
-
-## 界面与验证边界
-
-公共插件 context 的同值刷新不再重建 iframe。主题按 URL/变量差异更新，新 CSS 及字体准备完成再替换旧外观；加载失败保留最后成功版本。内容测量按帧合并，使用自然尺寸而非随滚动变化的 viewport 坐标。
-
-离线真实 Chromium 验证了左侧导航、分类栏和右侧账号详情：两次正常 15 秒刷新、未保存输入与滚动保留、主题失败恢复、真实字体加载、菜单伸缩及跨 lg 布局。跨 lg 后表格切换为文档流时，其原容器滚动值会归零，这是原有响应式行为，不属于本轮刷新验收结果。
-
-本地测试只覆盖实际修改风险，正常 PR 必需检查继续执行；同代码的成功结果复用。提示词重构使用离线编排、模拟上游与隔离 PostgreSQL 验证，不发真实模型请求。生产镜像及部署指针由工作区接手手册和交付证据维护，离线或部署健康结果不代表模型质量。

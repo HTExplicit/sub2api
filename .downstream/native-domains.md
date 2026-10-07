@@ -1,11 +1,6 @@
-# Native domains
+# Settings, stored data and rollback
 
-Five first-party domains run inside the host: Codex runtime, model policy,
-system prompts, account tools and observability. Native pages
-retain the console theme (flat_theme_enabled), account fields and persisted task interactions.
-The official third-party plugin framework and its own configuration UI remain.
-
-## Settings and operations
+## Settings
 
 All paths below are relative to `/api/v1`. Settings writes retain administrator
 authentication and the existing step-up policy.
@@ -13,7 +8,7 @@ authentication and the existing step-up policy.
 | Interface | Contract |
 | --- | --- |
 | `GET/PUT /admin/settings/codex-runtime` | Codex request body compression switch (`request_zstd`; a missing key is on). |
-| `GET/PUT /admin/settings/observability` | Native theme switch (`theme_enabled`; a missing key is on). |
+| `GET/PUT /admin/settings/observability` | Console theme switch (`theme_enabled`; a missing key is on). |
 
 Each of the two is stored as one `settings` row holding a JSON object of
 boolean switches; `GET` and `PUT` answer with the switches in the standard
@@ -21,10 +16,6 @@ response envelope. A `PUT` body that is not a JSON object, or that carries any
 other key or a non-boolean value (including `null`), returns HTTP 400 and stores
 nothing. While no Codex runtime row is stored,
 `gateway.openai_codex_request_zstd` decides the compression switch.
-
-Ordinary account bulk editing remains HTTP 202; this change does not replace
-background tasks with synchronous editing. Existing API-key reveal and
-account-field protections remain.
 
 ## Startup and stored data
 
@@ -74,7 +65,7 @@ they never silently enable features.
 
 ## Release and rollback boundary
 
-The host is delivered as one immutable OCI image with image provenance. Normal
+Each release is one immutable OCI image with image provenance. Normal
 deployment uses the existing fixed-image `deploy-preserve` flow. It does not add
 backups, canaries, model calls or automatic rollback.
 
@@ -140,12 +131,6 @@ them stores the key again, and 273 is recorded by then: this release then
 exits at start with `invalid setting admin_observability_config` until the key
 is removed by hand
 (`UPDATE settings SET value = (value::jsonb - 'telemetry_enabled')::text WHERE key = 'admin_observability_config'`).
-
-## Verification
-
-Normal required PR checks validate the native domain packages, account scope,
-native configuration and frontend behavior. The release reuses that
-source validation. Health endpoints establish availability only.
 
 ## Console theme
 

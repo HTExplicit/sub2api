@@ -8,12 +8,12 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 - Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.13.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
-## Native domains and account operations
+## Settings and account operations
 
-The five first-party domains run inside the host and use native Vue pages.
-The official third-party plugin framework remains available. Domain settings,
-the stored data the migrations removed and the rollback boundary are described
-in [native domains](.downstream/native-domains.md).
+The Codex runtime and console theme settings interfaces, the conditions on
+which migrations 264 and 272 stop startup, the stored data the migrations
+removed and the rollback boundary are described in
+[settings, stored data and rollback](.downstream/native-domains.md).
 
 Account bulk operations remain HTTP 202 jobs with progress, cancellation and
 failed-item retry. Both edit entries use the frozen selected IDs whenever there
@@ -27,7 +27,7 @@ remain supported. A bulk-update item without a saved target account fails with
 
 The Codex runtime setting is one switch, request body compression for the
 streaming `/responses` turns of OpenAI OAuth accounts; its contract is in
-[native domains](.downstream/native-domains.md).
+[settings, stored data and rollback](.downstream/native-domains.md).
 
 ## Official behavior and downstream contracts
 
@@ -59,7 +59,7 @@ The three `238_*` migrations retain separate filenames and checksums.
 - New releases use immutable `vX.Y.Z-codexrip.N` tags on `main`.
 - Images use the tag without `v`: `ghcr.io/htexplicit/sub2api:X.Y.Z-codexrip.N`.
 - Downstream Release authenticates to GHCR, verifies source/build materials and
-  publishes the native host image digest and provenance. It reuses PR validation.
+  publishes the image digest and provenance. It reuses PR validation.
 - Production Deploy resolves the fixed digest through the existing restricted SSH
   updater. Ordinary updates use `operation=deploy-preserve`, preserving runtime
   settings and resources, naturally draining requests, and rebuilding only Sub2API.
