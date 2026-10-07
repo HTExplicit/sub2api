@@ -28,7 +28,6 @@ Dockerfile text eol=lf
 *.html text eol=lf
 *.svg text eol=lf
 *.md text eol=lf
-*.mjs text eol=lf
 *.cjs text eol=lf
 *.py text eol=lf
 # Upstream stores this one script with CRLF; keep its bytes as they are.
