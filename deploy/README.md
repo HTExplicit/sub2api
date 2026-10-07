@@ -174,14 +174,11 @@ database recovery period is not treated as a permanent process failure.
 - `schema_migrations` tracks applied migrations (filename + checksum).
 - Migrations are forward-only; rollback requires a DB backup restore or a manual compensating SQL script.
 
-### Image Studio default and the retained rollout tuple
+### The retained rollout tuple
 
-`GATEWAY_IMAGE_STUDIO_ENABLED` is the deploy-time default of the Image Studio
-switch until an administrator saves the image tool setting; unset or `false`
-keeps Image Studio off. Cindy accounts are ordinary OpenAI API-key accounts and
-the backend no longer reads any `GATEWAY_CINDY_*` variable. The production
-workflow below still carries its historical `cindy=` tuple and the Cindy
-platform-v1 label check; the backend ignores those values.
+Cindy accounts are ordinary OpenAI API-key accounts. The production workflow
+below still carries its historical `cindy=` tuple and the Cindy platform-v1
+label check; the backend ignores those values.
 
 The protected production workflow exposes the five values as typed boolean
 inputs. The platform and jobs phase is dispatched with:
@@ -276,9 +273,6 @@ their OCI source revisions to match valid `main` ancestors, and requires
 `rollback <target-ref> from=<current-ref> cindy=...`; the
 host rejects it before pulling or mutating state unless the running image is
 byte-for-byte equal to `from=`. Ordinary deploys remain unable to downgrade.
-
-The backend reads only `GATEWAY_IMAGE_STUDIO_ENABLED`; the former
-`GATEWAY_CINDY_IMAGE_STUDIO_ENABLED` fallback was removed.
 
 **Verify `users.allowed_groups` → `user_allowed_groups` backfill**
 
