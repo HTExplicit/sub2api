@@ -142,14 +142,13 @@ cannot be deployed after this migration. Failures require a forward fix.
 
 `observability.theme_enabled` (public `flat_theme_enabled`, default on) toggles
 `html.flat-theme`; switching it off restores the upstream look. The console look
-lives only in the central layer: `frontend/src/styles/flat-theme.css` (tokens, the
-Inter and Geist Mono Latin subsets; Chinese uses MiSans loaded at runtime from
-Xiaomi's font service by `utils/flatTheme.ts`, falling back to system fonts),
-`frontend/tailwind.config.js` (every palette, radius, shadow and gradient resolves
-through a CSS variable whose fallback is the upstream value; `primary` is Apple blue
-and the hue families map to Apple system colours), `frontend/src/style.css`
-(upstream recipes plus a `flat-theme` console block: colour only where upstream has
-colour, Liquid Glass only on chrome) and the shared components and layout. Page
-files keep upstream class strings; after upstream merges, re-run the ops-repo
-de-sweep (`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling
-pages.
+lives only in the central layer: `frontend/src/styles/console/*.css` (tokens and
+the console rules), `frontend/tailwind.config.js` (every palette, radius, shadow
+and gradient resolves through a CSS variable whose fallback is the upstream value;
+`primary` is the console's green accent and the hue families fold into five status
+colours), `frontend/src/style.css` (upstream recipes plus a `flat-theme` block
+that restates them for the console) and the shared components and layout. Text
+uses the OS UI font stack of `frontend/src/styles/theme.css`, as upstream does; no
+web fonts are shipped or loaded. Page files keep upstream class strings; after
+upstream merges, re-run the ops-repo de-sweep
+(`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling pages.

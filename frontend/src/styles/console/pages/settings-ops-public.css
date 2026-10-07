@@ -3,7 +3,7 @@
 /* public: sign-in, sign-up and password pages (AuthLayout), home, legal documents, 404 and key usage.
  * Owner: wave 1 A6. Source: the reference console's /signin (artifacts/tmp/ui-el/ref/public/REF-PUBLIC.md §1) for
  * the auth pages; the marketing site's structure (§2: top bar, hairline lattice, plain page) drawn with the console
- * tokens and Geist for home, legal, 404 and key usage. No brand element, logo or copy of theirs.
+ * tokens and the system font for home, legal, 404 and key usage. No brand element, logo or copy of theirs.
  *
  * Template hooks (upstream templates otherwise unchanged):
  *   components/layout/AuthLayout.vue:2      data-ui="auth-layout" (page root)
@@ -20,37 +20,15 @@
  * renders after AuthLayout, the agreement dialog is the z-[140] layer in #overlay-root (unique to LoginAgreementPrompt). */
 
 html.flat-theme {
-  /* the reference's small mono text: field labels and text buttons 10/15 (Chinese 11/16, as the mono label) */
-  --pub-mono-size: 10px;
-  --pub-mono-leading: 15px;
-  /* Text on the sign-in background. The pixel grid can sit behind it (its faintest step is #f8f8f8), where the
-     mono-label grey #737373 reads 4.47:1; muted #6c6c6c reads 4.84:1 there. Dark: the label grey holds (6.5:1). */
-  --pub-label: var(--ui-muted);
+  /* the small captions (the site subtitle, the text buttons, the mode link row, the copyright, "OR", the kickers):
+     12/16 (upstream's text-xs), sentence case, normal tracking; on the sign-in background (the pixel grid can sit
+     behind them, its faintest step #f8f8f8) they are muted, 5.21:1 there */
+  --pub-caption-size: 12px;
+  --pub-caption-leading: 16px;
   /* The outline of the sign-in fields: the reference's structural line (#ededed). Each field is identified by its
      label above and its placeholder inside (the console fields' rule: A2 recipe + behaviour B3.2, which still draws
      the 3:1 form-control line on an empty field without a visible placeholder); focus draws the accent edge. */
   --pub-field-line: var(--ui-line);
-  /* Tracking of the mono captions: the reference's values for Latin capitals (field labels 0.12em; "OR" and the text
-     buttons 0.15em; small meta lines 0.06-0.08em). Captions that carry interface text take the CJK label tracking in
-     the Chinese interface (tokens.css), where the Latin values read as spaced-out characters. Captions that carry the
-     site's own name, subtitle or the fixed English copyright keep their literal values. */
-  --pub-track-label: 0.12em;
-  --pub-track-caps: 0.15em;
-  --pub-track-meta: 0.08em;
-  --pub-track-hint: 0.06em;
-}
-
-html.flat-theme:lang(zh) {
-  --pub-mono-size: 11px;
-  --pub-mono-leading: 16px;
-  --pub-track-label: var(--ui-label-tracking);
-  --pub-track-caps: var(--ui-label-tracking);
-  --pub-track-meta: var(--ui-label-tracking);
-  --pub-track-hint: var(--ui-label-tracking);
-}
-
-html.flat-theme.dark {
-  --pub-label: var(--ui-label);
 }
 
 /* ------------------------------------------------------------------ auth · page and background */
@@ -88,8 +66,8 @@ html.flat-theme [data-ui="auth-column"] {
   padding: 0 24px;
 }
 
-/* brand: a 44px accent tile (radius 12; palette C marks) with the site logo, then the site name as a mono wordmark;
-   the site subtitle sits under them as a mono caption */
+/* brand: a 44px accent tile (radius 12; palette C marks) with the site logo, then the site name as a quiet wordmark
+   (16/24/600, muted); the site subtitle sits under them as a caption */
 html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] {
   display: flex;
   flex-wrap: wrap;
@@ -113,9 +91,7 @@ html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] > h1[class~="text-g
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  font: 600 15px/22.5px var(--ui-font-mono);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font: 600 16px/24px var(--ui-font);
   text-align: left;
   color: rgb(var(--ui-muted));
   -webkit-text-fill-color: currentColor;
@@ -125,9 +101,7 @@ html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] > h1[class~="text-g
 html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] > p {
   flex-basis: 100%;
   margin-top: 12px;
-  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -144,9 +118,7 @@ html.flat-theme [data-ui="auth-column"] > [class~="card-glass"] {
 /* below the column: the mode link row (register / sign-in) and the copyright line */
 html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] {
   margin-top: 22px;
-  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: var(--pub-track-caps);
-  text-transform: uppercase;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -169,16 +141,13 @@ html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] :is(a, button):hove
 
 html.flat-theme [data-ui="auth-column"] > div[class~="mt-8"] {
   margin-top: 40px;
-  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
 /* ------------------------------------------------------------------ auth · title and rhythm */
 html.flat-theme [data-ui="auth-column"] [class~="card-glass"] > [class~="space-y-6"] > div[class~="text-center"]:first-child > h2 {
   font: 600 28px/42px var(--ui-font);
-  letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
@@ -219,20 +188,20 @@ html.flat-theme [data-ui="auth-column"] div[class~="space-y-3"] > div[class~="ga
 }
 
 /* ------------------------------------------------------------------ auth · fields */
+/* the field label is the console's (upstream's .input-label: 14/20/500 ink-soft, sentence case); its hint muted */
 html.flat-theme [data-ui="auth-column"] label.input-label {
   display: block;
   margin-bottom: 8px;
-  font: 600 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: var(--pub-track-label);
-  text-transform: uppercase;
+  font: 500 14px/20px var(--ui-font);
+  letter-spacing: normal;
+  text-transform: none;
   text-align: left;
-  color: rgb(var(--pub-label));
+  color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui="auth-column"] label.input-label > span {
   margin-left: 6px;
   font-weight: 400;
-  letter-spacing: var(--pub-track-hint);
   color: rgb(var(--ui-muted));
 }
 
@@ -334,15 +303,15 @@ html.flat-theme [data-ui="auth-column"] div[class~="relative"] > button[class~="
 /* hints under a field (password rule, code hint) */
 html.flat-theme [data-ui="auth-column"] .input-hint {
   margin-top: 6px;
-  font: 400 12px/18px var(--ui-font);
+  font: 400 12px/16px var(--ui-font);
   text-align: left;
   color: rgb(var(--ui-muted));
 }
 
-/* the verification code: mono digits in the standard 42px field */
+/* the verification code: digits in the mono stack at upstream's text-xl (its tracking-[0.5em] applies) in the
+   standard 42px field */
 html.flat-theme [data-ui="auth-column"] input#code.input {
-  font: 500 15px/20px var(--ui-font-mono);
-  letter-spacing: 0.3em;
+  font: 500 20px/20px var(--ui-font-mono);
   text-align: left;
 }
 
@@ -360,7 +329,6 @@ html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary {
   background: rgb(var(--ui-solid));
   color: rgb(var(--ui-on-solid));
   font: 600 14px/20px var(--ui-font);
-  letter-spacing: -0.025em;
   box-shadow: none;
   transform: none;
   transition: background-color var(--ui-duration) var(--ui-ease), opacity var(--ui-duration) var(--ui-ease);
@@ -449,20 +417,18 @@ html.flat-theme [data-ui="auth-column"] .btn:active {
   transform: none;
 }
 
-/* "OR": hairlines and the mono word between them */
+/* "OR": hairlines and the word between them (a caption) */
 html.flat-theme [data-ui="auth-column"] div[class~="h-px"][class~="flex-1"] {
   background-color: rgb(var(--ui-line));
 }
 
 html.flat-theme [data-ui="auth-column"] div[class~="h-px"][class~="flex-1"] + span {
-  font: 600 11px/16.5px var(--ui-font-mono);
-  letter-spacing: var(--pub-track-caps);
-  text-transform: uppercase;
+  font: 600 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
-/* text buttons: forgot password, back to sign-in, request a new link, resend code, back to sign-up (mono,
-   uppercase, muted; ink on hover) */
+/* text buttons: forgot password, back to sign-in, request a new link, resend code, back to sign-up (captions,
+   muted; ink on hover) */
 html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-between"] {
   margin-top: 10px;
 }
@@ -482,9 +448,7 @@ html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] > button {
   align-items: center;
   gap: 6px;
   margin-left: 0;
-  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: var(--pub-track-caps);
-  text-transform: uppercase;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   text-decoration: none;
   color: rgb(var(--ui-muted));
   transition: color var(--ui-duration) var(--ui-ease);
@@ -505,7 +469,7 @@ html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] > button svg {
 }
 
 /* ------------------------------------------------------------------ auth · notices and states */
-/* agreement, checkbox mode: native 14px box in the accent, 12.5px line, document links in ink, underlined */
+/* agreement, checkbox mode: native 14px box in the accent, upstream's 13px line, document links in ink, underlined */
 html.flat-theme [data-ui="auth-column"] #login-agreement-consent {
   width: 14px;
   height: 14px;
@@ -513,7 +477,6 @@ html.flat-theme [data-ui="auth-column"] #login-agreement-consent {
 }
 
 html.flat-theme [data-ui="auth-column"] #login-agreement-consent + div > p {
-  font: 400 12.5px/18px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -534,7 +497,7 @@ html.flat-theme [data-ui="auth-column"] #login-agreement-consent + div a:hover {
   text-decoration-color: currentColor;
 }
 
-/* agreement not accepted yet (modal mode): the reference's notice box (subtle fill, hairline, 13px ink) with a
+/* agreement not accepted yet (modal mode): the reference's notice box (subtle fill, hairline, 14px ink) with a
    small default button */
 html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] {
   padding: 10px 12px 10px 16px;
@@ -542,8 +505,8 @@ html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~=
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] p[class~="font-medium"] {
@@ -584,13 +547,13 @@ html.flat-theme [data-ui="auth-column"] div[class~="border-amber-200"][class~="p
   border: 1px solid rgb(var(--ui-warning) / 0.3);
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-warning-soft));
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui="auth-column"] div[class~="border-amber-200"][class~="p-4"] :is(p, div[class~="text-sm"]) {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   color: rgb(var(--ui-warning));
 }
 
@@ -608,14 +571,14 @@ html.flat-theme [data-ui="auth-column"] div[class~="bg-green-50"][class~="px-3"]
   border: 1px solid rgb(var(--ui-success) / 0.25);
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-success-soft));
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui="auth-column"] div[class~="border-green-200"][class~="p-4"] p,
 html.flat-theme [data-ui="auth-column"] div[class~="bg-green-50"][class~="px-3"][class~="py-2"] span {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   color: rgb(var(--ui-success));
 }
 
@@ -667,13 +630,13 @@ html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"][c
 }
 
 html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"] h3 {
-  font: 600 15px/22px var(--ui-font);
+  font: 600 18px/28px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"] h3 + p {
   margin-top: 4px;
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -712,19 +675,18 @@ html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div
 html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] h3 {
   margin-top: 16px;
   font: 600 19px/26px var(--ui-font);
-  letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] h3 + p {
   margin-top: 6px;
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] h3 + p + p {
   margin-top: 4px;
-  font: 500 12.5px/18px var(--ui-font-mono);
+  font: 500 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
@@ -735,7 +697,7 @@ html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-canvas));
   color: rgb(var(--ui-ink));
-  font: 500 18px/24px var(--ui-font-mono);
+  font: 500 18px/24px var(--ui-font);
   box-shadow: none;
   transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
 }
@@ -812,7 +774,6 @@ html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div
 
 html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] h2 {
   font: 600 17px/25.5px var(--ui-font);
-  letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
@@ -821,13 +782,12 @@ html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] h2 + span {
   border-radius: var(--ui-radius-sm);
   background: rgb(var(--ui-subtle));
   color: rgb(var(--ui-muted));
-  font: 400 10.5px/15.75px var(--ui-font-mono);
-  letter-spacing: 0.025em;
+  font: 400 12px/16px var(--ui-font);
 }
 
 html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:first-child p {
   margin-top: 4px;
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -836,9 +796,9 @@ html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div
 }
 
 html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] > div:first-child > p {
-  font: 500 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: var(--pub-track-label);
-  text-transform: uppercase;
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -877,7 +837,7 @@ html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="m
 }
 
 html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:nth-child(2) > span {
-  font: 600 13px/19.5px var(--ui-font);
+  font: 600 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
@@ -943,7 +903,7 @@ html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] :is(a, butt
 /* ------------------------------------------------------------------ public pages · shared structure */
 /* Home, legal documents and key usage share the marketing site's top bar (sticky, 64px, a hairline under it, the
    canvas at 92 % with a 10px blur), its 1240px content width with a clamp(16px, 3vw, 32px) gutter and its footer
-   (a hairline, mono labels); drawn with the console tokens and Geist. */
+   (a hairline, captions); drawn with the console tokens and the system font. */
 html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"], [data-ui="not-found"]) {
   --pub-gutter: clamp(16px, 3vw, 32px);
   --pub-width: 1240px;
@@ -970,7 +930,7 @@ html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"]) 
   gap: 12px;
 }
 
-/* brand: the site logo at 32px (radius 8) and, where the page prints it, the site name as a mono wordmark */
+/* brand: the site logo at 32px (radius 8) and, where the page prints it, the site name (14/20/500 ink) */
 html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > :first-child div[class~="h-10"],
 html.flat-theme [data-ui="legal"] > header > div > a > span[class~="h-10"] {
   width: 32px;
@@ -987,9 +947,7 @@ html.flat-theme [data-ui="legal"] > header > div > a:first-child {
 
 html.flat-theme [data-ui="key-usage"] > header > nav > a > span,
 html.flat-theme [data-ui="legal"] > header > div > a:first-child > span:not([class~="h-10"]) {
-  font: 500 13px/20px var(--ui-font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: 500 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
@@ -1008,7 +966,7 @@ html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > di
   gap: 6px;
   border-radius: var(--ui-radius-md);
   color: rgb(var(--ui-muted));
-  font: 500 13px/20px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -1028,8 +986,7 @@ html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > di
   gap: 6px;
   border-radius: var(--ui-radius-md);
   color: rgb(var(--ui-muted));
-  font: 500 12.5px/18px var(--ui-font-mono);
-  letter-spacing: 0.04em;
+  font: 500 14px/20px var(--ui-font);
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -1039,10 +996,10 @@ html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > di
 }
 
 html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child > div[class~="relative"] > button > span[class~="text-base"] {
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
-/* sign in / console: the console's small solid primary (30px, radius 6, 13 / 600; palette C) */
+/* sign in / console: the console's small solid primary (30px, radius 6, the .btn type 14/20/500; palette C) */
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"],
 html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"] {
   display: inline-flex;
@@ -1055,7 +1012,7 @@ html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"] {
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-solid));
   color: rgb(var(--ui-on-solid));
-  font: 600 13px/19.5px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   box-shadow: none;
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
@@ -1067,9 +1024,9 @@ html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"]:ho
 }
 
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > span:not([class~="rounded-full"]) {
-  font-size: 13px;
-  line-height: 19.5px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   color: rgb(var(--ui-on-solid));
 }
 
@@ -1079,7 +1036,8 @@ html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-
   height: 18px;
   background: rgb(var(--ui-on-solid) / 0.18);
   color: rgb(var(--ui-on-solid));
-  font: 600 10px/18px var(--ui-font-mono);
+  font-weight: 600;
+  line-height: 18px;
 }
 
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > svg {
@@ -1093,7 +1051,7 @@ html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"], 
   outline-offset: 2px;
 }
 
-/* footer: a hairline, the copyright as a mono label on the left, links on the right */
+/* footer: a hairline, the copyright as a caption on the left, links on the right */
 html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer {
   padding: 0;
   border-top: 1px solid rgb(var(--ui-line));
@@ -1108,14 +1066,12 @@ html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer > div {
 }
 
 html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer p {
-  font: 400 12px/18px var(--ui-font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer a {
-  font: 400 13px/20px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
   transition: color var(--ui-duration) var(--ui-ease);
 }
@@ -1173,7 +1129,6 @@ html.flat-theme [data-ui="home"] > main > div > div:first-child {
 html.flat-theme [data-ui="home"] > main > div > div:first-child h1 {
   margin-bottom: 20px;
   font: 500 clamp(40px, 4.4vw, 56px) / 1.05 var(--ui-font);
-  letter-spacing: -0.035em;
   color: rgb(var(--ui-ink));
 }
 
@@ -1215,8 +1170,8 @@ html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary
   margin: 0;
 }
 
-/* the terminal: a console code block (surface, hairline, radius 8, a subtle tab bar with a mono label), code in
-   Geist Mono 12.5 in the reference's syntax roles; no tilt, glow or traffic-light colours */
+/* the terminal: a console code block (surface, hairline, radius 8, a subtle tab bar with its title), code in the
+   mono stack at upstream's 14px in the reference's syntax roles; no tilt, glow or traffic-light colours */
 html.flat-theme [data-ui="home"] .terminal-window {
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -1246,18 +1201,18 @@ html.flat-theme [data-ui="home"] .terminal-buttons span {
   background: rgb(var(--ui-line-strong));
 }
 
-/* the tab bar is the grouped fill (#f5f5f5), where the label grey reads 4.35:1: muted (4.74:1) */
+/* on the tab bar's grouped fill the title is muted (5.03:1) */
 html.flat-theme [data-ui="home"] .terminal-title {
   margin-right: 38px;
   font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme [data-ui="home"] .terminal-body {
   padding: 18px 20px 20px;
-  font: 400 12.5px/24px var(--ui-font-mono);
+  font: 400 14px/24px var(--ui-font-mono);
   color: rgb(var(--ui-ink));
 }
 
@@ -1290,8 +1245,7 @@ html.flat-theme [data-ui="home"] .code-success {
   border-radius: var(--ui-radius-sm);
   background: rgb(var(--ui-success-soft));
   color: rgb(var(--ui-success));
-  font: 600 11px/16px var(--ui-font-mono);
-  letter-spacing: 0.025em;
+  font: 600 12px/16px var(--ui-font-mono);
 }
 
 html.flat-theme [data-ui="home"] .cursor {
@@ -1300,7 +1254,7 @@ html.flat-theme [data-ui="home"] .cursor {
   background: rgb(var(--ui-ink));
 }
 
-/* the three highlights under the hero: mono chips on the content edge */
+/* the three highlights under the hero: chips on the content edge */
 html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) {
   margin-bottom: 0;
   padding: 0 var(--pub-gutter) clamp(56px, 9vh, 88px);
@@ -1332,9 +1286,7 @@ html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) > div > svg {
 }
 
 html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) > div > span {
-  font: 500 11px/16px var(--ui-font-mono);
-  letter-spacing: var(--pub-track-hint);
-  text-transform: uppercase;
+  font: 500 12px/16px var(--ui-font);
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -1417,7 +1369,6 @@ html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > d
 html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] h3 {
   margin-bottom: 10px;
   font: 500 20px/26px var(--ui-font);
-  letter-spacing: -0.02em;
   color: rgb(var(--ui-ink));
 }
 
@@ -1437,12 +1388,11 @@ html.flat-theme [data-ui="home"] > main > div > div[class~="mb-8"][class~="text-
 html.flat-theme [data-ui="home"] > main > div > div[class~="mb-8"][class~="text-center"] h2 {
   margin-bottom: 12px;
   font: 500 clamp(28px, 2.6vw, 36px) / 1.15 var(--ui-font);
-  letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="home"] > main > div > div[class~="mb-8"][class~="text-center"] p {
-  font: 400 15px/24px var(--ui-font);
+  font: 400 14px/24px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -1480,12 +1430,12 @@ html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > div 
 }
 
 html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > div > span {
-  font: 600 11px/16px var(--ui-font-mono);
+  font: 600 12px/16px var(--ui-font);
   color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > span:not([class~="rounded"]) {
-  font: 500 13px/19.5px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
@@ -1495,9 +1445,8 @@ html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > span
   border-radius: 9999px;
   background: rgb(var(--ui-primary-soft));
   color: var(--ui-link);
-  font: 500 9.5px/14.25px var(--ui-font-mono);
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  font-weight: 500;
+  line-height: 14px;
 }
 
 html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > span[class~="rounded"][class~="bg-gray-100"] {
@@ -1556,9 +1505,7 @@ html.flat-theme [data-testid="compact-home"] > header > nav > div:first-child > 
 }
 
 html.flat-theme [data-testid="compact-home"] > header > nav > div:first-child > span {
-  font: 500 13px/20px var(--ui-font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: 500 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
@@ -1572,7 +1519,7 @@ html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > :
   padding: 0 8px;
   border-radius: var(--ui-radius-md);
   color: rgb(var(--ui-muted));
-  font: 500 13px/20px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -1591,7 +1538,7 @@ html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > d
   padding: 0 8px;
   border-radius: var(--ui-radius-md);
   color: rgb(var(--ui-muted));
-  font: 500 12.5px/18px var(--ui-font-mono);
+  font: 500 14px/20px var(--ui-font);
 }
 
 html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > div[class~="relative"] > button:hover {
@@ -1607,7 +1554,7 @@ html.flat-theme [data-testid="compact-home"] :is(header a[class~="bg-gray-900"],
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-solid));
   color: rgb(var(--ui-on-solid));
-  font: 600 13px/19.5px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -1633,7 +1580,6 @@ html.flat-theme [data-testid="compact-home"] > main > div > img {
 
 html.flat-theme [data-testid="compact-home"] > main h1 {
   font: 500 clamp(36px, 4vw, 48px) / 1.1 var(--ui-font);
-  letter-spacing: -0.03em;
   color: rgb(var(--ui-ink));
 }
 
@@ -1646,9 +1592,7 @@ html.flat-theme [data-testid="compact-home"] > main h1 + p {
 html.flat-theme [data-testid="compact-home"] > footer {
   padding: 20px clamp(16px, 3vw, 32px);
   border-top: 1px solid rgb(var(--ui-line));
-  font: 400 12px/18px var(--ui-font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -1658,8 +1602,8 @@ html.flat-theme [data-testid="compact-home"] :is(a, button):focus-visible {
 }
 
 /* ------------------------------------------------------------------ legal documents */
-/* the marketing site's plain page: a 760px column, a mono kicker (the document type), a 44 / 500 title, a mono meta
-   line, 14.5 / 1.75 body text; the type's glyph tile is decoration and goes */
+/* the marketing site's plain page: a 760px column, a kicker (the document type), a 44 / 500 title, a meta line,
+   14.5 / 1.75 body text; the type's glyph tile is decoration and goes */
 html.flat-theme [data-ui="legal"] > main {
   max-width: calc(760px + 2 * var(--pub-gutter));
   padding: clamp(48px, 9vh, 96px) var(--pub-gutter) clamp(72px, 10vh, 112px);
@@ -1676,22 +1620,19 @@ html.flat-theme [data-ui="legal"] > main > article > div:first-child > div > spa
 }
 
 html.flat-theme [data-ui="legal"] > main > article > div:first-child p:first-child {
-  font: 400 12px/18px var(--ui-font-mono);
-  letter-spacing: var(--pub-track-meta);
-  text-transform: uppercase;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme [data-ui="legal"] > main > article > div:first-child h1 {
   margin-top: 14px;
   font: 500 clamp(30px, 3.4vw, 44px) / 1.1 var(--ui-font);
-  letter-spacing: -0.03em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="legal"] > main > article > div:first-child h1 + p {
   margin-top: 16px;
-  font: 400 13px/20px var(--ui-font-mono);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -1718,14 +1659,12 @@ html.flat-theme [data-ui="legal"] .legal-document-content h1 {
   padding-bottom: 0;
   border-bottom: 0;
   font: 500 24px/32px var(--ui-font);
-  letter-spacing: -0.02em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="legal"] .legal-document-content h2 {
   margin: 40px 0 12px;
   font: 600 17px/25.5px var(--ui-font);
-  letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
@@ -1772,7 +1711,7 @@ html.flat-theme [data-ui="legal"] .legal-document-content code {
   padding: 0;
   border-radius: 0;
   background: none;
-  font: 400 12.5px/1.6 var(--ui-font-mono);
+  font: 400 14px/1.6 var(--ui-font-mono);
   color: rgb(var(--ui-ink));
 }
 
@@ -1783,14 +1722,14 @@ html.flat-theme [data-ui="legal"] .legal-document-content pre {
   border-radius: var(--ui-radius-lg);
   background: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font: 400 12.5px/1.625 var(--ui-font-mono);
+  font: 400 14px/1.625 var(--ui-font-mono);
 }
 
 html.flat-theme [data-ui="legal"] .legal-document-content table {
   margin: 16px 0;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
 html.flat-theme [data-ui="legal"] .legal-document-content th {
@@ -1823,7 +1762,7 @@ html.flat-theme [data-ui="legal"] article > div[class~="border-dashed"] {
   border: 1px dashed rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-lg);
   background: transparent;
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -1833,11 +1772,11 @@ html.flat-theme [data-ui="legal"] > main > section {
 }
 
 html.flat-theme [data-ui="legal"] > main > section h1 {
-  font: 600 15px/22px var(--ui-font);
+  font: 600 18px/28px var(--ui-font);
 }
 
 html.flat-theme [data-ui="legal"] > main > section p {
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
 }
 
 html.flat-theme [data-ui="legal"] > main > section span[class~="h-10"] {
@@ -1857,7 +1796,7 @@ html.flat-theme [data-ui="legal"] > main > div > div[class~="animate-spin"] {
 }
 
 /* ------------------------------------------------------------------ 404 */
-/* the marketing site's 404: a plain left-aligned column (a mono kicker "404", a 44 / 500 title, one muted line, the
+/* the marketing site's 404: a plain left-aligned column (a kicker "404", a 44 / 500 title, one muted line, the
    actions), no bar or footer; the giant watermark, the glowing tile and the orbs go */
 html.flat-theme [data-ui="not-found"] {
   padding: clamp(48px, 10vh, 120px) var(--pub-gutter);
@@ -1881,8 +1820,7 @@ html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:first-child > d
 }
 
 html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:first-child span {
-  font: 400 12px/18px var(--ui-font-mono);
-  letter-spacing: 0.08em;
+  font: 400 var(--pub-caption-size) / var(--pub-caption-leading) var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -1897,12 +1835,11 @@ html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:nth-child(2) {
 html.flat-theme [data-ui="not-found"] h1 {
   margin-bottom: 16px;
   font: 500 clamp(30px, 3.4vw, 44px) / 1.1 var(--ui-font);
-  letter-spacing: -0.03em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="not-found"] h1 + p {
-  font: 400 15px/24px var(--ui-font);
+  font: 400 16px/24px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -1956,7 +1893,7 @@ html.flat-theme [data-ui="not-found"] .btn.btn-secondary svg {
 
 html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > p:last-child {
   margin-top: 28px;
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -1968,9 +1905,9 @@ html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > p:last-child a {
 }
 
 /* ------------------------------------------------------------------ key usage */
-/* the console's language on a public page: a centred 40 / 500 title, one 42px field with its solid button, KPI-style
-   cards (hairline, radius 8, mono labels), hairline tables with mono numbers; ring strokes in the accent (palette C
-   marks) */
+/* the console's language on a public page: a centred 40 / 500 title (its template tracking-tight kept), one 42px
+   field with its solid button, KPI-style cards (hairline, radius 8, labels), hairline tables with tabular numbers;
+   ring strokes in the accent (palette C marks) */
 html.flat-theme [data-ui="key-usage"] > main {
   padding: clamp(56px, 9vh, 96px) var(--pub-gutter) clamp(72px, 10vh, 112px);
 }
@@ -1982,12 +1919,11 @@ html.flat-theme [data-ui="key-usage"] > main > div:first-child {
 html.flat-theme [data-ui="key-usage"] > main > div:first-child h1 {
   margin-bottom: 12px;
   font: 500 clamp(30px, 3.4vw, 40px) / 1.15 var(--ui-font);
-  letter-spacing: -0.03em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="key-usage"] > main > div:first-child p {
-  font: 400 15px/24px var(--ui-font);
+  font: 400 16px/24px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -2010,7 +1946,7 @@ html.flat-theme [data-ui="key-usage"] input.input-ring {
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font: 400 13px/20px var(--ui-font-mono);
+  font: 400 14px/20px var(--ui-font);
   transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
 }
 
@@ -2075,21 +2011,21 @@ html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-chil
 
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > p {
   margin-top: 12px;
-  font: 400 12px/18px var(--ui-font);
+  font: 400 12px/16px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
-/* the range picker after a query: a mono label, 28px range buttons (the current one a chosen option: the accent
-   tint, accent text and the accent edge, palette C) */
+/* the range picker after a query: a label, 28px range buttons in upstream's text-xs (the current one a chosen option:
+   the accent tint, accent text and the accent edge, palette C) */
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] > div {
   gap: 6px;
 }
 
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] > div > span {
   margin-right: 4px;
-  font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -2100,7 +2036,7 @@ html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink-soft));
-  font: 600 12.5px/18px var(--ui-font);
+  font: 500 12px/16px var(--ui-font);
   transition: border-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease);
 }
 
@@ -2118,7 +2054,7 @@ html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] input.input-ring {
   height: 28px;
   padding: 0 8px;
-  font: 400 12.5px/18px var(--ui-font-mono);
+  font: 400 12px/16px var(--ui-font);
 }
 
 /* results */
@@ -2150,12 +2086,12 @@ html.flat-theme [data-ui="key-usage"] div[class~="inline-flex"][class~="rounded-
 }
 
 html.flat-theme [data-ui="key-usage"] div[class~="inline-flex"][class~="rounded-full"][class~="px-5"] > span:nth-child(2) {
-  font: 600 12.5px/18px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="key-usage"] div[class~="inline-flex"][class~="rounded-full"][class~="px-5"] > span:nth-child(n + 3) {
-  font: 400 12.5px/18px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -2177,11 +2113,11 @@ html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"]:hover {
   box-shadow: none;
 }
 
-/* card titles: the mono label */
+/* card titles: the label (12/16/500, sentence case) */
 html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"] h3 {
-  font: 500 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -2196,7 +2132,7 @@ html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"][class~="p-8
 }
 
 /* rings: the track in the grouped fill, the progress in the accent (palette C marks; the ring colours were
-   decoration: each ring has its title); the figures in the ring in mono */
+   decoration: each ring has its title); the figures in the ring tabular */
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] > circle:first-child {
   stroke: rgb(var(--ui-subtle));
 }
@@ -2220,33 +2156,31 @@ html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div {
 
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-3xl"] {
   font: 600 30px/36px var(--ui-font);
-  letter-spacing: -0.02em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-2xl"] {
-  font: 600 22px/28px var(--ui-font-mono);
-  letter-spacing: -0.01em;
+  font: 600 22px/28px var(--ui-font);
 }
 
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-xs"] {
-  font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-sm"] {
-  font: 600 13px/19.5px var(--ui-font-mono);
+  font: 600 14px/20px var(--ui-font);
 }
 
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > p {
-  font: 400 11px/16.5px var(--ui-font-mono);
+  font: 400 12px/16px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
-/* card heads with a hairline under them; detail rows: a neutral 26px glyph tile, a 13px label, the mono value
-   (status colours kept) */
+/* card heads with a hairline under them; detail rows: a neutral 26px glyph tile, a 14px label, the value 14/600
+   tabular (status colours kept) */
 html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"] > div[class~="px-8"][class~="py-5"] {
   padding: 12px 20px;
   border-bottom: 1px solid rgb(var(--ui-line));
@@ -2272,15 +2206,15 @@ html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div > div > 
 }
 
 html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div > div > span {
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div > span {
-  font: 600 13px/19.5px var(--ui-font-mono);
+  font: 600 14px/20px var(--ui-font);
 }
 
-/* token totals: already a hairline lattice upstream; mono labels and figures */
+/* token totals: already a hairline lattice upstream; labels, and figures in upstream's text-sm 600 */
 html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] {
   background: rgb(var(--ui-line));
 }
@@ -2292,18 +2226,19 @@ html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] > div {
 
 html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] > div > div:first-child {
   margin-bottom: 4px;
-  font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] > div > div:last-child {
-  font: 600 15px/22.5px var(--ui-font-mono);
+  font: 600 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
-/* the 7 / 30 / 90-day switch: the console's segmented control (the grey track, the raised pill) */
+/* the 7 / 30 / 90-day switch: the console's segmented control (the grey track, the raised pill) at upstream's
+   text-xs, the segment grey */
 html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] {
   padding: 2px;
   border: 1px solid rgb(var(--ui-track));
@@ -2314,8 +2249,8 @@ html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rou
 html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] > button {
   padding: 5px 12px;
   border-radius: var(--ui-radius-md);
-  color: rgb(var(--ui-muted));
-  font: 500 12.5px/18px var(--ui-font);
+  color: rgb(var(--theme-text-gray-600));
+  font: 500 12px/16px var(--ui-font);
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
 
@@ -2327,11 +2262,12 @@ html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rou
 html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] > button[class~="bg-primary-500"] {
   background: rgb(var(--ui-thumb));
   color: rgb(var(--ui-ink));
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--ui-thumb-shadow);
 }
 
-/* tables: mono labels in the head, 12.5px mono cells, hairline rows */
+/* tables: the usage-table header (12/16/500, uppercase, 0.05em), the cells in upstream's classes (text-sm tabular),
+   hairline rows */
 html.flat-theme [data-ui="key-usage"] main table thead tr {
   border-color: rgb(var(--ui-line));
   background: rgb(var(--ui-surface));
@@ -2339,8 +2275,8 @@ html.flat-theme [data-ui="key-usage"] main table thead tr {
 
 html.flat-theme [data-ui="key-usage"] main table th {
   padding: 12px;
-  font: 500 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
-  letter-spacing: var(--ui-label-tracking);
+  font: 500 12px/16px var(--ui-font);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgb(var(--ui-label));
   white-space: nowrap;
@@ -2348,8 +2284,6 @@ html.flat-theme [data-ui="key-usage"] main table th {
 
 html.flat-theme [data-ui="key-usage"] main table td {
   padding: 10px 12px;
-  font: 400 12.5px/19.5px var(--ui-font-mono);
-  color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui="key-usage"] main table :is(th, td):first-child {
@@ -2360,17 +2294,13 @@ html.flat-theme [data-ui="key-usage"] main table :is(th, td):last-child {
   padding-right: 20px;
 }
 
-html.flat-theme [data-ui="key-usage"] main table td:is(:first-child, :last-child) {
-  color: rgb(var(--ui-ink));
-}
-
 html.flat-theme [data-ui="key-usage"] main table tbody tr {
   border-color: rgb(var(--ui-line));
 }
 
 html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"] > div[class~="px-8"][class~="py-8"] {
   padding: 32px 20px;
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 14px/20px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
@@ -2389,11 +2319,12 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  * Source: the reference console's settings language (artifacts/tmp/ui-el/ref/console/REF-CONSOLE.md §5, §8.3-§8.5,
  * §8.11, §8.16 and its public recipes: Modal, ConnectModal, DemoBanner, PromoField, TopUpModal, Toggle, AddChoice)
  * and its docs pages for long-form text (ref-docs-*: callouts, tables, code). A long form reads as the reference's
- * panels: section cards (the surface, 1px structural line, radius 8) with a header strip (13 / 19.5 title, 12.5px
- * muted description, 14 x 18 inset like its Modal) and a 16 x 18 body; mono field labels (controls.css), 34px
- * fields, 12px help text; switch rows with a 13 / 600 title and a 12px description beside a right-aligned switch,
- * hairlines between rows; nested groups as the reference's route cards; notices as its callouts. Colour stays for
- * states only (warning / info notices, errors, the accent on links, focus and switches that are on; WAVE2 decision 2).
+ * panels: section cards (the surface, 1px structural line, radius 8) with a header strip (14 / 20 / 600 title,
+ * upstream's text-sm muted description, 14 x 18 inset like its Modal) and a 16 x 18 body; upstream's field labels
+ * (controls.css, style.css), 34px fields, 12px help text; switch rows with a 14 / 500 title and a 12px description
+ * beside a right-aligned switch, hairlines between rows; nested groups as the reference's route cards; notices as its
+ * callouts. Colour stays for states only (warning / info notices, errors, the accent on links, focus and switches that
+ * are on; WAVE2 decision 2).
  *
  * Template hooks (one attribute each, upstream markup otherwise unchanged):
  *   views/admin/SettingsView.vue:3                    data-ui="settings"       (page root)
@@ -2425,10 +2356,10 @@ html.flat-theme :is([data-ui~="settings"], [data-ui~="system-prompts"], [data-ui
   /* the space between the fields and rows of a card, and a row's half gap around its hairline */
   --set-gap: 1rem;
   --set-row: 0.875rem;
-  /* text that carries no size of its own (a bare label, a status line) is the console's 13 / 19.5 body text, not the
-     document's 16px */
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  /* text that carries no size of its own (a bare label, a status line) is the console's 14 / 20 body text
+     (upstream's text-sm), not the document's 16px */
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 /* ================================================================== settings · 1 page rhythm, tab strip */
@@ -2478,9 +2409,9 @@ html.flat-theme [data-ui~="settings"] .settings-tabs-shell.settings-tabs-shell::
 
 /* ================================================================== settings · 2 section cards */
 
-/* 2.1 Header strip: the reference Modal / panel header (px 18, py 14, the structural line under it); title 13 / 19.5
-   600 ink (the reference's page card titles, "Usage", "Request history"; 14 / 600 is its dialog title), description
-   12.5 / 18.75 muted two pixels under it. Upstream: 24px insets, an 18px title. */
+/* 2.1 Header strip: the reference Modal / panel header (px 18, py 14, the structural line under it); title 14 / 20
+   600 ink (the console's card title), description upstream's text-sm (14 / 20) muted two pixels under it. Upstream:
+   24px insets, an 18px title. */
 html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]:is([class~="px-6"], [class~="px-4"]) {
   gap: 0.75rem;
   padding: var(--set-head-py) var(--set-px);
@@ -2488,8 +2419,8 @@ html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]
 
 html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] :is(h2, h3) {
   gap: 0.5rem;
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 600;
   letter-spacing: 0;
   color: rgb(var(--ui-ink));
@@ -2497,8 +2428,8 @@ html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]
 
 html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] :is(h2 + p, h3 + p, h2 + div, div > p) {
   margin-top: 0.125rem;
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   color: rgb(var(--ui-muted));
 }
 
@@ -2528,8 +2459,8 @@ html.flat-theme [data-ui~="settings"] .card > div:is([class~="p-6"], [class~="px
 /* ================================================================== settings · 3 rows, titles, labels, help */
 
 /* 3.1 Switch rows: a title and its description on the left, the switch on the right, 16px apart at least (upstream
-   has no gap: a long description ran into the switch). Title 13 / 19.5 600 ink (the reference's card and option titles;
-   upstream's bare label is 16px), description 12 / 18 muted.
+   has no gap: a long description ran into the switch). Title 14 / 20 at upstream's font-medium 500, ink (upstream's
+   bare label is 16px), description 12 / 18 muted.
    The row is found by its own hook (data-ui~="setting-row", on the flex wrapper that holds the switch), not by `:has()`
    on a bare `div`: a generic `:has()` anchor merges every descendant into one invalidation set, and the anchor's whole
    subtree is then re-styled whenever any of those descendants may have changed. The hook keeps the same rows (a switch
@@ -2546,9 +2477,9 @@ html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between
 html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) > div:first-child > :is(label, span, h3, h4, p):first-child:not([class~="font-mono"]),
 html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) > :is(label, span, h3, h4):first-child:not([class~="font-mono"]) {
   font-family: var(--ui-font);
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
   color: rgb(var(--ui-ink));
@@ -2565,7 +2496,7 @@ html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between
 }
 
 /* 3.2 Titles inside a card: the bare row labels (label.font-medium, 16px upstream) and the sub-section headings of any
-   size are the reference's 13 / 600 ink card title; dialogs drawn inside the page keep theirs. A label followed by its
+   size are the console's 14 / 600 ink card title; dialogs drawn inside the page keep theirs. A label followed by its
    description (not by a field) is such a title too. The `:has()` stays in the subject compound on this class-qualified
    label and asks only about its next sibling, so it neither styles a descendant of the anchor nor makes the anchor's
    subtree part of the invalidation set. */
@@ -2582,8 +2513,8 @@ html.flat-theme [data-ui~="settings"] .card label[class~="text-sm"][class~="font
 
 html.flat-theme [data-ui~="settings"] .card :where(label[class~="font-medium"][class~="text-gray-900"], h3, h4):not(:where([class~="font-mono"], [class~="fixed"] *, .modal-content *)) {
   font-family: var(--ui-font);
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
@@ -2598,25 +2529,18 @@ html.flat-theme [data-ui~="settings"] .card :where(label[class~="font-medium"][c
   color: rgb(var(--ui-muted));
 }
 
-/* 3.4 Field labels. The recipe and the block utility labels are the mono label already (controls.css 3.5, style.css
-   .input-label); the inline ones that sit right before their field (label[for] + input.mt-2, the grok / TTFT fields,
-   the small grey labels of the search provider and the backup list) join them, so a form has one label language. */
+/* 3.4 Field labels. The recipe and the block utility labels keep upstream's label type (style.css .input-label,
+   controls.css 3.5); the inline ones that sit right before their field (label[for] + input.mt-2, the grok / TTFT fields, the small grey labels of the search provider and the backup list) keep their own classes
+   too (text-sm font-medium, or the small text-xs grey labels) and stand on their own line above the field. */
 html.flat-theme [data-ui~="settings"] label[class~="text-sm"][class~="font-medium"]:not([class~="block"]):has(+ :is(input, select, textarea, div)),
 html.flat-theme [data-ui~="settings"] label[class~="text-xs"]:is([class~="text-gray-500"], [class~="text-gray-600"]):has(+ :is(input, select, textarea, div)) {
   display: block;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
-  font-weight: 600;
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
-  color: rgb(var(--ui-label));
 }
 
-/* 3.5 Help text under a field: 12 / 18 muted, 6px under it (upstream mt-1 / mt-1.5 mix). */
+/* 3.5 Help text under a field: upstream's text-xs (12 / 16) muted, 6px under it (upstream mt-1 / mt-1.5 mix). */
 html.flat-theme [data-ui~="settings"] :is(input, select, textarea, .relative, [class~="flex"]) + p[class~="text-xs"]:is([class~="text-gray-500"], [class~="text-gray-400"]) {
   margin-top: 0.375rem;
-  line-height: 1.125rem;
+  line-height: 1rem;
 }
 
 /* 3.6 Hairline rows and sub-sections: the structural line with one row gap (14px) on each side of it; upstream
@@ -2651,7 +2575,7 @@ html.flat-theme [data-ui~="settings"] .card div[class~="rounded"][class~="border
   padding: 0.625rem 0.875rem;
 }
 
-/* 4.2 Notices: the reference's callout (radius 6, 12 x 14, 13px with a relaxed line) in the colour of its state
+/* 4.2 Notices: the reference's callout (radius 6, 12 x 14, 14px with a relaxed line) in the colour of its state
    (warning, success, danger): the soft fill and the state colour at 30 % as the edge, in dark too (the soft tokens
    are the state at 18 %, not upstream's translucent 900 shades). Their text keeps the state colour upstream gives it
    (the warning is the message). A notice that holds a switch row stays a row. Blue / sky info boxes are not a state:
@@ -2690,7 +2614,8 @@ html.flat-theme [data-ui~="settings"] :is(div, p)[class~="border"][class*="bg-am
 }
 
 /* 4.3 Dashed "add" buttons (add an endpoint, a menu item, a rule): a quiet 34px outline in the control line, dashed,
-   radius 6, 12.5 / 600 muted, ink on hover; not the accent (the reference adds with a default button). */
+   radius 6, upstream's text-sm at the button weight 500, muted, ink on hover; not the accent (the reference adds with
+   a default button). */
 html.flat-theme [data-ui~="settings"] button[class~="border-dashed"] {
   min-height: var(--ui-select-h);
   gap: 0.375rem;
@@ -2698,9 +2623,9 @@ html.flat-theme [data-ui~="settings"] button[class~="border-dashed"] {
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-md);
   padding: 0.3125rem 0.75rem;
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
   color: rgb(var(--ui-muted));
   transition-property: color, border-color, background-color;
   transition-duration: var(--ui-duration);
@@ -2718,13 +2643,14 @@ html.flat-theme [data-ui~="settings"] button[class~="border-dashed"] svg {
   height: 0.875rem;
 }
 
-/* dashed empty boxes ("no rule yet") are the reference's empty state: dashed control outline, radius 8, 12.5px muted */
+/* dashed empty boxes ("no rule yet") are the reference's empty state: dashed control outline, radius 8, upstream's
+   text-sm muted */
 html.flat-theme [data-ui~="settings"] div[class~="border-dashed"] {
   border-width: 1px;
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-lg);
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   color: rgb(var(--ui-muted));
 }
 
@@ -2753,15 +2679,14 @@ html.flat-theme [data-ui~="settings"] button[class~="text-red-400"]:is([class~="
   height: 0.9375rem;
 }
 
-/* 4.5 Quick-fill chips (model patterns): the reference's value chip, Geist Mono 11 ink-soft, the control outline,
-   radius 4; ink on hover (upstream turns them green). */
+/* 4.5 Quick-fill chips (model patterns): the reference's value chip, upstream's text-xs ink-soft, the control
+   outline, radius 4; ink on hover (upstream turns them green). */
 html.flat-theme [data-ui~="settings"] button[class~="rounded"][class~="border"][class~="px-2"][class~="py-0.5"][class~="text-xs"] {
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--ui-surface));
   padding: 0.0625rem 0.375rem;
-  font-family: var(--ui-font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1.125rem;
   color: rgb(var(--ui-ink-soft));
 }
@@ -2772,8 +2697,8 @@ html.flat-theme [data-ui~="settings"] button[class~="rounded"][class~="border"][
   color: rgb(var(--ui-ink));
 }
 
-/* 4.6 Values set as code inside a card (callback URLs, the admin key): Geist Mono 12 ink-soft on the grouped fill,
-   radius 4 (the reference's value chip). */
+/* 4.6 Values set as code inside a card (callback URLs, the admin key): the mono stack at 12px, ink-soft on the
+   grouped fill, radius 4 (the reference's value chip). */
 html.flat-theme [data-ui~="settings"] .card code[class~="rounded"]:is([class~="bg-gray-50"], [class~="bg-gray-100"]) {
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--ui-subtle));
@@ -2783,13 +2708,13 @@ html.flat-theme [data-ui~="settings"] .card code[class~="rounded"]:is([class~="b
 }
 
 /* 4.7 Header-less tables in a card (the platform quota matrix, the source overrides): the reference's table header,
-   the mono label at 500 with the structural line under it; 8px between rows. */
+   upstream's usage-table header (12 / 16 / 500, uppercase, 0.05em) with the structural line under it; 8px between
+   rows. */
 html.flat-theme [data-ui~="settings"] .card table > thead:not([class~="bg-gray-50"]) > tr > th {
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
-  letter-spacing: var(--ui-label-tracking);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgb(var(--ui-label));
 }
@@ -2813,11 +2738,11 @@ html.flat-theme [data-ui~="settings"] .card > div[class~="p-6"] > :is([data-test
   padding-top: var(--set-row);
 }
 
-/* the observation panel's checkbox options: 13px ink beside the 14px box, 8px apart */
+/* the observation panel's checkbox options: 14px ink beside the 14px box, 8px apart */
 html.flat-theme [data-ui~="settings"] [data-testid="observability-settings"] > label {
   gap: 0.5rem;
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   color: rgb(var(--ui-ink));
 }
 
@@ -2826,9 +2751,9 @@ html.flat-theme [data-ui~="settings"] [data-testid="observability-settings"] > :
 }
 
 /* 5.2 The model catalogue reads as the reference's docs reference list: a bordered scroll box (radius 8, 14px in),
-   one entry per hairline; the model id in Geist Mono 12.5 / 600 ink, the provider / product in mono 11 muted; the
-   facts as a two-column definition list, 12 / 18, labels muted, values ink-soft; the count as the reference's mono
-   meta line. Every field stays shown. */
+   one entry per hairline; the model id 14 / 600 ink (upstream text-sm), the provider / product 12px muted; the facts
+   as a two-column definition list, 12 / 18, labels muted, values ink-soft; the count as a 12px meta line. Every field
+   stays shown. */
 html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-list"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -2840,17 +2765,15 @@ html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry
 }
 
 html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > p:first-child {
-  font-family: var(--ui-font-mono);
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > p:nth-child(2) {
-  font-family: var(--ui-font-mono);
-  font-size: 0.6875rem;
-  line-height: 1.03125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   color: rgb(var(--ui-muted));
 }
 
@@ -2871,9 +2794,8 @@ html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry
 }
 
 html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog"] > p[class~="text-xs"] {
-  font-family: var(--ui-font-mono);
-  font-size: 0.6875rem;
-  line-height: 1.03125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   color: rgb(var(--ui-label));
 }
 
@@ -2892,27 +2814,27 @@ html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[clas
 }
 
 html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[class~="mb-4"] h3 {
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[class~="mb-4"] h3 + p {
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
-/* the backup list: the reference's table header (mono label, the line under it), 42px rows, figures in Geist Mono */
+/* the backup list: the reference's table header (upstream's usage-table header, the line under it), 42px rows,
+   figures in upstream's classes */
 html.flat-theme [data-ui~="settings"] .card[class~="p-6"] table > thead > tr {
   border-color: rgb(var(--ui-line));
 }
 
 html.flat-theme [data-ui~="settings"] .card[class~="p-6"] table > thead > tr > th {
   padding-block: 0.625rem;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
-  letter-spacing: var(--ui-label-tracking);
+  letter-spacing: 0.05em;
   color: rgb(var(--ui-label));
 }
 
@@ -2926,8 +2848,8 @@ html.flat-theme [data-ui~="settings"] [data-testid="backup-schedule"] > div[clas
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-subtle) / 0.6);
   padding: 0.625rem 0.875rem;
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -2940,36 +2862,37 @@ html.flat-theme [data-ui~="settings"] [data-testid="backup-schedule"] > div[clas
    description, not a state: the shared neutral callout (data.css §11 gives its line, fill and text; here only its
    radius and inset), its category and delivery chips neutral (upstream tints it with the accent and colours the
    delivery kind). The HTML body is set as the reference's code
-   (Geist Mono 12.5 on a 1.625 line). Placeholders are value chips: the structural outline, Geist Mono 11, ink on
-   hover (not green). The live preview panel's header is a panel header (10 x 14, 13 / 600 title). */
+   (its template font-mono at 14px on a 1.625 line). Placeholders are value chips: the structural outline, their
+   template font-mono at 12px, ink on hover (not green). The live preview panel's header is a panel header (10 x 14,
+   14 / 600 title). */
 html.flat-theme [data-ui~="settings"] .card div[class~="rounded-lg"][class~="border"][class~="border-primary-100"] {
   border-radius: var(--ui-radius-lg);
   padding: 0.75rem 0.875rem;
 }
 
 html.flat-theme [data-ui~="settings"] .card div[class~="border-primary-100"] > div:first-child > div {
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 html.flat-theme [data-ui~="settings"] .card div[class~="border-primary-100"] > div:first-child > span[class~="rounded-full"] {
   border: 1px solid rgb(var(--ui-line-strong));
   background-color: rgb(var(--ui-surface));
   padding: 0.0625rem 0.5rem;
-  font-size: 0.6875rem;
-  line-height: 1.03125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   font-weight: 500;
   color: rgb(var(--ui-ink-soft));
   box-shadow: none;
 }
 
 html.flat-theme [data-ui~="settings"] .card div[class~="border-primary-100"] > p {
-  font-size: 0.78125rem;
+  font-size: 0.875rem;
   line-height: 1.25rem;
 }
 
 html.flat-theme [data-ui~="settings"] .card textarea#email-template-html {
-  font-size: 0.78125rem;
+  font-size: 0.875rem;
   line-height: 1.625;
 }
 
@@ -2977,8 +2900,8 @@ html.flat-theme [data-ui~="settings"] .card button[class~="rounded-full"][class~
   border-color: rgb(var(--ui-line-strong));
   background-color: rgb(var(--ui-surface));
   padding: 0.125rem 0.625rem;
-  font-size: 0.6875rem;
-  line-height: 1.03125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   color: rgb(var(--ui-ink-soft));
   transition-property: color, border-color;
   transition-duration: var(--ui-duration);
@@ -3053,13 +2976,13 @@ html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"] > tabl
   }
 }
 
-/* 7.2 The intro under the title: the reference's page intro (13px on a relaxed line, muted, 780px at most); a
+/* 7.2 The intro under the title: the reference's page intro (14px on a relaxed line, muted, 780px at most); a
    wrapped intro keeps more than one character on its last line. */
 html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > header p,
 html.flat-theme [data-ui~="codex-runtime"] > h2:first-child + p,
 html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p {
   max-width: 48.75rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.625;
   color: rgb(var(--ui-muted));
   text-wrap: pretty;
@@ -3077,9 +3000,9 @@ html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p
   }
 }
 
-/* the page title where it stays (below 1024px, or an untranslated route title): the reference's 20 / 28 page title */
+/* the page title where it stays (below 1024px, or an untranslated route title): the header row's 18 / 28 page title */
 html.flat-theme :is([data-ui~="system-prompts"] > header h1, [data-ui~="codex-runtime"] > h2:first-child, [data-ui~="plugins"] > section:first-child h2) {
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   line-height: 1.75rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
@@ -3110,8 +3033,8 @@ html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]
   padding: var(--set-body-py) var(--set-px) calc(var(--set-body-py) + 0.125rem);
 }
 
-/* 8.2 The switch line (switch, title, hint on one row) and the default prompt: title 13 / 600 ink, hint 12 muted;
-   the field label is the mono label; the usage line in ink-soft with its figures tabular; the notes 12 muted. */
+/* 8.2 The switch line (switch, title, hint on one row) and the default prompt: title 14 / 600 ink, hint 12 muted;
+   the field label follows upstream text-sm font-medium; the usage line in ink-soft with its figures tabular; the notes 12 muted. */
 html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]) > section:first-of-type > label:first-child > span[class~="font-medium"] {
   font-weight: 600;
   color: rgb(var(--ui-ink));
@@ -3125,13 +3048,12 @@ html.flat-theme [data-ui~="system-prompts"] > section:first-of-type > label:firs
 
 html.flat-theme [data-ui~="system-prompts"] label > span[class~="block"]:first-child {
   margin-bottom: 0.5rem;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
-  font-weight: 600;
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
-  color: rgb(var(--ui-label));
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui~="system-prompts"] label[class~="space-y-1"] > :not([hidden]) ~ :not([hidden]) {
@@ -3155,9 +3077,9 @@ html.flat-theme :is([data-ui~="system-prompts"], [data-ui~="reasoning-recovery"]
   line-height: 1.125rem;
 }
 
-/* 8.3 The library card: its title row is the card's header strip (14 x 18, the line under it, 13 / 600 title, the
-   add button at the right); each prompt is a row under a hairline; the body is the reference's code (Geist Mono
-   12.5 on a 1.625 line); the byte count and the users in the mono meta line. */
+/* 8.3 The library card: its title row is the card's header strip (14 x 18, the line under it, 14 / 600 title, the
+   add button at the right); each prompt is a row under a hairline; the body is the reference's code (its template
+   font-mono at text-xs, on a 1.625 line); the byte count and the users in a 12px meta line. */
 html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-child {
   margin: calc(var(--set-body-py) * -1) calc(var(--set-px) * -1) 0;
   border-bottom: 1px solid rgb(var(--ui-line));
@@ -3165,8 +3087,8 @@ html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-c
 }
 
 html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-child > h2 {
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -3190,15 +3112,14 @@ html.flat-theme [data-ui~="system-prompts"] article > div[class~="items-end"] > 
 }
 
 html.flat-theme [data-ui~="system-prompts"] article textarea.input {
-  font-size: 0.78125rem;
+  font-size: 0.75rem;
   line-height: 1.625;
 }
 
 html.flat-theme [data-ui~="system-prompts"] article > p[class~="text-xs"] {
   gap: 0.25rem 1rem;
-  font-family: var(--ui-font-mono);
-  font-size: 0.6875rem;
-  line-height: 1.03125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-label));
 }
@@ -3210,16 +3131,15 @@ html.flat-theme [data-ui~="system-prompts"] article > p[class~="text-xs"] > [cla
 /* ================================================================== 8b · the per-account binding (accounts dialogs) */
 
 /* AccountSystemPromptBinding.vue, inside the account row menu's dialog, the bulk dialog and the account edit dialog:
-   the same field language (mono labels over 34px selects, 12px muted notes), the effect line in ink-soft. */
+   the same field language (field labels over 34px selects, 12px muted notes), the effect line in ink-soft. */
 html.flat-theme [data-test="account-system-prompt-binding"] label > span[class~="block"]:first-child {
   margin-bottom: 0.5rem;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
-  font-weight: 600;
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
-  color: rgb(var(--ui-label));
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-test="account-system-prompt-binding"] label[class~="space-y-1"] > :not([hidden]) ~ :not([hidden]) {
@@ -3243,8 +3163,8 @@ html.flat-theme [data-test="account-system-prompt-binding"] > div[class~="items-
 }
 
 html.flat-theme [data-test="account-system-prompt-binding"] > h3 {
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -3313,7 +3233,7 @@ html.flat-theme [data-ui~="plugins"] > p[class~="text-xs"] {
 }
 
 /* 10.2 The runtime notice is the shared neutral callout (data.css §11); the empty state is the reference's dashed
-   panel (radius 8, the control outline, a 14 / 500 title, 13px muted text, a neutral glyph). */
+   panel (radius 8, the control outline, a 14 / 500 title, 14px muted text, a neutral glyph). */
 html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] {
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-lg);
@@ -3333,42 +3253,43 @@ html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] > p:first-of-
 }
 
 html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] > p:last-of-type {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.625;
   color: rgb(var(--ui-muted));
 }
 
-/* 10.3 Plugin cards: section cards; the head is the header strip (14 x 18, the line under it) with the name
-   13 / 600, the version in Geist Mono 11 muted, the state as a small chip; the facts as a two-column definition
-   list (12 / 18, labels muted, values ink-soft, identifiers in Geist Mono); section labels are the mono label. */
+/* 10.3 Plugin cards: section cards; the head is the header strip (14 x 18, the line under
+   it) with the name 14 / 600, the version in its template font-mono 12px muted, the id and state as small chips
+   (upstream's text-xs); the facts as a two-column definition list (12 / 18, labels muted, values ink-soft,
+   identifiers in their template font-mono); section labels are the label (12 / 16 / 500, sentence case); JSON is the
+   reference's snippet (the page ground, radius 6, its template font-mono at 12px on 1.6). */
 html.flat-theme [data-ui~="plugins"] article.card > div:first-child[class~="border-b"] {
   padding: var(--set-head-py) var(--set-px);
 }
 
 html.flat-theme [data-ui~="plugins"] article.card h3 {
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="plugins"] article.card h3 ~ span[class~="font-mono"] {
-  font-size: 0.6875rem;
-  line-height: 1.03125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme [data-ui~="plugins"] article.card h3 ~ span[class~="rounded"] {
   border-radius: var(--ui-radius-sm);
   padding: 0.0625rem 0.375rem;
-  font-family: var(--ui-font-mono);
-  font-size: 0.6875rem;
-  line-height: 1.03125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 html.flat-theme [data-ui~="plugins"] article.card > div:first-child p {
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 html.flat-theme [data-ui~="plugins"] article.card > div:not(:first-child)[class~="p-5"] {
@@ -3391,11 +3312,11 @@ html.flat-theme [data-ui~="plugins"] article.card dl > dd {
 }
 
 html.flat-theme [data-ui~="plugins"] article.card p[class~="uppercase"][class~="text-xs"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
-  font-weight: 600;
+  font-weight: var(--ui-label-weight);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -3472,8 +3393,8 @@ html.flat-theme :is([data-ui~="settings"], #provider-form) button[class~="rounde
   color: var(--ui-link);
 }
 
-/* the dialog's groups and headings follow the settings form: the custom-method group is a route card; headings 13 /
-   600 ink; the inline group captions (payment mode, methods) are the mono label */
+/* the dialog's groups and headings follow the settings form: the custom-method group is a route card; headings 14 /
+   600 ink; the inline group captions (payment mode, methods) are the label (12 / 16 / 500, sentence case) */
 html.flat-theme #provider-form div[class~="rounded-lg"][class~="border"][class~="p-3"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -3481,37 +3402,36 @@ html.flat-theme #provider-form div[class~="rounded-lg"][class~="border"][class~=
 }
 
 html.flat-theme #provider-form :is(h4, h5) {
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme #provider-form > div[class~="flex-wrap"] > div > span[class~="text-xs"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
-  font-weight: 600;
+  font-weight: var(--ui-label-weight);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 /* ================================================================== 12 · the Cloudflare R2 guide (BackupView dialog) */
 
-/* A how-to in a dialog reads as the reference's docs page: 13px text on a relaxed line; the step titles 13 / 600 ink;
-   the step numbers a neutral mark (a 22px circle with the control outline, Geist Mono 11 ink-soft; upstream tints them
-   with the accent, decision 2); code and the settings table as its code and docs table (Geist Mono, the structural
-   line, the grouped fill on the key column); the Secret warning keeps its state; the free-tier line is a neutral
-   callout. Hook: BackupView.vue:291 data-ui="r2-guide" (the dialog's outer layer; the panel keeps the overlays'
-   utility-dialog look). */
+/* A how-to in a dialog reads as the reference's docs page: 14px text on a relaxed line; the step titles 14 / 600 ink;
+   the step numbers a neutral mark (a 22px circle with the control outline, 12px ink-soft; upstream tints them with the
+   accent, decision 2); code and the settings table as its code and docs table (code in the mono stack, the
+   structural line, the grouped fill on the key column); the Secret warning keeps its state; the free-tier line is a
+   neutral callout. Hook: BackupView.vue:291 data-ui="r2-guide" (the dialog's outer layer; the panel keeps the
+   overlays' utility-dialog look). */
 html.flat-theme [data-ui~="r2-guide"] :is(p, li) {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.625;
 }
 
 html.flat-theme [data-ui~="r2-guide"] h3 {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.375rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
@@ -3522,8 +3442,7 @@ html.flat-theme [data-ui~="r2-guide"] h3 > span[class~="rounded-full"] {
   height: 1.375rem;
   border: 1px solid rgb(var(--ui-line-strong));
   background-color: rgb(var(--ui-surface));
-  font-family: var(--ui-font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: rgb(var(--ui-ink-soft));
 }
@@ -3552,7 +3471,7 @@ html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="border"]:
 }
 
 html.flat-theme [data-ui~="r2-guide"] table {
-  font-size: 0.78125rem;
+  font-size: 0.875rem;
   line-height: 1.25rem;
 }
 
@@ -3562,8 +3481,6 @@ html.flat-theme [data-ui~="r2-guide"] table tr {
 
 html.flat-theme [data-ui~="r2-guide"] table td:first-child {
   background-color: rgb(var(--ui-subtle) / 0.6);
-  font-weight: 500;
-  color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui~="r2-guide"] table td:last-child code {
@@ -3575,7 +3492,7 @@ html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="bg-amber-
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-warning-soft));
   padding: 0.625rem 0.875rem;
-  font-size: 0.78125rem;
+  font-size: 0.75rem;
   line-height: 1.25rem;
 }
 
@@ -3584,7 +3501,7 @@ html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="bg-green-
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   padding: 0.75rem 0.875rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.625;
   color: rgb(var(--ui-muted));
 }

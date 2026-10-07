@@ -53,42 +53,13 @@ function watchUnlabelledFields(on: boolean): void {
   }
 }
 
-// MiSans (Chinese text of the console theme) is not shipped with the app: it is loaded from Xiaomi's
-// official font service (one stylesheet with the 400, 500 and 600 weights that match Geist's strokes,
-// unicode-range slices, font-display: swap) while the console theme is on, and removed when it is
-// switched off. The CSP allows both hosts (backend config DefaultCSPPolicy). If the service is
-// unreachable, the font stack in styles/console/tokens.css falls back to PingFang SC / Microsoft YaHei
-// and the other system fonts.
-const MISANS_FONT_ORIGIN = 'https://cdn-file.hyperos.mi.com'
-const MISANS_STYLESHEET = 'https://font.sec.miui.com/font/css?family=MiSans:400,500,600:Chinese_Simplify,Latin'
-
-function syncMiSansStylesheet(on: boolean): void {
-  if (typeof document === 'undefined' || !document.head) return
-  const existing = document.head.querySelectorAll<HTMLLinkElement>('link[data-misans]')
-  if (!on) {
-    existing.forEach((link) => link.remove())
-    return
-  }
-  if (existing.length) return
-  const preconnect = document.createElement('link')
-  preconnect.rel = 'preconnect'
-  preconnect.href = MISANS_FONT_ORIGIN
-  preconnect.crossOrigin = 'anonymous'
-  preconnect.dataset.misans = 'preconnect'
-  const stylesheet = document.createElement('link')
-  stylesheet.rel = 'stylesheet'
-  stylesheet.href = MISANS_STYLESHEET
-  stylesheet.dataset.misans = 'stylesheet'
-  document.head.append(preconnect, stylesheet)
-}
-
 // The console theme (styles/console/*.css) applies while <html> carries the flat-theme class.
 // It follows the public flat_theme_enabled setting and stays on when the setting is absent.
+// It loads no web fonts: text uses the OS UI font stack of styles/theme.css, as upstream does.
 export function applyFlatTheme(enabled: boolean | undefined): void {
   active.value = enabled !== false
   document.documentElement.classList.toggle('flat-theme', active.value)
   watchUnlabelledFields(active.value)
-  syncMiSansStylesheet(active.value)
 }
 
 /** Reactive: true while the console theme is on. */
