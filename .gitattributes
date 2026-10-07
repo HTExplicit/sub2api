@@ -21,8 +21,8 @@ backend/migrations/*.sql text eol=lf
 # Dockerfile
 Dockerfile text eol=lf
 
-# Signed resources and review fingerprints must identify the same source bytes
-# on developer Windows checkouts and Linux release builders.
+# Keep these text files LF in every checkout, so a Windows working tree
+# (core.autocrlf) holds the same bytes as the Linux CI and release builders.
 *.json text eol=lf
 *.css text eol=lf
 *.html text eol=lf
@@ -33,7 +33,6 @@ Dockerfile text eol=lf
 *.py text eol=lf
 # Upstream stores this one script with CRLF; keep its bytes as they are.
 tools/check_pnpm_audit_exceptions.py -text
-*.ps1 text eol=lf
 go.mod text eol=lf
 go.sum text eol=lf
 .gitattributes text eol=lf

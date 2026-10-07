@@ -4,8 +4,8 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 
 ## Source baseline
 
-- Integrated official baseline: `v0.2.8`, commit `fd80b08c90b55edcad5b00171b53f08721d30da1`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.8.md).
+- Integrated official baseline: the release recorded in `.downstream/upstream-base`.
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.13.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
 ## Native domains and account operations
@@ -45,8 +45,7 @@ only that account/model. The account option `openai_prompt_cache_key_mode`
 64 characters with its SHA-256 hex. Continuation, refusal recovery and
 destination-specific reasoning summaries remain supported. Account test model
 choices persist; API-key reveal requires the configured password. The account test
-dialog keeps list position. Public model management remains retired; catalog
-changes do not restore its routes or navigation.
+dialog keeps list position.
 
 Quota storage, aggregation, cleanup and resets follow official semantics. Missing
 quota rows represent unlimited access; rows with three NULL limits are purged by
@@ -68,7 +67,7 @@ The three `238_*` migrations retain separate filenames and checksums.
   automatic rollback. A failure preserves the runtime state for diagnosis.
 - SSH identity checks, fixed image validation, mutual exclusion and command error
   reporting remain required. Other services, networking, accounts, subscriptions
-  and manual routing stay within their existing configuration; CPA stays stopped.
+  and manual routing stay within their existing configuration.
 - Container/public health confirms availability, not actual model functionality.
 
 ## Upstream updates
