@@ -174,105 +174,31 @@ database recovery period is not treated as a permanent process failure.
 - `schema_migrations` tracks applied migrations (filename + checksum).
 - Migrations are forward-only; rollback requires a DB backup restore or a manual compensating SQL script.
 
-### The retained rollout tuple
+### Production deployment
 
-Cindy accounts are ordinary OpenAI API-key accounts. The production workflow
-below still carries its historical `cindy=` tuple and the Cindy platform-v1
-label check; the backend ignores those values.
-
-The protected production workflow exposes the five values as typed boolean
-inputs. The platform and jobs phase is dispatched with:
+Use the protected production workflow with the immutable release tag and the
+exact `DEPLOY` confirmation:
 
 ```bash
 gh workflow run production-deploy.yml \
   --repo HTExplicit/sub2api \
   --ref main \
-  -f operation=deploy \
   -f release_tag=vX.Y.Z-codexrip.N \
-  -f confirmation=DEPLOY \
-  -f cindy_health=false \
-  -f cindy_capability_catalog=false \
-  -f cindy_search=false \
-  -f image_studio=false \
-  -f cindy_responses_image_bridge=false
+  -f confirmation=DEPLOY
 ```
 
-The workflow resolves the release to an immutable digest, requires the Release
-body to record that exact image and source commit, and requires the immutable
-image's OCI revision and Cindy platform-v1 capability label to match the release.
-It sends only `deploy <immutable-ref> cindy=<health>,<catalog>,<search>,<studio>,<responses-image>`
-to the restricted host command. The host persists the tuple in
-`/opt/sub2api/docker-compose.cindy-rollout.yml`; a tuple-only change for the
-same digest recreates only `sub2api`, with the prior override included in the
-checksum-verified rollback set.
-During the guard-first migration window, the host accepts only the old workflow's
-three-value `cindy=<health>,<catalog>,<studio>` tuple and maps it to the canonical
-five-value tuple with Search and Responses-image disabled.
-This workflow always emits the explicit five-value tuple.
+The resolver requires a published stable Release, a release tag on `main`, and
+one immutable image reference and source commit in the Release body. The fixed
+image's standard OCI revision must match that commit. It sends exactly
+`deploy <immutable-ref>` to the restricted host command, which naturally drains
+requests, changes the image, and recreates only `sub2api`. Runtime settings and
+resources remain as configured; container/public health confirms availability,
+not actual model functionality.
 
-If an out-of-band maintenance action recreated `sub2api` from only the base
-Compose file while the canonical rollout override remained valid on disk, use
-the dedicated reconciliation operation with the exact Release currently
-running:
-
-```bash
-gh workflow run production-deploy.yml \
-  --repo HTExplicit/sub2api \
-  --ref main \
-  -f operation=reconcile-runtime \
-  -f release_tag=vX.Y.Z-codexrip.N \
-  -f confirmation=RECONCILE \
-  -f cindy_health=true \
-  -f cindy_capability_catalog=true \
-  -f cindy_search=true \
-  -f image_studio=false \
-  -f cindy_responses_image_bridge=false \
-  -f interrupt_business=false
-```
-
-The host proves that the requested immutable image is already running, the
-active container came from base-only Compose, the running tuple matches that
-base configuration, and the on-disk canonical override matches the requested
-target. It then takes the normal root-only backup and non-target container
-snapshot, recreates only `sub2api`, and observes the reconciled runtime for 300
-seconds. Any failure restores the prior base-only runtime; this operation does
-not pull or change an image.
-
-For a controlled stop before recreation, set `-f interrupt_business=true`. The
-host appends only `maintenance=interrupt`, stops `sub2api` after the root-only
-backup, waits for three stable zero samples of loopback connections and
-Redis-backed active leases (up to the fixed 900 second lease grace window), and
-then recreates only `sub2api`. A timeout or any post-recreate gate failure
-restores the verified base-only runtime and returns a failure status.
-
-The reconcile path records a fixed same-image native-canary skip marker and does
-not create a temporary acceptance credential; all local health, tuple, image,
-snapshot, and 300-second observation gates still run.
-
-An image downgrade uses the same protected `production` Environment and an
-explicit expected-current release rather than the deploy path:
-
-```bash
-gh workflow run production-deploy.yml \
-  --repo HTExplicit/sub2api \
-  --ref main \
-  -f operation=rollback \
-  -f release_tag=v0.1.177-codexrip.6 \
-  -f expected_current_release_tag=v0.1.177-codexrip.7 \
-  -f confirmation=ROLLBACK \
-  -f cindy_health=true \
-  -f cindy_capability_catalog=false \
-  -f cindy_search=false \
-  -f image_studio=false \
-  -f cindy_responses_image_bridge=false
-```
-
-The resolver requires both Releases, their recorded immutable references, and
-their OCI source revisions to match valid `main` ancestors, and requires
-`CURRENT` to be strictly newer than `TARGET`. The forced command is exactly
-`rollback <target-ref> from=<current-ref> cindy=...`; the
-host rejects it before pulling or mutating state unless the running image is
-byte-for-byte equal to `from=`. Ordinary deploys remain unable to downgrade.
+An older release uses the same form. Its database migrations must be compatible
+with the current data: the workflow does not restore dropped schema or deleted
+data and does not automatically roll back a failed deployment. See the migration
+boundaries in [native-domains](../.downstream/native-domains.md).
 
 **Verify `users.allowed_groups` → `user_allowed_groups` backfill**
 

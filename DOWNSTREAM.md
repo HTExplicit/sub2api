@@ -129,8 +129,9 @@ identity and verified-replay checks remain in force.
 - Downstream Release authenticates to GHCR, verifies source/build materials and
   publishes the image digest and provenance. It reuses PR validation.
 - Production Deploy resolves the fixed digest through the existing restricted SSH
-  updater. Ordinary updates use `operation=deploy-preserve`, preserving runtime
-  settings and resources, naturally draining requests, and rebuilding only Sub2API.
+  updater. Its only inputs are `release_tag` and `confirmation=DEPLOY`; the host
+  retains runtime settings and resources, naturally drains requests, and rebuilds
+  only Sub2API. An older tag uses the same form and requires compatible migrations.
 - Ordinary updates do not run business backups, canaries, long observation or
   automatic rollback. A failure preserves the runtime state for diagnosis.
 - SSH identity checks, fixed image validation, mutual exclusion and command error

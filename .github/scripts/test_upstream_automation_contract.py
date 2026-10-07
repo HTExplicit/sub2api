@@ -50,13 +50,18 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         self.assertIn("-codexrip.1", self.promoter)
         self.assertIn("endsWith(github.event.workflow_run.head_branch, '-codexrip.1')", self.handoff)
         self.assertIn("Manual codexrip releases must remain independent", self.handoff)
-        self.assertIn("operation=deploy-preserve", self.handoff)
+        self.assertIn('title="Deploy ${RELEASE_TAG}"', self.handoff)
+        self.assertIn('-f release_tag="$RELEASE_TAG"', self.handoff)
+        self.assertIn('-f confirmation=DEPLOY', self.handoff)
+        self.assertNotIn('operation=', self.handoff)
         self.assertIn("environment:\n      name: production", self.production)
-        self.assertIn("runtime=preserve", self.production)
+        self.assertIn('run-name: Deploy ${{ inputs.release_tag }}', self.production)
+        self.assertIn('remote_command="deploy ${IMAGE_REF}"', self.production)
+        self.assertNotIn('runtime=', self.production)
         self.assertNotIn("pending_deployments", self.handoff)
         self.assertNotIn("pending_deployments", self.promoter)
         self.assertIn("--match-head-commit", self.promoter)
-        self.assertIn("operation=deploy-preserve", self.promoter)
+        self.assertNotIn('operation=', self.promoter)
         self.assertIn("source_sha", self.publisher)
         self.assertIn("ref: refs/tags/${{ env.RELEASE_TAG }}", self.publisher)
         self.assertIn("ref: ${{ needs.verify.outputs.source_sha }}", self.publisher)
@@ -246,14 +251,14 @@ class UpstreamPromotionPollingTest(unittest.TestCase):
                 return merged
             return ""
 
-        for existing in (False, True):
+        for existing in (None, f"Deploy {self.tag}", f"Deploy {self.tag} (preserve)"):
             def read_api(path, *args):
                 if path == "pulls/152":
                     return pr
                 if path == "git/refs":
                     return {}
                 if path == "actions/workflows/production-deploy.yml/runs?per_page=100":
-                    runs = [{"display_title": f"Deploy {self.tag} (preserve)", "status": "in_progress",
+                    runs = [{"display_title": existing, "status": "in_progress",
                              "conclusion": None, "html_url": "https://github.com/example/run/18"}] if existing else []
                     return {"workflow_runs": runs}
                 self.fail(f"unexpected API call: {path}")
@@ -274,7 +279,7 @@ class UpstreamPromotionPollingTest(unittest.TestCase):
                 dispatches = [c for c in command.call_args_list if c.args[:3] == ("gh", "workflow", "run")]
                 self.assertEqual(dispatches, [] if existing else [call("gh", "workflow", "run",
                     "production-deploy.yml", "--repo", "HTExplicit/sub2api", "--ref", "main", "-f",
-                    "operation=deploy-preserve", "-f", f"release_tag={self.tag}", "-f", "confirmation=DEPLOY")])
+                    f"release_tag={self.tag}", "-f", "confirmation=DEPLOY")])
 
 
 if __name__ == "__main__":

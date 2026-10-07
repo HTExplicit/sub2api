@@ -62,12 +62,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          title="Deploy ${RELEASE_TAG} (preserve)"
+          title="Deploy ${RELEASE_TAG}"
+          # Reuse deployments already dispatched before the form changed.
+          legacy_title="${title} (preserve)"
           existing=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow production-deploy.yml --event workflow_dispatch --limit 50 \
-            --json displayTitle --jq "[.[] | select(.displayTitle == \"${title}\")] | length")
+            --json displayTitle --jq "[.[] | select(.displayTitle == \"${title}\" or .displayTitle == \"${legacy_title}\")] | length")
           [[ "$existing" == 0 ]] || exit 0
           gh workflow run production-deploy.yml --repo "$GITHUB_REPOSITORY" --ref main \
-            -f operation=deploy-preserve \
             -f release_tag="$RELEASE_TAG" \
             -f confirmation=DEPLOY
 
