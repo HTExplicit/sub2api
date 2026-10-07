@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -109,21 +108,20 @@ func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
 	})
 }
 
-// GetObservabilitySettings returns the account traffic telemetry and flat theme
-// switches this process applies.
+// GetObservabilitySettings returns the flat theme switch this process applies.
 // GET /api/v1/admin/settings/observability
 func (h *SettingHandler) GetObservabilitySettings(c *gin.Context) {
 	response.Success(c, service.EffectiveAdminObservabilityConfig())
 }
 
-// UpdateObservabilitySettings saves the account traffic telemetry and flat theme
-// switches. Omitted switches stay on.
+// UpdateObservabilitySettings saves the flat theme switch. An omitted switch is
+// on.
 // PUT /api/v1/admin/settings/observability
 func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
-	req := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
+	req := service.AdminObservabilityConfig{ThemeEnabled: true}
 	raw, err := c.GetRawData()
 	if err == nil {
-		err = service.DecodeSwitchSettings(raw, &req, "telemetry_enabled", "theme_enabled")
+		err = service.DecodeSwitchSettings(raw, &req, "theme_enabled")
 	}
 	if err != nil {
 		response.BadRequest(c, "Invalid observability settings: "+err.Error())
@@ -147,7 +145,7 @@ func (h *SettingHandler) GetCodexRuntimeSettings(c *gin.Context) {
 // omitted switch is on.
 // PUT /api/v1/admin/settings/codex-runtime
 func (h *SettingHandler) UpdateCodexRuntimeSettings(c *gin.Context) {
-	req := extensionv1.CodexRuntimeConfig{RequestZstd: true}
+	req := service.CodexRuntimeConfig{RequestZstd: true}
 	raw, err := c.GetRawData()
 	if err == nil {
 		err = service.DecodeSwitchSettings(raw, &req, "request_zstd")

@@ -19,5 +19,6 @@ func (s *OpenAIGatewayService) finalizeCodexOutboundHeaders(ctx context.Context,
 	if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {
 		return err
 	}
-	return enforceCodexIdentityHeadersForAccount(headers, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+	enforceCodexIdentityHeadersForAccount(headers, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+	return nil
 }

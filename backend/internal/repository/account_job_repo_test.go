@@ -34,7 +34,7 @@ func accountJobTestColumns() []string {
 
 func accountJobItemTestColumns() []string {
 	return []string{
-		"id", "job_id", "ordinal", "action", "target_account_id", "status", "metadata",
+		"id", "job_id", "ordinal", "target_account_id", "status", "metadata",
 		"error_code", "error_message", "started_at", "finished_at", "created_at", "updated_at",
 	}
 }
@@ -57,14 +57,14 @@ func TestAccountJobRepositoryCreatePersistsJobAndItemsAtomically(t *testing.T) {
 		WithArgs(int64(7), service.AccountJobKindBatchDelete, "key", requestHash, "cipher", sqlmock.AnyArg(), "{}", 1, nil, 1).
 		WillReturnRows(accountJobRows(now, 41, service.AccountJobStatusPending))
 	mock.ExpectExec("INSERT INTO admin_account_job_items").
-		WithArgs(int64(41), 1, "delete", targetID, "{}").
+		WithArgs(int64(41), 1, targetID, "{}").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	job, replayed, err := repo.Create(context.Background(), service.CreateAccountJobParams{
 		CreatedBy: 7, Kind: service.AccountJobKindBatchDelete, IdempotencyKey: "key", RequestHash: requestHash,
 		PayloadCipher: "cipher", PayloadExpires: now.Add(time.Hour), Metadata: json.RawMessage(`{}`),
-		Items: []service.AccountJobItemSeed{{Ordinal: 1, Action: "delete", TargetAccountID: &targetID, Metadata: json.RawMessage(`{}`)}}, Attempt: 1,
+		Items: []service.AccountJobItemSeed{{Ordinal: 1, TargetAccountID: &targetID, Metadata: json.RawMessage(`{}`)}}, Attempt: 1,
 	})
 	require.NoError(t, err)
 	require.False(t, replayed)
@@ -180,4 +180,3 @@ func TestAccountJobRepositoryPruneOnlyFinishedBeforeCutoff(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(migration), "job_id BIGINT NOT NULL REFERENCES admin_account_jobs(id) ON DELETE CASCADE")
 }
-

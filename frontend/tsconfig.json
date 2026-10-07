@@ -16,10 +16,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "vue-draggable-plus": ["./node_modules/vue-draggable-plus"],
-      "vue": ["./node_modules/vue"],
-      "vue-i18n": ["./node_modules/vue-i18n"]
+      "@/*": ["./src/*"]
     },
     "types": ["vite/client"]
   },

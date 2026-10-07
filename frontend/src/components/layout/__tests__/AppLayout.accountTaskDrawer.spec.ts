@@ -29,8 +29,8 @@ import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useAccountJobsStore } from '@/stores/accountJobs'
 
-describe('account job global surface', () => {
-  it('mounts one global drawer for account-page operation history without a header task entry', async () => {
+describe('AppLayout account task drawer', () => {
+  it('mounts one global drawer for account-page operation history, for administrators only', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const auth = useAuthStore()
@@ -59,12 +59,11 @@ describe('account job global surface', () => {
     })
 
     expect(wrapper.findAllComponents(AccountTaskDrawer)).toHaveLength(1)
-    expect(wrapper.find('[data-test="account-task-button"]').exists()).toBe(false)
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(listJobs).not.toHaveBeenCalled()
 
     // AccountsView.lite.spec mounts and clicks the real operation-history button.
-    // Its shared store action must open this single host-owned history drawer.
+    // Its shared store action must open this single history drawer.
     const jobs = useAccountJobsStore(pinia)
     await jobs.openDrawer()
     await flushPromises()
@@ -73,12 +72,11 @@ describe('account job global surface', () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
     expect(listJobs).toHaveBeenCalledTimes(1)
     expect(listJobs).toHaveBeenCalledWith(
-      { page: 1, page_size: 20, kind: undefined, status: undefined },
+      { page: 1, page_size: 20, status: undefined },
       { signal: expect.any(AbortSignal) },
     )
     auth.user = { ...auth.user!, role: 'user' }
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-test="account-task-button"]').exists()).toBe(false)
     expect(wrapper.findAllComponents(AccountTaskDrawer)).toHaveLength(0)
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(listJobs).toHaveBeenCalledTimes(1)

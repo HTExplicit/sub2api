@@ -933,8 +933,7 @@ export interface ClaudeModel {
   created_at: string
 }
 
-// Admin account-model view, not an unadapted upstream or Claude-only catalog.
-// The server supplies a nonempty display_name independently of the model id.
+// Account model row (returned by the admin account models API); display_name is never empty.
 export interface AccountAvailableModel {
   id: string
   type: string
@@ -943,21 +942,12 @@ export interface AccountAvailableModel {
   created?: number
   created_at?: string
   owned_by?: string
-  live_upstream_id?: string
   description?: string
   context_window?: number
   max_input_tokens?: number
-  base_context_window?: number
-  codex_context_window?: number
   max_output_tokens?: number
   reasoning_efforts?: string[]
   default_reasoning_effort?: string
-  endpoints?: string[]
-  source_revision?: string
-  verified?: boolean
-  alias_target?: string
-  managed?: boolean
-  public_model?: boolean
 }
 
 export interface AccountTestModeView {
@@ -966,9 +956,7 @@ export interface AccountTestModeView {
 }
 
 export interface AccountTestPlanView {
-  schema_version: 1
   account_id: number
-  wire_platform: string
   default_mode: string
   models: AccountAvailableModel[]
   mode_views: Record<string, AccountTestModeView>
@@ -1312,13 +1300,6 @@ export interface Account {
 
   // Rate limit & scheduling fields
   schedulable: boolean
-  // Native host projection, not an SDK Account or a client authorization grant.
-  account_view_facts?: {
-    version: 1
-    status: string
-    plan: string
-    privacy_mode: string
-  }
   rate_limited_at: string | null
   rate_limit_reset_at: string | null
   overload_until: string | null
@@ -1419,7 +1400,6 @@ export interface AccountFacetOption {
 }
 
 export interface AccountConsoleFacets {
-  view_preset_counts?: Record<string, number>
   total: number
   uncategorized_count: number
   platforms: AccountFacetOption[]

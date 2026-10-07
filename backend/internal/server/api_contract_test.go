@@ -1623,7 +1623,7 @@ func (*contractAccountJobRepo) FindIdempotent(context.Context, int64, string, st
 func (*contractAccountJobRepo) Get(context.Context, int64) (*service.AccountJob, error) {
 	return nil, service.ErrAccountJobNotFound
 }
-func (*contractAccountJobRepo) List(context.Context, int64, string, string, int, int) (*service.AccountJobList, error) {
+func (*contractAccountJobRepo) List(context.Context, string, int, int) (*service.AccountJobList, error) {
 	return &service.AccountJobList{}, nil
 }
 func (*contractAccountJobRepo) ResultAccountIDs(context.Context, int64) ([]int64, error) {

@@ -696,7 +696,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	firstEventType := ""
 	lastEventType := ""
 	upstreamTerminalEvent := ""
-	upstreamTerminalStatus := 0
 	sawDone := false
 	wroteDownstream := false
 	semanticOutputStarted := false
@@ -739,7 +738,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			Stream:                        reqStream,
 			OpenAIWSMode:                  true,
 			UpstreamTerminalEvent:         upstreamTerminalEvent,
-			UpstreamTerminalStatus:        upstreamTerminalStatus,
 			ResponseHeaders:               cloneHeader(resp.Header),
 			Duration:                      time.Since(turnStart),
 			FirstTokenMs:                  firstTokenMs,
@@ -764,7 +762,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			failureAccountSideEffectsApplied = s.handleOpenAIWSFailureAccountSideEffects(ctx, account, mappedModel, resp.Header, bareErrorPayload)
 		}
 		upstreamTerminalEvent = "response.failed"
-		upstreamTerminalStatus = openAIWSPayloadStatus(bareErrorPayload)
 		if clientDisconnected {
 			return nil
 		}
@@ -1058,7 +1055,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		}
 		if isOpenAIWSTerminalEvent(eventType) && !bareErrorPending {
 			upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, canonicalOpenAIAccountSchedulingModel(account, originalModel), resp.Header, rawUpstreamMessage)
-			upstreamTerminalStatus = openAIWSPayloadStatus(rawUpstreamMessage)
 			terminalEventCount++
 			firstTokenMsValue := -1
 			if firstTokenMs != nil {

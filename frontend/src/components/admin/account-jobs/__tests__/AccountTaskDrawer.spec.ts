@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), listItems: vi.fn(), cancel: vi.fn(), retryFailed: vi.fn(), mergeDuplicates: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), listItems: vi.fn(), cancel: vi.fn(), retryFailed: vi.fn() }))
 vi.mock('@/api/admin/accountJobs', () => ({ default: api }))
 vi.mock('@/api/admin/accounts', () => ({ list: vi.fn().mockResolvedValue({ items: [] }) }))
 vi.mock('vue-i18n', async () => ({ ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'), useI18n: () => ({ t: (key: string) => key }) }))
@@ -36,7 +36,7 @@ describe('account operation presentation', () => {
     expect(host.find('[data-test="operation-dock"]').exists()).toBe(true)
     api.get.mockResolvedValue({ ...base, status: 'succeeded', processed_count: 2, succeeded_count: 2 })
     await vi.advanceTimersByTimeAsync(3000)
-    expect(store.activeCount).toBe(0)
+    expect(store.activeJobs).toHaveLength(0)
     expect(store.drawerOpen).toBe(false)
     expect(host.text()).toContain('statuses.succeeded')
   })
@@ -54,21 +54,6 @@ describe('account operation presentation', () => {
     api.retryFailed.mockResolvedValue({ ...base, id: 52, status: 'pending', target_count: 1, processed_count: 0, retry_of_job_id: 51 })
     await button(wrapper, '.retryFailed').trigger('click'); await flushPromises()
     expect(api.retryFailed).toHaveBeenCalledWith(51)
-    expect(store.currentJob?.id).toBe(52)
-  })
-  it('validates safe duplicate metadata and requires explicit merge confirmation', async () => {
-    const store = useAccountJobsStore()
-    store.track({ ...base, kind: 'account_duplicate_review', status: 'succeeded', processed_count: 2 })
-    store.items = [{ id: 101, job_id: 51, ordinal: 1, status: 'succeeded', metadata: { confirmation_hash: 'opaque-confirmation-token', api_key: 'MustNotRender', accounts: [{ account_id: 7, name: 'Keep me', group_count: 2, tag_count: 1, configuration_score: 9 }, { account_id: 8, name: 'Merge me', group_count: 1, tag_count: 0, configuration_score: 4 }] }, created_at: base.created_at, updated_at: base.updated_at }]
-    const wrapper = mount(AccountTaskDrawer, options); wrappers.push(wrapper); await flushPromises()
-    expect(wrapper.text()).toContain('Keep me')
-    expect(wrapper.text()).not.toContain('MustNotRender')
-    await wrapper.get('[data-test="duplicate-survivor-7"]').setValue(true)
-    await wrapper.get('[data-test="duplicate-merge-submit"]').trigger('click')
-    expect(api.mergeDuplicates).not.toHaveBeenCalled()
-    api.mergeDuplicates.mockResolvedValue({ ...base, id: 52, kind: 'account_duplicate_merge', status: 'pending' })
-    await wrapper.get('[data-test="duplicate-merge-submit"]').trigger('click'); await flushPromises()
-    expect(api.mergeDuplicates).toHaveBeenCalledWith({ survivor_account_id: 7, loser_account_ids: [8], confirmation_hash: 'opaque-confirmation-token' })
     expect(store.currentJob?.id).toBe(52)
   })
   it('shows the full item name and its result metadata, without retry bookkeeping', async () => {

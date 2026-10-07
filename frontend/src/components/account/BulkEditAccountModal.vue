@@ -1474,8 +1474,6 @@
 </template>
 
 <script setup lang="ts">
-import { useAccountViewOperation } from '@/composables/useAccountViewContext'
-import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -1537,9 +1535,6 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const accountViewOperation = useAccountViewOperation(() => props.show, () => undefined)
-function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
-
 const emit = defineEmits<{
   close: []
   updated: [job: AccountJob]
@@ -2186,7 +2181,7 @@ const preCheckMixedChannelRisk = async (built: Record<string, unknown>): Promise
   if (mixedChannelConfirmed.value) return true
 
   try {
-    const result = await scopedAccounts().checkMixedChannelRisk({
+    const result = await adminAPI.accounts.checkMixedChannelRisk({
       platform: targetSelectedPlatforms.value[0],
       group_ids: groupIds.value
     })
@@ -2288,11 +2283,11 @@ const submitBulkUpdate = async (baseUpdates: Record<string, unknown>) => {
 
   try {
     const job = targetMode.value === 'filtered' && props.target?.filters
-      ? await scopedAccounts().bulkUpdate({
+      ? await adminAPI.accounts.bulkUpdate({
         filters: props.target.filters,
         ...updates
       })
-      : await scopedAccounts().bulkUpdate(props.accountIds, updates)
+      : await adminAPI.accounts.bulkUpdate(props.accountIds, updates)
     pendingUpdatesForConfirm.value = null
     operationJob.value = job
     emit('updated', job)

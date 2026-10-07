@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -405,18 +404,6 @@ func openAIReasoningCipherItems(body []byte) []openAIReasoningCipherItem {
 	return out
 }
 
-// message is the upstream error text; selection reads it only for the id of
-// the rejected item.
-type openAIReasoningRejection struct{ code, param, message string }
-
-func parseOpenAIReasoningRejection(payload []byte) (openAIReasoningRejection, bool) {
-	result := codexrecovery.Rejection(openAIRecoveryEnvelope(payload))
-	if !result.Recognized {
-		return openAIReasoningRejection{}, false
-	}
-	return openAIReasoningRejection{code: result.Code, param: result.Param, message: openAIRecoveryErrorMessage(payload)}, true
-}
-
 func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 	var input []any
 	if err := decodeOpenAIJSONUseNumber([]byte(gjson.GetBytes(body, "input").Raw), &input); err != nil {
@@ -428,24 +415,24 @@ func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 }
 
 func openAIReasoningRejectedIndices(body []byte, rejection openAIReasoningRejection) ([]int, []string) {
-	selection := selectOpenAIRecoveryIndices(body, rejection)
-	if len(selection.Indices) == 0 {
+	indices, _ := selectOpenAIRecoveryIndices(body, rejection)
+	if len(indices) == 0 {
 		return nil, nil
 	}
 	byIndex := map[int]string{}
 	for _, item := range openAIReasoningCipherItems(body) {
 		byIndex[item.index] = item.hash
 	}
-	hashes := make([]string, 0, len(selection.Indices))
+	hashes := make([]string, 0, len(indices))
 	seen := map[string]bool{}
-	for _, index := range selection.Indices {
+	for _, index := range indices {
 		hash := byIndex[index]
 		if !seen[hash] {
 			hashes = append(hashes, hash)
 			seen[hash] = true
 		}
 	}
-	return selection.Indices, hashes
+	return indices, hashes
 }
 
 // Evidence preserves numeric field presence, not default-zero struct members.
@@ -847,13 +834,13 @@ func (r *openAIReasoningRecoveryState) recoveryNotAttemptedReason(payload []byte
 	if !ok {
 		return "not_signature_rejection"
 	}
-	selection := selectOpenAIRecoveryIndices(r.wire, rejection)
-	if len(selection.Indices) > 0 {
-		if _, err := stripOpenAIReasoningCipherIndices(r.wire, selection.Indices); err != nil {
+	indices, reason := selectOpenAIRecoveryIndices(r.wire, rejection)
+	if len(indices) > 0 {
+		if _, err := stripOpenAIReasoningCipherIndices(r.wire, indices); err != nil {
 			return "rewrite_failed"
 		}
 	}
-	return selection.Reason
+	return reason
 }
 
 func (r *openAIReasoningRecoveryState) diagnosticClassification(payload []byte) string {

@@ -617,9 +617,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if account.Platform == PlatformTypeSafe && input.Type != "" && input.Type != AccountTypeAPIKey {
 		return nil, errors.New("typesafe accounts only support apikey credentials")
 	}
-	var owned map[string]accountEditRawValue
+	var protocolModes map[string]any
 	if input.Extra != nil {
-		owned = openAIAPIKeyOwnedExtraForUpdate(account, input.Extra)
+		protocolModes = openAIAPIKeyProtocolModesForUpdate(account, input.Extra)
 	}
 	NormalizeAccountCredentialBaseURLs(input.Credentials)
 	if err := ValidateModelContextOverrides(input.ModelContextOverrides); err != nil {
@@ -779,9 +779,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Extra == nil {
 		account.Extra = prepareCodexFingerprintExtraForUpdate(account, account.Extra)
 	}
-	// Whole-object forms own the other Extra keys; omitted OpenAI API-key
+	// A whole-object edit replaces the other Extra keys; omitted OpenAI API-key
 	// protocol modes retain their exact stored presence and value.
-	applyAccountEditOwned(account, owned)
+	applyOpenAIAPIKeyProtocolModes(account, protocolModes)
 	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
 		if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
 			return nil, infraerrors.BadRequest(

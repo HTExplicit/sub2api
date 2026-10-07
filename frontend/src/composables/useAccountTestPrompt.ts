@@ -1,14 +1,9 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { getActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
-import { browserPreferenceEvent, writeBrowserPreference } from '@/utils/browserPreferences'
 
 export const ACCOUNT_TEST_PROMPT_LIMIT = 8192
 const drafts = new Map<string, Ref<string>>()
-window.addEventListener(browserPreferenceEvent, event => {
-  const change = (event as CustomEvent<{ key: string; value: string }>).detail
-  if (change && drafts.has(change.key)) drafts.get(change.key)!.value = change.value
-})
 
 export function useAccountTestPrompt() {
   const auth = getActivePinia() ? useAuthStore() : undefined
@@ -30,7 +25,7 @@ export function useAccountTestPrompt() {
     set: value => {
       selected.value = value
       if (!key.value) return
-      writeBrowserPreference(key.value, value)
+      try { localStorage.setItem(key.value, value) } catch { /* Storage can be disabled. */ }
     }
   })
   const length = computed(() => Array.from(prompt.value).length)

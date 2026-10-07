@@ -89,6 +89,7 @@
             </div>
             <div class="mt-4 border-t border-gray-100 pt-4 dark:border-dark-700">
               <AccountUsageCell
+                :key="account.id"
                 :account="account"
                 :today-stats="todayStats"
                 :today-stats-loading="todayStatsLoading"
@@ -148,8 +149,6 @@
 </template>
 
 <script setup lang="ts">
-import { provideAccountViewContext, useAccountViewOperation } from '@/composables/useAccountViewContext'
-import { accountAPIForView } from '@/api/admin/accounts'
 import AccountTaxonomyEditor from './AccountTaxonomyEditor.vue'
 import AccountLastUpstreamError from './AccountLastUpstreamError.vue'
 import { computed, onMounted, onUnmounted } from 'vue'
@@ -178,10 +177,6 @@ const props = defineProps<{
   todayStatsLoading: boolean
   manualRefreshToken: number
 }>()
-const accountViewOperation = useAccountViewOperation(() => !!props.account, () => props.account?.id)
-function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
-provideAccountViewContext({ capture: accountViewOperation.capture, available: () => accountViewOperation.available.value, revision: accountViewOperation.revision })
-
 
 const emit = defineEmits<{
   close: []
@@ -223,7 +218,7 @@ const refreshTaxonomyAccount = async () => {
   if (!props.account) return
   const id = props.account.id
   try {
-    const updated = await scopedAccounts().getById(id)
+    const updated = await adminAPI.accounts.getById(id)
     if (props.account?.id === id) emit('updated', updated)
   } catch (error: any) { appStore.showError(error?.message || t('common.unknownError')) }
 }

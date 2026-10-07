@@ -6,8 +6,7 @@ const mocks = vi.hoisted(() => ({ getTempUnschedulableStatus: vi.fn(), recoverSt
 vi.mock('@/api/admin', () => ({ adminAPI: { accounts: mocks } }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => mocks }))
 vi.mock('@/utils/format', () => ({ formatDateTime: () => 'date' }))
-// Downstream: the component also loads the account-view API client, which creates the i18n instance.
-vi.mock('vue-i18n', async () => ({ ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'), useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 enableAutoUnmount(afterEach)
 beforeEach(() => vi.clearAllMocks())
 function deferred() {

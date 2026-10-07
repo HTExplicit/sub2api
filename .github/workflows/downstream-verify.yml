@@ -34,8 +34,6 @@ jobs:
           python3 .github/scripts/test_release_preflight.py
       - name: Agent protocol contracts
         run: bash .github/scripts/test_agent_protocol.sh
-      - name: Native domain contracts
-        run: bash .github/scripts/test_native_domains.sh
       - name: Reasoning recovery contracts
         run: bash .github/scripts/test_reasoning_recovery.sh
       - name: Model context capacity contracts
@@ -110,14 +108,13 @@ jobs:
           pnpm exec vitest run \
             src/components/admin/account/__tests__/AccountTestModal.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts \
-            src/components/admin/account/__tests__/AccountTestModal.policyPlan.spec.ts \
+            src/components/admin/account/__tests__/AccountTestModal.testPlan.spec.ts \
             src/components/keys/__tests__/UseKeyModal.spec.ts \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
             src/components/common/__tests__/BaseDialog.spec.ts \
-            src/components/common/__tests__/Select.disabled.spec.ts \
             src/views/admin/__tests__/PluginsView.spec.ts \
-            src/components/admin/codex/__tests__/CodexRuntime.native.spec.ts \
+            src/components/admin/codex/__tests__/CodexRuntime.spec.ts \
             src/api/__tests__/downstreamStatus.spec.ts \
             src/i18n/__tests__/accountConsoleLocales.spec.ts \
             src/__tests__/integration/data-import.spec.ts \
@@ -141,7 +138,7 @@ jobs:
             src/views/user/__tests__/StripePaymentView.spec.ts \
             src/views/admin/__tests__/ReasoningRecoveryView.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
-            src/utils/__tests__/accountEditCodec.spec.ts \
+            src/utils/__tests__/openaiProtocolModeEdits.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
             src/components/account/__tests__/ModelContextCapacityField.spec.ts \
             src/utils/__tests__/modelContextCapacity.spec.ts \

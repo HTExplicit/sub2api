@@ -290,13 +290,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		}
 		forwardStart := time.Now()
 		writerSizeBeforeForward := service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
-		trafficTurn := h.trafficObserver.Begin(requestCtx, account, service.AccountTrafficProtocolHTTP)
-		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
+		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()
 				}
-				trafficTurn.Finish(res, ferr, requestCtx.Err() != nil)
 			}()
 			return h.gatewayService.ForwardImages(requestCtx, c, account, body, parsed, channelMapping.MappedModel)
 		}()

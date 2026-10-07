@@ -1957,7 +1957,7 @@
             </p>
           </div>
           <div class="w-52">
-            <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" @update:model-value="recordAccountMode('responses_websocket_mode', $event)" />
+            <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" @update:model-value="recordProtocolModeEdit('responses_websocket_mode', $event)" />
           </div>
         </div>
       </div>
@@ -1980,7 +1980,7 @@
               :options="openAIResponsesModeOptions"
               :disabled="!openAITextGenerationCapabilityEnabled"
               data-testid="openai-responses-mode-select"
-              @update:model-value="recordAccountMode('responses_mode', $event)"
+              @update:model-value="recordProtocolModeEdit('responses_mode', $event)"
             />
           </div>
         </div>
@@ -2466,7 +2466,7 @@
             </p>
           </div>
           <div class="w-44">
-            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" data-testid="account-edit-compact-mode" @update:model-value="recordAccountMode('compact_mode', $event)" />
+            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" data-testid="account-edit-compact-mode" @update:model-value="recordProtocolModeEdit('compact_mode', $event)" />
           </div>
         </div>
         <div class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
@@ -3206,8 +3206,7 @@
 import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
-import { accountEditModes, applyCoreAccountModeChanges } from '@/utils/accountEditCodec'
-import type { AccountEditChangesV1, AccountEditModeTarget } from '@/types/accountEdit'
+import { openAIProtocolModes, applyOpenAIProtocolModeEdits, type OpenAIProtocolMode, type OpenAIProtocolModeEdits } from '@/utils/openaiProtocolModeEdits'
 
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
@@ -3315,8 +3314,6 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-function scopedAccounts() { return adminAPI.accounts }
-
 const emit = defineEmits<{
   close: []
   updated: [account: Account]
@@ -3623,7 +3620,7 @@ const modelMappings = ref<ModelMapping[]>([])
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
-const coreModeChanges = ref<AccountEditChangesV1>({})
+const protocolModeEdits = ref<OpenAIProtocolModeEdits>({})
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
 const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
@@ -3703,7 +3700,7 @@ const loadGrokMediaEligibility = async (accountID: number): Promise<GrokMediaEli
   grokMediaEligibilityLoading.value = true
   grokMediaEligibilityError.value = ''
   try {
-    const state = await scopedAccounts().getGrokMediaEligibility(accountID)
+    const state = await adminAPI.accounts.getGrokMediaEligibility(accountID)
     if (requestVersion !== grokMediaEligibilityRequestVersion) return null
     grokMediaEligibilityState.value = state
     grokMediaEligibilityMode.value = state.mode
@@ -4655,9 +4652,9 @@ async function loadTLSProfiles() {
 }
 
 // Only protocol modes the admin explicitly changes are written back.
-function recordAccountMode(target: AccountEditModeTarget, value: unknown) {
-  if (typeof value !== 'string' || !(accountEditModes[target].values as readonly string[]).includes(value)) return
-  coreModeChanges.value = { ...coreModeChanges.value, [target]: { op: 'set', value } }
+function recordProtocolModeEdit(mode: OpenAIProtocolMode, value: unknown) {
+  if (typeof value !== 'string' || !(openAIProtocolModes[mode].values as readonly string[]).includes(value)) return
+  protocolModeEdits.value = { ...protocolModeEdits.value, [mode]: value }
 }
 
 watch(
@@ -4668,7 +4665,7 @@ watch(
     }
     if (!wasShow || newAccount.id !== previousAccount?.id || newAccount.platform !== previousAccount?.platform ||
         newAccount.type !== previousAccount?.type) {
-      coreModeChanges.value = {}
+      protocolModeEdits.value = {}
       syncFormFromAccount(newAccount)
       loadTLSProfiles()
     }
@@ -4774,7 +4771,7 @@ const syncAntigravityUpstreamModels = async () => {
 
   isSyncingAntigravityUpstream.value = true
   try {
-    const result = await synchronizeCapacity(() => scopedAccounts().syncUpstreamModels(accountID))
+    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModels(accountID))
     if (!result) return
     const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
@@ -5195,7 +5192,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
   }
 
   try {
-    const result = await scopedAccounts().checkMixedChannelRisk({
+    const result = await adminAPI.accounts.checkMixedChannelRisk({
       platform: props.account.platform,
       group_ids: form.group_ids,
       account_id: props.account.id
@@ -5238,7 +5235,7 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
   }
 
   try {
-    const state = await scopedAccounts().updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
+    const state = await adminAPI.accounts.updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
     grokMediaEligibilityState.value = state
     grokMediaEligibilityInitialMode.value = state.mode
     const nextExtra = { ...((updatedAccount.extra as Record<string, unknown> | undefined) || {}) }
@@ -5838,7 +5835,7 @@ const handleSubmit = async () => {
       const currentExtra = (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
       const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
-      applyCoreAccountModeChanges(newExtra, currentExtra, props.account.type, coreModeChanges.value)
+      applyOpenAIProtocolModeEdits(newExtra, currentExtra, props.account.type, protocolModeEdits.value)
       const storedPassthrough = currentExtra.openai_passthrough === true || currentExtra.openai_oauth_passthrough === true
       if (openaiPassthroughEnabled.value !== storedPassthrough) {
         if (openaiPassthroughEnabled.value) newExtra.openai_passthrough = true

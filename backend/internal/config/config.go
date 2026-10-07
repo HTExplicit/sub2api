@@ -1087,9 +1087,6 @@ type GatewayConfig struct {
 	// ConcurrencySlotTTLMinutes: 并发槽位过期时间（分钟）
 	// 应大于最长 LLM 请求时间，防止请求完成前槽位过期
 	ConcurrencySlotTTLMinutes int `mapstructure:"concurrency_slot_ttl_minutes"`
-	// AccountTrafficTelemetryDisabled: 关闭 OpenAI 系网关的账号级流量遥测（只观察：仅写 Redis 计数器
-	// account_traffic_observe:{id}:*，不改变调度/准入）。零值为开启，手工构造的 Config 也能观测。
-	AccountTrafficTelemetryDisabled bool `mapstructure:"account_traffic_telemetry_disabled"`
 	// SessionIdleTimeoutMinutes: 会话空闲超时时间（分钟），默认 5 分钟
 	// 用于 Anthropic OAuth/SetupToken 账号的会话数量限制功能
 	// 空闲超过此时间的会话将被自动释放
@@ -2449,7 +2446,6 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.openai_codex_request_zstd", true)
-	viper.SetDefault("gateway.account_traffic_telemetry_disabled", false)
 	viper.SetDefault("gateway.openai_request_integrity_mode", "off")
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)

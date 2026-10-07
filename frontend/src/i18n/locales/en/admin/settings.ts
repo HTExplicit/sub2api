@@ -516,13 +516,11 @@ export default {
         saveFailed: 'Failed to save OpenCode Go usage refresh settings'
       },
       observability: {
-        title: 'Appearance and observations',
-        description: 'Account traffic observations record real gateway attempts without running test requests. They do not restrict accounts or change billing.',
-        telemetryEnabled: 'Enable account traffic observations',
+        title: 'Appearance',
         themeEnabled: 'Enable flat theme',
         save: 'Save settings',
         saved: 'Settings saved',
-        loadFailed: 'Failed to load appearance and observation settings',
+        loadFailed: 'Failed to load appearance settings',
         saveFailed: 'Save failed'
       },
       officialModelCatalog: {
@@ -530,7 +528,6 @@ export default {
         description: 'Capacity priority: account override > applicable official API specification > valid upstream declaration > models.dev registry. Values missing from the selected source remain unknown.',
         search: 'Search model or provider',
         count: '{count} matches.',
-        context: 'Context',
         maxOutput: 'Max output',
         subscriptionMaximum: 'Subscription reference maximum',
         verified: 'Verified',

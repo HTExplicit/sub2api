@@ -210,12 +210,11 @@ type AdminGroup struct {
 }
 
 type Account struct {
-	AccountViewFacts *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
-	ID               int64                       `json:"id"`
-	Name             string                      `json:"name"`
-	Notes            *string                     `json:"notes"`
-	Platform         string                      `json:"platform"`
-	Type             string                      `json:"type"`
+	ID       int64   `json:"id"`
+	Name     string  `json:"name"`
+	Notes    *string `json:"notes"`
+	Platform string  `json:"platform"`
+	Type     string  `json:"type"`
 	// Credentials 经 RedactCredentials 处理后默认只含非敏感子键；敏感 token / api_key / 私钥
 	// 的存在性通过 CredentialsStatus（has_<key>）暴露。账号详情在管理员开启 API Key
 	// 可见性后可额外恢复 api_key 原文，其它敏感键仍不返回。
@@ -223,6 +222,7 @@ type Account struct {
 	CredentialsStatus       map[string]bool                `json:"credentials_status,omitempty"`
 	Extra                   map[string]any                 `json:"extra"`
 	OllamaCloudUsage        *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
+	OpenCodeGoUsage         *service.OpenCodeGoUsageState  `json:"opencode_go_usage,omitempty"`
 	QuotaState              *service.UpstreamQuotaState    `json:"quota_state,omitempty"`
 	ProxyID                 *int64                         `json:"proxy_id"`
 	ProxyFallbackOriginID   *int64                         `json:"proxy_fallback_origin_id"`
@@ -241,8 +241,7 @@ type Account struct {
 	CreatedAt               time.Time                      `json:"created_at"`
 	UpdatedAt               time.Time                      `json:"updated_at"`
 
-	Schedulable     bool                          `json:"schedulable"`
-	OpenCodeGoUsage *service.OpenCodeGoUsageState `json:"opencode_go_usage,omitempty"`
+	Schedulable bool `json:"schedulable"`
 
 	RateLimitedAt    *time.Time `json:"rate_limited_at"`
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at"`
@@ -377,7 +376,6 @@ type AccountFacetOption struct {
 // repeated account_groups and groups object graphs. Fetch /admin/accounts/:id
 // for the complete Account DTO when editing or inspecting an account.
 type AccountListItem struct {
-	AccountViewFacts *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
 	QuotaState       *service.UpstreamQuotaState `json:"quota_state,omitempty"`
 	ManagementFolder *AccountManagementFolder    `json:"management_folder,omitempty"`
 	Tags             []AccountManagementTag      `json:"tags"`

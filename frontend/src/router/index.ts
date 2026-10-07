@@ -538,30 +538,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/tasks',
-    name: 'AdminAccountTasks',
-    redirect: { path: '/admin/accounts', query: { operations: 'history' } },
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Account Tasks',
-      titleKey: 'admin.accountTasks.title',
-      descriptionKey: 'admin.accountTasks.description'
-    }
-  },
-  {
-    // Former Cindy page: Cindy accounts are ordinary OpenAI API-key accounts filed in the "cindy" folder.
-    path: '/admin/cindy-accounts',
-    component: () => import('@/views/admin/AccountsView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Account Management', titleKey: 'admin.accounts.title' },
-    beforeEnter: async () => {
-      const { listFolders } = await import('@/api/admin/accounts')
-      const folders = await listFolders().catch(() => null)
-      const folder = folders?.find((item) => item.name.trim().toLowerCase() === 'cindy')
-      return { path: '/admin/accounts', query: folder ? { folder: String(folder.id) } : {} }
-    }
-  },
-  {
     path: '/admin/codex-runtime',
     name: 'AdminCodexRuntime',
     component: () => import('@/views/admin/CodexRuntimeView.vue'),

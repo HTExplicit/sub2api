@@ -175,11 +175,11 @@ function explain(diagnostic: Diagnostic): string[] {
   if (changed(incoming.instructions, wire.instructions)) lines.push(text('入口与实际出站的指令不同，对照下表的原文。', 'Instructions differ between entry and dispatch; compare the values below.'))
   if (changed(incoming.session, wire.session) || changed(incoming.previous_response, wire.previous_response)) lines.push(text('入口与实际出站的会话或前序响应引用发生了变化。', 'Session or previous-response references changed between entry and dispatch.'))
   if (incoming.inspection_limited || wire.inspection_limited || history.scan_limited || error.inspection_limited) lines.push(text('本次结构检查受大小或可读性限制；未检查部分不能当作不存在。', 'Structural inspection was limited by size or readability; uninspected fields are not evidence of absence.'))
-  if (recovery.retry_attempted) lines.push(text('宿主已执行一次受限恢复请求；恢复是否成功须查看后续结果。', 'The host dispatched one bounded recovery request; check the subsequent result for its outcome.'))
+  if (recovery.retry_attempted) lines.push(text('已执行一次受限恢复请求；恢复是否成功须查看后续结果。', 'One bounded recovery request was dispatched; check the subsequent result for its outcome.'))
   const reasons: Record<string, [string, string]> = {
     disabled: ['推理恢复开关已关闭，或该账号类型、请求路径不在恢复适用范围。', 'Reasoning recovery is switched off, or this account type or request path is outside what it covers.'],
-    semantic_output_committed: ['已向客户端发送业务输出，宿主禁止重放请求。', 'Semantic output was already committed; the host prohibits replay.'],
-    source_changed: ['请求来源已变化，宿主禁止跨来源恢复。', 'The source changed; the host prohibits recovery across sources.'],
+    semantic_output_committed: ['已向客户端发送业务输出，不允许重放请求。', 'Semantic output was already committed; replay is not allowed.'],
+    source_changed: ['请求来源已变化，不允许跨来源恢复。', 'The source changed; recovery across sources is not allowed.'],
     request_cancelled: ['请求已取消，未继续恢复。', 'The request was canceled before further recovery.']
   }
   const reason = reasons[recovery.not_attempted_reason || '']

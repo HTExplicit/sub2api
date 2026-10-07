@@ -6,7 +6,7 @@ import AccountsView from '../AccountsView.vue'
 import type { Column } from '@/components/common/types'
 
 vi.mock('@/stores/accountJobs', () => ({
-  useAccountJobsStore: () => ({ track: vi.fn(), reviewDuplicates: vi.fn() })
+  useAccountJobsStore: () => ({ track: vi.fn() })
 }))
 
 const {

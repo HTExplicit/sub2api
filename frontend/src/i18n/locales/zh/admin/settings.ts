@@ -509,13 +509,11 @@ export default {
         saveFailed: '保存 OpenCode Go 用量刷新设置失败'
       },
       observability: {
-        title: '界面与观测',
-        description: '账号流量观测只记录实际业务转发的结果，不触发测试请求，也不用于限制账号或改变计费。',
-        telemetryEnabled: '启用账号流量观测',
+        title: '界面',
         themeEnabled: '启用平面主题',
         save: '保存设置',
         saved: '设置已保存',
-        loadFailed: '界面与观测设置加载失败',
+        loadFailed: '界面设置加载失败',
         saveFailed: '保存失败'
       },
       officialModelCatalog: {
@@ -523,7 +521,6 @@ export default {
         description: '容量优先级：账号自定义 > 适用的官方 API 规格 > 有效上游声明 > models.dev 目录。选中来源未声明的字段保持未知。',
         search: '搜索模型或供应商',
         count: '共 {count} 项匹配。',
-        context: '上下文',
         maxOutput: '最大输出',
         subscriptionMaximum: '订阅参考最大窗口',
         verified: '核对日期',

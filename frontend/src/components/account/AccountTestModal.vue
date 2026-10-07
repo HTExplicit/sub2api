@@ -292,9 +292,7 @@ const loadingModels = ref(false)
 let abortController: AbortController | null = null
 const generatedImages = ref<PreviewImage[]>([])
 const testMode = ref<'default' | 'compact'>('default')
-const isOpenAIAccount = computed(() =>
-  (currentModelPlan.value?.wire_platform || props.account?.platform) === 'openai'
-)
+const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
   { value: 'compact', label: t('admin.accounts.openai.testModeCompact') }
@@ -310,7 +308,7 @@ const supportsGeminiImageTest = computed(() => {
 const supportsOpenAIImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gpt-image-')) return false
-  return isOpenAIAccount.value
+  return props.account?.platform === 'openai'
 })
 
 const supportsImageTest = computed(() => supportsGeminiImageTest.value || supportsOpenAIImageTest.value)

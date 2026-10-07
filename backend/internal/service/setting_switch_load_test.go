@@ -7,28 +7,27 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
-type nativeSwitchReadRepository struct {
+type switchReadRepository struct {
 	SettingRepository
 	value string
 	err   error
 }
 
-func (r *nativeSwitchReadRepository) GetValue(context.Context, string) (string, error) {
+func (r *switchReadRepository) GetValue(context.Context, string) (string, error) {
 	return r.value, r.err
 }
 
-func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
+func TestSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 	oldObservability := EffectiveAdminObservabilityConfig()
 	oldCodexRuntime := EffectiveCodexRuntimeConfig()
 	t.Cleanup(func() {
 		ConfigureAdminObservability(&oldObservability)
 		SetCodexRequestZstdEnabled(oldCodexRuntime.RequestZstd)
 	})
-	ConfigureAdminObservability(&extensionv1.AdminObservabilityConfig{})
+	ConfigureAdminObservability(&AdminObservabilityConfig{})
 	SetCodexRequestZstdEnabled(false)
 	for _, test := range []struct {
 		name  string
@@ -37,23 +36,36 @@ func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 	}{
 		{name: "database error", err: errors.New("fixture database unavailable")},
 		{name: "invalid JSON", value: `{"broken"`},
-		{name: "invalid value type", value: `{"telemetry_enabled":"false"}`},
+		{name: "invalid value type", value: `{"theme_enabled":"false"}`},
 		{name: "empty existing key", value: ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			svc := NewSettingService(&nativeSwitchReadRepository{value: test.value, err: test.err}, nil)
+			svc := NewSettingService(&switchReadRepository{value: test.value, err: test.err}, nil)
 			for _, load := range []func(context.Context) error{svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig} {
 				require.Error(t, load(context.Background()))
 			}
-			require.Equal(t, extensionv1.AdminObservabilityConfig{}, EffectiveAdminObservabilityConfig())
-			require.Equal(t, extensionv1.CodexRuntimeConfig{}, EffectiveCodexRuntimeConfig())
+			require.Equal(t, AdminObservabilityConfig{}, EffectiveAdminObservabilityConfig())
+			require.Equal(t, CodexRuntimeConfig{}, EffectiveCodexRuntimeConfig())
 		})
 	}
-	svc := NewSettingService(&nativeSwitchReadRepository{err: ErrSettingNotFound}, nil)
+	svc := NewSettingService(&switchReadRepository{err: ErrSettingNotFound}, nil)
 	var value map[string]json.RawMessage
-	found, err := svc.readNativeSwitchSetting(context.Background(), SettingKeyAdminObservabilityConfig, &value, "telemetry_enabled", "theme_enabled")
+	found, err := svc.readSwitchSetting(context.Background(), SettingKeyAdminObservabilityConfig, &value, "theme_enabled")
 	require.NoError(t, err)
 	require.False(t, found)
+}
+
+func TestDecodeSwitchSettingsRejectsUnknownAndNonBooleanValues(t *testing.T) {
+	type switches struct {
+		Kept    bool `json:"kept"`
+		Changed bool `json:"changed"`
+	}
+	config := switches{Kept: true, Changed: true}
+	require.NoError(t, DecodeSwitchSettings([]byte(`{"changed":false}`), &config, "kept", "changed"))
+	require.Equal(t, switches{Kept: true}, config, "omitted switches keep their defaults")
+	for _, raw := range []string{`{"changed":null}`, `{"change":true}`, `{"changed":"false"}`, `[]`, `null`} {
+		require.Error(t, DecodeSwitchSettings([]byte(raw), &config, "kept", "changed"), raw)
+	}
 }
 
 type codexRuntimeSettingRepository struct {
@@ -81,7 +93,7 @@ func TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault(t *testing.T) {
 	old := EffectiveCodexRuntimeConfig()
 	t.Cleanup(func() { SetCodexRequestZstdEnabled(old.RequestZstd) })
 	ctx := context.Background()
-	load := func(deploy bool, stored ...string) (extensionv1.CodexRuntimeConfig, error) {
+	load := func(deploy bool, stored ...string) (CodexRuntimeConfig, error) {
 		repo := &codexRuntimeSettingRepository{values: map[string]string{}}
 		if len(stored) > 0 {
 			repo.values["codex_runtime_config"] = stored[0]
@@ -107,7 +119,7 @@ func TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault(t *testing.T) {
 			SetCodexRequestZstdEnabled(!test.expected)
 			got, err := load(test.deploy, test.stored...)
 			require.NoError(t, err)
-			require.Equal(t, extensionv1.CodexRuntimeConfig{RequestZstd: test.expected}, got)
+			require.Equal(t, CodexRuntimeConfig{RequestZstd: test.expected}, got)
 		})
 	}
 	for _, stored := range []string{`{"request_zstd":"true"}`, `{"request_zstd":null}`, `{"request_zstd":true,"other":true}`, `{"other":true}`, `null`, `[]`, `true`, ``} {
@@ -119,10 +131,10 @@ func TestCodexRuntimeSettingIsOnePlainRowOverTheDeployDefault(t *testing.T) {
 
 	repo := &codexRuntimeSettingRepository{values: map[string]string{}}
 	svc := NewSettingService(repo, &config.Config{})
-	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, extensionv1.CodexRuntimeConfig{RequestZstd: true}))
+	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, CodexRuntimeConfig{RequestZstd: true}))
 	require.Equal(t, map[string]string{"codex_runtime_config": `{"request_zstd":true}`}, repo.values)
 	require.True(t, EffectiveCodexRuntimeConfig().RequestZstd)
-	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, extensionv1.CodexRuntimeConfig{}))
+	require.NoError(t, svc.UpdateCodexRuntimeConfig(ctx, CodexRuntimeConfig{}))
 	require.Equal(t, map[string]string{"codex_runtime_config": `{"request_zstd":false}`}, repo.values)
 	require.False(t, EffectiveCodexRuntimeConfig().RequestZstd)
 }

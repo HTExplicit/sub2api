@@ -16,7 +16,6 @@ const {
   showError,
   showSuccess,
   jobTrack,
-  reviewDuplicates,
   batchRefreshTier
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
@@ -29,14 +28,11 @@ const {
   showError: vi.fn(),
   showSuccess: vi.fn(),
   jobTrack: vi.fn(),
-  reviewDuplicates: vi.fn(),
   batchRefreshTier: vi.fn()
 }))
 
-vi.mock('@/api/admin/accountJobs', async () => ({ ...await vi.importActual<typeof import('@/api/admin/accountJobs')>('@/api/admin/accountJobs'), default: { reviewDuplicates } }))
-
 vi.mock('@/stores/accountJobs', () => ({
-  useAccountJobsStore: () => ({ track: jobTrack, reviewDuplicates })
+  useAccountJobsStore: () => ({ track: jobTrack })
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -101,7 +97,7 @@ const makeAccounts = (count: number) => Array.from({ length: count }, (_, index)
 
 const AccountBulkActionsBarStub = {
   props: ['selectedIds', 'totalResults', 'selectingAll', 'allResultsSelected'],
-  emits: ['select-all-results', 'select-page', 'clear', 'duplicate-review', 'refresh-tier', 'refresh-token'],
+  emits: ['select-all-results', 'select-page', 'clear', 'refresh-tier', 'refresh-token'],
   template: `
     <div>
       <span data-test="selected-count">{{ selectedIds.length }}</span>
@@ -110,7 +106,6 @@ const AccountBulkActionsBarStub = {
       <button data-test="select-page" @click="$emit('select-page')">select page</button>
       <button data-test="select-all-results" @click="$emit('select-all-results')">select all</button>
       <button data-test="clear" @click="$emit('clear')">clear</button>
-      <button data-test="duplicate-review" @click="$emit('duplicate-review')">duplicates</button>
       <button data-test="refresh-tier" @click="$emit('refresh-tier')">refresh tier</button>
       <button data-test="refresh-token" @click="$emit('refresh-token')">refresh token</button>
     </div>
@@ -178,7 +173,6 @@ describe('admin AccountsView select all filtered results', () => {
     showError.mockReset()
     showSuccess.mockReset()
     jobTrack.mockReset()
-    reviewDuplicates.mockReset().mockResolvedValue({ id: 91, status: 'pending' })
     batchRefreshTier.mockReset().mockResolvedValue({ id: 92, kind: 'account_batch_refresh_tier', status: 'pending' })
 
     listWithEtag.mockResolvedValue({
@@ -312,7 +306,7 @@ describe('admin AccountsView select all filtered results', () => {
     expect(showError).toHaveBeenCalledWith('admin.accounts.bulkActions.selectAllFailed')
   })
 
-  it('submits selected duplicate review and tier refresh jobs then clears selection', async () => {
+  it('submits the selected tier refresh job then clears selection', async () => {
     const currentPage = makeAccounts(20)
     listAccounts.mockResolvedValue({
       items: currentPage,
@@ -324,15 +318,6 @@ describe('admin AccountsView select all filtered results', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = mountView()
     await flushPromises()
-
-    await wrapper.get('[data-test="select-page"]').trigger('click')
-    await wrapper.get('[data-test="duplicate-review"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
-    await flushPromises()
-
-    expect(reviewDuplicates).toHaveBeenCalledWith(currentPage.map((account) => account.id))
-    expect(wrapper.get('[data-test="selected-count"]').text()).toBe('0')
 
     await wrapper.get('[data-test="select-page"]').trigger('click')
     await wrapper.get('[data-test="refresh-tier"]').trigger('click')

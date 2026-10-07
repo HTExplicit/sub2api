@@ -6,7 +6,7 @@ import AccountsView from '../AccountsView.vue'
 import { flattenStackedColumns } from '@/components/common/columnStack'
 
 vi.mock('@/stores/accountJobs', () => ({
-  useAccountJobsStore: () => ({ track: vi.fn(), reviewDuplicates: vi.fn() })
+  useAccountJobsStore: () => ({ track: vi.fn() })
 }))
 
 const {

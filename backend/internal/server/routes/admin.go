@@ -277,7 +277,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Error logs (legacy)
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorLogByID)
-		ops.GET("/errors/:id/diagnostics", h.Admin.Account.CodexErrorDiagnostics(h.Admin.Ops))
+		ops.GET("/errors/:id/diagnostics", h.Admin.Ops.GetCodexErrorDiagnostics)
 		ops.PUT("/errors/:id/resolve", h.Admin.Ops.UpdateErrorResolution)
 
 		// Request errors (client-visible failures)
@@ -454,7 +454,6 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/revert-proxy-fallback", h.Admin.Account.RevertProxyFallback)
 		accounts.GET("/:id/usage", h.Admin.Account.GetUsage)
 		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
-		accounts.GET("/:id/traffic-telemetry", h.Admin.Account.GetTrafficTelemetry)
 		accounts.POST("/usage/batch", h.Admin.Account.GetBatchUsage)
 		accounts.POST("/today-stats/batch", h.Admin.Account.GetBatchTodayStats)
 		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)

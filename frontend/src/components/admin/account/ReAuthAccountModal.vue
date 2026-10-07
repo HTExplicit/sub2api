@@ -5,7 +5,7 @@
     width="normal"
     @close="handleClose"
   >
-    <div v-if="account" class="space-y-4" :inert="!accountViewOperation.available.value ? true : undefined">
+    <div v-if="account" class="space-y-4">
       <!-- Account Info -->
       <div
         class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
@@ -190,8 +190,6 @@
 </template>
 
 <script setup lang="ts">
-import { useAccountViewOperation } from '@/composables/useAccountViewContext'
-import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -227,18 +225,13 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
-function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
 let reauthRevision = 0
 watch(() => [props.show, props.account?.id], () => { reauthRevision++ }, { flush: 'sync' })
 onBeforeUnmount(() => { reauthRevision++ })
 function captureReauth() {
-  if (!props.show || !props.account || !accountViewOperation.available.value) return undefined
-  const revision = reauthRevision, accountID = props.account.id, view = accountViewOperation.capture()
-  return () => {
-    try { view?.assertCurrent() } catch { return false }
-    return revision === reauthRevision && props.show && props.account?.id === accountID
-  }
+  if (!props.show || !props.account) return undefined
+  const revision = reauthRevision, accountID = props.account.id
+  return () => revision === reauthRevision && props.show && props.account?.id === accountID
 }
 
 const emit = defineEmits<{
@@ -255,9 +248,6 @@ const openaiOAuth = useOpenAIOAuth()
 const geminiOAuth = useGeminiOAuth()
 const antigravityOAuth = useAntigravityOAuth()
 const grokOAuth = useGrokOAuth()
-watch(accountViewOperation.available, available => {
-  if (!available) for (const client of [claudeOAuth, openaiOAuth, geminiOAuth, antigravityOAuth, grokOAuth]) client.loading.value = false
-})
 
 // Refs
 const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
@@ -336,7 +326,6 @@ const isManualInputMethod = computed(() => {
 })
 
 const canExchangeCode = computed(() => {
-  if (!accountViewOperation.available.value) return false
   const authCode = oauthFlowRef.value?.authCode || ''
   const sessionId = currentSessionId.value
   const loading = currentLoading.value
@@ -387,7 +376,7 @@ const handleClose = () => {
 }
 
 const handleGenerateUrl = async () => {
-  if (!props.show || !props.account || !accountViewOperation.available.value) return
+  if (!props.account) return
 
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
@@ -438,7 +427,7 @@ const handleExchangeCode = async () => {
     const extra = oauthClient.buildExtraInfo(tokenInfo)
 
     try {
-      const updatedAccount = await scopedAccounts().applyOAuthCredentials(props.account.id, {
+      const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
         type: 'oauth',
         credentials,
         extra
@@ -473,12 +462,12 @@ const handleExchangeCode = async () => {
     const credentials = geminiOAuth.buildCredentials(tokenInfo)
 
     try {
-      await scopedAccounts().update(props.account.id, {
+      await adminAPI.accounts.update(props.account.id, {
         type: 'oauth',
         credentials
       })
       if (!isCurrent()) return
-      const updatedAccount = await scopedAccounts().clearError(props.account.id)
+      const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
       if (!isCurrent()) return
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
       emit('reauthorized', updatedAccount)
@@ -508,12 +497,12 @@ const handleExchangeCode = async () => {
     const credentials = antigravityOAuth.buildCredentials(tokenInfo)
 
     try {
-      await scopedAccounts().update(props.account.id, {
+      await adminAPI.accounts.update(props.account.id, {
         type: 'oauth',
         credentials
       })
       if (!isCurrent()) return
-      const updatedAccount = await scopedAccounts().clearError(props.account.id)
+      const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
       if (!isCurrent()) return
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
       emit('reauthorized', updatedAccount)
@@ -543,7 +532,7 @@ const handleExchangeCode = async () => {
     const extra = grokOAuth.buildExtraInfo(tokenInfo)
 
     try {
-      const updatedAccount = await scopedAccounts().applyOAuthCredentials(props.account.id, {
+      const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
         type: 'oauth',
         credentials,
         extra
@@ -572,7 +561,7 @@ const handleExchangeCode = async () => {
           ? '/admin/accounts/exchange-code'
           : '/admin/accounts/exchange-setup-token-code'
 
-      const tokenInfo = await scopedAccounts().exchangeCode(endpoint, {
+      const tokenInfo = await adminAPI.accounts.exchangeCode(endpoint, {
         session_id: sessionId,
         code: authCode.trim(),
         ...proxyConfig
@@ -581,7 +570,7 @@ const handleExchangeCode = async () => {
 
       const extra = claudeOAuth.buildExtraInfo(tokenInfo)
 
-      const updatedAccount = await scopedAccounts().applyOAuthCredentials(props.account.id, {
+      const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
         type: capturedMethod as 'oauth' | 'setup-token',
         credentials: tokenInfo as unknown as Record<string, unknown>,
         extra
@@ -615,7 +604,7 @@ const handleCookieAuth = async (sessionKey: string) => {
         ? '/admin/accounts/cookie-auth'
         : '/admin/accounts/setup-token-cookie-auth'
 
-    const tokenInfo = await scopedAccounts().exchangeCode(endpoint, {
+    const tokenInfo = await adminAPI.accounts.exchangeCode(endpoint, {
       session_id: '',
       code: sessionKey.trim(),
       ...proxyConfig
@@ -624,7 +613,7 @@ const handleCookieAuth = async (sessionKey: string) => {
 
     const extra = claudeOAuth.buildExtraInfo(tokenInfo)
 
-    const updatedAccount = await scopedAccounts().applyOAuthCredentials(props.account.id, {
+    const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
       type: capturedMethod as 'oauth' | 'setup-token',
       credentials: tokenInfo as unknown as Record<string, unknown>,
       extra
@@ -652,7 +641,7 @@ const applyGrokReauthTokenInfo = async (tokenInfo: {
   if (!props.account || !isCurrent()) return
   const credentials = grokOAuth.buildCredentials(tokenInfo as any)
   const extra = grokOAuth.buildExtraInfo(tokenInfo as any)
-  const updatedAccount = await scopedAccounts().applyOAuthCredentials(props.account.id, {
+  const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
     type: 'oauth',
     credentials,
     extra
@@ -685,7 +674,7 @@ const handleValidateRefreshToken = async (refreshTokenInput: string) => {
       const tokenInfo = await openaiOAuth.validateRefreshToken(refreshToken, props.account.proxy_id)
       if (!tokenInfo || !isCurrent()) return
 
-      const updatedAccount = await scopedAccounts().applyOAuthCredentials(props.account.id, {
+      const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
         type: 'oauth',
         credentials: openaiOAuth.buildCredentials(tokenInfo),
         extra: openaiOAuth.buildExtraInfo(tokenInfo)
@@ -715,7 +704,7 @@ const handleValidateRefreshToken = async (refreshTokenInput: string) => {
     const tokenInfo = await antigravityOAuth.validateRefreshToken(refreshToken, props.account.proxy_id)
     if (!tokenInfo || !isCurrent()) return
 
-    const updatedAccount = await scopedAccounts().applyOAuthCredentials(props.account.id, {
+    const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
       type: 'oauth',
       credentials: antigravityOAuth.buildCredentials(tokenInfo, refreshToken)
     })

@@ -69,7 +69,6 @@ type AccountHandler struct {
 	grokImportProber        grokImportProber
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
-	trafficObserver         *service.AccountTrafficObserver
 	accountJobs             *service.AccountJobService
 
 	cfg               *config.Config
@@ -85,11 +84,6 @@ func (h *AccountHandler) SetUpstreamBillingProbeService(probe *service.UpstreamB
 
 func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUsageService) {
 	h.ollamaCloudUsage = usage
-}
-
-// SetAccountTrafficObserver attaches the optional observe-only traffic telemetry.
-func (h *AccountHandler) SetAccountTrafficObserver(observer *service.AccountTrafficObserver) {
-	h.trafficObserver = observer
 }
 
 func (h *AccountHandler) SetOpenCodeGoUsageService(usage *service.OpenCodeGoUsageService) {
@@ -173,23 +167,6 @@ type UpdateAccountRequest struct {
 	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
 	RateSyncEnabled         *bool             `json:"upstream_billing_rate_sync_enabled"`
 	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
-}
-
-func (r *UpdateAccountRequest) UnmarshalJSON(raw []byte) error {
-	type plain UpdateAccountRequest
-	var decoded plain
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return err
-	}
-	if value, present := fields["provider_edit"]; present && strings.TrimSpace(string(value)) == "null" {
-		return errors.New("invalid provider edit input")
-	}
-	*r = UpdateAccountRequest(decoded)
-	return nil
 }
 
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
@@ -2635,55 +2612,6 @@ func (h *AccountHandler) GetTodayStats(c *gin.Context) {
 	}
 
 	response.Success(c, stats)
-}
-
-// GetTrafficTelemetry returns the observe-only per-account traffic counters.
-// GET /api/v1/admin/accounts/:id/traffic-telemetry
-//
-// Read-only Redis snapshot (24h TTL). Never 5xx on telemetry trouble: a disabled
-// or unavailable observer yields state_available=false. peak_in_flight only
-// carries meaning when configured_concurrency > 0 (unlimited accounts write no
-// slot members, so it reads 0 for them).
-func (h *AccountHandler) GetTrafficTelemetry(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "Invalid account ID")
-		return
-	}
-
-	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	payload := gin.H{
-		"account_id":             account.ID,
-		"configured_concurrency": account.Concurrency,
-		"state_available":        false,
-	}
-	if h.trafficObserver == nil {
-		response.Success(c, payload)
-		return
-	}
-	snapshot, err := h.trafficObserver.Snapshot(c.Request.Context(), account)
-	if err != nil {
-		if !errors.Is(err, service.ErrAccountTrafficTelemetryUnavailable) {
-			payload["error"] = "telemetry_unavailable"
-		}
-		response.Success(c, payload)
-		return
-	}
-	payload["state_available"] = true
-	payload["ttl_seconds"] = service.AccountTrafficObserveTTLSeconds
-	payload["protocols"] = snapshot
-	if h.concurrencyService != nil {
-		if counts, err := h.concurrencyService.GetAccountConcurrencyBatch(c.Request.Context(), []int64{account.ID}); err == nil {
-			payload["in_flight_now"] = counts[account.ID]
-		}
-	}
-	response.Success(c, payload)
 }
 
 // BatchTodayStatsRequest 批量今日统计请求体。

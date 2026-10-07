@@ -81,8 +81,8 @@ const {
 
 const localeRef = vi.hoisted(() => ({ value: "zh-CN" }));
 
-const nativeSettings = vi.hoisted(() => ({
-  observability: { telemetry_enabled: true, theme_enabled: true },
+const panelSettings = vi.hoisted(() => ({
+  observability: { theme_enabled: true },
 }));
 
 vi.mock("@/stores/auth", () => ({
@@ -91,12 +91,12 @@ vi.mock("@/stores/auth", () => ({
 
 vi.mock("@/api/admin/settings", async () => {
   const actual = await vi.importActual<typeof import("@/api/admin/settings")>("@/api/admin/settings");
-  const native = {
-    getObservabilitySettings: vi.fn(async () => ({ ...nativeSettings.observability })),
+  const panelAPI = {
+    getObservabilitySettings: vi.fn(async () => ({ ...panelSettings.observability })),
     updateObservabilitySettings: vi.fn(async (value) => value),
     getOfficialModelCapacityCatalog: vi.fn(async () => ({ entries: [] })),
   };
-  return { ...actual, ...native, settingsAPI: { ...actual.settingsAPI, ...native }, default: { ...actual.default, ...native } };
+  return { ...actual, ...panelAPI, settingsAPI: { ...actual.settingsAPI, ...panelAPI }, default: { ...actual.default, ...panelAPI } };
 });
 
 vi.mock("@/api", () => ({
@@ -759,7 +759,7 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
-  it("mounts native settings without resubmitting their configuration through the general settings form", async () => {
+  it("mounts the observability settings and the official model catalog without resubmitting their configuration through the general settings form", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);

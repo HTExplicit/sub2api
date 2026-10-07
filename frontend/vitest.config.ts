@@ -4,14 +4,9 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
-  // Match the production build: runtime-only i18n uses CSP-safe JIT.
-  define: { __INTLIFY_JIT_COMPILATION__: true },
-  server: { fs: { allow: [resolve(__dirname, '..')] } },
   resolve: {
-    dedupe: ['vue', 'vue-i18n', '@vue/test-utils', 'vitest', 'vue-draggable-plus'],
     alias: {
       '@': resolve(__dirname, 'src'),
-      'vue': resolve(__dirname, 'node_modules/vue/dist/vue.runtime.esm-bundler.js'),
       'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js'
     }
   },

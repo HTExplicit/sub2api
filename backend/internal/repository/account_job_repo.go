@@ -47,7 +47,7 @@ const accountJobSelectColumns = `id, created_by, kind, idempotency_key, request_
 	cancel_requested_at, error_code, error_message, retry_of_job_id, attempt,
 	started_at, finished_at, created_at, updated_at`
 
-const accountJobItemSelectColumns = `id, job_id, ordinal, action, target_account_id, status, metadata,
+const accountJobItemSelectColumns = `id, job_id, ordinal, target_account_id, status, metadata,
 	error_code, error_message, started_at, finished_at, created_at, updated_at`
 
 // accountJobResultKeysField is the item metadata key that lists the keys a
@@ -99,7 +99,7 @@ func scanAccountJobItem(row accountJobScanner) (*service.AccountJobItem, error) 
 	var errorCode, errorMessage sql.NullString
 	var started, finished sql.NullTime
 	if err := row.Scan(
-		&item.ID, &item.JobID, &item.Ordinal, &item.Action, &target, &item.Status, &metadata,
+		&item.ID, &item.JobID, &item.Ordinal, &target, &item.Status, &metadata,
 		&errorCode, &errorMessage, &started, &finished, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 	for start := 0; start < len(params.Items); start += service.AccountJobBatchSize {
 		end := min(start+service.AccountJobBatchSize, len(params.Items))
 		values := make([]string, 0, end-start)
-		args := make([]any, 0, (end-start)*5)
+		args := make([]any, 0, (end-start)*4)
 		for index := start; index < end; index++ {
 			seed := params.Items[index]
 			ordinal := seed.Ordinal
@@ -170,11 +170,11 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 				ordinal = index + 1
 			}
 			n := len(args)
-			values = append(values, fmt.Sprintf("($%d,$%d,$%d,$%d,$%d::jsonb)", n+1, n+2, n+3, n+4, n+5))
-			args = append(args, job.ID, ordinal, seed.Action, seed.TargetAccountID, string(normalizeRepositoryJobMetadata(seed.Metadata)))
+			values = append(values, fmt.Sprintf("($%d,$%d,$%d,$%d::jsonb)", n+1, n+2, n+3, n+4))
+			args = append(args, job.ID, ordinal, seed.TargetAccountID, string(normalizeRepositoryJobMetadata(seed.Metadata)))
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO admin_account_job_items
-			(job_id, ordinal, action, target_account_id, metadata) VALUES `+strings.Join(values, ","), args...); err != nil {
+			(job_id, ordinal, target_account_id, metadata) VALUES `+strings.Join(values, ","), args...); err != nil {
 			return nil, false, err
 		}
 	}
@@ -225,29 +225,20 @@ func normalizeAccountJobPage(page, size int) (int, int) {
 	return page, size
 }
 
-func (r *accountJobRepository) List(ctx context.Context, createdBy int64, kind, status string, page, pageSize int) (*service.AccountJobList, error) {
+func (r *accountJobRepository) List(ctx context.Context, status string, page, pageSize int) (*service.AccountJobList, error) {
 	page, pageSize = normalizeAccountJobPage(page, pageSize)
-	where := []string{"1=1"}
-	args := make([]any, 0, 5)
-	if createdBy > 0 {
-		args = append(args, createdBy)
-		where = append(where, "created_by=$"+strconv.Itoa(len(args)))
-	}
-	if kind = strings.TrimSpace(kind); kind != "" {
-		args = append(args, kind)
-		where = append(where, "kind=$"+strconv.Itoa(len(args)))
-	}
+	args := make([]any, 0, 3)
+	where := "1=1"
 	if status = strings.TrimSpace(status); status != "" {
 		args = append(args, status)
-		where = append(where, "status=$"+strconv.Itoa(len(args)))
+		where += " AND status=$1"
 	}
-	whereSQL := strings.Join(where, " AND ")
 	var total int64
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM admin_account_jobs WHERE "+whereSQL, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM admin_account_jobs WHERE "+where, args...).Scan(&total); err != nil {
 		return nil, err
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := r.db.QueryContext(ctx, `SELECT `+accountJobSelectColumns+` FROM admin_account_jobs WHERE `+whereSQL+
+	rows, err := r.db.QueryContext(ctx, `SELECT `+accountJobSelectColumns+` FROM admin_account_jobs WHERE `+where+
 		` ORDER BY created_at DESC, id DESC LIMIT $`+strconv.Itoa(len(args)-1)+` OFFSET $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return nil, err
@@ -610,7 +601,7 @@ func (r *accountJobRepository) FailedItemSeeds(ctx context.Context, jobID, creat
 	// A retry is seeded with the original item keys; keys a previous result
 	// added (warnings, matched ids, proxy errors, account id, action, ...) are
 	// results of that attempt, not input of the next one.
-	rows, err := r.db.QueryContext(ctx, `SELECT ordinal, action, target_account_id,
+	rows, err := r.db.QueryContext(ctx, `SELECT ordinal, target_account_id,
 			(metadata - '`+accountJobResultKeysField+`') - ARRAY(SELECT jsonb_array_elements_text(
 				CASE WHEN jsonb_typeof(metadata->'`+accountJobResultKeysField+`')='array'
 				THEN metadata->'`+accountJobResultKeysField+`' ELSE '[]'::jsonb END))
@@ -624,7 +615,7 @@ func (r *accountJobRepository) FailedItemSeeds(ctx context.Context, jobID, creat
 		var seed service.AccountJobItemSeed
 		var target sql.NullInt64
 		var metadata []byte
-		if err = rows.Scan(&seed.Ordinal, &seed.Action, &target, &metadata); err != nil {
+		if err = rows.Scan(&seed.Ordinal, &target, &metadata); err != nil {
 			return nil, nil, "", time.Time{}, err
 		}
 		if target.Valid {

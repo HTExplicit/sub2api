@@ -20,7 +20,7 @@ function plan(accountID: number): AccountTestPlanView {
     { id: 'gpt-6-lite', type: 'model', created_at: '', display_name: 'GPT-6 Lite', reasoning_efforts: ['low', 'medium'] },
     { id: 'gpt-image-2', type: 'model', created_at: '', display_name: 'GPT Image 2' }
   ]
-  return { schema_version: 1, account_id: accountID, wire_platform: 'openai', default_mode: 'default', models,
+  return { account_id: accountID, default_mode: 'default', models,
     mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: 'gpt-6-astra' } } }
 }
 

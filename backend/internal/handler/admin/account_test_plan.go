@@ -18,12 +18,10 @@ type accountTestModeView struct {
 }
 
 type accountTestPlanView struct {
-	SchemaVersion int                            `json:"schema_version"`
-	AccountID     int64                          `json:"account_id"`
-	WirePlatform  string                         `json:"wire_platform"`
-	DefaultMode   string                         `json:"default_mode"`
-	Models        []map[string]any               `json:"models"`
-	ModeViews     map[string]accountTestModeView `json:"mode_views"`
+	AccountID   int64                          `json:"account_id"`
+	DefaultMode string                         `json:"default_mode"`
+	Models      []map[string]any               `json:"models"`
+	ModeViews   map[string]accountTestModeView `json:"mode_views"`
 }
 
 func accountTestPlanRequested(view string) (bool, error) {
@@ -38,14 +36,11 @@ func accountTestPlanRequested(view string) (bool, error) {
 }
 
 func (h *AccountHandler) accountTestPlan(ctx context.Context, account *service.Account) (*accountTestPlanView, error) {
-	if account == nil || account.ID <= 0 {
-		return nil, errors.New("account test target is unavailable")
-	}
 	raw, err := h.accountTestModels(ctx, account)
 	if err != nil {
 		return nil, err
 	}
-	return ordinaryAccountTestPlan(account, raw)
+	return buildAccountTestPlan(account, raw)
 }
 
 // accountTestModelRows decodes a typed model catalog into its JSON rows.
@@ -110,19 +105,6 @@ func accountTestPlanModels(raw any) ([]map[string]any, error) {
 	return models, nil
 }
 
-func basicAccountTestPlan(account *service.Account, models []map[string]any, defaultID string) *accountTestPlanView {
-	ids := make([]string, 0, len(models))
-	for _, model := range models {
-		id, _ := model["id"].(string) // Validated by accountTestPlanModels.
-		ids = append(ids, id)
-	}
-	view := accountTestModeView{ModelIDs: ids, DefaultModelID: defaultID}
-	return &accountTestPlanView{SchemaVersion: 1, AccountID: account.ID, WirePlatform: account.Platform,
-		DefaultMode: "default", Models: models, ModeViews: map[string]accountTestModeView{
-			"default": view, "compact": view, "text": view,
-		}}
-}
-
 // connectionTestDefault applies the batch test's automatic model choice to a
 // displayed list, falling back to its first entry for media-only accounts.
 func connectionTestDefault(account *service.Account, ids []string) string {
@@ -135,9 +117,10 @@ func connectionTestDefault(account *service.Account, ids []string) string {
 	return ""
 }
 
-// These choices originate in the official single-account test UI. Keep their
-// current behavior in this one view producer.
-func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPlanView, error) {
+// buildAccountTestPlan arranges an account's test models for the single-account
+// test dialog: Gemini and Antigravity list their preferred models first, Grok
+// lists its models per test mode, and every mode names its default model.
+func buildAccountTestPlan(account *service.Account, raw any) (*accountTestPlanView, error) {
 	models, err := accountTestPlanModels(raw)
 	if err != nil {
 		return nil, err
@@ -161,12 +144,13 @@ func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPla
 		id, _ := model["id"].(string) // Validated above.
 		ids = append(ids, id)
 	}
-	plan := basicAccountTestPlan(account, models, connectionTestDefault(account, ids))
 	if account.Platform != service.PlatformGrok {
-		return plan, nil
+		view := accountTestModeView{ModelIDs: ids, DefaultModelID: connectionTestDefault(account, ids)}
+		return &accountTestPlanView{AccountID: account.ID, DefaultMode: "default", Models: models,
+			ModeViews: map[string]accountTestModeView{"default": view, "compact": view, "text": view}}, nil
 	}
-	plan.DefaultMode = "text"
-	plan.ModeViews = map[string]accountTestModeView{}
+	plan := &accountTestPlanView{AccountID: account.ID, DefaultMode: "text", Models: models,
+		ModeViews: map[string]accountTestModeView{}}
 	for _, mode := range []string{"text", "image", "video", "search", "tts", "stt", "realtime"} {
 		view := accountTestModeView{ModelIDs: []string{}}
 		for _, model := range models {

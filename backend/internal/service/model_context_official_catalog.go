@@ -3,8 +3,6 @@ package service
 import (
 	"slices"
 	"strings"
-
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // officialCatalogQuery carries the real upstream model spellings and the
@@ -26,20 +24,14 @@ type officialCatalogQuery struct {
 // look-alike ID from inheriting a vendor product's capacity; two applicable
 // entries with different limits are ambiguous and match nothing.
 func lookupOfficialModelCatalog(query officialCatalogQuery) *OfficialModelContextCapacity {
-	if len(query.Candidates) == 0 || len(query.Candidates) > 16 {
-		return nil
-	}
 	for _, candidate := range query.Candidates {
-		if len(candidate) > 512 || strings.TrimSpace(candidate) == "" {
-			return nil
-		}
 		key := modelReferenceKey(candidate)
 		var found *OfficialModelContextCapacity
 		for _, entry := range officialModelContextCapacityCatalog {
 			if !officialCatalogEntryMatches(entry, key) || !officialCatalogApplies(query, entry) {
 				continue
 			}
-			if !validOfficialCatalogCapacity(entry.ContextWindow) && !validOfficialCatalogCapacity(entry.MaxInputTokens) && !validOfficialCatalogCapacity(entry.MaxContextWindow) {
+			if !validModelContextTokens(entry.ContextWindow) && !validModelContextTokens(entry.MaxInputTokens) && !validModelContextTokens(entry.MaxContextWindow) {
 				continue
 			}
 			if found != nil && found.ModelContextCapacity != entry.ModelContextCapacity {
@@ -104,10 +96,6 @@ func OfficialModelCatalogSnapshot() []OfficialModelContextCapacity {
 		result[i] = cloneOfficialModelContextCapacity(entry)
 	}
 	return result
-}
-
-func validOfficialCatalogCapacity(value int64) bool {
-	return value > 0 && value <= extensionv1.MaxModelContextTokens
 }
 
 func officialCatalogContainsFold(values []string, target string) bool {

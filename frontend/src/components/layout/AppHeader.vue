@@ -260,8 +260,6 @@
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue'
-import { accountViewTitleKey } from '@/composables/useAccountViewContext'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -332,9 +330,7 @@ const routeMetaKeys = computed(() => resolveRouteMetaKeys(route, {
   billingMode: resolveSiteBillingMode(appStore.cachedPublicSettings),
 }))
 
-const declaredAccountViewTitle = inject(accountViewTitleKey, null)
 const pageTitle = computed(() => {
-  if (declaredAccountViewTitle?.value) return declaredAccountViewTitle.value
   // For custom pages, use the menu item's label instead of generic "自定义页面"
   if (route.name === 'CustomPage') {
     const id = route.params.id as string

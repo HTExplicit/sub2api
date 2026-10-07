@@ -66,7 +66,6 @@ describe('AppSidebar header styles', () => {
 describe('AppSidebar extensions section', () => {
   it('keeps downstream tools in a dedicated section', () => {
     expect(componentSource).toContain("{{ t('nav.extensions') }}")
-    expect(componentSource).not.toContain('/admin/cindy-accounts')
     expect(componentSource).toContain("{ path: '/admin/codex-runtime'")
   })
 
