@@ -188,7 +188,7 @@ func prepareReasoningRecoveryRequest(recovery *openAIReasoningRecoveryState, req
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	clean, err = projectReasoningCipherEdits(clean, wire, final)
+	clean, err = projectReasoningRecoveryEdits(clean, wire, final)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -222,11 +222,12 @@ func finalWirePromptCacheKey(wire []byte, seed string) string {
 	return seed
 }
 
-// projectReasoningCipherEdits repeats a recovery edit on the clean request.
+// projectReasoningRecoveryEdits repeats a recovery edit on the clean request.
 // Recovery may only delete encrypted_content from reasoning items, whose
-// relative order the system prompt never changes; any other difference is
-// rejected instead of becoming the next retry's source.
-func projectReasoningCipherEdits(clean, before, after []byte) ([]byte, error) {
+// relative order the system prompt never changes, and the id of an item it
+// has stripped: with the ciphertext, or afterwards from the item left behind.
+// Any other difference is rejected instead of becoming the next retry's source.
+func projectReasoningRecoveryEdits(clean, before, after []byte) ([]byte, error) {
 	if bytes.Equal(before, after) {
 		return clean, nil
 	}
@@ -234,19 +235,59 @@ func projectReasoningCipherEdits(clean, before, after []byte) ([]byte, error) {
 	if len(wireItems) != len(cleanItems) {
 		return nil, errReasoningWireProjection
 	}
-	wireIndices, cleanIndices := []int{}, []int{}
+	lost := func(index int, field string) bool {
+		return !gjson.GetBytes(after, fmt.Sprintf("input.%d.%s", index, field)).Exists()
+	}
+	var wireEdit, cleanEdit openAIReasoningRecoveryEdit
 	for index, item := range wireItems {
 		if item.hash != cleanItems[index].hash {
 			return nil, errReasoningWireProjection
 		}
-		if !gjson.GetBytes(after, fmt.Sprintf("input.%d.encrypted_content", item.index)).Exists() {
-			wireIndices = append(wireIndices, item.index)
-			cleanIndices = append(cleanIndices, cleanItems[index].index)
+		if !lost(item.index, "encrypted_content") {
+			continue
+		}
+		wireEdit.cipher = append(wireEdit.cipher, item.index)
+		cleanEdit.cipher = append(cleanEdit.cipher, cleanItems[index].index)
+		if item.id != "" && lost(item.index, "id") {
+			wireEdit.ids = append(wireEdit.ids, item.index)
+			cleanEdit.ids = append(cleanEdit.ids, cleanItems[index].index)
 		}
 	}
-	expected, err := stripOpenAIReasoningCipherIndices(before, wireIndices)
+	// An item left behind without ciphertext has no hash to pair it by. It is
+	// the same item in both bodies when it is the same occurrence of its id.
+	wireBare, cleanBare := openAIReasoningBareItemsByID(before), openAIReasoningBareItemsByID(clean)
+	for id, indices := range wireBare {
+		for occurrence, index := range indices {
+			if !lost(index, "id") {
+				continue
+			}
+			if occurrence >= len(cleanBare[id]) {
+				return nil, errReasoningWireProjection
+			}
+			wireEdit.ids = append(wireEdit.ids, index)
+			cleanEdit.ids = append(cleanEdit.ids, cleanBare[id][occurrence])
+		}
+	}
+	expected, err := applyOpenAIReasoningRecoveryEdit(before, wireEdit)
 	if err != nil || !bytes.Equal(expected, after) {
 		return nil, errReasoningWireProjection
 	}
-	return stripOpenAIReasoningCipherIndices(clean, cleanIndices)
+	return applyOpenAIReasoningRecoveryEdit(clean, cleanEdit)
+}
+
+// openAIReasoningBareItemsByID lists, for each id, the input positions of the
+// reasoning items that carry it and have no ciphertext.
+func openAIReasoningBareItemsByID(body []byte) map[string][]int {
+	out := map[string][]int{}
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return out
+	}
+	for index, item := range input.Array() {
+		id := item.Get("id")
+		if item.Get("type").String() == "reasoning" && !openAIReasoningItemHasCipher(item) && id.Type == gjson.String && id.String() != "" {
+			out[id.String()] = append(out[id.String()], index)
+		}
+	}
+	return out
 }

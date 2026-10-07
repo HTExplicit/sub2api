@@ -43,6 +43,10 @@ const (
 // because of ciphertext it cannot verify, StopError says so and the handler
 // decides whether another account is tried.
 // original is immutable; wire is the exact payload of the latest sent attempt.
+//
+// Apart from that retry it may re-send once more to undo a side effect of its
+// own strip: an upstream that looks up by id an item left without ciphertext
+// and does not find it (TryRepairUnfoundItemIDs).
 type openAIReasoningRecoveryState struct {
 	ctx      context.Context
 	c        *gin.Context
@@ -86,6 +90,16 @@ type openAIReasoningRecoveryState struct {
 	// accountFailure records that the stripped retry failed for a reason of
 	// the account's own.
 	accountFailure bool
+
+	// stripped lists the reasoning items whose ciphertext this attempt removed,
+	// by their position in the wire body.
+	stripped []openAIReasoningCipherItem
+	// dropItemIDs makes a strip remove the item's id with its ciphertext. It
+	// is set by the repair, for the rest of this attempt.
+	dropItemIDs bool
+	// idRepairUsed records the one re-send without the ids of stripped items.
+	idRepairUsed   bool
+	itemIDsRemoved int
 }
 
 func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Context, c *gin.Context, account *Account, token string) *openAIReasoningRecoveryState {
@@ -360,23 +374,42 @@ func (r *openAIReasoningRecoveryState) skipRejectedHistory(body []byte) []byte {
 		return body
 	}
 	now := time.Now()
-	indices := make([]int, 0, len(items))
+	skipped := make([]openAIReasoningCipherItem, 0, len(items))
 	for _, item := range items {
 		if old, ok := rejected[item.hash]; ok && !old.RejectedAt.IsZero() &&
 			!old.RejectedAt.After(now) && now.Before(old.ExpiresAt) && now.Before(old.RejectedAt.Add(OpenAIReasoningStateTTL)) {
-			indices = append(indices, item.index)
+			skipped = append(skipped, item)
 		}
 	}
-	if len(indices) == 0 {
+	if len(skipped) == 0 {
 		return body
 	}
-	stripped, err := stripOpenAIReasoningCipherIndices(body, indices)
+	stripped, err := r.strip(body, skipped)
 	if err != nil {
 		return body
 	}
-	r.cacheSkippedItems += len(indices)
-	r.record("rejected_history_skipped", 0, "", nil, len(indices))
+	r.cacheSkippedItems += len(skipped)
+	r.record("rejected_history_skipped", 0, "", nil, len(skipped))
 	return stripped
+}
+
+// strip removes the ciphertext of items from body and remembers them as
+// stripped by this attempt. After the repair the id goes with the ciphertext.
+func (r *openAIReasoningRecoveryState) strip(body []byte, items []openAIReasoningCipherItem) ([]byte, error) {
+	edit := openAIReasoningRecoveryEdit{}
+	for _, item := range items {
+		edit.cipher = append(edit.cipher, item.index)
+		if r.dropItemIDs && item.id != "" && openAIReasoningItemStandsWithoutID(gjson.GetBytes(body, fmt.Sprintf("input.%d", item.index))) {
+			edit.ids = append(edit.ids, item.index)
+		}
+	}
+	stripped, err := applyOpenAIReasoningRecoveryEdit(body, edit)
+	if err != nil {
+		return nil, err
+	}
+	r.stripped = append(r.stripped, items...)
+	r.itemIDsRemoved += len(edit.ids)
+	return stripped, nil
 }
 
 type openAIReasoningCipherItem struct {
@@ -498,6 +531,10 @@ func countOpenAIEncryptedFields(value any) int {
 }
 
 func stripOpenAIReasoningCipherIndices(body []byte, indices []int) ([]byte, error) {
+	return deleteOpenAIReasoningItemField(body, indices, "encrypted_content")
+}
+
+func deleteOpenAIReasoningItemField(body []byte, indices []int, field string) ([]byte, error) {
 	out := bytes.Clone(body)
 	for _, index := range indices {
 		path := fmt.Sprintf("input.%d", index)
@@ -505,12 +542,40 @@ func stripOpenAIReasoningCipherIndices(body []byte, indices []int) ([]byte, erro
 			return nil, errors.New("reasoning recovery target mismatch")
 		}
 		var err error
-		out, err = sjson.DeleteBytes(out, path+".encrypted_content")
+		out, err = sjson.DeleteBytes(out, path+"."+field)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
+}
+
+// openAIReasoningRecoveryEdit is everything recovery may do to a request: at
+// the listed input positions, all reasoning items, delete encrypted_content
+// and delete id. Positions never move.
+type openAIReasoningRecoveryEdit struct{ cipher, ids []int }
+
+// applyOpenAIReasoningRecoveryEdit makes the edit in one fixed order, so that
+// the same edit yields the same bytes wherever it is repeated.
+func applyOpenAIReasoningRecoveryEdit(body []byte, edit openAIReasoningRecoveryEdit) ([]byte, error) {
+	out, err := deleteOpenAIReasoningItemField(body, edit.cipher, "encrypted_content")
+	if err != nil {
+		return nil, err
+	}
+	return deleteOpenAIReasoningItemField(out, edit.ids, "id")
+}
+
+// openAIReasoningItemHasCipher is the test openAIReasoningCipherItems applies.
+func openAIReasoningItemHasCipher(item gjson.Result) bool {
+	cipher := item.Get("encrypted_content")
+	return cipher.Type == gjson.String && cipher.String() != ""
+}
+
+// openAIReasoningItemStandsWithoutID reports an item the upstream takes as it
+// is once its id is gone. An item without a summary is refused then, so such
+// an item keeps its id.
+func openAIReasoningItemStandsWithoutID(item gjson.Result) bool {
+	return item.Get("summary").IsArray()
 }
 
 // Signal is deliberately pure. A bare SSE error may be superseded by a later
@@ -567,7 +632,16 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	if len(indices) == 0 {
 		return nil, false
 	}
-	stripped, err := stripOpenAIReasoningCipherIndices(r.wire, indices)
+	selected := make([]openAIReasoningCipherItem, 0, len(indices))
+	for _, item := range openAIReasoningCipherItems(r.wire) {
+		if slices.Contains(indices, item.index) {
+			selected = append(selected, item)
+		}
+	}
+	if len(selected) != len(indices) {
+		return nil, false
+	}
+	stripped, err := r.strip(r.wire, selected)
 	if err != nil {
 		return nil, false
 	}
@@ -586,6 +660,62 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	}
 	r.record("retry_without_encrypted_content", status, rejection.code, payload, len(indices))
 	return stripped, true
+}
+
+// TryRepairUnfoundItemIDs undoes a side effect of this attempt's own strip. A
+// reasoning item left without ciphertext still carries its id, and an upstream
+// may take such an item for a reference to one it stores. When it does not
+// find it, it says so and names the id (officially with status 404); without
+// the id it takes the item as it is. The repair is made only for that answer
+// naming an item this attempt stripped, removes the id of every such item, and
+// is re-sent once. It is not the stripped retry and does not spend it.
+//
+// Nothing is remembered: every attempt that meets the answer repairs again.
+func (r *openAIReasoningRecoveryState) TryRepairUnfoundItemIDs(status int, headers http.Header, payload []byte) ([]byte, bool) {
+	if r == nil || !r.enabled || r.idRepairUsed || len(r.stripped) == 0 || r.ctx.Err() != nil ||
+		status < http.StatusBadRequest || openAIReasoningRecoveryProtectedStatus(status) {
+		return nil, false
+	}
+	// The official answer to an item looked up by id and not found. A relay may
+	// pass it on under another status; the named id is what identifies it.
+	message := extractUpstreamErrorMessage(payload)
+	if !strings.Contains(message, "Item with id '") {
+		return nil, false
+	}
+	found := false
+	ids := make([]int, 0, len(r.stripped))
+	for _, item := range r.stripped {
+		// What was stripped is checked against what was sent.
+		sent := gjson.GetBytes(r.wire, fmt.Sprintf("input.%d", item.index))
+		id := sent.Get("id")
+		if item.id == "" || sent.Get("type").String() != "reasoning" || openAIReasoningItemHasCipher(sent) ||
+			id.Type != gjson.String || id.String() != item.id || !openAIReasoningItemStandsWithoutID(sent) ||
+			slices.Contains(ids, item.index) {
+			continue
+		}
+		ids = append(ids, item.index)
+		found = found || strings.Contains(message, "Item with id '"+item.id+"' not found")
+	}
+	if !found {
+		return nil, false
+	}
+	repaired, err := applyOpenAIReasoningRecoveryEdit(r.wire, openAIReasoningRecoveryEdit{ids: ids})
+	if err != nil {
+		return nil, false
+	}
+	r.idRepairUsed, r.dropItemIDs = true, true
+	r.itemIDsRemoved += len(ids)
+	if r.retryUsed {
+		// The stripped retry was already sent; the send boundary accepts only
+		// the body it knows, and this one is not sent yet.
+		r.retryBody = bytes.Clone(repaired)
+		r.retryDispatched, r.diagnosticState = false, "retry_prepared"
+	}
+	if r.responseStatus == 0 {
+		r.responseStatus, r.responseHeaders = status, headers.Clone()
+	}
+	r.record("retry_without_item_ids", status, "", payload, len(ids))
+	return repaired, true
 }
 
 func openAIReasoningRecoveryProtectedStatus(status int) bool {
@@ -800,6 +930,7 @@ func (r *openAIReasoningRecoveryState) requestRejectionFromStream(payload []byte
 func (r *openAIReasoningRecoveryState) continuationDiagnosticRecovery(payload []byte) *openAIContinuationRecoveryShape {
 	shape := &openAIContinuationRecoveryShape{
 		CacheSkippedItems: r.cacheSkippedItems,
+		ItemIDsRemoved:    r.itemIDsRemoved,
 		RetryAttempted:    r.retryDispatched,
 		Disposition:       r.diagnosticState,
 		AccountMismatch:   r.accountMismatch,

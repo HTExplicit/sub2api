@@ -43,7 +43,10 @@ type OpenAIContinuationDiagnostic struct {
 }
 
 type openAIContinuationRecoveryShape struct {
-	CacheSkippedItems  int    `json:"cache_skipped_items"`
+	CacheSkippedItems int `json:"cache_skipped_items"`
+	// ItemIDsRemoved counts stripped reasoning items sent without their id,
+	// because the upstream did not find such an id.
+	ItemIDsRemoved     int    `json:"item_ids_removed,omitempty"`
 	RetryAttempted     bool   `json:"retry_attempted"`
 	Disposition        string `json:"disposition"`
 	NotAttemptedReason string `json:"not_attempted_reason,omitempty"`
@@ -461,6 +464,9 @@ func sanitizeOpenAIContinuationDiagnosticValues(in *OpenAIContinuationDiagnostic
 		recovery := *in.Recovery
 		if recovery.CacheSkippedItems < 0 {
 			recovery.CacheSkippedItems = 0
+		}
+		if recovery.ItemIDsRemoved < 0 {
+			recovery.ItemIDsRemoved = 0
 		}
 		switch recovery.Disposition {
 		case "not_attempted", "retry_prepared", "retry_attempted", "budget_exhausted":
