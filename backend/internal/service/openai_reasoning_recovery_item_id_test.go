@@ -5,6 +5,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -409,9 +411,111 @@ func TestOpenAIReasoningRecoveryRepairChecksWhatItStrippedAgainstWhatWasSent(t *
 	})
 }
 
-// The fields are deleted in one pass over the body. The bytes are those of
-// deleting them one whole-body edit at a time, which is what a request was
-// sent with before, and the same targets are refused.
+// The repair's event carries the status and the request id of the answer it
+// repairs, whatever an earlier answer left in the state, and a repaired body
+// that is then not sent is reported with the reason.
+func TestOpenAIReasoningRecoveryRepairIsRecordedWithItsOwnAnswer(t *testing.T) {
+	state, req, _ := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryRelayFixture)
+	state.BindDiagnosticRequest([]byte(reasoningRecoveryRelayFixture), req)
+	stripped, retry := state.TryRecover(http.StatusBadRequest, http.Header{"X-Request-Id": []string{"req_cipher_rejected"}}, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
+	require.True(t, retry)
+	retried, _, err := state.PrepareRequest(req.Clone(context.Background()), stripped, "")
+	require.NoError(t, err)
+	state.MarkAttemptDispatched()
+
+	unfound := []byte(`{"error":{"message":"Item with id '` + reasoningRecoveryRelayItemID + `' not found."}}`)
+	repaired, ok := state.TryRepairUnfoundItemIDs(http.StatusNotFound, http.Header{"X-Request-Id": []string{"req_item_not_found"}}, unfound)
+	require.True(t, ok)
+	events, _ := state.c.Get(OpsUpstreamErrorsKey)
+	recorded := events.([]*OpsUpstreamErrorEvent)
+	last := recorded[len(recorded)-1]
+	require.Equal(t, "retry_without_item_ids", last.Message)
+	require.Equal(t, http.StatusNotFound, last.UpstreamStatusCode)
+	require.Equal(t, "req_item_not_found", last.UpstreamRequestID)
+	require.True(t, last.ContinuationDiagnostic.Recovery.RetryAttempted, "the stripped retry was sent")
+
+	// The send boundary refuses a body other than the repaired one.
+	_, _, err = state.PrepareRequest(retried.Clone(context.Background()), stripped, "")
+	var stopped *OpenAIReasoningRecoveryTerminalError
+	require.ErrorAs(t, err, &stopped)
+	blocked := lastReasoningRecoveryDiagnostic(t, state.c).ContinuationDiagnostic.Recovery
+	require.Equal(t, "source_changed", blocked.NotAttemptedReason, "the repaired body was never sent")
+	require.True(t, blocked.RetryAttempted, "the stripped retry stays recorded as sent")
+	require.NotEqual(t, string(stripped), string(repaired))
+}
+
+// A repair prepared after either a cached strip or a sent stripped retry may
+// fail before sending. Report that fact without handing the old answer to
+// another account. The cached path keeps the builder's ordinary error contract.
+func TestOpenAIReasoningRecoveryUnsentRepairKeepsItsDiagnostic(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		cached bool
+		prior  func() error
+	}{
+		{name: "cached_snapshot_failure", cached: true},
+		{name: "stripped_retry_snapshot_failure"},
+		{name: "stripped_retry_old_account_failure", prior: func() error {
+			return &UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: []byte(`{"error":{"code":"credit_balance_exhausted"}}`)}
+		}},
+		{name: "stripped_retry_old_cipher_rejection", prior: func() error {
+			return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`))
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state, req, _ := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryRelayFixture)
+			var body []byte
+			if test.cached {
+				store := &reasoningRecoveryMemoryStore{}
+				learner, _, _ := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryRelayFixture)
+				learner.store = store
+				_, retry := learner.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
+				require.True(t, retry)
+				state.store = store
+				body = []byte(reasoningRecoveryRelayFixture)
+			} else {
+				var retry bool
+				body, retry = state.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
+				require.True(t, retry)
+			}
+			retried, _, err := state.PrepareRequest(req.Clone(context.Background()), body, "")
+			require.NoError(t, err)
+			state.BindDiagnosticRequest([]byte(reasoningRecoveryRelayFixture), retried)
+			state.MarkAttemptDispatched()
+			repaired, ok := state.TryRepairUnfoundItemIDs(http.StatusNotFound, nil, []byte(`{"error":{"message":"Item with id '`+reasoningRecoveryRelayItemID+`' not found."}}`))
+			require.True(t, ok)
+
+			var attempt error
+			if test.prior != nil {
+				attempt = test.prior()
+			} else {
+				unsent := retried.Clone(context.Background())
+				unsent.GetBody = func() (io.ReadCloser, error) { return nil, errors.New("snapshot unavailable") }
+				_, _, attempt = state.PrepareRequest(unsent, repaired, "")
+				require.Error(t, attempt)
+			}
+			stopped := state.StopError(attempt)
+			if test.cached {
+				require.Same(t, attempt, stopped)
+			} else {
+				var terminal *OpenAIReasoningRecoveryTerminalError
+				require.ErrorAs(t, stopped, &terminal)
+				require.False(t, terminal.Failure.ShouldRetryNextAccount())
+			}
+			diagnostic := lastReasoningRecoveryDiagnostic(t, state.c).ContinuationDiagnostic.Recovery
+			require.Equal(t, "recovery_not_dispatched", diagnostic.NotAttemptedReason)
+			require.Equal(t, !test.cached, diagnostic.RetryAttempted)
+			require.Equal(t, 1, diagnostic.ItemIDsRemoved)
+			require.False(t, diagnostic.AccountMismatch)
+			require.False(t, diagnostic.AccountFailure)
+		})
+	}
+}
+
+// The fields are deleted in one pass over the body. For valid JSON with one
+// input, which is all the callers pass, the bytes are those of deleting them
+// one whole-body edit at a time, which is what a request was sent with before,
+// and the same targets are refused.
 func TestOpenAIReasoningRecoveryDeletesFieldsInOnePassAsOneByOne(t *testing.T) {
 	const (
 		compact = `{"type":"reasoning","id":"rs_a","summary":[{"type":"summary_text","text":"id \"quoted\" \\ é"}],"encrypted_content":"a"}`

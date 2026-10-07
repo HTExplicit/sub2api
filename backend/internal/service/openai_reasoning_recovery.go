@@ -97,8 +97,10 @@ type openAIReasoningRecoveryState struct {
 	// dropItemIDs makes a strip remove the item's id with its ciphertext. It
 	// is set by the repair, for the rest of this attempt.
 	dropItemIDs bool
-	// idRepairUsed records the one re-send without the ids of stripped items.
+	// idRepairUsed records the one re-send without the ids of stripped items;
+	// idRepairUnsent, that its body has not been sent yet.
 	idRepairUsed   bool
+	idRepairUnsent bool
 	itemIDsRemoved int
 }
 
@@ -175,7 +177,11 @@ func (r *openAIReasoningRecoveryState) ObserveResponse(resp *http.Response) {
 }
 
 func (r *openAIReasoningRecoveryState) MarkAttemptDispatched() {
-	if r != nil && r.retryUsed {
+	if r == nil {
+		return
+	}
+	r.idRepairUnsent = false
+	if r.retryUsed {
 		r.retryDispatched = true
 		r.diagnosticState = "retry_attempted"
 	}
@@ -541,8 +547,9 @@ func stripOpenAIReasoningCipherIndices(body []byte, indices []int) ([]byte, erro
 // deleteOpenAIReasoningItemField deletes one field from the reasoning items at
 // the listed input positions. A long history holds hundreds of them, and
 // editing the whole body once for each costs seconds, so the items are edited
-// on their own and the body is written once. The result is byte for byte that
-// of deleting the fields one by one.
+// on their own and the body is written once. For what its callers pass, valid
+// JSON with one input and positions of that input, the result is byte for byte
+// that of deleting the fields one by one.
 func deleteOpenAIReasoningItemField(body []byte, indices []int, field string) ([]byte, error) {
 	input := gjson.GetBytes(body, "input")
 	if len(indices) == 0 || !input.IsArray() {
@@ -772,7 +779,7 @@ func (r *openAIReasoningRecoveryState) TryRepairUnfoundItemIDs(status int, heade
 	if err != nil {
 		return nil, false
 	}
-	r.idRepairUsed, r.dropItemIDs = true, true
+	r.idRepairUsed, r.idRepairUnsent, r.dropItemIDs = true, true, true
 	r.itemIDsRemoved += len(ids)
 	if r.retryUsed {
 		// The stripped retry was already sent; the send boundary accepts only
@@ -782,9 +789,7 @@ func (r *openAIReasoningRecoveryState) TryRepairUnfoundItemIDs(status int, heade
 	// The answer is recorded with its own status and request id, and leaves
 	// neither behind for a caller that does not observe each response.
 	observedStatus, observedHeaders := r.responseStatus, r.responseHeaders
-	if r.responseStatus == 0 {
-		r.responseStatus, r.responseHeaders = status, headers.Clone()
-	}
+	r.responseStatus, r.responseHeaders = status, headers.Clone()
 	r.record("retry_without_item_ids", status, "", payload, len(ids))
 	r.responseStatus, r.responseHeaders = observedStatus, observedHeaders
 	return repaired, true
@@ -890,6 +895,12 @@ func (r *openAIReasoningRecoveryState) StopError(err error) error {
 	r.accountMismatch = r.anotherAccountMayAccept(failure, signatureRejected)
 	r.accountFailure = !r.accountMismatch && r.accountFailedAfterRetry(returned)
 	if !r.retryUsed && !signatureRejected && !cacheSkipRejected && !r.accountMismatch {
+		if r.idRepairUnsent && !r.stopRecorded {
+			// A cached pre-strip needs no stripped retry. Keep the builder's
+			// error contract, but record that its prepared id repair was not sent.
+			r.stopRecorded = true
+			r.record("recovery_not_attempted", 0, "", nil, 0)
+		}
 		return err
 	}
 	if failure == nil {
@@ -940,9 +951,10 @@ func (r *openAIReasoningRecoveryState) anotherAccountMayAccept(failure *Upstream
 		openAIRequestHoldsServerContext(r.wire) || openAIRequestHoldsServerContext(r.diagnosticIncoming) {
 		return false
 	}
-	if r.retryUsed && !r.retryDispatched {
-		// The stripped retry was prepared but never sent. That is a fault in
-		// how this request was built, not evidence about the account.
+	if (r.retryUsed && !r.retryDispatched) || r.idRepairUnsent {
+		// The stripped retry, or the repair after it, was prepared but never
+		// sent. That is a fault in how this request was built, not evidence
+		// about the account.
 		return false
 	}
 	switch {
@@ -962,7 +974,7 @@ func (r *openAIReasoningRecoveryState) anotherAccountMayAccept(failure *Upstream
 // rejection, continuation state and a refusal are not the account's, and an
 // error the attempt did not classify as a failover ends the request as before.
 func (r *openAIReasoningRecoveryState) accountFailedAfterRetry(returned *UpstreamFailoverError) bool {
-	if returned == nil || !r.switchAccounts || !r.retryUsed || !r.retryDispatched ||
+	if returned == nil || !r.switchAccounts || !r.retryUsed || !r.retryDispatched || r.idRepairUnsent ||
 		r.semanticCommitted || r.failureTerminalForwarded || r.ctx.Err() != nil {
 		return false
 	}
@@ -1011,13 +1023,14 @@ func (r *openAIReasoningRecoveryState) continuationDiagnosticRecovery(payload []
 	if shape.Disposition == "" {
 		shape.Disposition = "not_attempted"
 	}
-	if shape.Disposition == "not_attempted" {
-		shape.NotAttemptedReason = r.recoveryNotAttemptedReason(payload)
-	} else if r.retryUsed && !r.retryDispatched && r.stopRecorded {
+	if r.stopRecorded && (r.idRepairUnsent || (r.retryUsed && !r.retryDispatched)) {
+		// The last re-send prepared, stripped retry or repair, was not sent.
 		shape.NotAttemptedReason = r.diagnosticStopReason
 		if shape.NotAttemptedReason == "" {
 			shape.NotAttemptedReason = "recovery_not_dispatched"
 		}
+	} else if shape.Disposition == "not_attempted" {
+		shape.NotAttemptedReason = r.recoveryNotAttemptedReason(payload)
 	}
 	return shape
 }
