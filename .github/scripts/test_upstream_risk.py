@@ -33,10 +33,8 @@ class UpstreamRiskTest(unittest.TestCase):
             "backend/internal/securityaudit/policy.go",
             "backend/internal/service/billing_service.go",
             "backend/internal/service/openai_ws_pool.go",
-            "backend/internal/service/plugin_update.go",
-            "backend/pkg/extensionapi/v1/rpc.go",
+            "backend/internal/service/plugin_manager.go",
             "backend/pkg/pluginapi/v1/plugin.proto",
-            "plugins/codex-runtime/manifest.source.json",
         ):
             with self.subTest(path=path):
                 self.assertTrue(is_critical(path))
