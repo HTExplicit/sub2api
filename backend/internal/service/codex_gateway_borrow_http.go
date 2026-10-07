@@ -89,23 +89,26 @@ func (s *OpenAIGatewayService) codexGatewayBorrowHTTPConfigured(account *Account
 // before the business first-output guard. WithContext shares Body/GetBody: this
 // phase neither reads nor copies the business body, including a 100 MiB body.
 func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context, req *http.Request, account *Account, model, proxy string) (*http.Request, time.Duration, error) {
+	// Ordinary requests retain their exact identity: continuation diagnostics
+	// bind an immutable body snapshot to this pointer after GetBody is disabled.
+	if !CodexGatewayBorrowRequestEligible(req) || !s.codexGatewayBorrowHTTPConfigured(account, model) {
+		return req, 0, nil
+	}
 	started := time.Now()
 	prepared := codexGatewayBorrowHTTPPreparation{service: s.gatewayBorrow, accountID: account.ID, model: model, proxy: proxy}
-	if prepared.service != nil {
-		prepared.service.mu.Lock()
-		prepared.revision = prepared.service.revision
-		prepared.service.mu.Unlock()
-		borrowed, application, err := prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
-		if err != nil {
-			return nil, 0, err
-		}
-		req, prepared.application = borrowed.WithContext(req.Context()), application
+	prepared.service.mu.Lock()
+	prepared.revision = prepared.service.revision
+	prepared.service.mu.Unlock()
+	borrowed, application, err := prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
+	if err != nil {
+		return nil, 0, err
 	}
-	req = req.WithContext(context.WithValue(req.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, prepared))
-	if prepared.application != nil && prepared.application.Applied {
-		return req, time.Since(started), nil
+	if application == nil || !application.Applied {
+		return nil, 0, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowChanged}
 	}
-	return req, 0, nil
+	prepared.application = application
+	req = borrowed.WithContext(context.WithValue(req.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, prepared))
+	return req, time.Since(started), nil
 }
 
 // Forward already performed its one preparation before starting the business
@@ -149,6 +152,11 @@ func (s *OpenAIGatewayService) applyCodexGatewayBorrowHTTP(req *http.Request, ac
 		application.CookieFingerprint != prepared.application.CookieFingerprint || application.SourceAccountID != prepared.application.SourceAccountID ||
 		!application.ExpiresAt.Equal(prepared.application.ExpiresAt) {
 		return changed()
+	}
+	// The preparation already canonicalized this Cookie header. Validation
+	// must keep the bound plaintext request identity when it changes no bytes.
+	if slices.Equal(req.Header.Values("Cookie"), borrowed.Header.Values("Cookie")) {
+		return req, nil
 	}
 	return borrowed, nil
 }

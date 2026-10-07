@@ -1031,7 +1031,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return nil, integrityErr
 		}
-		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 		// Qualification observes the fully finalized request, after recovery and
 		// integrity checks, using the original client's cancellation/deadline.
 		// It must finish before the business header and semantic-output budgets.
@@ -1060,6 +1059,20 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(upstreamReq.Context(), releaseUpstreamCtx, firstOutputStartedAt.Add(firstOutputTimeout))
 			upstreamReq = upstreamReq.WithContext(upstreamCtx)
 		}
+		if _, borrowed := upstreamReq.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation); borrowed {
+			finalized, finalizationErr := s.applyCodexGatewayBorrowHTTP(upstreamReq, account, upstreamModel, proxyURL)
+			if finalizationErr != nil {
+				if headerGuard != nil {
+					headerGuard.close()
+				}
+				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, finalizationErr, false)
+			}
+			upstreamReq = finalized
+		}
+		// Bind only after preparation, context/guard changes and the final
+		// cached Cookie canonicalization. Dispatch preserves this plaintext
+		// pointer; wire compression still uses its separate outbound copy.
+		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 
 		// Send request
 		upstreamStart := time.Now()

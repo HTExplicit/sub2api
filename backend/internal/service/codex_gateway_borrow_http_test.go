@@ -276,6 +276,72 @@ func TestCodexGatewayBorrowHTTPPreparedDispatchNeverReprepares(t *testing.T) {
 	}
 }
 
+func TestCodexGatewayBorrowHTTPPreparedDispatchPreservesFrozenRequest(t *testing.T) {
+	for _, changedCookie := range []bool{false, true} {
+		name := "canonical_cookie"
+		if changedCookie {
+			name = "changed_cookie"
+		}
+		t.Run(name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			body := []byte(`{"model":"gpt-6-astra","input":[{"type":"reasoning","encrypted_content":"synthetic-cipher"}]}`)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+			account := borrowCoreAccount(2)
+			var probes, businessCalls atomic.Int32
+			borrow := newBorrowCoreTest(t, borrowCoreProbe(func(*http.Request, string, int64, int, *tlsfingerprint.Profile) (*http.Response, error) {
+				if probes.Add(1) == 1 {
+					return borrowCoreResponse("gpt-6-astra", "", "synthetic-state"), nil
+				}
+				return borrowCoreResponse("gpt-6-astra", "", ""), nil
+			}), account)
+			borrowCoreCandidate(borrow, time.Now().Add(time.Minute))
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, chatgptCodexURL, bytes.NewReader(body))
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "Bearer synthetic-target")
+			req.Header.Set("Cookie", "target=kept")
+			recovery := &openAIReasoningRecoveryState{ctx: context.Background(), c: c, account: account, enabled: true}
+			c.Set(openAIReasoningRecoveryContextKey, recovery)
+			req, _, err = recovery.PrepareRequest(req, body, "")
+			require.NoError(t, err)
+			prepared, _, err := borrow.gateway.prepareCodexGatewayBorrowHTTP(context.Background(), req, account, "gpt-6-astra", "")
+			require.NoError(t, err)
+			guardCtx, guard := newOpenAIFirstOutputHeaderGuard(prepared.Context(), func() {}, time.Now().Add(time.Minute))
+			defer guard.close()
+			prepared = prepared.WithContext(guardCtx)
+			if changedCookie {
+				prepared.Header.Set("Cookie", "target=kept; __oailb=stale")
+			}
+			finalized, err := borrow.gateway.applyCodexGatewayBorrowHTTP(prepared, account, "gpt-6-astra", "")
+			require.NoError(t, err)
+			if changedCookie {
+				require.NotSame(t, prepared, finalized)
+			} else {
+				require.Same(t, prepared, finalized)
+			}
+			recovery.BindDiagnosticRequest(body, finalized)
+			borrow.gateway.httpUpstream = borrowCoreProbe(func(got *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+				businessCalls.Add(1)
+				require.Same(t, finalized, got, "cached dispatch must keep the diagnostic's plaintext request")
+				require.Nil(t, got.GetBody, "diagnostics must not restore transparent POST replay")
+				diagnostic := buildOpenAIContinuationDiagnostic(c, body, got, body, []byte(`{"error":{"message":"bad request"}}`), "unclassified_bad_request")
+				require.NotNil(t, diagnostic)
+				require.Equal(t, "frozen_request", diagnostic.Wire.BodySource)
+				require.False(t, diagnostic.Wire.InspectionLimited)
+				return &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("synthetic rejection"))}, nil
+			})
+			oldCompression := codexRequestZstd.Load()
+			SetCodexRequestZstdEnabled(false)
+			defer SetCodexRequestZstdEnabled(oldCompression)
+			resp, err := borrow.gateway.doOpenAICodexUpstream(finalized, account, "", "gpt-6-astra")
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			require.Equal(t, int32(2), probes.Load())
+			require.Equal(t, int32(1), businessCalls.Load())
+		})
+	}
+}
+
 type borrowHTTPUnreadBody struct{ reads atomic.Int32 }
 
 func (r *borrowHTTPUnreadBody) Read([]byte) (int, error) {
@@ -285,7 +351,7 @@ func (r *borrowHTTPUnreadBody) Read([]byte) (int, error) {
 func (*borrowHTTPUnreadBody) Close() error { return nil }
 
 func TestCodexGatewayBorrowHTTPOrdinaryGatingDoesNotInspectBody(t *testing.T) {
-	for _, ordinary := range []string{"other_model", "other_host", "other_method", "other_path"} {
+	for _, ordinary := range []string{"other_model", "other_host", "other_method", "other_path", "feature_off", "other_account", "nil_service"} {
 		t.Run(ordinary, func(t *testing.T) {
 			var probes, business atomic.Int32
 			probe := borrowCoreProbe(func(*http.Request, string, int64, int, *tlsfingerprint.Profile) (*http.Response, error) {
@@ -306,6 +372,14 @@ func TestCodexGatewayBorrowHTTPOrdinaryGatingDoesNotInspectBody(t *testing.T) {
 				req.Method = http.MethodGet
 			case "other_path":
 				req.URL.Path += "/compact"
+			case "feature_off":
+				cfg := borrow.ConfigSnapshot()
+				cfg.Enabled = false
+				borrow.publishConfig(cfg, false)
+			case "other_account":
+				account = borrowCoreAccount(9)
+			case "nil_service":
+				borrow.gateway.gatewayBorrow = nil
 			}
 			body := &borrowHTTPUnreadBody{}
 			req.Body, req.ContentLength = body, 100<<20
@@ -313,6 +387,8 @@ func TestCodexGatewayBorrowHTTPOrdinaryGatingDoesNotInspectBody(t *testing.T) {
 			prepared, elapsed, err := borrow.gateway.prepareCodexGatewayBorrowHTTP(context.Background(), req, account, model, "")
 			require.NoError(t, err)
 			require.Zero(t, elapsed)
+			require.Same(t, req, prepared, "ordinary requests must retain their diagnostic identity")
+			require.Nil(t, prepared.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}))
 			require.Same(t, body, prepared.Body)
 			borrow.gateway.httpUpstream = borrowCoreProbe(func(got *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 				business.Add(1)
