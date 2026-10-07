@@ -317,6 +317,13 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_t
   white-space: normal;
 }
 
+/* Capacity stays in the platform cell; wrap between its whole badges so their combined width does not set the
+   column's minimum after switching to the system font. Figures and each badge keep their own nowrap rule. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="cell-line"][data-line="capacity"] > [data-ui="cell-line-value"] > div {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
 /* ---- 状态 / 调度: the badge, its countdown (「自动恢复」 whole), the 429 / model / error marks, then the switch */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div:not([data-ui="cell-lines"]),
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div:not([data-ui="cell-lines"]) > div[class~="flex"][class~="items-center"] {
