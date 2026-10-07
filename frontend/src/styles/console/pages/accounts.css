@@ -659,8 +659,8 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   }
 }
 
-/* The fork's own sentence lines in the 用量 cell (the codex turn tickets, the stale / fetch-failed notes; upstream has
-   no such lines) read at 12 / 16 like the cell's other text; upstream's micro widgets (the 9-10px bars and chips)
+/* The fork's own sentence lines in the 用量 cell (the stale / fetch-failed notes; upstream has no such lines)
+   read at 12 / 16 like the cell's other text; upstream's micro widgets (the 9-10px bars and chips)
    keep their template sizes. */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-usage-variant="list"] [class~="max-w-[15rem]"] > div[class~="text-[10px]"][class~="leading-4"],
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] :is([data-test="usage-stale"], [data-test="usage-fetch-failed"]) {
@@ -670,9 +670,9 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] :i
 
 /* 优先级: upstream's quick-adjust control (AccountPriorityCell: − value +; the two steppers show under the pointer or
    on focus, a click on the value turns it into an input, a change saves by itself). It is the value of the 优先级 line
-   and sits under its label, as the column cannot hold both. The figure keeps the primary tone (above). The steppers
-   are icon buttons, so they take the label tone whatever grey class they carry and the ink under the pointer (the row
-   actions' rule, data.css 12.3); one at the end of the range is the theme's disabled .55 (on the glyph: the button's
+   and sits under its label, as the column cannot hold both. The figure keeps its template's semantic text class.
+   The steppers are icon buttons, so they take the muted tone and the ink under the pointer; one at the end of the
+   range is the theme's disabled .55 (on the glyph: the button's
    own opacity is what shows and hides it). The control's 28px box gives 3px back above and below, so the line keeps
    the pitch of the lines around it. Reached through the component's own static data-testid attributes. */
 html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] {
@@ -680,11 +680,11 @@ html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-prio
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] > button:is([data-testid="account-priority-decrement"], [data-testid="account-priority-increment"]) {
-  color: rgb(var(--ui-data-label));
+  color: rgb(var(--ui-muted));
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] > button:is([data-testid="account-priority-decrement"], [data-testid="account-priority-increment"]):hover:not(:disabled) {
-  color: rgb(var(--ui-data-primary));
+  color: rgb(var(--ui-ink));
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-priority-cell"] > button:is([data-testid="account-priority-decrement"], [data-testid="account-priority-increment"]):disabled > svg {
