@@ -387,3 +387,28 @@ func TestOpenAIGatewayHandler_ContinuationStrippedRetryAccountFailureCoolsTheAcc
 	serveContinuationMismatchSession(t, handler, body, "another-conversation")
 	require.Equal(t, []int64{1, 1, 2, 2}, upstream.accountIDs, "account 1 would accept again, but is cooling")
 }
+
+// The upstream cannot find a reasoning item that the stripped retry left behind
+// without ciphertext. The same account is asked once more, without the id, and
+// answers; no other account is involved and the session stays where it was.
+func TestOpenAIGatewayHandler_ContinuationStrippedItemTheUpstreamCannotFindIsRepairedOnTheSameAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const relayID = "rs_0123456789abcdef0123456789abcdef"
+	body := strings.Replace(continuationMismatchReasoningOnlyBody, `"rs_a"`, `"`+relayID+`"`, 1)
+	unfound := continuationMismatchReply{status: http.StatusNotFound,
+		payload: `{"error":{"message":"Item with id '` + relayID + `' not found. Items are not persisted when ` + "`store`" + ` is set to false.","type":"invalid_request_error","param":"input","code":null}}`}
+	upstream := &continuationMismatchUpstream{
+		accepting: map[int64]bool{1: true, 2: true},
+		sequence:  map[int64][]continuationMismatchReply{1: {continuationMismatchUnrecoverable, unfound}},
+	}
+	handler, cache := newContinuationMismatchHandler(t, upstream, continuationMismatchAccounts(2, service.AccountTypeAPIKey))
+	response := serveContinuationMismatch(t, handler, body)
+
+	require.Equal(t, http.StatusOK, response.code, response.body)
+	require.Equal(t, []int64{1, 1, 1}, upstream.accountIDs, "first send, stripped retry, then the repair")
+	require.Equal(t, relayID, gjson.GetBytes(upstream.bodies[1], "input.0.id").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
+	require.Equal(t, "reasoning", gjson.GetBytes(upstream.bodies[2], "input.0.type").String(), "the item is kept")
+	require.False(t, gjson.GetBytes(upstream.bodies[2], "input.0.id").Exists(), "without the id the upstream could not find")
+	require.Equal(t, int64(1), continuationMismatchBoundAccount(t, cache))
+}

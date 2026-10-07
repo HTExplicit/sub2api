@@ -453,9 +453,17 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		}
 		if resp.StatusCode >= 400 {
 			respBody, upstreamMsg := s.readOpenAIUpstreamError(resp, c)
+			if repaired, repair := recovery.TryRepairUnfoundItemIDs(resp.StatusCode, resp.Header, respBody); repair {
+				closeUpstreamResponse()
+				responsesBody, err = projectReasoningRecoveryEdits(responsesBody, wireBody, repaired)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if retryBody, retry := recovery.TryRecover(resp.StatusCode, resp.Header, respBody, false); retry {
 				closeUpstreamResponse()
-				responsesBody, err = projectReasoningCipherEdits(responsesBody, wireBody, retryBody)
+				responsesBody, err = projectReasoningRecoveryEdits(responsesBody, wireBody, retryBody)
 				if err != nil {
 					return nil, err
 				}
@@ -495,7 +503,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		}
 		closeUpstreamResponse()
 		if retryBody, retry := recovery.TryRecoverError(handleErr); retry {
-			responsesBody, err = projectReasoningCipherEdits(responsesBody, wireBody, retryBody)
+			responsesBody, err = projectReasoningRecoveryEdits(responsesBody, wireBody, retryBody)
 			if err != nil {
 				return nil, err
 			}

@@ -1076,8 +1076,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			respBody := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
+			if repaired, repair := reasoningRecovery.TryRepairUnfoundItemIDs(resp.StatusCode, resp.Header, respBody); repair {
+				body, err = projectReasoningRecoveryEdits(body, wireBody, repaired)
+				if err != nil {
+					return nil, err
+				}
+				requestView = newOpenAIRequestView(body)
+				reqBody = nil
+				continue
+			}
 			if retryBody, retry := reasoningRecovery.TryRecover(resp.StatusCode, resp.Header, respBody, false); retry {
-				body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+				body, err = projectReasoningRecoveryEdits(body, wireBody, retryBody)
 				if err != nil {
 					return nil, err
 				}
@@ -1223,7 +1232,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if err != nil {
 				if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
 					_ = resp.Body.Close()
-					body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+					body, err = projectReasoningRecoveryEdits(body, wireBody, retryBody)
 					if err != nil {
 						return nil, err
 					}
@@ -1285,7 +1294,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if err != nil {
 				if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
 					_ = resp.Body.Close()
-					body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+					body, err = projectReasoningRecoveryEdits(body, wireBody, retryBody)
 					if err != nil {
 						return nil, err
 					}
