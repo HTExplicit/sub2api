@@ -476,6 +476,7 @@ type OpenAIGatewayService struct {
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	systemPrompts         *SystemPromptService
 	reasoningRecovery     *ReasoningRecoveryService
+	gatewayBorrow         *CodexGatewayBorrowService
 	usageCache            *UsageCache
 	usageCommitObserver   UsageCommitObserver
 	liveAttestation       liveattestation.Provider

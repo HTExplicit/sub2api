@@ -77,6 +77,9 @@ type openAIWSAcquireRequest struct {
 	HeadersFactory  func(context.Context, http.Header) (http.Header, error)
 	ProxyURL        string
 	PreferredConnID string
+	// AnchorScope isolates a borrowed conversation in the original account pool.
+	// It contains the model and authenticated client identity, never a cookie generation.
+	AnchorScope string
 	// ForceNewConn: 强制本次获取新连接（避免复用导致连接内续链状态互相污染）。
 	ForceNewConn bool
 	// ForcePreferredConn: 强制本次只使用 PreferredConnID，禁止漂移到其它连接。
@@ -84,6 +87,7 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
+	anchorScope         string
 	betaFeatures        string
 	codexInstallationID string
 	sessionIDHyphen     string
@@ -304,10 +308,11 @@ type openAIWSConn struct {
 	// unusable 表示空闲期收到数据被判为脏连接：持有令牌不再借出，由池在锁外关闭。
 	unusable atomic.Bool
 
-	waiters       atomic.Int32
-	createdAtNano atomic.Int64
-	lastUsedNano  atomic.Int64
-	prewarmed     atomic.Bool
+	waiters         atomic.Int32
+	createdAtNano   atomic.Int64
+	lastUsedNano    atomic.Int64
+	prewarmed       atomic.Bool
+	anchorUntilNano atomic.Int64
 }
 
 func newOpenAIWSConn(id string, _ int64, ws openAIWSClientConn, handshakeHeaders http.Header) *openAIWSConn {
@@ -754,6 +759,10 @@ func (c *openAIWSConn) age(now time.Time) time.Duration {
 	return now.Sub(created)
 }
 
+func (c *openAIWSConn) hasLiveAnchor(now time.Time) bool {
+	return c != nil && c.anchorUntilNano.Load() > now.UnixNano()
+}
+
 func (c *openAIWSConn) isLeased() bool {
 	if c == nil {
 		return false
@@ -1145,7 +1154,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 retryAcquire:
 	accountID := req.Account.ID
-	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
+	compatibility := normalizeOpenAIWSAcquireCompatibility(req)
 	routingAffinity := normalizeOpenAIWSRoutingAffinity(req.Headers)
 	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
 	if effectiveMaxConns <= 0 {
@@ -1553,8 +1562,9 @@ func (p *openAIWSConnPool) pickOldestIdleConnLocked(ap *openAIWSAccountPool) *op
 		return nil
 	}
 	var oldest *openAIWSConn
+	now := time.Now()
 	for _, conn := range ap.conns {
-		if conn == nil || conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
+		if conn == nil || conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) || conn.hasLiveAnchor(now) {
 			continue
 		}
 		if oldest == nil || conn.lastUsedAt().Before(oldest.lastUsedAt()) {
@@ -1572,10 +1582,11 @@ func (p *openAIWSConnPool) pickOldestIdleConnWithoutHandshakeCompatibilityLocked
 		return nil
 	}
 	var oldest *openAIWSConn
+	now := time.Now()
 	for _, conn := range ap.conns {
 		if conn == nil ||
 			conn.matchesHandshakeCompatibility(compatibility) ||
-			conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
+			conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) || conn.hasLiveAnchor(now) {
 			continue
 		}
 		if oldest == nil || conn.lastUsedAt().Before(oldest.lastUsedAt()) {
@@ -1663,7 +1674,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			evicted = append(evicted, conn)
 			continue
 		}
-		if p.isConnPinnedLocked(ap, id) {
+		if p.isConnPinnedLocked(ap, id) || conn.hasLiveAnchor(now) {
 			continue
 		}
 		if !conn.isLeased() && conn.waiters.Load() == 0 &&
@@ -1704,7 +1715,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 				continue
 			}
 			// 有等待者的连接不能在清理阶段被淘汰，否则等待中的 acquire 会收到 closed 错误。
-			if conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
+			if conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) || conn.hasLiveAnchor(now) {
 				continue
 			}
 			idleConns = append(idleConns, conn)
@@ -1844,7 +1855,7 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	}
 	ap.mu.Lock()
 	defer ap.mu.Unlock()
-	if ap.lastAcquire == nil {
+	if ap.lastAcquire == nil || stringsTrim(ap.lastAcquire.AnchorScope) != "" {
 		return
 	}
 	if ap.prewarmActive {
@@ -2152,7 +2163,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	accountID := req.Account.ID
 	evict := func() { p.evictConn(accountID, id) }
 	pooledConn.onPeerClosed.Store(&evict)
-	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
+	pooledConn.handshakeCompatibility = normalizeOpenAIWSAcquireCompatibility(req)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
 	return pooledConn, nil
 }
@@ -2319,6 +2330,7 @@ func cloneOpenAIWSAcquireRequest(req openAIWSAcquireRequest) openAIWSAcquireRequ
 	copied.WSURL = stringsTrim(req.WSURL)
 	copied.ProxyURL = stringsTrim(req.ProxyURL)
 	copied.PreferredConnID = stringsTrim(req.PreferredConnID)
+	copied.AnchorScope = stringsTrim(req.AnchorScope)
 	return copied
 }
 
@@ -2333,7 +2345,13 @@ func cloneOpenAIWSAcquireRequestPtr(req *openAIWSAcquireRequest) *openAIWSAcquir
 func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 	return stringsTrim(a.WSURL) == stringsTrim(b.WSURL) &&
 		stringsTrim(a.ProxyURL) == stringsTrim(b.ProxyURL) &&
-		normalizeOpenAIWSHandshakeCompatibility(a.Account, a.Headers) == normalizeOpenAIWSHandshakeCompatibility(b.Account, b.Headers)
+		normalizeOpenAIWSAcquireCompatibility(a) == normalizeOpenAIWSAcquireCompatibility(b)
+}
+
+func normalizeOpenAIWSAcquireCompatibility(req openAIWSAcquireRequest) openAIWSHandshakeCompatibilityKey {
+	key := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
+	key.anchorScope = stringsTrim(req.AnchorScope)
+	return key
 }
 
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {

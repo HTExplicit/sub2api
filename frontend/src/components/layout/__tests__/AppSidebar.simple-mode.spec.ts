@@ -107,7 +107,17 @@ describe('AppSidebar simple mode extensions', () => {
   it('renders admin extensions for an admin in simple mode', async () => {
     const wrapper = await renderSidebar({ admin: true })
 
-    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime', '/admin/reasoning-recovery'])
+    expect(extensionLinks(wrapper)).toEqual([
+      '/admin/system-prompts',
+      '/admin/codex-runtime',
+      '/admin/codex-gateway-borrow',
+      '/admin/reasoning-recovery',
+    ])
     expect(wrapper.text()).not.toContain('nav.myAccount')
+
+    wrapper.unmount()
+    const regularUser = await renderSidebar()
+    expect(regularUser.find('a[href="/admin/codex-gateway-borrow"]').exists()).toBe(false)
+    regularUser.unmount()
   })
 })

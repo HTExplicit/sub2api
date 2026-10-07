@@ -143,7 +143,16 @@ func prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.R
 
 // doOpenAICodexUpstream 是 OpenAI 网关所有 Responses 端点 POST 的统一发送入口：先按上述
 // 规则生成线上请求（满足条件时压缩），再交给 httpUpstream。读取失败作为传输错误返回。
-func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account *Account, proxyURL string) (*http.Response, error) {
+func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account *Account, proxyURL string, resolvedModels ...string) (*http.Response, error) {
+	model := CodexGatewayBorrowModelFromContext(req.Context())
+	if len(resolvedModels) > 0 {
+		model = resolvedModels[0]
+	}
+	borrowed, err := s.applyCodexGatewayBorrowHTTP(req, account, model, proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	req = borrowed
 	wire, err := prepareOpenAICodexWireRequest(req, account)
 	if err != nil {
 		return nil, err

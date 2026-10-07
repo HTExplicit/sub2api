@@ -975,6 +975,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	var wireBody []byte
+	var borrowPreparationElapsed time.Duration
 	for {
 		// Read the final attempt payload. A compatibility retry may have changed
 		// the request, so neither the original alias nor prior attempt is usage
@@ -992,9 +993,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		var headerGuard *openAIFirstOutputHeaderGuard
-		if firstOutputTimeout > 0 {
+		if firstOutputTimeout > 0 && !s.codexGatewayBorrowHTTPConfigured(account, upstreamModel) {
 			upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(
-				upstreamCtx, releaseUpstreamCtx, startTime.Add(firstOutputTimeout),
+				upstreamCtx, releaseUpstreamCtx, startTime.Add(borrowPreparationElapsed).Add(firstOutputTimeout),
 			)
 		}
 		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, reqStream, promptCacheKey, isCodexCLI)
@@ -1030,14 +1031,64 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return nil, integrityErr
 		}
+		// Qualification observes the fully finalized request, after recovery and
+		// integrity checks, using the original client's cancellation/deadline.
+		// It must finish before the business header and semantic-output budgets.
+		prepared, preparationElapsed, preparationErr := s.prepareCodexGatewayBorrowHTTP(ctx, upstreamReq, account, upstreamModel, proxyURL)
+		if preparationErr != nil {
+			if headerGuard != nil {
+				headerGuard.close()
+			}
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, preparationErr, false)
+		}
+		upstreamReq = prepared
+		if preparationElapsed > 0 {
+			borrowPreparationElapsed += preparationElapsed
+			// A save may have enabled borrowing after the earlier configuration
+			// check. Drop that old guard without treating its cancellation as an
+			// upstream timeout, and retain the finalized request's context values.
+			replacedGuard := headerGuard != nil
+			if headerGuard != nil {
+				headerGuard.close()
+				headerGuard = nil
+			}
+			upstreamReq = upstreamReq.WithContext(codexGatewayBorrowHTTPPreparedContext(ctx, upstreamReq.Context(), replacedGuard, reasoningRecovery.RecoveryAttempt()))
+		}
+		firstOutputStartedAt := startTime.Add(borrowPreparationElapsed)
+		if firstOutputTimeout > 0 && headerGuard == nil {
+			upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(upstreamReq.Context(), releaseUpstreamCtx, firstOutputStartedAt.Add(firstOutputTimeout))
+			upstreamReq = upstreamReq.WithContext(upstreamCtx)
+		}
+		if _, borrowed := upstreamReq.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation); borrowed {
+			finalized, finalizationErr := s.applyCodexGatewayBorrowHTTP(upstreamReq, account, upstreamModel, proxyURL)
+			if finalizationErr != nil {
+				if headerGuard != nil {
+					headerGuard.close()
+				}
+				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, finalizationErr, false)
+			}
+			upstreamReq = finalized
+		}
+		// Bind only after preparation, context/guard changes and the final
+		// cached Cookie canonicalization. Dispatch preserves this plaintext
+		// pointer; wire compression still uses its separate outbound copy.
 		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 
 		// Send request
 		upstreamStart := time.Now()
 		reasoningRecovery.MarkAttemptDispatched()
-		resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
+		resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
 		reasoningRecovery.ObserveResponse(resp)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		if IsCodexGatewayBorrowRequestFailure(err) {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			if headerGuard != nil {
+				headerGuard.close()
+			}
+			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		}
 		if headerGuard != nil && headerGuard.stopHeaderWait() {
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
@@ -1228,7 +1279,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		var imageOutputSizes []string
 		if reqStream {
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
-			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
+			streamCtx := ctx
+			if borrowPreparationElapsed > 0 {
+				streamCtx = withCodexGatewayBorrowHTTPFirstOutputStart(ctx, firstOutputStartedAt)
+			}
+			streamResult, err := s.handleStreamingResponseWithReasoning(streamCtx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
 			if err != nil {
 				if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
 					_ = resp.Body.Close()

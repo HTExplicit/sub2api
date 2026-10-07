@@ -600,7 +600,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	}
 
 	turnStart := time.Now()
-	resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
+	resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
 	if err != nil {
 		if turn == 1 {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -649,7 +649,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				return nil, err
 			}
 			applyBridgeOwnedTurnState(retryReq)
-			resp, err = s.doOpenAICodexUpstream(retryReq, account, proxyURL)
+			resp, err = s.doOpenAICodexUpstream(retryReq, account, proxyURL, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
 			if err != nil {
 				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
 			}

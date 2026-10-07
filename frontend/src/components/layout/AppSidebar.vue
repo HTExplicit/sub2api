@@ -503,6 +503,10 @@ const PluginIcon = {
   render: () => h(Icon, { name: 'cube' })
 }
 
+const GatewayBorrowIcon = {
+  render: () => h(Icon, { name: 'link', 'aria-hidden': 'true' })
+}
+
 const BellIcon = {
   render: () =>
     h(
@@ -829,6 +833,7 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 const adminExtensionNavItems = computed((): NavItem[] => [
   { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon },
   { path: '/admin/codex-runtime', label: t('nav.codexRuntime'), icon: PluginIcon },
+  { path: '/admin/codex-gateway-borrow', label: t('nav.codexGatewayBorrow'), icon: GatewayBorrowIcon },
   { path: '/admin/reasoning-recovery', label: t('nav.reasoningRecovery'), icon: RecoveryIcon },
 ])
 

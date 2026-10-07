@@ -41,6 +41,11 @@ jobs:
       - name: Service tests
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|AlphaSearch|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|AccountTaxonomyRules|AccountTestReasoningValidated|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+      - name: Native gateway borrowing contracts
+        working-directory: backend
+        run: |
+          go test -p=1 -tags unit ./internal/service ./internal/repository ./internal/handler ./internal/handler/admin -run '^TestCodexGatewayBorrow' -count=1
+          go test -p=1 -tags integration ./internal/repository -run '^TestCodexGatewayBorrowTestRepositoryIntegrationLifecycle$' -count=1
       - name: Upstream automation classifier tests
         run: |
           python3 .github/scripts/test_upstream_risk.py
@@ -135,6 +140,9 @@ jobs:
             src/components/payment/__tests__/StripePaymentInline.contrast.spec.ts \
             src/views/user/__tests__/StripePaymentView.spec.ts \
             src/views/admin/__tests__/ReasoningRecoveryView.spec.ts \
+            src/api/admin/__tests__/codexGatewayBorrow.spec.ts \
+            src/components/admin/codex/__tests__/BorrowPelicanPreview.spec.ts \
+            src/views/admin/__tests__/CodexGatewayBorrowView.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
             src/utils/__tests__/openaiProtocolModeEdits.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \

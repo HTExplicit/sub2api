@@ -328,7 +328,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	var firstOutputTimer *time.Timer
 	var firstOutputCh <-chan time.Time
 	if firstOutputTimeout > 0 {
-		remaining := time.Until(startTime.Add(firstOutputTimeout))
+		// Borrow preparation is outside the business first-output budget; TTFT
+		// and the total request duration continue to use the original startTime.
+		remaining := time.Until(codexGatewayBorrowHTTPFirstOutputStart(ctx, startTime).Add(firstOutputTimeout))
 		if remaining <= 0 {
 			remaining = time.Nanosecond
 		}
