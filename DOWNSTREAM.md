@@ -5,7 +5,7 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 ## Source baseline
 
 - Integrated official baseline: the release recorded in `.downstream/upstream-base`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.13.md).
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.14.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
 ## Settings and account operations
@@ -145,13 +145,9 @@ Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
 
-`.downstream/upstream-risk.json` is the recorded integration snapshot, not a live
-worktree conflict report. Its current classifier inputs are upstream `v0.2.11`
-through `v0.2.13` and downstream commit
-`291d25e7f8a8c82d45072a1eee742c21ba3b8d21`. `initial_conflict_files` supplements
-the classifier output with paths reviewed during the merge, including files
-resolved automatically; it is historical review evidence rather than a list of
-remaining unmerged paths. The final `merge_conflicts: []` records the resolved
-merge. The risk gate recomputes from the tags and downstream commit in that
-snapshot, rather than the current PR head, so later-deleted paths remain in its
-classification; `review_required` still requires the `upstream-reviewed` label.
+`.downstream/upstream-risk.json` records the v0.2.13-to-v0.2.14 integration against
+downstream commit `7132011d7a4275e7d6407c92db4ec205a1c14ad1`. The risk gate
+recomputes those exact inputs. `initial_conflict_files` lists the three dependency
+conflicts resolved during this merge; `merge_conflicts: []` records that none
+remain. A `review_required` candidate needs a real completed review and the
+`upstream-reviewed` label before promotion.
