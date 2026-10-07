@@ -132,6 +132,12 @@ exits at start with `invalid setting admin_observability_config` until the key
 is removed by hand
 (`UPDATE settings SET value = (value::jsonb - 'telemetry_enabled')::text WHERE key = 'admin_observability_config'`).
 
+Migration 274 removes the soft-deleted release-acceptance keys and their usage
+records, removes their billing deduplication records, and drops `api_keys.purpose`
+and `api_keys.lease_id`. Ordinary keys and diagnostic logs remain. The matching
+application code no longer reads those columns; an older image that reads them
+cannot be deployed after this migration. Failures require a forward fix.
+
 ## Console theme
 
 `observability.theme_enabled` (public `flat_theme_enabled`, default on) toggles
