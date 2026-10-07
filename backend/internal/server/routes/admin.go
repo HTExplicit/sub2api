@@ -22,6 +22,7 @@ func RegisterAdminRoutes(
 ) {
 	// 插件 UI 使用短时能力 URL，仅提供经过安装校验的静态资源。
 	v1.GET("/plugin-ui/:token/*path", h.Admin.Plugin.ServeUIAsset)
+	v1.GET("/codex-gateway-borrow/preview/:cap/index.html", h.Admin.CodexGatewayBorrow.ServePreview)
 
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))
@@ -131,6 +132,7 @@ func RegisterAdminRoutes(
 
 		// 推理恢复全局开关
 		registerReasoningRecoveryRoutes(admin, h)
+		registerCodexGatewayBorrowRoutes(admin, h)
 
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
@@ -138,6 +140,18 @@ func RegisterAdminRoutes(
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
 	}
+}
+
+func registerCodexGatewayBorrowRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	borrow := admin.Group("/codex-gateway-borrow")
+	borrow.GET("/config", h.Admin.CodexGatewayBorrow.GetConfig)
+	borrow.PUT("/config", h.Admin.CodexGatewayBorrow.SaveConfig)
+	borrow.GET("/status", h.Admin.CodexGatewayBorrow.Status)
+	borrow.POST("/prepare", h.Admin.CodexGatewayBorrow.Prepare)
+	borrow.POST("/verify", h.Admin.CodexGatewayBorrow.Verify)
+	borrow.POST("/tests", h.Admin.CodexGatewayBorrow.StartTests)
+	borrow.GET("/tests", h.Admin.CodexGatewayBorrow.ListTests)
+	borrow.GET("/tests/:id", h.Admin.CodexGatewayBorrow.GetTest)
 }
 
 func registerAccountJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {

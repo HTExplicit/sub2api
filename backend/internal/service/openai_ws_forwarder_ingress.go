@@ -935,6 +935,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	agentTaskRecoveryTried := false
 	initialTransportRetryUsed := false
+	var borrowTurn *codexGatewayBorrowWSTurn
+	var lastBorrowTurn *codexGatewayBorrowWSTurn
+	defer func() {
+		if borrowTurn != nil {
+			borrowTurn.finish(pool, nil, errors.New("websocket borrow turn did not complete"))
+		}
+	}()
 	var acquireTurnLease func(int, string, bool, bool) (*openAIWSConnLease, error)
 	acquireTurnLease = func(turn int, preferred string, forcePreferredConn bool, forceNewConn bool) (*openAIWSConnLease, error) {
 		req := cloneOpenAIWSAcquireRequest(baseAcquireReq)
@@ -942,6 +949,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		req.ForcePreferredConn = forcePreferredConn
 		// dedicated 模式及重试均新建连接，避免复用陈旧上下文。
 		req.ForceNewConn = dedicatedMode || forceNewConn || (turn == 1 && initialTransportRetryUsed)
+		borrowTurn.applyToAcquire(&req)
 		acquireCtx, acquireCancel := context.WithTimeout(ctx, acquireTimeout)
 		lease, acquireErr := pool.Acquire(acquireCtx, req)
 		acquireCancel()
@@ -1034,6 +1042,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return nil, acquireErr
 		}
 		connID := strings.TrimSpace(lease.ConnID())
+		if bindErr := borrowTurn.bindLease(lease); bindErr != nil {
+			lease.MarkBroken()
+			lease.Release()
+			return nil, bindErr
+		}
 		logOpenAIWSModeInfo(
 			"ingress_ws_upstream_connected account_id=%d turn=%d conn_id=%s conn_reused=%v conn_idle_ms=%d conn_age_ms=%d upstream_pings=%d conn_pick_ms=%d queue_wait_ms=%d preferred_conn_id=%s",
 			account.ID,
@@ -1189,6 +1202,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
 			responseModelObserver.ObserveOpenAI(upstreamMessage, eventType)
+			borrowTurn.observe(rawUpstreamMessage)
 			if responseID == "" && eventResponseID != "" {
 				responseID = eventResponseID
 			}
@@ -1244,6 +1258,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					fallbackReason == string(openAIContinuationStateErrorInvalidEncryptedContent)
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
 					turnPreviousResponseID != "" &&
+					borrowTurn == nil &&
 					s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
 					!downstreamOutputStarted()
 				if recoverablePrevNotFound {
@@ -1464,6 +1479,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				imageCount := imageCounter.Count()
 				result := &OpenAIForwardResult{
 					RequestID:                     responseID,
+					ResponseID:                    responseID,
 					Usage:                         usage,
 					Model:                         originalModel,
 					UpstreamModel:                 mappedModel,
@@ -1478,6 +1494,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ResponseHeaders:               lease.HandshakeHeaders(),
 					Duration:                      time.Since(turnStart),
 					FirstTokenMs:                  firstTokenMs,
+					ClientDisconnect:              clientDisconnected,
 				}
 				result.wsReplayInput = replayCollector.AllItems()
 				result.wsReplayInputExists = replayCollector.Complete()
@@ -1582,6 +1599,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		preferredConnID = ""
 	}
 	recoverIngressPrevResponseNotFound := func(relayErr error, turn int, connID string) bool {
+		if borrowTurn != nil {
+			return false
+		}
 		if !isOpenAIWSIngressPreviousResponseNotFound(relayErr) {
 			return false
 		}
@@ -1608,6 +1628,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return true
 	}
 	retryIngressTurn := func(relayErr error, turn int, connID string) bool {
+		if borrowTurn != nil && borrowTurn.previousID != "" {
+			return false
+		}
 		_, transportFailure := openAIWSIngressTurnTransportCause(relayErr)
 		if transportFailure && initialTransportRetryUsed {
 			return false
@@ -1755,6 +1778,29 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return headerErr
 		}
 		baseAcquireReq.Headers = finalHeaders
+		if borrowTurn == nil {
+			borrowPreviousID := currentPreviousResponseID
+			// Later frames without an explicit previous ID still belong to the
+			// live native session. They need no fresh cookie or qualification.
+			if borrowPreviousID == "" && lastBorrowTurn != nil && sessionLease != nil &&
+				!contextWindowBoundary.Changed && lastBorrowTurn.model == wireFields[1].String() {
+				borrowPreviousID = lastTurnResponseID
+			}
+			var borrowPrepareErr error
+			borrowTurn, borrowPrepareErr = s.prepareCodexGatewayBorrowWSTurn(ctx, c, account, wsURL, finalHeaders,
+				currentClientPayload, wireFields[1].String(), borrowPreviousID, baseAcquireReq.ProxyURL)
+			if borrowPrepareErr != nil {
+				return codexGatewayBorrowWSPreparationError(c, account, borrowPrepareErr)
+			}
+			if borrowTurn != nil {
+				if sessionLease != nil && (borrowTurn.previousID == "" || borrowTurn.connID != sessionConnID) {
+					resetSessionLease(false)
+				}
+				preferredConnID = borrowTurn.connID
+			} else if sessionLease != nil && sessionLease.conn.handshakeCompatibility.anchorScope != "" {
+				resetSessionLease(false)
+			}
+		}
 		forcePreferredConn := isStrictAffinityTurn(currentPayload) && strings.TrimSpace(preferredConnID) != ""
 		if sessionLease == nil {
 			acquiredLease, acquireErr := acquireTurnLease(turn, preferredConnID, forcePreferredConn, turnRetry > 0)
@@ -1826,6 +1872,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				continue
 			}
 			if retryIngressTurn(relayErr, turn, connID) {
+				borrowTurn.finish(pool, nil, relayErr)
+				borrowTurn = nil
 				continue
 			}
 			finalErr := relayErr
@@ -1857,6 +1905,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		turnPrevRecoveryTried = false
 		lastTurnFinishedAt = time.Now()
 		lastTurnClean = true
+		borrowTurn.finish(pool, result, nil)
+		lastBorrowTurn = borrowTurn
+		borrowTurn = nil
 		if hooks != nil && hooks.AfterTurn != nil {
 			hooks.AfterTurn(turn, result, nil)
 		}

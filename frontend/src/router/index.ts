@@ -544,6 +544,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex runtime settings', titleKey: 'nav.codexRuntime' }
   },
   {
+    path: '/admin/codex-gateway-borrow',
+    name: 'AdminCodexGatewayBorrow',
+    component: () => import('@/views/admin/CodexGatewayBorrowView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Gateway Borrow', titleKey: 'nav.codexGatewayBorrow' }
+  },
+  {
     path: '/admin/reasoning-recovery',
     name: 'AdminReasoningRecovery',
     component: () => import('@/views/admin/ReasoningRecoveryView.vue'),

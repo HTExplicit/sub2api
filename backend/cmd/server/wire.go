@@ -130,6 +130,9 @@ func provideCleanup(
 	antigravityOAuth *service.AntigravityOAuthService,
 	grokOAuth *service.GrokOAuthService,
 	openAIGateway *service.OpenAIGatewayService,
+	codexGatewayBorrow *service.CodexGatewayBorrowService,
+	codexGatewayBorrowTests *service.CodexGatewayBorrowTestRunner,
+	codexGatewayBorrowPreview *service.CodexGatewayBorrowPreviewService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	upstreamModelCatalogRefresh *service.UpstreamModelCatalogRefreshService,
 	backupSvc *service.BackupService,
@@ -157,6 +160,18 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"CodexGatewayBorrow", func() error {
+				if codexGatewayBorrow != nil {
+					codexGatewayBorrow.Stop()
+				}
+				if codexGatewayBorrowTests != nil {
+					codexGatewayBorrowTests.Stop()
+				}
+				if codexGatewayBorrowPreview != nil {
+					codexGatewayBorrowPreview.Stop()
+				}
+				return nil
+			}},
 			{"PluginManager", func() error {
 				if pluginManager != nil {
 					pluginManager.Stop()

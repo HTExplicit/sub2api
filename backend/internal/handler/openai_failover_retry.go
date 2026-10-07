@@ -120,6 +120,11 @@ func openAISameAccountRetryLimit(account *service.Account, failoverErr *service.
 	if account == nil || failoverErr == nil || !failoverErr.ShouldRetryNextAccount() {
 		return 0
 	}
+	if failoverErr.Reason == service.CodexGatewayBorrowPreparationFailureReason {
+		// A local preparation failure uses normal switch-account handling, but
+		// replaying it on the same account is not a network/inference retry.
+		return 0
+	}
 	if account.Type == service.AccountTypeAPIKey {
 		if !account.IsPoolMode() || failoverErr.StatusCode <= 0 ||
 			!account.IsPoolModeRetryableStatus(failoverErr.StatusCode) ||

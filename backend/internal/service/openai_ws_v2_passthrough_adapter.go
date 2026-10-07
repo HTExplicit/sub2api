@@ -907,6 +907,33 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	borrowRequest, borrowRequestErr := codexGatewayBorrowWSRequest(ctx, wsURL, headers)
+	if borrowRequestErr != nil {
+		return borrowRequestErr
+	}
+	knownBorrowAnchor := false
+	if requestPreviousResponseID != "" && s.gatewayBorrow != nil {
+		if key, keyErr := codexGatewayBorrowWSKey(c, account, headers, originalFirstClientMessage, initialUpstreamModel, proxyURL); keyErr == nil {
+			exact, knownResponse := s.gatewayBorrow.wsAnchors.knowsContinuation(key, requestPreviousResponseID)
+			knownBorrowAnchor = exact || knownResponse
+		}
+	}
+	if requestPreviousResponseID != "" && (knownBorrowAnchor || s.codexGatewayBorrowWSSelected(account, initialUpstreamModel, borrowRequest)) {
+		// A direct passthrough socket closes with its client. A reconnect must
+		// not acquire a new cookie and replay a continuation on a new socket.
+		return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	}
+	borrowTurn, borrowPrepareErr := s.prepareCodexGatewayBorrowWSTurn(ctx, c, account, wsURL, headers,
+		originalFirstClientMessage, initialUpstreamModel, requestPreviousResponseID, proxyURL)
+	if borrowPrepareErr != nil {
+		return codexGatewayBorrowWSPreparationError(c, account, borrowPrepareErr)
+	}
+	var borrowSession *codexGatewayBorrowWSDirectSession
+	if borrowTurn != nil {
+		headers = cloneHeader(borrowTurn.headers)
+		borrowSession = &codexGatewayBorrowWSDirectSession{turn: borrowTurn}
+		defer borrowSession.close(s.getOpenAIWSConnPool())
+	}
 
 	dialer := s.getOpenAIWSPassthroughDialer()
 	if dialer == nil {
@@ -1040,6 +1067,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				return payload, nil, nil
 			}
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
+			rawBorrowClientFrame := payload
 			isResponseCreate := eventType == "response.create"
 			// Request integrity snapshot of the client frame before any rewrite in
 			// this filter (response.create only; other frames carry no compared field).
@@ -1207,6 +1235,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			//     覆盖（Store(nil)），因为 OpenAI 上游对该帧实际不传
 			//     service_tier 时按 default 处理，billing 应如实反映。
 			if policyErr == nil && blocked == nil && isResponseCreate {
+				if borrowErr := borrowSession.check(c, account, headers, rawBorrowClientFrame, model, proxyURL); borrowErr != nil {
+					return payload, nil, borrowErr
+				}
 				usageMeta.updateFromResponseCreate(out, model, requestModelForThisFrame)
 				responseCreateAtCopy := responseCreateAt
 				acceptedTurnStartedAt.Store(&responseCreateAtCopy)
@@ -1343,6 +1374,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					Duration:                      turn.Duration,
 					FirstTokenMs:                  turn.FirstTokenMs,
 				}
+				borrowSession.completed(turnResult)
 				logOpenAIWSV2Passthrough(
 					"relay_turn_completed account_id=%d turn=%d request_id=%s terminal_event=%s turn_requested_model=%s turn_upstream_model=%s duration_ms=%d first_token_ms=%d input_tokens=%d output_tokens=%d cache_read_tokens=%d",
 					account.ID,

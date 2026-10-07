@@ -859,6 +859,9 @@ func (r *openAIReasoningRecoveryState) StopError(err error) error {
 	if err == nil || r == nil {
 		return err
 	}
+	if IsCodexGatewayBorrowRequestFailure(err) {
+		return err
+	}
 	if r.diagnosticIncoming == nil {
 		// Protocol-conversion callers have their own error contract. This repair
 		// opts in only at native Responses/passthrough send boundaries.

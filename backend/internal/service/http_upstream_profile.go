@@ -11,6 +11,10 @@ const (
 	HTTPUpstreamProfileOpenAI     HTTPUpstreamProfile = "openai"
 	HTTPUpstreamProfileGrok       HTTPUpstreamProfile = "grok"
 	HTTPUpstreamProfileLongStream HTTPUpstreamProfile = "long_stream"
+	// Borrow purposes route through the dedicated probe upstream, whose clients
+	// and fallback state are separate from normal gateway traffic.
+	HTTPUpstreamProfileCodexBorrowSource HTTPUpstreamProfile = "codex_borrow_source"
+	HTTPUpstreamProfileCodexBorrowTarget HTTPUpstreamProfile = "codex_borrow_target"
 )
 
 type httpUpstreamProfileContextKey struct{}
@@ -38,7 +42,8 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 		return HTTPUpstreamProfileDefault
 	}
 	switch profile {
-	case HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileGrok, HTTPUpstreamProfileLongStream:
+	case HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileGrok, HTTPUpstreamProfileLongStream,
+		HTTPUpstreamProfileCodexBorrowSource, HTTPUpstreamProfileCodexBorrowTarget:
 		return profile
 	default:
 		return HTTPUpstreamProfileDefault

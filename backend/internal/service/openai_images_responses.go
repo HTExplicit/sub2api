@@ -1902,7 +1902,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	upstreamStart := time.Now()
 	// 非 direct 分支是发往 /backend-api/codex/responses 的 OAuth POST，与其他 Responses
 	// 端点同一发送入口（含 zstd 压缩边界）；direct-images URL 不满足门控，保持明文。
-	resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
+	resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIImagesUpstreamTransportError(upstreamCtx, c, account, err, upstreamReq.URL.String())

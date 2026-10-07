@@ -17,6 +17,47 @@ other key or a non-boolean value (including `null`), returns HTTP 400 and stores
 nothing. While no Codex runtime row is stored,
 `gateway.openai_codex_request_zstd` decides the compression switch.
 
+## Codex gateway borrowing
+
+`GET/PUT /admin/codex-gateway-borrow/config` owns one JSON setting,
+`codex_gateway_borrow_config`: `enabled`, `source_account_ids`,
+`target_account_ids` and `models`. A missing row is off with empty account
+lists and the two models `gpt-6-astra` and `gpt-6.1-sol`. Only existing OpenAI
+OAuth-like accounts can be selected; the source and target lists are disjoint.
+The extension never rewrites account model mappings, proxies, WS switches,
+groups, quota or scheduling state. Normal credential refresh remains available.
+
+Source acquisition shares one process-local `__oailb` candidate. Its maximum
+lease is 230 seconds, capped by an earlier upstream expiry; receiving the same
+value during a live lease does not extend it. Source preparation is sequential
+and has a 90-second budget. Each target/model is validated with two completed
+HTTP 200 streams, at most 45 seconds each: the first must return STATE, and
+the second may omit STATE or return the same value. Qualification includes
+the target identity, actual model, exit, client headers, STATE and TLS profile.
+Source and target probes use separate HTTP/TLS pools. Business WS connections
+stay in the ordinary account pool, with fixed one-hour continuation anchors.
+
+Status/config/history reads do not call models. Saving an enabled config starts
+one finite preparation; business cache misses prepare synchronously. There is
+no renewal timer. `/prepare` and `/verify` explicitly prepare or revalidate.
+All probes only record observations, including failures before business dispatch.
+
+`POST /admin/codex-gateway-borrow/tests` accepts a timestamped UUIDv7 and explicit
+account/model pairs. It sends the fixed pelican prompt once per pair, only with
+matching unexpired qualification, using at most three shared generation slots
+and serializing each account. It does not prepare missing routes. An expired
+or future UUID is rejected; replaying a saved UUID cannot dispatch again.
+Migration 275 adds only this feature's task/result tables. Records expire 24
+hours after task creation, disappear from reads immediately, and are removed
+by scoped minute cleanup. Output/errors retain their original bytes.
+
+Result previews use short random capability URLs under
+`/codex-gateway-borrow/preview/`, an opaque script-enabled sandbox and their own
+response CSP. Inline animation and external scripts/styles/fonts/images are
+allowed. Preview documents receive no administrator token or UI bridge.
+Adaptation sources and retained notices are in
+[gateway borrowing notices](gateway-borrow-notices.md).
+
 ## Startup and stored data
 
 Migrations run first. Migration 264 stops startup, changing nothing, on a

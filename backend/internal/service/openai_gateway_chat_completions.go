@@ -433,7 +433,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 				upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
 			}
 		}
-		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
+		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
 		if err != nil {
 			cancelUpstream()
 			if recovery.RecoveryAttempt() {

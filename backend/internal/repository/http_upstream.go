@@ -167,6 +167,9 @@ type httpUpstreamService struct {
 	clients map[string]*upstreamClientEntry // 客户端缓存池，key 由隔离策略决定
 	// OpenAI 走 HTTP/HTTPS 代理时的 H2->H1 回退状态（key=标准化 proxyKey）
 	openAIHTTP2Fallbacks sync.Map
+	// Set only on the dedicated borrow probe managers; ordinary gateway pools
+	// keep their existing keys, TLS policy and eviction budget.
+	codexBorrowPurpose service.HTTPUpstreamProfile
 }
 
 // NewHTTPUpstream 创建通用 HTTP 上游服务
@@ -562,9 +565,19 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	protocolMode := upstreamProtocolModeDefault
+	if s.codexBorrowPurpose == service.HTTPUpstreamProfileCodexBorrowTarget {
+		protocolMode = upstreamProtocolModeCodexBorrowTargetH1
+	}
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls"
+	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+	poolKey := buildPoolKey(settings, protocolMode) + ":tls"
+	if s.codexBorrowPurpose != service.HTTPUpstreamProfileDefault {
+		profile = cloneCodexBorrowTLSProfile(profile)
+		profileKey := "|profile:" + codexBorrowTLSProfileKey(profile)
+		cacheKey = s.codexBorrowClientCacheKey(cacheKey + profileKey)
+		poolKey += profileKey
+	}
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -615,7 +628,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 
 	// 创建带 TLS 指纹的 Transport
 	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
+	transport, err := s.buildCodexBorrowTLSFingerprintTransport(settings, parsedProxy, profile)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
@@ -630,6 +643,9 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 		client:   client,
 		proxyKey: proxyKey,
 		poolKey:  poolKey,
+	}
+	if s.codexBorrowPurpose != service.HTTPUpstreamProfileDefault {
+		entry.protocolMode = protocolMode
 	}
 	atomic.StoreInt64(&entry.lastUsed, nowUnix)
 	if markInFlight {
@@ -726,7 +742,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
 	// 构建缓存键（根据隔离策略不同）
-	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+	cacheKey := s.codexBorrowClientCacheKey(buildCacheKey(isolation, proxyKey, accountID, protocolMode))
 	// 构建连接池配置键（用于检测配置变更）
 	poolKey := buildPoolKey(settings, protocolMode)
 
@@ -970,6 +986,8 @@ func (s *httpUpstreamService) resolvePoolSettings(isolation string, accountConcu
 
 func (s *httpUpstreamService) applyProfilePoolSettings(settings poolSettings, profile service.HTTPUpstreamProfile) poolSettings {
 	switch profile {
+	case service.HTTPUpstreamProfileCodexBorrowTarget:
+		settings.responseHeaderTimeout = codexBorrowProbeHeaderTimeout
 	case service.HTTPUpstreamProfileOpenAI:
 		settings.responseHeaderTimeout = 0
 		if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIResponseHeaderTimeout > 0 {
@@ -1061,6 +1079,9 @@ func (s *httpUpstreamService) resolveOpenAIHTTP2Settings() openAIHTTP2Settings {
 }
 
 func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamProfile, proxyKey string, parsedProxy *url.URL) string {
+	if profile == service.HTTPUpstreamProfileCodexBorrowTarget {
+		return upstreamProtocolModeCodexBorrowTargetH1
+	}
 	if profile == service.HTTPUpstreamProfileLongStream {
 		return upstreamProtocolModeLongStreamH2
 	}
@@ -1395,6 +1416,8 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		transport.DisableCompression = true
 	}
 	switch protocolMode {
+	case upstreamProtocolModeCodexBorrowTargetH1:
+		configureCodexBorrowTargetTransport(transport)
 	case upstreamProtocolModeLongStreamH2, upstreamProtocolModeOpenAIH2:
 		transport.ForceAttemptHTTP2 = true
 		// 显式配置 http2 并启用 PING 健康探测，剔除代理/NAT 静默掐断的死连接，

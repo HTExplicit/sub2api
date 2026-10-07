@@ -409,7 +409,7 @@ retryUpstream:
 
 		upstreamStart := time.Now()
 		reasoningRecovery.MarkAttemptDispatched()
-		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
+		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, actualModel)
 		reasoningRecovery.ObserveResponse(resp)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {

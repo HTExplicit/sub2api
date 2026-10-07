@@ -113,6 +113,9 @@ func openAIWSPostOutputCyberClose(err error) (*service.OpenAIWSClientCloseError,
 }
 
 func shouldReportOpenAIWSProxyAccountFailure(err error) bool {
+	if service.IsCodexGatewayBorrowRequestFailure(err) {
+		return false
+	}
 	if _, postOutputCyber := openAIWSPostOutputCyberClose(err); postOutputCyber {
 		return false
 	}
