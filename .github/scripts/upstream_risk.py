@@ -15,7 +15,7 @@ CRITICAL_PATHS = (
     re.compile(r"^(?:Dockerfile|docker-compose[^/]*\.ya?ml|deploy/|\.dockerignore$)"),
     re.compile(r"^(?:backend/go\.(?:mod|sum)|frontend/(?:package\.json|pnpm-lock\.yaml))$"),
     re.compile(r"^backend/(?:migrations|ent)/"),
-    re.compile(r"^(?:plugins/|backend/pkg/(?:pluginapi|extensionapi)/)"),
+    re.compile(r"^backend/pkg/pluginapi/"),
     re.compile(
         r"^backend/internal/(?:auth|securityaudit|repository|server/middleware|service/"
         r"(?:billing|pricing|ratelimit|account_scheduler|gateway|openai_|plugin_|api_key_auth))"

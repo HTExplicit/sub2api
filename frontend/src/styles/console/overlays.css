@@ -39,12 +39,13 @@
 
 /* ================================================================== 0 · local tokens */
 html.flat-theme {
-  /* menus and lists (FilterMenu, measured): 4px panel inset, 6/12 rows, 12.5/18.75 text, 14px glyphs, 8px gap */
+  /* menus and lists (FilterMenu, measured): 4px panel inset, 6/12 rows, 14/20 text (official .dropdown-item
+     text-sm), 14px glyphs, 8px gap */
   --ui-menu-inset: 4px;
   --ui-menu-row-y: 6px;
   --ui-menu-row-x: 12px;
-  --ui-menu-text: 12.5px;
-  --ui-menu-leading: 18.75px;
+  --ui-menu-text: 14px;
+  --ui-menu-leading: 20px;
   --ui-menu-glyph: 14px;
   /* dialogs (Modal, measured): 18px sides, 14px header, 16px body; the footer's 12px is derived */
   --ui-dialog-x: 18px;
@@ -103,9 +104,10 @@ html.flat-theme :is(.select-dropdown-enter-from, .select-dropdown-leave-to, .dat
   transform: translateY(-4px);
 }
 
-/* 1.2 Rows. FilterMenu option: 6/12, 12.5/18.75, ink-soft, 8px gap, hover = subtle fill (text unchanged), 150ms. The
-   same row serves command menus (row "more", user menu), lists (Select, proxy picker) and upstream's utility menus
-   (their full-width buttons). The named rows share one :is() group (0,3,1), so every state below is written on it. */
+/* 1.2 Rows. FilterMenu option: 6/12, 14/20 (official .dropdown-item), ink-soft, 8px gap, hover = subtle fill (text
+   unchanged), 150ms. The same row serves command menus (row "more", user menu), lists (Select, proxy picker) and
+   upstream's utility menus (their full-width buttons). The named rows share one :is() group (0,3,1), so every state
+   below is written on it. */
 html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item),
 html.flat-theme :is(div, nav, ul).bg-white:is(.absolute, .fixed):is(.shadow-lg, .shadow-xl) :is(button, a).w-full:is(.flex, .text-left):not(.btn) {
   gap: 8px;
@@ -212,14 +214,14 @@ html.flat-theme :is(div, nav, ul).bg-white:is(.absolute, .fixed):is(.shadow-lg, 
   color: var(--ui-link);
 }
 
-/* 1.4 Group labels: the mono label (Geist Mono 10, 0.12em, uppercase, --ui-label; 11px in Chinese) at 8/12/4, as the
-   ModelPicker's group rows; separators are the structural line with 4px around. */
+/* 1.4 Group labels: the console label (12/16/500, the label grey, sentence case) at 8/12/4, as the ModelPicker's
+   group rows; separators are the structural line with 4px around. */
 html.flat-theme [data-ui="menu-label"],
 html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-option-group:not(.dropdown-item),
 html.flat-theme :is(div, nav, ul).bg-white:is(.absolute, .fixed):is(.shadow-lg, .shadow-xl) :is(div, span, p).uppercase:is(.text-xs, .text-\[10px\], .text-\[11px\]):not(button *) {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -270,7 +272,7 @@ html.flat-theme [data-ui="menu-check"][data-checked="true"] {
 }
 
 /* 1.6 Select's list (the ModelPicker frame: a search row, then the list): a 36px search row on the structural line,
-   13px input, 14px faint glyph; a 4px list inset; a 12px muted empty state. */
+   14px input, 14px faint glyph; a 4px list inset; a 12/16 muted empty state. */
 html.flat-theme .select-dropdown-portal .select-search,
 html.flat-theme .select-dropdown .select-header,
 html.flat-theme.dark .select-dropdown-portal .select-search,
@@ -290,7 +292,7 @@ html.flat-theme :is(.select-dropdown-portal .select-search, .select-dropdown .se
 html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-search-input,
 html.flat-theme.dark :is(.select-dropdown-portal, .select-dropdown) .select-search-input {
   min-height: 36px;
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--ui-ink));
 }
 
@@ -308,7 +310,7 @@ html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-empty,
 html.flat-theme.dark :is(.select-dropdown-portal, .select-dropdown) .select-empty {
   padding: 16px 10px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -359,23 +361,24 @@ html.flat-theme div[data-ui~="account-tools-panel"][data-ui] > div > div.px-2.py
   padding: 8px var(--ui-menu-row-x) 4px;
 }
 
-/* 1.8 The user menu's identity block, the mobile balance and the contact row */
+/* 1.8 The user menu's identity block, the mobile balance and the contact row (official's text: the name 14/20/500,
+   the e-mail and the contact row 12/16) */
 html.flat-theme .dropdown > div.border-b:first-child {
   padding: 10px var(--ui-menu-row-x);
 }
 
 html.flat-theme .dropdown > div.border-b:first-child > :first-child,
 html.flat-theme.dark .dropdown > div.border-b:first-child > :first-child {
-  font-size: 13px;
-  line-height: 19.5px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme .dropdown > div.border-b:first-child > :nth-child(2),
 html.flat-theme.dark .dropdown > div.border-b:first-child > :nth-child(2) {
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -398,7 +401,7 @@ html.flat-theme .dropdown > div.border-t.px-4 > div,
 html.flat-theme.dark .dropdown > div.border-t.px-4 > div {
   gap: 8px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -409,8 +412,6 @@ html.flat-theme .dropdown > div.border-t.px-4 > div > svg {
 
 html.flat-theme .dropdown > div.border-t.px-4 > div > span:last-child,
 html.flat-theme.dark .dropdown > div.border-t.px-4 > div > span:last-child {
-  font-family: var(--ui-font-mono);
-  font-weight: 400;
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -429,7 +430,7 @@ html.flat-theme :is(div, span).text-white:is(.bg-gray-900, .bg-gray-800):is(.abs
   box-shadow: var(--ui-shadow-popover);
   color: rgb(var(--ui-ink-soft));
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   /* the text shades upstream chose for a dark ground, resolved for the light surface; white text is ink */
   --theme-on-fill: var(--ui-ink);
   --theme-text-gray-100: var(--ui-ink);
@@ -525,13 +526,13 @@ html.flat-theme :is([role="tooltip"].theme-dark-surface, .theme-dark-surface[id^
 }
 
 /* 2.3 Breakdown cards (the usage table's cost and token details): the reference's MetricFigure rows, label left,
-   figure right in Geist Mono tabular ink; the card's section title is its 11px uppercase divider label. */
+   figure right in tabular ink; the card's section title is its 12/16 divider label (official text-xs, sentence
+   case). */
 html.flat-theme div.fixed.pointer-events-none > .theme-dark-surface {
   padding: 8px 12px;
 }
 
 html.flat-theme div.fixed.pointer-events-none > .theme-dark-surface .justify-between > span:last-child {
-  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 400;
 }
@@ -542,11 +543,9 @@ html.flat-theme div.fixed.pointer-events-none > .theme-dark-surface .justify-bet
 
 html.flat-theme div.fixed.pointer-events-none > .theme-dark-surface div.font-semibold.mb-1 {
   margin-bottom: 4px;
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
   color: rgb(var(--ui-muted));
 }
 
@@ -626,7 +625,8 @@ html.flat-theme [role="tooltip"].theme-dark-surface > button.absolute:hover {
   color: rgb(var(--ui-ink));
 }
 
-/* 2.6 Icon-only row actions (behaviour B2.1 places the label left of the button): the bubble's look, 12/16 500 ink. */
+/* 2.6 Icon-only row actions (behaviour B2.1 places the label left of the button): the bubble's frame; the label keeps
+   its template's text-xs and behaviour.css' ink. */
 @media (hover: hover) and (pointer: fine) {
   html.flat-theme:is(.flat-theme) :is(.table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="accounts"], [data-table="users"]), :is([data-ui~="subscriptions-page"], [data-ui~="redeem-page"]) .table-wrapper) td[data-column="actions"] button.flex-col:is(:hover, :focus-visible) > span.text-xs {
     padding: 6px 10px;
@@ -634,22 +634,18 @@ html.flat-theme [role="tooltip"].theme-dark-surface > button.absolute:hover {
     border-radius: var(--ui-radius-md);
     background-color: rgb(var(--ui-surface));
     box-shadow: var(--ui-shadow-popover);
-    color: rgb(var(--ui-ink));
-    font-size: 12px;
-    line-height: 16px;
-    font-weight: 500;
   }
 }
 
 /* 2.7 White hover cards (the usage KPI explanations, the supported-model card; the header balance card is the shell's):
-   the breakdown frame, radius 6, control outline, 12/8 inset, 12px. */
+   the breakdown frame, radius 6, control outline, 12/8 inset, 12/16 text. */
 html.flat-theme :is(div, span).pointer-events-none.bg-white:is(.absolute, .fixed):is(.shadow-lg, .shadow-xl):not([data-ui="header-balance"] > *) {
   border: 1px solid rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   box-shadow: var(--ui-shadow-popover);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 html.flat-theme :is(div, span).pointer-events-none.bg-white:is(.absolute, .fixed):is(.shadow-lg, .shadow-xl).p-3:not([data-ui="header-balance"] > *) {
@@ -697,8 +693,8 @@ html.flat-theme div.fixed.inset-0 > div.min-h-full > div.bg-white:is(.shadow-xl,
   box-shadow: var(--ui-shadow-overlay);
 }
 
-/* 3.3 Header: 14/18 inset on the structural line, 8px gap; title 14/20 600 ink (Modal h2). Titles wrap instead of
-   being cut (nothing hidden). */
+/* 3.3 Header: 14/18 inset on the structural line, 8px gap; title 18/28 600 ink (official .modal-title text-lg
+   font-semibold). Titles wrap instead of being cut (nothing hidden). */
 html.flat-theme .modal-header {
   gap: 8px;
   padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
@@ -708,10 +704,10 @@ html.flat-theme .modal-header {
 html.flat-theme .modal-title {
   min-width: 0;
   margin: 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 18px;
+  line-height: 28px;
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: normal;
   color: rgb(var(--ui-ink));
 }
 
@@ -768,13 +764,14 @@ html.flat-theme .modal-footer > div.flex:only-child:is(.pt-2, .pt-3, .pt-4) {
   padding-top: 0;
 }
 
-/* 3.6 The confirm dialog: message 13/21 ink-soft; its two utility buttons restated as the .btn recipes (controls'
-   values: 30px, 0 12px, 13/19.5 600, radius 6, 1px edge; cancel = default, confirm = the solid primary, a danger
-   confirm = destructive). Perf pass: the message box is hooked ([data-ui="confirm-body"], ConfirmDialog.vue), so no
-   has-test on .modal-content asks whether the dialog holds the confirm button; the `div` keeps the original 0,5,3. */
+/* 3.6 The confirm dialog: message 14/20 ink-soft (official text-sm); its two utility buttons restated as the .btn
+   recipes (30px, 0 12px, official 14/20 500, radius 6, 1px edge; cancel = default, confirm = the solid primary, a
+   danger confirm = destructive). Perf pass: the message box is hooked ([data-ui="confirm-body"], ConfirmDialog.vue),
+   so no has-test on .modal-content asks whether the dialog holds the confirm button; the `div` keeps the original
+   0,5,3. */
 html.flat-theme .modal-content .modal-body > div[data-ui~="confirm-body"] > p:first-child {
-  font-size: 13px;
-  line-height: 21px;
+  font-size: 14px;
+  line-height: 20px;
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -789,9 +786,9 @@ html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]) {
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  line-height: 19.5px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   box-shadow: none;
   --tw-ring-shadow: 0 0 #0000;
   --tw-ring-offset-shadow: 0 0 #0000;
@@ -845,14 +842,13 @@ html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]):disabled
 }
 
 /* 3.7 Utility-built dialogs without a header strip (TOTP, passkey, payment renewal; the ones led by an h2 take the
-   Modal's parts, 3.7b): the reference's padded panel (ReadScope, login modal): title 17/600 tight ink, close 28px
-   ghost glyph button (muted -> ink on the subtle fill). */
+   Modal's parts, 3.7b): the reference's padded panel (ReadScope, login modal): title 18/28 600 ink (official
+   .modal-title), close 28px ghost glyph button (muted -> ink on the subtle fill). */
 html.flat-theme div.fixed.inset-0 :is(div, section).bg-white:is(.shadow-xl, .shadow-2xl):not([data-ui]) > :is(h2, h3):is(.text-lg, .text-xl),
 html.flat-theme div.fixed.inset-0 :is(div, section).bg-white:is(.shadow-xl, .shadow-2xl):not([data-ui]) > div:first-child > :is(h2, h3):is(.text-lg, .text-xl) {
-  font-size: 17px;
-  line-height: 25.5px;
+  font-size: 18px;
+  line-height: 28px;
   font-weight: 600;
-  letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
@@ -880,10 +876,10 @@ html.flat-theme div.fixed.inset-0 :is(div, section).bg-white:is(.shadow-xl, .sha
 
 /* 3.7b Utility-built dialogs led by an h2 (兑换码 生成 / 批量修改, 订阅 使用指南, 备份 R2 教程 / 分卷下载) are drawn as the
    Modal, in the numbers of the settings page's inline dialogs (settings-ops-public.css 10b): body 16 x 18; the title
-   as the header strip, 14 / 20 600 ink at 14 x 18 on the structural line, on the Modal's 28px row (57px); a close
-   button the Modal's 28px framed close in that strip; the closing button row as the footer strip, 12 x 18 on the
-   structural line, its small close button at the control height (55px, the Modal's footer). The h3- and icon-led ones
-   (TOTP, passkey, payment renewal, the settings page's) keep 3.7 / 10b. (final review V1-01)
+   as the header strip, 18 / 28 600 ink (the Modal title) at 14 x 18 on the structural line, on the Modal's 28px row
+   (57px); a close button the Modal's 28px framed close in that strip; the closing button row as the footer strip,
+   12 x 18 on the structural line, its small close button at the control height (55px, the Modal's footer). The h3-
+   and icon-led ones (TOTP, passkey, payment renewal, the settings page's) keep 3.7 / 10b. (final review V1-01)
    Perf pass: the five scrims are hooked in their templates (data-ui="h2-dlg", plus "h2-dlg-close" on the three whose
    panel has the top-right close button; the h2 and the close button are unconditional there), so the panel and its
    parts are plain child selectors; :where() / the repeated [data-ui] / :not(uipad) keep each rule's original
@@ -899,10 +895,10 @@ html.flat-theme div:where([data-ui~="h2-dlg"]).fixed.inset-0 > :is(div, section)
   margin: calc(-1 * var(--ui-dialog-body-y)) calc(-1 * var(--ui-dialog-x)) var(--ui-dialog-body-y);
   border-bottom: 1px solid rgb(var(--ui-line));
   padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 1.125rem;
+  line-height: 1.75rem;
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: normal;
   color: rgb(var(--ui-ink));
 }
 
@@ -936,9 +932,9 @@ html.flat-theme div:where([data-ui~="h2-dlg"]).fixed.inset-0 > :is(div, section)
 
 html.flat-theme div:where([data-ui~="h2-dlg"]).fixed.inset-0 > :is(div, section).bg-white.p-6:is(.shadow-xl, .shadow-2xl):not([data-ui]) > div.text-right:last-child > .btn-sm:not(uipad) {
   min-height: var(--ui-control-h);
-  padding: 0.265625rem 0.75rem;
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 /* 3.8 Motion: the scrim fades in 200ms; the panel settles on the reference's 450ms panel curve from 98% with a 160ms
@@ -971,8 +967,8 @@ html.flat-theme .modal-leave-to .modal-content {
 /* ================================================================== 4 · drawers (derived: the reference has none) */
 
 /* 4.1 The account details drawer's shell (its content is the accounts page's): the dark theme's surface, a 1px
-   structural edge, the overlay shadow; the header is the dialog's (14/18, 14/20 600 title, mono id, 28px bordered
-   buttons). */
+   structural edge, the overlay shadow; the header is the dialog's strip (14/18 inset, 28px bordered buttons) with a
+   14/20 600 title, the #id in the template's mono at 12/16 and the e-mail at 12/16. */
 html.flat-theme [data-test="account-details-drawer"] {
   border-left: 1px solid rgb(var(--ui-line));
   background-color: rgb(var(--ui-surface));
@@ -994,16 +990,15 @@ html.flat-theme [data-test="account-details-drawer"] > header h2 {
 }
 
 html.flat-theme [data-test="account-details-drawer"] > header h2 + span {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   color: rgb(var(--ui-faint));
 }
 
 html.flat-theme [data-test="account-details-drawer"] > header p {
   margin-top: 2px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -1043,10 +1038,10 @@ html.flat-theme [data-test="operation-dock"] {
 /* ================================================================== 5 · toasts (derived: the reference has none) */
 
 /* 5.1 A toast is the compare tray's floating surface: 1px structural line all round (no coloured edge), radius 8,
-   popover shadow; 12/14 inset; a 15px status glyph in the status text colour (the only colour); message 13/19.5
-   ink-soft (ink when it stands alone), title 13/600 ink; a 24px ghost close; the auto-dismiss timer stays, as a 2px
-   hairline in the control-outline grey. It arrives with the reference's reveal (200ms, 4px), not a slide from the
-   edge. */
+   popover shadow; 12/14 inset; a 15px status glyph in the status text colour (the only colour); message 14/20
+   ink-soft (ink when it stands alone), title 14/600 ink (official text-sm); a 24px ghost close; the auto-dismiss
+   timer stays, as a 2px hairline in the control-outline grey. It arrives with the reference's reveal (200ms, 4px),
+   not a slide from the edge. */
 html.flat-theme [data-ui="toast"] {
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -1072,8 +1067,8 @@ html.flat-theme [data-ui="toast"] > div:first-child > div > div:first-child > sv
 }
 
 html.flat-theme [data-ui="toast"] p {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui="toast"] p.font-semibold {
@@ -1179,7 +1174,7 @@ html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail
   height: 15px;
 }
 
-/* titles: the list header 14/600 (Modal), the announcement itself 17/600 tight (panel title) */
+/* titles: the list header 14/600, the announcement itself 18/28 600 (the Modal title) */
 html.flat-theme [data-ui="announcement-list"] > div:first-child h2 {
   font-size: 14px;
   line-height: 20px;
@@ -1189,16 +1184,15 @@ html.flat-theme [data-ui="announcement-list"] > div:first-child h2 {
 
 html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child h2 {
   margin-bottom: 6px;
-  font-size: 17px;
-  line-height: 25.5px;
+  font-size: 18px;
+  line-height: 28px;
   font-weight: 600;
-  letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child :is(p, time, div.text-sm) {
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -1213,19 +1207,17 @@ html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popu
   height: 13px;
 }
 
-/* chips: "unread" and the category label become the reference's small mono pills; pulsing rings stop (the text says
-   it) */
+/* chips: "unread" and the category label become the reference's small pills (official text-xs font-medium);
+   pulsing rings stop (the text says it) */
 html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) span:is(.bg-gradient-to-r, .bg-blue-100) {
   gap: 5px;
   padding: 1px 6px;
   border-radius: 9999px;
   background: rgb(var(--ui-primary-soft));
   color: var(--ui-link);
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
-  line-height: 15.75px;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
-  letter-spacing: 0.025em;
   box-shadow: none;
 }
 
@@ -1289,9 +1281,9 @@ html.flat-theme [data-ui="announcement-list"] > div:first-child button:not(:last
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  line-height: 19.5px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   box-shadow: none;
 }
 
@@ -1342,16 +1334,15 @@ html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div.gro
 }
 
 html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div.group h3 {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div.group time {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   color: rgb(var(--ui-faint));
 }
 
@@ -1361,7 +1352,8 @@ html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div.gro
   color: rgb(var(--ui-faint));
 }
 
-/* the empty and loading states: the reference's empty state (14/500 ink-soft, 13 muted), neutral glyph */
+/* the empty and loading states: the reference's empty state (14/500 ink-soft, the description at the template's
+   12px, muted), neutral glyph */
 html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div.flex-col > div.relative > div:first-child {
   width: 40px;
   height: 40px;
@@ -1386,7 +1378,6 @@ html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div.flex-col 
 }
 
 html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div.flex-col > p + p {
-  font-size: 13px;
   color: rgb(var(--ui-muted));
 }
 
@@ -1445,9 +1436,9 @@ html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popu
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  line-height: 19.5px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   box-shadow: none;
   transform: none;
 }
@@ -1470,58 +1461,25 @@ html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popu
   height: 14px;
 }
 
-/* 6.2 Markdown inside announcements: the reference's docs article (REF §8.16): 13.5/1.625 muted text, 17/600 H2 on 40 /
-   12, links ink underlined (offset 2), strong 500 ink, disc lists at 20px with muted markers, mono 12.5 code without a
-   fill, code blocks and tables on the card frame (radius 8, 1px line), a neutral call-out for quotes, no shadows. */
-html.flat-theme .markdown-body {
-  font-size: 13.5px;
-  line-height: 1.625;
-  color: rgb(var(--ui-muted));
-}
-
+/* 6.2 Markdown inside announcements: official's typography (styles/announcement-markdown.css: 15px / 1.75 text,
+   h1-h4 30 / 24 / 20 / 18, its link, marker, code and heading colours) in the reference's docs frame (REF §8.16):
+   headings on 28 / 10 without rules, underlined links (offset 2), disc lists at 20px, mono code without a fill, code
+   blocks and tables on the card frame (radius 8, 1px line), a neutral call-out for quotes, no shadows. */
 html.flat-theme .markdown-body :is(h1, h2, h3, h4) {
   margin: 28px 0 10px;
   padding: 0;
   border: 0;
-  color: rgb(var(--ui-ink));
-  font-weight: 600;
-  letter-spacing: -0.025em;
 }
 
 html.flat-theme .markdown-body > :is(h1, h2, h3, h4):first-child {
   margin-top: 0;
 }
 
-html.flat-theme .markdown-body h1 {
-  font-size: 20px;
-  line-height: 28px;
-}
-
-html.flat-theme .markdown-body h2 {
-  font-size: 17px;
-  line-height: 25.5px;
-}
-
-html.flat-theme .markdown-body h3 {
-  font-size: 15px;
-  line-height: 22.5px;
-  letter-spacing: 0;
-}
-
-html.flat-theme .markdown-body h4 {
-  font-size: 13.5px;
-  line-height: 21px;
-  letter-spacing: 0;
-}
-
 html.flat-theme .markdown-body p {
   margin: 0 0 16px;
-  line-height: 1.625;
 }
 
 html.flat-theme .markdown-body a {
-  font-weight: 400;
-  color: rgb(var(--ui-ink));
   text-decoration: underline;
   text-decoration-color: rgb(var(--ui-line-focus));
   text-decoration-thickness: 1px;
@@ -1543,20 +1501,6 @@ html.flat-theme .markdown-body :is(ul, ol) > li + li {
 
 html.flat-theme .markdown-body li {
   padding-left: 2px;
-  line-height: 1.625;
-}
-
-html.flat-theme .markdown-body li::marker {
-  color: rgb(var(--ui-faint));
-}
-
-html.flat-theme .markdown-body strong {
-  font-weight: 500;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme .markdown-body em {
-  color: inherit;
 }
 
 html.flat-theme .markdown-body code {
@@ -1564,8 +1508,6 @@ html.flat-theme .markdown-body code {
   border-radius: 0;
   background: none;
   font-family: var(--ui-font-mono);
-  font-size: 12.5px;
-  color: rgb(var(--ui-ink));
 }
 
 html.flat-theme .markdown-body pre {
@@ -1576,21 +1518,13 @@ html.flat-theme .markdown-body pre {
   background: rgb(var(--ui-surface));
 }
 
-html.flat-theme .markdown-body pre code {
-  font-size: 12.5px;
-  line-height: 1.625;
-  color: rgb(var(--ui-ink));
-}
-
 html.flat-theme .markdown-body blockquote {
   margin: 16px 0;
   padding: 12px 14px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-surface));
-  font-size: 13px;
   font-style: normal;
-  color: rgb(var(--ui-muted));
 }
 
 html.flat-theme .markdown-body blockquote::before {
@@ -1613,7 +1547,6 @@ html.flat-theme .markdown-body table {
   border-radius: var(--ui-radius-lg);
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 12.5px;
 }
 
 html.flat-theme .markdown-body :is(th, td) {
@@ -1621,7 +1554,6 @@ html.flat-theme .markdown-body :is(th, td) {
   border: 0;
   border-bottom: 1px solid rgb(var(--ui-line));
   vertical-align: top;
-  line-height: 1.625;
 }
 
 html.flat-theme .markdown-body tr:last-child td {
@@ -1630,8 +1562,6 @@ html.flat-theme .markdown-body tr:last-child td {
 
 html.flat-theme .markdown-body th {
   background: rgb(var(--ui-subtle));
-  font-weight: 500;
-  color: rgb(var(--ui-faint));
 }
 
 html.flat-theme .markdown-body thead th:first-child {
@@ -1657,9 +1587,10 @@ html.flat-theme .markdown-body img {
 /* ================================================================== 7 · the onboarding tour (driver.js) */
 
 /* 7.1 The popover is a panel: surface, 1px line, radius 8, overlay shadow (the sign-in panel's frame, derived); title
-   17/600 tight ink; text the docs paragraph (13.5/1.625 muted); footer the dialog footer (12/18, structural line, no
-   tint); progress and key hints in Geist Mono; next = the solid primary, back = default, skip = ghost; close = 28px
-   ghost. The page dims with the dialog scrim; the highlighted element carries the reference's accent ring (34%). */
+   18/28 600 ink (the Modal title); text 14px / 1.625 muted; footer the dialog footer (12/18, structural line, no
+   tint); the progress count in the console font, key hints in the mono stack at official's 11px; next = the solid
+   primary, back = default, skip = ghost, all at the .btn's 14/20 500; close = 28px ghost. The page dims with the
+   dialog scrim; the highlighted element carries the reference's accent ring (34%). */
 html.flat-theme .driver-popover.theme-tour-popover {
   border: 1px solid rgb(var(--ui-line)) !important;
   border-radius: var(--ui-radius-lg) !important;
@@ -1682,17 +1613,16 @@ html.flat-theme .theme-tour-popover .driver-popover-title {
 html.flat-theme .theme-tour-popover :is(.driver-popover-title, .driver-popover-title-text),
 html.flat-theme.dark .theme-tour-popover :is(.driver-popover-title, .driver-popover-title-text) {
   font-family: var(--ui-font) !important;
-  font-size: 17px !important;
-  line-height: 25.5px !important;
+  font-size: 18px !important;
+  line-height: 28px !important;
   font-weight: 600 !important;
-  letter-spacing: -0.025em !important;
   color: rgb(var(--ui-ink)) !important;
 }
 
 html.flat-theme .theme-tour-popover .driver-popover-description,
 html.flat-theme.dark .theme-tour-popover .driver-popover-description {
   padding: 0 var(--ui-dialog-x) 18px !important;
-  font-size: 13.5px !important;
+  font-size: 14px !important;
   line-height: 1.625 !important;
   color: rgb(var(--ui-muted)) !important;
 }
@@ -1711,8 +1641,8 @@ html.flat-theme.dark .theme-tour-popover .driver-popover-footer {
 
 html.flat-theme .theme-tour-popover .driver-popover-progress-text,
 html.flat-theme.dark .theme-tour-popover .driver-popover-progress-text {
-  font-family: var(--ui-font-mono) !important;
-  font-size: 11px !important;
+  font-family: var(--ui-font) !important;
+  font-size: 12px !important;
   font-weight: 400 !important;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-label)) !important;
@@ -1738,7 +1668,6 @@ html.flat-theme.dark .theme-tour-popover .shortcut-item kbd {
   background-color: rgb(var(--ui-subtle)) !important;
   box-shadow: none !important;
   font-family: var(--ui-font-mono) !important;
-  font-size: 10px !important;
   font-weight: 400 !important;
   line-height: 16px !important;
   color: rgb(var(--ui-faint)) !important;
@@ -1754,9 +1683,9 @@ html.flat-theme.dark .theme-tour-popover .driver-popover-footer button {
   color: rgb(var(--ui-ink)) !important;
   box-shadow: none !important;
   font-family: var(--ui-font) !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  line-height: 19.5px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 20px !important;
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease) !important;
 }
 

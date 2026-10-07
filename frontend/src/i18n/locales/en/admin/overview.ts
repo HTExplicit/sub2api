@@ -629,8 +629,6 @@ export default {
       apiKeys: 'API Keys',
       userApiKeys: 'User API Keys',
       noApiKeys: 'This user has no API keys',
-      apiKeyPurposeReadOnly: 'Internal purpose: {purpose} (read-only)',
-      apiKeyLease: 'Lease: {lease}',
       group: 'Group',
       none: 'None',
       groupChangedSuccess: 'Group updated successfully',

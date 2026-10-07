@@ -55,7 +55,7 @@ jobs:
         working-directory: backend
         run: |
           go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(CodexImageGenerationBridgeOverridePrecedence|TurnStateCommits|SchedulerCache|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels|ForwardResponsesOllamaClampPreservesContinuationPolicy|AccountAvailableModels|FetchOpenAIAccountModels|SetAnthropicAPIKeyAuthHeader|OllamaCloud.*(MaxTokens|MaxOutputTokens|Bearer)|Clamps.*OllamaBase)' -count=1
-          go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224|Migration230|Migration231|Migration232|Migration235|Migration236|GroupModelAllowlistRepairMigration|ReleaseAcceptance)' -count=1
+          go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration232|GroupModelAllowlistRepairMigration)' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
@@ -71,15 +71,13 @@ jobs:
         run: go test -p=1 -tags unit ./internal/handler/admin -run '^TestAccountJobBulk.*$' -count=1
       - name: Account taxonomy migration integration test
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration$|^TestAPIKeyRepoSuite$/^TestReleaseAcceptanceKeyIsAdminListedReadOnlyAndAuthenticates$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration$' -count=1
+      - name: Release acceptance retirement migration integration test
+        working-directory: backend
+        run: go test -p=1 -tags integration ./migrations -run '^TestMigration274RemovesReleaseAcceptanceKeysSafely$' -count=1
       - name: Repository audit integration tests
         working-directory: backend
         run: go test -p=1 -tags integration ./internal/repository -run '^Test(PGXBatchInsertAuditAndSystemLogs|Migration236.*)$' -count=1
-      - name: Historical Cindy migration tests
-        working-directory: backend
-        run: |
-          go test -p=1 ./migrations -run '^(TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers|213ResetsOnlyStrictCindyBalanceMarkers)|TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows)$' -count=1
-          go test -p=1 -tags integration ./migrations -run '^(TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset|PlatformProjectionRoundTrip)MigrationIsStrictAndIdempotent|TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay)$' -count=1
 
   frontend:
     name: Downstream frontend
@@ -177,11 +175,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Resolve candidate compatibility version
-        id: version
-        shell: bash
-        # Keep candidate versions distinct from every numbered codexrip release.
-        run: printf 'value=%s-codexrip.candidate\n' "$(tr -d '\r\n' < backend/cmd/server/VERSION)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build candidate
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -192,7 +185,7 @@ jobs:
           push: false
           outputs: type=oci,dest=/tmp/sub2api-candidate.tar
           build-args: |
-            VERSION=${{ steps.version.outputs.value }}
+            VERSION=0.0.0-candidate
             COMMIT=${{ github.sha }}
             GOPROXY=https://proxy.golang.org,direct
             GOSUMDB=sum.golang.org

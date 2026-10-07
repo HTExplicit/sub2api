@@ -2219,11 +2219,11 @@ const nameParts = (value: unknown): string[] =>
   flatThemeActive.value ? nameWrapParts(value) : [value == null ? '' : String(value)]
 
 // Console theme: the name column follows the page's names (styles/console/tables.css, 名称; softWrap.ts
-// nameColumnWidth). The page's account names (13px / 500), e-mails (12px / 400, accounts.css) and #ids (Geist Mono 12)
-// are measured in the cells' fonts on a canvas, piece by piece, and the column takes the width at which they leave the
-// least blank, an extra line counting as 40px of it: one long name or e-mail takes a third line at its word joins
-// instead of widening the column for the whole page. Measured from the page's rows, not the rendered ones, so a
-// virtualised list keeps one width while it scrolls; the web fonts arriving re-measure.
+// nameColumnWidth). The page's account names (14px / 500), e-mails (12px / 400, accounts.css) and #ids (the mono
+// stack, 12px) are measured in the cells' fonts on a canvas, piece by piece, and the column takes the width at which
+// they leave the least blank, an extra line counting as 40px of it: one long name or e-mail takes a third line at its
+// word joins instead of widening the column for the whole page. Measured from the page's rows, not the rendered ones,
+// so a virtualised list keeps one width while it scrolls; re-measured when fonts load.
 const nameFontEpoch = ref(0)
 const nameRunsCache = new Map<string, NameRuns>()
 let nameCanvas: CanvasRenderingContext2D | null | undefined
@@ -2256,7 +2256,7 @@ const accountNameColumnStyle = computed<Record<string, string> | undefined>(() =
   const showId = !hiddenColumns.has('id') && !!mono
   const cells: NameCell[] = accounts.value.map((row) => {
     const texts: NameRuns[] = []
-    if (row.name) texts.push(measureAccountName(ctx, `500 13px ${family}`, String(row.name)))
+    if (row.name) texts.push(measureAccountName(ctx, `500 14px ${family}`, String(row.name)))
     const email = accountDisplayEmail(row)
     if (email) texts.push(measureAccountName(ctx, `400 12px ${family}`, email))
     let fixed = 0

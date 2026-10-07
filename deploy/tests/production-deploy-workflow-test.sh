@@ -11,23 +11,29 @@ fail() {
   exit 1
 }
 
-grep -Fq 'packages: read' "$WORKFLOW" ||
-  fail 'production resolve must request GHCR package read permission'
+# Authentication, immutable source binding, and the protected deploy job remain.
+grep -Fq 'packages: read' "$WORKFLOW" || fail 'resolve must request GHCR read permission'
 grep -Fq 'docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9' "$WORKFLOW" ||
-  fail 'production resolve must authenticate to GHCR before imagetools inspect'
-grep -Fq 'digest="${release_image_ref#${image}@}"' "$WORKFLOW" ||
-  fail 'production resolution must take the immutable digest from the Release body'
-grep -Fq 'release_body=$(gh release view "$tag" --json body --jq .body)' "$WORKFLOW" ||
-  fail 'production resolution must read the immutable image reference recorded in the Release body'
-grep -Fq '[[ "$release_image_ref" == "${image}@${digest}" ]]' "$WORKFLOW" ||
-  fail 'production resolution must bind the Release digest to the image tag'
-grep -Fq 'image_revision=$(docker buildx imagetools inspect "${image}@${digest}" --format' "$WORKFLOW" ||
-  fail 'production resolution must inspect source metadata from the immutable image digest'
-grep -Fq '[[ "$image_revision" == "$tag_commit" ]]' "$WORKFLOW" ||
-  fail 'production resolution must bind the immutable image revision to the release tag commit'
-if grep -Fq '{print $2; exit}' "$WORKFLOW"; then
-  fail 'production digest resolution closes the buildx pipe before EOF'
+  fail 'resolve must authenticate to GHCR'
+grep -Fq 'run-name: Deploy ${{ inputs.release_tag }}' "$WORKFLOW" ||
+  fail 'run title must expose the release tag for the status UI'
+grep -Fq '      name: production' "$WORKFLOW" || fail 'deployment must use the production environment'
+[[ "$(grep -c '^      [a-z_]*:$' "$WORKFLOW")" -eq 2 ]] || fail 'workflow must have only two inputs'
+for input in release_tag confirmation; do
+  grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing input: $input"
+done
+if grep -Eq 'expected_current|runtime=|resource=|CINDY_|IMAGE_STUDIO|INTERRUPT_BUSINESS|rollback|reconcile-runtime|io.github.htexplicit' "$WORKFLOW"; then
+  fail 'workflow still contains a retired deployment interface or image label gate'
 fi
+if grep -Fq 'io.github.htexplicit.' "$DOWNSTREAM_RELEASE_WORKFLOW"; then
+  fail 'release still emits retired fork image labels'
+fi
+for label in source version revision created licenses; do
+  grep -Fq "org.opencontainers.image.${label}=" "$DOWNSTREAM_RELEASE_WORKFLOW" ||
+    fail "standard OCI label missing: $label"
+done
+grep -Fq "!contains(github.ref_name, '-codexrip.')" "$GENERIC_RELEASE_WORKFLOW" ||
+  fail 'generic Release must skip downstream codexrip tags'
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
@@ -38,76 +44,19 @@ awk '
   capture && /^  deploy:$/ { exit }
   capture { sub(/^          /, ""); print }
 ' "$WORKFLOW" >"$resolve_script"
-[[ -s "$resolve_script" ]] || fail 'could not extract the resolve shell step'
+[[ -s "$resolve_script" ]] || fail 'could not extract resolve step'
 apply_script="$tmpdir/apply.sh"
 awk '
-  /^      - name: Apply immutable release operation$/ { found_apply = 1; next }
+  /^      - name: Apply immutable release image$/ { found_apply = 1; next }
   found_apply && /^        run: \|$/ { capture = 1; next }
   capture && /^      - name:/ { exit }
   capture { sub(/^          /, ""); print }
 ' "$WORKFLOW" >"$apply_script"
-[[ -s "$apply_script" ]] || fail 'could not extract the immutable release operation shell step'
+[[ -s "$apply_script" ]] || fail 'could not extract deploy step'
+bash -n "$resolve_script"
+bash -n "$apply_script"
 
 mkdir -p "$tmpdir/bin"
-cat >"$tmpdir/bin/gh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ " $* " == *' --json assets '* ]]; then
-  printf '%s\n' 'seed-descriptor.json'
-  for ((i = 0; i < 10000; i++)); do
-    printf 'ordinary-release-asset-%05d-%064d.bin\n' "$i" "$i"
-  done
-elif [[ " $* " == *' --json tagName,isDraft,isPrerelease '* ]]; then
-  printf '%s\tfalse\tfalse\n' "$3"
-else
-  exit 2
-fi
-EOF
-cat >"$tmpdir/bin/git" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-case "$1" in
-  fetch|merge-base) exit 0 ;;
-  rev-list)
-    tag=${!#}
-    case "$tag" in
-      v0.1.177-codexrip.6) printf '%s\n' 1111111111111111111111111111111111111111 ;;
-      v0.1.177-codexrip.7) printf '%s\n' 2222222222222222222222222222222222222222 ;;
-      v0.1.177-codexrip.8) printf '%s\n' 3333333333333333333333333333333333333333 ;;
-      *) exit 3 ;;
-    esac
-    ;;
-  *) exit 2 ;;
-esac
-EOF
-cat >"$tmpdir/bin/docker" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'Name: image\nDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
-EOF
-chmod +x "$tmpdir/bin/gh" "$tmpdir/bin/git" "$tmpdir/bin/docker"
-
-set +e
-PATH="$tmpdir/bin:$PATH" \
-OPERATION=deploy \
-RELEASE_TAG=v0.1.177-codexrip.7 \
-EXPECTED_CURRENT_RELEASE_TAG= \
-CONFIRMATION=DEPLOY \
-CINDY_HEALTH=true \
-CINDY_CAPABILITY_CATALOG=false \
-  CINDY_SEARCH=false \
-  IMAGE_STUDIO=false \
-  CINDY_RESPONSES_IMAGE_BRIDGE=false \
-  INTERRUPT_BUSINESS=false \
-  GITHUB_OUTPUT="$tmpdir/github-output" \
-bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
-resolve_status=$?
-set -e
-[[ "$resolve_status" -ne 0 ]] ||
-  fail 'removed release asset was accepted when the producer received SIGPIPE'
-grep -Fq 'contains a removed Skill-specific asset' "$tmpdir/resolve-output" ||
-  fail 'removed release asset did not fail through the intended release gate'
-
 cat >"$tmpdir/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -121,32 +70,38 @@ case "$tag" in
     digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     source=2222222222222222222222222222222222222222
     ;;
-  v0.1.177-codexrip.8)
-    digest=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-    source=3333333333333333333333333333333333333333
-    ;;
   *) exit 3 ;;
 esac
-if [[ "${MOCK_OVERRIDE_TAG:-}" == "$tag" ]]; then
-  digest=${MOCK_BODY_DIGEST_OVERRIDE:-$digest}
-  source=${MOCK_BODY_SOURCE_OVERRIDE:-$source}
-fi
-if [[ " $* " == *' --json assets '* ]]; then
-  printf '%s\n' 'sub2api-release-checksums.txt'
-elif [[ " $* " == *' --json tagName,isDraft,isPrerelease '* ]]; then
-  draft=false
-  prerelease=false
-  if [[ "${MOCK_OVERRIDE_TAG:-}" == "$tag" ]]; then
-    draft=${MOCK_RELEASE_DRAFT_OVERRIDE:-false}
-    prerelease=${MOCK_RELEASE_PRERELEASE_OVERRIDE:-false}
-  fi
-  printf '%s\t%s\t%s\n' "$tag" "$draft" "$prerelease"
+if [[ " $* " == *' --json tagName,isDraft,isPrerelease '* ]]; then
+  printf '%s\t%s\t%s\n' "$tag" "${MOCK_RELEASE_DRAFT:-false}" "${MOCK_RELEASE_PRERELEASE:-false}"
 elif [[ " $* " == *' --json body '* ]]; then
-  version=${tag#v}
-  printf 'Image: `ghcr.io/htexplicit/sub2api:%s@%s`\nSource: `%s`\n' "$version" "$digest" "$source"
+  printf 'Image: `%s`\nSource: `%s`\n' \
+    "${MOCK_BODY_IMAGE:-ghcr.io/htexplicit/sub2api:${tag#v}@${MOCK_BODY_DIGEST:-$digest}}" \
+    "${MOCK_BODY_SOURCE:-$source}"
+  if [[ "${MOCK_DUPLICATE_IMAGE:-false}" == true ]]; then
+    printf 'Image: `ghcr.io/htexplicit/sub2api:%s@%s`\n' "${tag#v}" "$digest"
+  fi
 else
+  # No asset inventory or retired Skill gate belongs to deployment resolution.
   exit 2
 fi
+EOF
+cat >"$tmpdir/bin/git" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  fetch) exit 0 ;;
+  merge-base) [[ "${MOCK_NON_ANCESTOR:-false}" == false ]] ;;
+  rev-list)
+    tag=${!#}
+    case "$tag" in
+      v0.1.177-codexrip.6) printf '%s\n' 1111111111111111111111111111111111111111 ;;
+      v0.1.177-codexrip.7) printf '%s\n' 2222222222222222222222222222222222222222 ;;
+      *) exit 3 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
 EOF
 cat >"$tmpdir/bin/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -154,418 +109,122 @@ set -euo pipefail
 image_ref=$4
 case "$image_ref" in
   *:0.1.177-codexrip.6*)
-    tag=v0.1.177-codexrip.6
     digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     revision=1111111111111111111111111111111111111111
-    platform_v1=false
     ;;
   *:0.1.177-codexrip.7*)
-    tag=v0.1.177-codexrip.7
     digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     revision=2222222222222222222222222222222222222222
-    platform_v1=true
-    ;;
-  *:0.1.177-codexrip.8*)
-    tag=v0.1.177-codexrip.8
-    digest=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-    revision=3333333333333333333333333333333333333333
-    platform_v1=true
     ;;
   *) exit 3 ;;
 esac
-if [[ "${MOCK_OVERRIDE_TAG:-}" == "$tag" ]]; then
-  digest=${MOCK_REGISTRY_DIGEST_OVERRIDE:-$digest}
-  revision=${MOCK_IMAGE_REVISION_OVERRIDE:-$revision}
-  platform_v1=${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-$platform_v1}
-fi
-if [[ "$image_ref" == *@sha256:* ]]; then
-  requested=${image_ref##*@}
-  [[ "$requested" == "$digest" ]] || exit 3
-fi
-if [[ " $* " == *'io.github.htexplicit.cindy-platform-v1'* ]]; then
-  printf '%s\n' "$platform_v1"
-elif [[ " $* " == *' --format '* ]]; then
-  printf '%s\n' "$revision"
-else
-  printf 'Name: image\nDigest: %s\n' "$digest"
-fi
+[[ "$image_ref" == *@"$digest" ]] || exit 3
+[[ "$6" == '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}' ]] || exit 2
+printf '%s\n' "${MOCK_IMAGE_REVISION:-$revision}"
 EOF
 cat >"$tmpdir/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-: "${SSH_CAPTURE:?}"
-: "${SSH_CALLS:?}"
-printf 'call\n' >>"$SSH_CALLS"
-printf '%s\n' "$@" >"$SSH_CAPTURE"
+printf 'call\n' >>"${SSH_CALLS:?}"
+printf '%s\n' "$@" >"${SSH_CAPTURE:?}"
 EOF
-chmod +x "$tmpdir/bin/gh" "$tmpdir/bin/docker" "$tmpdir/bin/ssh"
+chmod +x "$tmpdir/bin/gh" "$tmpdir/bin/git" "$tmpdir/bin/docker" "$tmpdir/bin/ssh"
 
 run_resolve() {
-  local operation=$1 tag=$2 expected_current=$3 confirmation=$4 interrupt=${5-false}
   : >"$tmpdir/github-output"
-  : >"$tmpdir/resolve-output"
   PATH="$tmpdir/bin:$PATH" \
-    MOCK_OVERRIDE_TAG="${MOCK_OVERRIDE_TAG:-}" \
-    MOCK_RELEASE_DRAFT_OVERRIDE="${MOCK_RELEASE_DRAFT_OVERRIDE:-}" \
-    MOCK_RELEASE_PRERELEASE_OVERRIDE="${MOCK_RELEASE_PRERELEASE_OVERRIDE:-}" \
-    MOCK_BODY_DIGEST_OVERRIDE="${MOCK_BODY_DIGEST_OVERRIDE:-}" \
-    MOCK_BODY_SOURCE_OVERRIDE="${MOCK_BODY_SOURCE_OVERRIDE:-}" \
-    MOCK_REGISTRY_DIGEST_OVERRIDE="${MOCK_REGISTRY_DIGEST_OVERRIDE:-}" \
-    MOCK_IMAGE_REVISION_OVERRIDE="${MOCK_IMAGE_REVISION_OVERRIDE:-}" \
-    MOCK_IMAGE_PLATFORM_V1_OVERRIDE="${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-}" \
-    OPERATION="$operation" \
-    RELEASE_TAG="$tag" \
-    EXPECTED_CURRENT_RELEASE_TAG="$expected_current" \
-    CONFIRMATION="$confirmation" \
-    CINDY_HEALTH=true \
-    CINDY_CAPABILITY_CATALOG=false \
-    CINDY_SEARCH=false \
-    IMAGE_STUDIO=false \
-    CINDY_RESPONSES_IMAGE_BRIDGE=false \
-    INTERRUPT_BUSINESS="$interrupt" \
-    GITHUB_OUTPUT="$tmpdir/github-output" \
+    MOCK_RELEASE_DRAFT="${MOCK_RELEASE_DRAFT:-false}" \
+    MOCK_RELEASE_PRERELEASE="${MOCK_RELEASE_PRERELEASE:-false}" \
+    MOCK_BODY_DIGEST="${MOCK_BODY_DIGEST:-}" \
+    MOCK_BODY_IMAGE="${MOCK_BODY_IMAGE:-}" \
+    MOCK_BODY_SOURCE="${MOCK_BODY_SOURCE:-}" \
+    MOCK_DUPLICATE_IMAGE="${MOCK_DUPLICATE_IMAGE:-false}" \
+    MOCK_IMAGE_REVISION="${MOCK_IMAGE_REVISION:-}" \
+    MOCK_NON_ANCESTOR="${MOCK_NON_ANCESTOR:-false}" \
+    RELEASE_TAG="$1" CONFIRMATION="$2" GITHUB_OUTPUT="$tmpdir/github-output" \
     bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 }
 
+assert_resolve_rejected() {
+  if run_resolve "$1" "$2"; then fail "$3"; fi
+  [[ ! -s "$tmpdir/github-output" ]] || fail 'rejected release emitted a deployable image'
+}
+
+# Both old and new immutable images use the same path, without fork labels.
+for tag in v0.1.177-codexrip.6 v0.1.177-codexrip.7; do
+  run_resolve "$tag" DEPLOY || { cat "$tmpdir/resolve-output" >&2; fail 'valid release was rejected'; }
+  [[ "$(wc -l <"$tmpdir/github-output")" -eq 1 ]] || fail 'resolve must emit only image_ref'
+  grep -Fq "image_ref=ghcr.io/htexplicit/sub2api:${tag#v}@sha256:" "$tmpdir/github-output" ||
+    fail 'resolve did not emit the immutable release image'
+done
+for confirmation in ROLLBACK RECONCILE deploy ''; do
+  assert_resolve_rejected v0.1.177-codexrip.7 "$confirmation" 'non-DEPLOY confirmation was accepted'
+done
+for tag in latest v0.1.177 v0.1.177-codexrip.0 'v0.1.177-codexrip.7;id'; do
+  assert_resolve_rejected "$tag" DEPLOY 'invalid release tag was accepted'
+done
+MOCK_RELEASE_DRAFT=true
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'draft release was accepted'
+unset MOCK_RELEASE_DRAFT
+MOCK_RELEASE_PRERELEASE=true
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'prerelease was accepted'
+unset MOCK_RELEASE_PRERELEASE
+MOCK_BODY_DIGEST=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'unavailable release digest was accepted'
+unset MOCK_BODY_DIGEST
+MOCK_BODY_IMAGE=ghcr.io/htexplicit/sub2api:latest
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'wrong image tag was accepted'
+unset MOCK_BODY_IMAGE
+MOCK_BODY_SOURCE=4444444444444444444444444444444444444444
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'release source mismatch was accepted'
+unset MOCK_BODY_SOURCE
+MOCK_IMAGE_REVISION=4444444444444444444444444444444444444444
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'OCI revision mismatch was accepted'
+unset MOCK_IMAGE_REVISION
+MOCK_DUPLICATE_IMAGE=true
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'ambiguous release body was accepted'
+unset MOCK_DUPLICATE_IMAGE
+MOCK_NON_ANCESTOR=true
+assert_resolve_rejected v0.1.177-codexrip.7 DEPLOY 'release outside main was accepted'
+unset MOCK_NON_ANCESTOR
+
 run_apply() {
-  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 runtime_spec=${5-runtime=explicit} maintenance_spec=${6-}
   : >"$tmpdir/ssh-capture"
   : >"$tmpdir/ssh-calls"
-  : >"$tmpdir/apply-output"
-  HOME="$tmpdir/home" \
-    PATH="$tmpdir/bin:$PATH" \
-    SSH_CAPTURE="$tmpdir/ssh-capture" \
-    SSH_CALLS="$tmpdir/ssh-calls" \
-    VPS_HOST=production.example.invalid \
-    VPS_PORT="${MOCK_VPS_PORT:-2222}" \
-    VPS_USER=deployer \
-    OPERATION="$operation" \
-    IMAGE_REF="$image_ref" \
-    EXPECTED_CURRENT_IMAGE_REF="$expected_current" \
-    CINDY_ROLLOUT="$rollout" \
-    MAINTENANCE_SPEC="$maintenance_spec" \
-    RUNTIME_SPEC="$runtime_spec" \
-    bash "$apply_script" >"$tmpdir/apply-output" 2>&1
+  PATH="$tmpdir/bin:$PATH" SSH_CAPTURE="$tmpdir/ssh-capture" SSH_CALLS="$tmpdir/ssh-calls" \
+    VPS_HOST=production.example.invalid VPS_PORT="${MOCK_VPS_PORT:-2222}" VPS_USER=deployer \
+    IMAGE_REF="$1" bash "$apply_script" >"$tmpdir/apply-output" 2>&1
 }
 
-assert_ssh_invocation() {
-  local expected_remote_command=$1 index line
-  local -a actual expected
-  actual=()
-  while IFS= read -r line; do
-    actual+=("$line")
-  done <"$tmpdir/ssh-capture"
-  expected=(
-    -F /dev/null
-    -i "$tmpdir/home/.ssh/sub2api_deploy"
-    -o BatchMode=yes
-    -o IdentitiesOnly=yes
-    -o ServerAliveInterval=30
-    -o ServerAliveCountMax=10
-    -o StrictHostKeyChecking=yes
-    -o "UserKnownHostsFile=$tmpdir/home/.ssh/known_hosts"
-    -p 2222
-    deployer@production.example.invalid
-    "$expected_remote_command"
-  )
-  [[ "$(wc -l <"$tmpdir/ssh-calls")" -eq 1 ]] ||
-    fail 'immutable release operation did not invoke ssh exactly once'
-  [[ "${#actual[@]}" -eq "${#expected[@]}" ]] ||
-    fail "ssh argv length mismatch: expected ${#expected[@]}, got ${#actual[@]}"
-  for ((index = 0; index < ${#expected[@]}; index++)); do
-    [[ "${actual[$index]}" == "${expected[$index]}" ]] ||
-      fail "ssh argv[$index] mismatch: expected '${expected[$index]}', got '${actual[$index]}'"
-  done
-}
-
-assert_ssh_not_invoked() {
-  [[ ! -s "$tmpdir/ssh-calls" && ! -s "$tmpdir/ssh-capture" ]] ||
-    fail 'rejected immutable release operation still invoked ssh'
-}
-
-rollback_target_ref=ghcr.io/htexplicit/sub2api:0.1.177-codexrip.6@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-rollback_current_ref=ghcr.io/htexplicit/sub2api:0.1.177-codexrip.7@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-
-if ! run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
-  cat "$tmpdir/resolve-output" >&2
-  fail 'valid deploy resolution did not execute successfully'
-fi
-grep -Fq "image_ref=$rollback_current_ref" "$tmpdir/github-output" ||
-  fail 'deploy did not emit the Release-bound immutable image'
-grep -Fxq 'expected_current_image_ref=' "$tmpdir/github-output" ||
-  fail 'deploy unexpectedly emitted an expected-current rollback image'
-
-if ! run_resolve reconcile-runtime v0.1.177-codexrip.7 '' RECONCILE; then
-  cat "$tmpdir/resolve-output" >&2
-  fail 'valid runtime reconciliation did not resolve successfully'
-fi
-grep -Fq "image_ref=$rollback_current_ref" "$tmpdir/github-output" ||
-  fail 'runtime reconciliation did not resolve its exact current Release image'
-grep -Fxq 'expected_current_image_ref=' "$tmpdir/github-output" ||
-  fail 'runtime reconciliation unexpectedly emitted a second current image'
-grep -Fxq 'operation=reconcile-runtime' "$tmpdir/github-output" ||
-  fail 'runtime reconciliation did not preserve its dedicated operation'
-grep -Fxq 'runtime_spec=runtime=explicit' "$tmpdir/github-output" ||
-  fail 'runtime reconciliation did not require an explicit target runtime tuple'
-if run_resolve reconcile-runtime v0.1.177-codexrip.7 '' DEPLOY; then
-  fail 'runtime reconciliation accepted the deploy confirmation word'
-fi
-if run_resolve reconcile-runtime v0.1.177-codexrip.7 v0.1.177-codexrip.6 RECONCILE; then
-  fail 'runtime reconciliation accepted a separate expected-current release'
-fi
-if ! run_resolve reconcile-runtime v0.1.177-codexrip.7 '' RECONCILE true; then
-  cat "$tmpdir/resolve-output" >&2
-  fail 'runtime reconciliation rejected the explicit interruption mode'
-fi
-grep -Fxq 'maintenance_spec=maintenance=interrupt' "$tmpdir/github-output" ||
-  fail 'runtime reconciliation did not emit the explicit interruption spec'
-
-run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY true ||
-  fail 'deploy resolution rejected the explicit interruption mode'
-grep -Fxq 'maintenance_spec=maintenance=interrupt' "$tmpdir/github-output" ||
-  fail 'deploy resolution did not emit the explicit interruption spec'
-
-run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK ||
-  fail 'valid rollback resolution did not execute successfully'
-grep -Fq "image_ref=$rollback_target_ref" "$tmpdir/github-output" ||
-  fail 'rollback did not emit the immutable target image'
-grep -Fq "expected_current_image_ref=$rollback_current_ref" "$tmpdir/github-output" ||
-  fail 'rollback did not emit the immutable expected-current image'
-
-MOCK_OVERRIDE_TAG=v0.1.177-codexrip.7
-MOCK_BODY_DIGEST_OVERRIDE=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
-  fail 'registry digest was accepted when it did not match the Release body'
-fi
-unset MOCK_BODY_DIGEST_OVERRIDE
-MOCK_BODY_SOURCE_OVERRIDE=4444444444444444444444444444444444444444
-if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
-  fail 'Release source was accepted when it did not match the release tag commit'
-fi
-unset MOCK_BODY_SOURCE_OVERRIDE
-MOCK_IMAGE_REVISION_OVERRIDE=4444444444444444444444444444444444444444
-if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
-  fail 'immutable image was accepted when its OCI revision did not match the release tag commit'
-fi
-unset MOCK_IMAGE_REVISION_OVERRIDE
-MOCK_IMAGE_PLATFORM_V1_OVERRIDE=false
-if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
-  fail 'immutable image without the Cindy platform-v1 capability label was accepted'
-fi
-unset MOCK_IMAGE_PLATFORM_V1_OVERRIDE
-MOCK_RELEASE_DRAFT_OVERRIDE=true
-if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
-  fail 'draft Release was accepted for production deploy'
-fi
-unset MOCK_RELEASE_DRAFT_OVERRIDE MOCK_OVERRIDE_TAG
-
-MOCK_OVERRIDE_TAG=v0.1.177-codexrip.7
-MOCK_BODY_DIGEST_OVERRIDE=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
-  fail 'rollback accepted an expected-current Release body with the wrong digest'
-fi
-unset MOCK_BODY_DIGEST_OVERRIDE
-MOCK_BODY_SOURCE_OVERRIDE=4444444444444444444444444444444444444444
-if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
-  fail 'rollback accepted an expected-current Release body with the wrong source'
-fi
-unset MOCK_BODY_SOURCE_OVERRIDE
-MOCK_IMAGE_REVISION_OVERRIDE=4444444444444444444444444444444444444444
-if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
-  fail 'rollback accepted an expected-current image with the wrong OCI revision'
-fi
-unset MOCK_IMAGE_REVISION_OVERRIDE
-MOCK_IMAGE_PLATFORM_V1_OVERRIDE=false
-if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
-  fail 'rollback accepted an expected-current image without the platform-v1 capability label'
-fi
-unset MOCK_IMAGE_PLATFORM_V1_OVERRIDE MOCK_OVERRIDE_TAG
-if run_resolve rollback v0.1.177-codexrip.8 v0.1.177-codexrip.7 ROLLBACK; then
-  fail 'rollback target newer than expected-current was accepted'
-fi
-if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK true; then
-  fail 'rollback accepted the business interruption mode'
-fi
-
-run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' ||
-  fail 'valid deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false"
-
-run_apply rollback "$rollback_target_ref" "$rollback_current_ref" 'cindy=true,false,false,false,false' ||
-  fail 'valid rollback operation did not execute successfully'
-assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref cindy=true,false,false,false,false"
-
-run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' runtime=explicit maintenance=interrupt ||
-  fail 'valid maintenance-interrupt deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false maintenance=interrupt"
-
-run_apply deploy "$rollback_current_ref" '' '' runtime=preserve ||
-  fail 'valid runtime-preserve deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref runtime=preserve"
-
-run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' ||
-  fail 'valid runtime reconciliation did not execute successfully'
-assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false"
-
-run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' runtime=explicit maintenance=interrupt ||
-  fail 'valid interrupted runtime reconciliation did not execute successfully'
-assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false maintenance=interrupt"
-
-if run_apply reconcile-runtime "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
-  fail 'runtime reconciliation accepted a second expected-current image'
-fi
-assert_ssh_not_invoked
-if run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' runtime=preserve; then
-  fail 'runtime reconciliation accepted runtime-preserve mode'
-fi
-assert_ssh_not_invoked
-if run_apply deploy "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
-  fail 'deploy accepted an unexpected expected-current image'
-fi
-assert_ssh_not_invoked
-if run_apply rollback "$rollback_target_ref" "$rollback_target_ref" 'cindy=true,false,false,false,false'; then
-  fail 'rollback accepted a target equal to expected-current'
-fi
-assert_ssh_not_invoked
+image_ref=ghcr.io/htexplicit/sub2api:0.1.177-codexrip.7@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+run_apply "$image_ref" || fail 'valid deploy did not execute'
+actual=()
+while IFS= read -r line; do actual+=("$line"); done <"$tmpdir/ssh-capture"
+expected=(
+  -F /dev/null
+  -i "$HOME/.ssh/sub2api_deploy"
+  -o BatchMode=yes
+  -o IdentitiesOnly=yes
+  -o ServerAliveInterval=30
+  -o ServerAliveCountMax=10
+  -o StrictHostKeyChecking=yes
+  -o "UserKnownHostsFile=$HOME/.ssh/known_hosts"
+  -p 2222
+  deployer@production.example.invalid
+  "deploy $image_ref"
+)
+[[ "$(wc -l <"$tmpdir/ssh-calls")" -eq 1 ]] || fail 'deploy must invoke SSH exactly once'
+[[ "${#actual[@]}" -eq "${#expected[@]}" ]] || fail 'SSH argument count mismatch'
+for ((i = 0; i < ${#expected[@]}; i++)); do
+  [[ "${actual[$i]}" == "${expected[$i]}" ]] || fail "SSH argument $i mismatch"
+done
+for invalid in 'ghcr.io/htexplicit/sub2api:latest' "$image_ref runtime=preserve" "$image_ref;id"; do
+  if run_apply "$invalid"; then fail 'invalid image reference was accepted'; fi
+  [[ ! -s "$tmpdir/ssh-calls" && ! -s "$tmpdir/ssh-capture" ]] || fail 'rejected reference invoked SSH'
+done
 MOCK_VPS_PORT=not-a-port
-if run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false'; then
-  fail 'deploy accepted a malformed SSH port'
-fi
+if run_apply "$image_ref"; then fail 'invalid SSH port was accepted'; fi
+[[ ! -s "$tmpdir/ssh-calls" && ! -s "$tmpdir/ssh-capture" ]] || fail 'rejected SSH port invoked SSH'
 unset MOCK_VPS_PORT
-assert_ssh_not_invoked
-if run_apply deploy 'ghcr.io/htexplicit/sub2api:latest' '' 'cindy=true,true,true,false,false'; then
-  fail 'deploy accepted a mutable image reference'
-fi
-assert_ssh_not_invoked
-if run_apply deploy "$rollback_current_ref" '' 'cindy=true,false,true'; then
-  fail 'deploy accepted a malformed Cindy rollout'
-fi
-assert_ssh_not_invoked
-if run_apply rollback "$rollback_target_ref" '' 'cindy=true,false,false,false,false'; then
-  fail 'rollback accepted an empty expected-current image'
-fi
-assert_ssh_not_invoked
-if run_apply invalid "$rollback_current_ref" '' 'cindy=true,true,true,false,false'; then
-  fail 'immutable release operation accepted an unknown operation'
-fi
-assert_ssh_not_invoked
 
-inspect=$'Name: image\nDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nManifest: amd64\nManifest: attestation'
-digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect")
-[[ "$digest" == 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ]] ||
-  fail 'digest parser did not preserve the first index digest'
-
-for input in operation release_tag expected_current_release_tag confirmation \
-  cindy_health cindy_capability_catalog cindy_search image_studio \
-  cindy_responses_image_bridge interrupt_business resource_profile; do
-  grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
-done
-grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
-grep -Fq '          - deploy-preserve' "$WORKFLOW" || fail 'workflow operation is missing deploy-preserve'
-grep -Fq '          - reconcile-runtime' "$WORKFLOW" || fail 'workflow operation is missing reconcile-runtime'
-grep -Fq '          - rollback' "$WORKFLOW" || fail 'workflow operation is missing rollback'
-[[ "$(grep -c '        type: boolean' "$WORKFLOW")" -ge 5 ]] ||
-  fail 'Cindy rollout inputs must be typed booleans'
-[[ "$(grep -c '        default: false' "$WORKFLOW")" -ge 5 ]] ||
-  fail 'all staged rollout phases must default off'
-if grep -Fq 'requires the Cindy capability catalog' "$WORKFLOW"; then
-  fail 'independent Search, Image Studio, or Responses-image flags still depend on the catalog'
-fi
-grep -Fq 'cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}' "$WORKFLOW" ||
-  fail 'resolve must emit a canonical Cindy rollout tuple'
-grep -Fq 'io.github.htexplicit.cindy-platform-v1' "$WORKFLOW" ||
-  fail 'resolve must require the platform capability label from the immutable image'
-grep -Fq 'expected_current_image_ref=${expected_current_image_ref}' "$WORKFLOW" ||
-  fail 'resolve must publish the immutable expected-current rollback image'
-grep -Fq '[[ "$CONFIRMATION" == DEPLOY ]]' "$WORKFLOW" ||
-  fail 'deploy must require the exact DEPLOY confirmation'
-grep -Fq '[[ "$CONFIRMATION" == ROLLBACK ]]' "$WORKFLOW" ||
-  fail 'rollback must require the exact ROLLBACK confirmation'
-grep -Fq '[[ "$CONFIRMATION" == RECONCILE ]]' "$WORKFLOW" ||
-  fail 'runtime reconciliation must require the exact RECONCILE confirmation'
-grep -Fq 'resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG"' "$WORKFLOW" ||
-  fail 'rollback must independently resolve the expected-current release image'
-grep -Fq 'resolve_release_image "$RELEASE_TAG" rollback-target' "$WORKFLOW" ||
-  fail 'rollback must resolve the target using the legacy-aware image role'
-grep -Fq 'resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG" platform' "$WORKFLOW" ||
-  fail 'rollback must require the expected-current image to be platform capable'
-grep -Fq 'isDraft,isPrerelease' "$WORKFLOW" ||
-  fail 'release state resolution must inspect draft and prerelease flags'
-grep -Fq '\tfalse\tfalse' "$WORKFLOW" ||
-  fail 'deploy and rollback releases must be published and non-prerelease'
-grep -Fq 'version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"' "$WORKFLOW" ||
-  fail 'rollback must require the target release to be older than expected-current'
-grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
-  fail 'deploy must pass the canonical rollout tuple to the forced command'
-grep -Fq 'remote_command+=" $RESOURCE_SPEC"' "$WORKFLOW" ||
-  fail 'deploy must pass an explicit Sub2API resource profile to the forced command'
-grep -Fq 'maintenance_spec=maintenance=interrupt' "$WORKFLOW" ||
-  fail 'explicit business interruption must resolve to a fixed maintenance spec'
-grep -Fq 'remote_command+=" $MAINTENANCE_SPEC"' "$WORKFLOW" ||
-  fail 'explicit business interruption must be appended only after validation'
-grep -Fq '[[ "$OPERATION" == deploy || "$OPERATION" == reconcile-runtime || -z "$MAINTENANCE_SPEC" ]]' "$WORKFLOW" ||
-  fail 'rollback must reject the maintenance interrupt spec while allowing deploy/reconcile'
-grep -Fq '[[ "$INTERRUPT_BUSINESS" == false ]]' "$WORKFLOW" ||
-  fail 'preserve/rollback paths must reject business interruption'
-grep -Fq 'remote_command="deploy ${IMAGE_REF} runtime=preserve"' "$WORKFLOW" ||
-  fail 'automatic deploy must preserve the locked runtime tuple'
-grep -Fq 'remote_command="reconcile-runtime ${IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
-  fail 'runtime reconciliation must bind the exact current image and explicit runtime tuple'
-grep -Fq 'remote_command+=" $MAINTENANCE_SPEC"' "$WORKFLOW" ||
-  fail 'runtime reconciliation must append only the validated maintenance interrupt spec'
-grep -Fq 'if [[ ("$OPERATION" == deploy || "$OPERATION" == reconcile-runtime) && "$INTERRUPT_BUSINESS" == true ]]; then' "$WORKFLOW" ||
-  fail 'runtime reconciliation interruption was not bound to the fixed maintenance spec'
-grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
-  fail 'rollback must bind the target to the exact expected-current image'
-
-validate_rollout() {
-  local value=$1
-  [[ "$value" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]]
-}
-
-validate_rollout 'cindy=false,false,false,false,false' || fail 'platform-only rollout was rejected'
-validate_rollout 'cindy=false,true,false,false,false' || fail 'catalog rollout was rejected'
-validate_rollout 'cindy=true,true,false,false,false' || fail 'health rollout was rejected'
-validate_rollout 'cindy=true,true,true,false,false' || fail 'search rollout was rejected'
-validate_rollout 'cindy=true,true,true,true,false' || fail 'Image Studio rollout was rejected'
-validate_rollout 'cindy=true,true,true,true,true' || fail 'Responses-image rollout was rejected'
-validate_rollout 'cindy=false,false,true,true,true' || fail 'independent feature rollout was rejected'
-for invalid in \
-  'cindy=1,false,false,false,false' \
-  'cindy=true,false,false,false,false extra' \
-  'cindy=true,false,false,false,false;id' \
-  'cindy=true, true,false,false,false' \
-  'cindy=true,false,false'
-do
-  if validate_rollout "$invalid"; then
-    fail "malformed rollout tuple was accepted: $invalid"
-  fi
-done
-
-grep -Fq 'io.github.htexplicit.cindy-platform-v1=true' "$DOWNSTREAM_RELEASE_WORKFLOW" ||
-  fail 'downstream image must declare the platform capability label'
-grep -Fq "!contains(github.ref_name, '-codexrip.')" "$GENERIC_RELEASE_WORKFLOW" ||
-  fail 'generic Release workflow must skip downstream codexrip tags'
-
-version_strictly_less() {
-  local target=$1 current=$2 first
-  [[ "$target" != "$current" ]] || return 1
-  first=$(printf '%s\n%s\n' "$target" "$current" | LC_ALL=C sort -V | head -n 1)
-  [[ "$first" == "$target" ]]
-}
-
-version_strictly_less 'v0.1.177-codexrip.6' 'v0.1.177-codexrip.7' ||
-  fail 'valid rollback order was rejected'
-version_strictly_less 'v0.1.176-codexrip.16' 'v0.1.177-codexrip.1' ||
-  fail 'valid cross-upstream rollback order was rejected'
-for invalid_pair in \
-  'v0.1.177-codexrip.7 v0.1.177-codexrip.7' \
-  'v0.1.177-codexrip.8 v0.1.177-codexrip.7' \
-  'v0.1.178-codexrip.1 v0.1.177-codexrip.9'; do
-  read -r target current <<<"$invalid_pair"
-  if version_strictly_less "$target" "$current"; then
-    fail "unsafe rollback order was accepted: $invalid_pair"
-  fi
-done
-
-printf 'PASS: production deploy, rollback, digest, and Cindy rollout resolution\n'
+printf 'PASS: single production deploy, immutable source binding, and pinned SSH command\n'

@@ -607,8 +607,6 @@ export default {
       apiKeys: 'API密钥',
       userApiKeys: '用户 API 密钥',
       noApiKeys: '此用户暂无 API 密钥',
-      apiKeyPurposeReadOnly: '内部用途：{purpose}（只读）',
-      apiKeyLease: '租约：{lease}',
       group: '分组',
       none: '无',
       groupChangedSuccess: '分组修改成功',

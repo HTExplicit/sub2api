@@ -6,6 +6,6 @@ cd "$repo_root/backend"
 
 # Offline policy, persistence, and wire-contract fixtures only; no model calls.
 go test -p=1 -tags unit \
-  ./internal/service ./internal/repository ./internal/handler ./internal/handler/admin ./cmd/server \
-  -run 'Test.*(ModelContext|OfficialModelCatalog|ContextCapacit|GroupModelCapacity|CodexCapacityProjection|SyncUpstreamModelCatalog.*Capacity|RunCodexContextContractVerification)' \
+  ./internal/service ./internal/repository ./internal/handler ./internal/handler/admin \
+  -run 'Test.*(ModelContext|OfficialModelCatalog|ContextCapacit|GroupModelCapacity|CodexCapacityProjection|SyncUpstreamModelCatalog.*Capacity)' \
   -count=1

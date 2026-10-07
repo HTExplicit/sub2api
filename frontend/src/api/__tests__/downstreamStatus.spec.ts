@@ -82,7 +82,7 @@ describe('downstream release status', () => {
         .mockImplementationOnce(() => response([]))
         .mockImplementationOnce(() => response({ workflow_runs: run ? [{
           id: 1,
-          display_title: 'Deploy v0.1.185-codexrip.1 (preserve)',
+          display_title: 'Deploy v0.1.185-codexrip.1',
           html_url: 'https://production',
           ...run
         }] : [] }))

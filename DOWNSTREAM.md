@@ -4,16 +4,16 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 
 ## Source baseline
 
-- Integrated official baseline: `v0.2.8`, commit `fd80b08c90b55edcad5b00171b53f08721d30da1`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.8.md).
+- Integrated official baseline: the release recorded in `.downstream/upstream-base`.
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.13.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
-## Native domains and account operations
+## Settings and account operations
 
-The five first-party domains run inside the host and use native Vue pages.
-The official third-party plugin framework remains available. Domain settings,
-the stored data the migrations removed and the rollback boundary are described
-in [native domains](.downstream/native-domains.md).
+The Codex runtime and console theme settings interfaces, the conditions on
+which migrations 264 and 272 stop startup, the stored data the migrations
+removed and the rollback boundary are described in
+[settings, stored data and rollback](.downstream/native-domains.md).
 
 Account bulk operations remain HTTP 202 jobs with progress, cancellation and
 failed-item retry. Both edit entries use the frozen selected IDs whenever there
@@ -27,7 +27,7 @@ remain supported. A bulk-update item without a saved target account fails with
 
 The Codex runtime setting is one switch, request body compression for the
 streaming `/responses` turns of OpenAI OAuth accounts; its contract is in
-[native domains](.downstream/native-domains.md).
+[settings, stored data and rollback](.downstream/native-domains.md).
 
 ## Official behavior and downstream contracts
 
@@ -45,13 +45,80 @@ only that account/model. The account option `openai_prompt_cache_key_mode`
 64 characters with its SHA-256 hex. Continuation, refusal recovery and
 destination-specific reasoning summaries remain supported. Account test model
 choices persist; API-key reveal requires the configured password. The account test
-dialog keeps list position. Public model management remains retired; catalog
-changes do not restore its routes or navigation.
+dialog keeps list position.
 
 Quota storage, aggregation, cleanup and resets follow official semantics. Missing
 quota rows represent unlimited access; rows with three NULL limits are purged by
 the official migration.
 The three `238_*` migrations retain separate filenames and checksums.
+
+## Model discovery and context capacity
+
+The account test picker reads raw upstream model IDs and applies the saved mapping
+itself. Configured request names remain testable when the upstream catalog omits
+their target; wildcard mappings select request IDs from that raw catalog. The
+ordinary account-model projection keeps official mapping and passthrough semantics.
+Capacity resolves the real account/channel targets, rather than public aliases.
+
+Every provider and account type uses
+`custom > applicable official API > source-bound upstream > registry > unknown`.
+One complete automatic evidence record wins: omitted input/output limits are not
+filled from another source. A custom window overlays that record and keeps only
+its compatible independently declared input/output limits. The effective window
+is `max_context_window`, then `context_window`, then the input limit; a smaller
+explicit maximum is still authoritative. Group capacity is the minimum of the
+resolved targets of active accounts, independent of their schedulable toggle.
+Unknown capacity stays unknown, with no invented fallback or hard expiry.
+
+`upstream_model_metadata.source_identity` binds capacity observations and registry
+enrichment to the normalized endpoint and protocol, including Responses mode and
+escaped URL paths. An unbound or old-endpoint snapshot remains visible to
+administrators but supplies no current capacity. Asynchronous writes use the
+account revision gate; one reread/retry is allowed only when the source and complete
+stored snapshot, including an empty catalog, are unchanged. Persistence retries
+never fetch the upstream catalog again or resurrect a superseded observation.
+
+Administrator rows, `/v1/models` and Codex manifests share this resolver. Locally
+generated Codex descriptors have no capacity defaults, including the GPT-5.6,
+GPT-6 and GPT-6.1 Sol families; real upstream fields remain when no effective
+evidence supersedes them. OpenCode exports limits only from resolver-tagged
+manifest rows (`custom`, `official`, `upstream`, `registry`) when the client schema's
+required values are known, without a separate hard-coded capacity table. The
+capacity self-test remains version 4 with
+`priority=custom,official,upstream,registry`.
+
+The Use Key catalog panel and fetch remain available for Codex tabs, including
+OpenAI groups, and for the OpenCode tab. Codex configuration defaults to
+`model_catalog_url = "{root}/v1/models"`; Codex appends its own `client_version` to
+reach the same manifest handler. Fetching and downloading the catalog uses
+`{root}/backend-api/codex/models` without a pinned client version. The alternative
+is the downloaded `model_catalog_json` file; a response over 1 MiB switches the
+Codex configuration to that file mode. OpenCode continues reading the manifest
+regardless of the Codex remote/file selection.
+
+## OpenAI forwarding and model identity
+
+Explicit `reasoning.effort=none` is preserved on OpenAI-wire accounts, including
+compatible hosts, subject to the selected model's validation. Downstream effort
+accounting preserves the requested canonical effort rather than substituting the
+provider-normalized value. Explicit cross-protocol normalization retains `max`,
+except that legacy GPT-5.4/5.5 models map it to `xhigh`. GPT-6 Sol's Codex catalog
+keeps the six-level workflow including `ultra`; Luna keeps five levels.
+
+Finite known model/effort aliases are normalized, while undocumented dated GPT-6
+snapshots, including GPT-6.1 Sol, pass through unchanged. Unrecognized `gpt-6-*`
+and `gpt-6.*` names do not borrow the default model's price; exact configured
+price cards are still considered first.
+
+Responses streams require an authoritative terminal event. Chat Completions
+streams require a supported `finish_reason`; `[DONE]` and transport EOF alone
+cannot turn an incomplete stream into success. Raw Chat Completions does not
+write Ops `upstream_model` before dispatch: the forwarding result keeps the
+resolved target and separately records the model declared by the response and
+any conflicting response declarations. WebSocket composite routing uses the
+resolved forward target for scheduling. A Codex WebSocket window rollover removes
+the previous response ID without inferring an anchor from the old window; owner,
+identity and verified-replay checks remain in force.
 
 ## Release and production deployment
 
@@ -60,15 +127,16 @@ The three `238_*` migrations retain separate filenames and checksums.
 - New releases use immutable `vX.Y.Z-codexrip.N` tags on `main`.
 - Images use the tag without `v`: `ghcr.io/htexplicit/sub2api:X.Y.Z-codexrip.N`.
 - Downstream Release authenticates to GHCR, verifies source/build materials and
-  publishes the native host image digest and provenance. It reuses PR validation.
+  publishes the image digest and provenance. It reuses PR validation.
 - Production Deploy resolves the fixed digest through the existing restricted SSH
-  updater. Ordinary updates use `operation=deploy-preserve`, preserving runtime
-  settings and resources, naturally draining requests, and rebuilding only Sub2API.
+  updater. Its only inputs are `release_tag` and `confirmation=DEPLOY`; the host
+  retains runtime settings and resources, naturally drains requests, and rebuilds
+  only Sub2API. An older tag uses the same form and requires compatible migrations.
 - Ordinary updates do not run business backups, canaries, long observation or
   automatic rollback. A failure preserves the runtime state for diagnosis.
 - SSH identity checks, fixed image validation, mutual exclusion and command error
   reporting remain required. Other services, networking, accounts, subscriptions
-  and manual routing stay within their existing configuration; CPA stays stopped.
+  and manual routing stay within their existing configuration.
 - Container/public health confirms availability, not actual model functionality.
 
 ## Upstream updates
@@ -76,3 +144,14 @@ The three `238_*` migrations retain separate filenames and checksums.
 Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
+
+`.downstream/upstream-risk.json` is the recorded integration snapshot, not a live
+worktree conflict report. Its current classifier inputs are upstream `v0.2.11`
+through `v0.2.13` and downstream commit
+`291d25e7f8a8c82d45072a1eee742c21ba3b8d21`. `initial_conflict_files` supplements
+the classifier output with paths reviewed during the merge, including files
+resolved automatically; it is historical review evidence rather than a list of
+remaining unmerged paths. The final `merge_conflicts: []` records the resolved
+merge. The risk gate recomputes from the tags and downstream commit in that
+snapshot, rather than the current PR head, so later-deleted paths remain in its
+classification; `review_required` still requires the `upstream-reviewed` label.

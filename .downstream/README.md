@@ -14,8 +14,8 @@ create a named issue with the conflicted paths.
 After a safe candidate merges, automation creates the immutable
 `vX.Y.Z-codexrip.1` tag once. The normal Downstream Release workflow builds and
 attests the linux/amd64 OCI image. A successful release dispatches Production
-Deploy with `runtime=preserve`; that run waits at the GitHub `production`
-Environment for the configured approval. Authorized delegated maintenance may
+Deploy with `release_tag` and `confirmation=DEPLOY`; that run waits at the GitHub
+`production` Environment for the configured approval. Authorized delegated maintenance may
 complete that approval; the release workflow does not approve itself.
 
 Sub2API does not store a GitHub token. The admin VersionBadge reads only public

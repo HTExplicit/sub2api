@@ -1,11 +1,6 @@
-# Native domains
+# Settings, stored data and rollback
 
-Five first-party domains run inside the host: Codex runtime, model policy,
-system prompts, account tools and observability. Native pages
-retain the console theme (flat_theme_enabled), account fields and persisted task interactions.
-The official third-party plugin framework and its own configuration UI remain.
-
-## Settings and operations
+## Settings
 
 All paths below are relative to `/api/v1`. Settings writes retain administrator
 authentication and the existing step-up policy.
@@ -13,7 +8,7 @@ authentication and the existing step-up policy.
 | Interface | Contract |
 | --- | --- |
 | `GET/PUT /admin/settings/codex-runtime` | Codex request body compression switch (`request_zstd`; a missing key is on). |
-| `GET/PUT /admin/settings/observability` | Native theme switch (`theme_enabled`; a missing key is on). |
+| `GET/PUT /admin/settings/observability` | Console theme switch (`theme_enabled`; a missing key is on). |
 
 Each of the two is stored as one `settings` row holding a JSON object of
 boolean switches; `GET` and `PUT` answer with the switches in the standard
@@ -21,10 +16,6 @@ response envelope. A `PUT` body that is not a JSON object, or that carries any
 other key or a non-boolean value (including `null`), returns HTTP 400 and stores
 nothing. While no Codex runtime row is stored,
 `gateway.openai_codex_request_zstd` decides the compression switch.
-
-Ordinary account bulk editing remains HTTP 202; this change does not replace
-background tasks with synchronous editing. Existing API-key reveal and
-account-field protections remain.
 
 ## Startup and stored data
 
@@ -75,12 +66,12 @@ they never silently enable features.
 ## Release and rollback boundary
 
 The host is delivered as one immutable OCI image with image provenance. Normal
-deployment uses the existing fixed-image `deploy-preserve` flow. It does not add
+deployment uses the fixed-image `deploy` flow. It does not add
 backups, canaries, model calls or automatic rollback.
 
-`rollback-preserve` still requires a verified compatible data contract. The
-deployer recognizes the old and native prompt/skill directory locations by the
-same content hashes; missing or ambiguous trees and changed schema remain errors.
+An older tag uses the same deployment form and requires database migrations
+compatible with that image. Deployment does not restore dropped schema or data;
+the migration boundaries below determine whether an earlier image can start.
 
 Migration 264 has no down path. Images at or before v0.2.11-codexrip.5 need
 `sub2api_plugin_state` and `sub2api_plugin_leases`, which it drops, for their
@@ -141,24 +132,23 @@ exits at start with `invalid setting admin_observability_config` until the key
 is removed by hand
 (`UPDATE settings SET value = (value::jsonb - 'telemetry_enabled')::text WHERE key = 'admin_observability_config'`).
 
-## Verification
-
-Normal required PR checks validate the native domain packages, account scope,
-native configuration and frontend behavior. The release reuses that
-source validation. Health endpoints establish availability only.
+Migration 274 removes the soft-deleted release-acceptance keys and their usage
+records, removes their billing deduplication records, and drops `api_keys.purpose`
+and `api_keys.lease_id`. Ordinary keys and diagnostic logs remain. The matching
+application code no longer reads those columns; an older image that reads them
+cannot be deployed after this migration. Failures require a forward fix.
 
 ## Console theme
 
 `observability.theme_enabled` (public `flat_theme_enabled`, default on) toggles
 `html.flat-theme`; switching it off restores the upstream look. The console look
-lives only in the central layer: `frontend/src/styles/flat-theme.css` (tokens, the
-Inter and Geist Mono Latin subsets; Chinese uses MiSans loaded at runtime from
-Xiaomi's font service by `utils/flatTheme.ts`, falling back to system fonts),
-`frontend/tailwind.config.js` (every palette, radius, shadow and gradient resolves
-through a CSS variable whose fallback is the upstream value; `primary` is Apple blue
-and the hue families map to Apple system colours), `frontend/src/style.css`
-(upstream recipes plus a `flat-theme` console block: colour only where upstream has
-colour, Liquid Glass only on chrome) and the shared components and layout. Page
-files keep upstream class strings; after upstream merges, re-run the ops-repo
-de-sweep (`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling
-pages.
+lives only in the central layer: `frontend/src/styles/console/*.css` (tokens and
+the console rules), `frontend/tailwind.config.js` (every palette, radius, shadow
+and gradient resolves through a CSS variable whose fallback is the upstream value;
+`primary` is the console's green accent and the hue families fold into five status
+colours), `frontend/src/style.css` (upstream recipes plus a `flat-theme` block
+that restates them for the console) and the shared components and layout. Text
+uses the OS UI font stack of `frontend/src/styles/theme.css`, as upstream does; no
+web fonts are shipped or loaded. Page files keep upstream class strings; after
+upstream merges, re-run the ops-repo de-sweep
+(`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling pages.
