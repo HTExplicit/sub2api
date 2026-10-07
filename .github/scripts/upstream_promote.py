@@ -183,16 +183,17 @@ def promote(number: int) -> None:
     else:
         api("git/refs", "-X", "POST", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={merged}")
     ensure_release(tag, merged)
-    title = f"Deploy {tag} (preserve)"
+    # Reuse deployments already dispatched before the form changed.
+    titles = {f"Deploy {tag}", f"Deploy {tag} (preserve)"}
     deployments = api("actions/workflows/production-deploy.yml/runs?per_page=100")["workflow_runs"]
-    previous = [r for r in deployments if r.get("display_title") == title]
+    previous = [r for r in deployments if r.get("display_title") in titles]
     if previous:
         if previous[0]["status"] == "completed" and previous[0]["conclusion"] != "success":
             raise RuntimeError("previous production run failed; runtime audit required before retry")
         print("Existing protected deployment: " + previous[0]["html_url"])
         return
     command("gh", "workflow", "run", "production-deploy.yml", "--repo", REPOSITORY,
-        "--ref", "main", "-f", "operation=deploy-preserve", "-f", f"release_tag={tag}", "-f", "confirmation=DEPLOY")
+        "--ref", "main", "-f", f"release_tag={tag}", "-f", "confirmation=DEPLOY")
     print(f"Protected deployment dispatched: {tag}; production approval remains required.")
 
 

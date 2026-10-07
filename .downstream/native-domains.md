@@ -75,12 +75,12 @@ they never silently enable features.
 ## Release and rollback boundary
 
 The host is delivered as one immutable OCI image with image provenance. Normal
-deployment uses the existing fixed-image `deploy-preserve` flow. It does not add
+deployment uses the fixed-image `deploy` flow. It does not add
 backups, canaries, model calls or automatic rollback.
 
-`rollback-preserve` still requires a verified compatible data contract. The
-deployer recognizes the old and native prompt/skill directory locations by the
-same content hashes; missing or ambiguous trees and changed schema remain errors.
+An older tag uses the same deployment form and requires database migrations
+compatible with that image. Deployment does not restore dropped schema or data;
+the migration boundaries below determine whether an earlier image can start.
 
 Migration 264 has no down path. Images at or before v0.2.11-codexrip.5 need
 `sub2api_plugin_state` and `sub2api_plugin_leases`, which it drops, for their
