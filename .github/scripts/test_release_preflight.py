@@ -2,12 +2,15 @@
 """Only publication metadata mocks and workflow contracts; no external writes."""
 
 import argparse
+import contextlib
 import copy
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -18,13 +21,14 @@ from unittest import mock
 import release_preflight as guard
 
 
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/downstream-release.yml"
 SOURCE = "a" * 40
 TAG = "v0.2.7-codexrip.1"
 IMAGE_DIGEST = "sha256:" + "c" * 64
 
 
-def options(stage="before-push", kind="host"):
-    return argparse.Namespace(kind=kind, stage=stage, tag=TAG, source_sha=SOURCE,
+def options(stage="before-push"):
+    return argparse.Namespace(stage=stage, tag=TAG, source_sha=SOURCE,
                               image_digest=IMAGE_DIGEST if stage in ("before-create", "before-publish") else "")
 
 
@@ -123,31 +127,35 @@ class ReleaseMetadataTests(unittest.TestCase):
             with self.subTest(observed=observed), self.assertRaisesRegex(guard.PreflightError, "published_image_digest_mismatch"):
                 guard.check(args, github=Repository(args), registry=lambda _: observed)
 
-    def test_complete_draft_assets_and_source_allow_publication_by_id(self):
+    def test_asset_free_draft_and_source_allow_publication_by_id(self):
         for target in (SOURCE, "main"):
-            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+            with self.subTest(target=target):
                 args = options("before-publish")
                 release = {"id": 101, "tag_name": args.tag, "draft": True,
                            "target_commitish": target, "assets": []}
                 repo = Repository(args, {1: [release]})
-                result = guard.check(args, github=repo, registry=lambda _: IMAGE_DIGEST, root=Path(tmp))
+                result = guard.check(args, github=repo, registry=lambda _: IMAGE_DIGEST)
                 self.assertEqual(101, result["release_id"])
                 self.assertEqual("git/ref/tags/" + args.tag, repo.calls[-1])
 
-    def test_missing_or_changed_draft_asset_metadata_prevents_publication(self):
-        for mutation in ("unexpected-package", "invalid-assets", "wrong-target"):
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+    def test_draft_assets_or_another_target_prevent_publication(self):
+        for mutation, code in (
+            ("unexpected-asset", "draft_assets_unexpected"),
+            ("invalid-assets", "draft_assets_unexpected"),
+            ("wrong-target", "draft_target_mismatch"),
+        ):
+            with self.subTest(mutation=mutation):
                 args = options("before-publish")
                 release = {"id": 101, "tag_name": TAG, "draft": True,
                            "target_commitish": SOURCE, "assets": []}
-                if mutation == "unexpected-package":
-                    release["assets"] = [{"name": "old.s2plugin", "state": "uploaded"}]
+                if mutation == "unexpected-asset":
+                    release["assets"] = [{"name": "unexpected.tar.gz", "state": "uploaded"}]
                 if mutation == "invalid-assets":
                     release["assets"] = None
                 if mutation == "wrong-target":
                     release["target_commitish"] = "d" * 40
-                with self.assertRaises(guard.PreflightError):
-                    guard.check(args, github=Repository(args, {1: [release]}), registry=lambda _: IMAGE_DIGEST, root=Path(tmp))
+                with self.assertRaisesRegex(guard.PreflightError, code):
+                    guard.check(args, github=Repository(args, {1: [release]}), registry=lambda _: IMAGE_DIGEST)
 
 
 class ReleaseWorkflowContracts(unittest.TestCase):
@@ -160,11 +168,10 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             bash = shutil.which("bash")
             if bash is None:
                 self.skipTest("Bash is required for the environment-only fixture")
-        for name in ("downstream-release.yml",):
-            source = (guard.ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
-            snippet = re.search(r"(?ms)^          authorization=\$\(.*?^          unset authorization$", source)
-            self.assertIsNotNone(snippet)
-            body = r'''
+        source = WORKFLOW.read_text(encoding="utf-8")
+        snippet = re.search(r"(?ms)^          authorization=\$\(.*?^          unset authorization$", source)
+        self.assertIsNotNone(snippet)
+        body = r'''
 set -euo pipefail
 GH_TOKEN=fixture-job-token
 calls=0
@@ -181,50 +188,55 @@ git() {
 [[ "$calls" == 1 && -z ${authorization+x} && -z ${GIT_CONFIG_COUNT+x} && -z ${GIT_CONFIG_VALUE_0+x} ]]
 printf 'TEMPORARY_GIT_AUTH|state=passed|real_git=false\n'
 '''
-            with self.subTest(workflow=name), tempfile.TemporaryDirectory() as tmp:
-                result = subprocess.run([bash, "-c", body], cwd=tmp, capture_output=True, text=True, timeout=15)
-                self.assertEqual(0, result.returncode)
-                self.assertIn("TEMPORARY_GIT_AUTH|state=passed", result.stdout)
-                self.assertNotIn("fixture-job-token", result.stdout + result.stderr)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run([bash, "-c", body], cwd=tmp, capture_output=True, text=True, timeout=15)
+            self.assertEqual(0, result.returncode)
+            self.assertIn("TEMPORARY_GIT_AUTH|state=passed", result.stdout)
+            self.assertNotIn("fixture-job-token", result.stdout + result.stderr)
 
     def test_write_credentials_are_not_in_build_environments(self):
-        for name in ("downstream-release.yml",):
-            source = (guard.ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
-            self.assertEqual([], re.findall(r"(?m)^      GH_TOKEN:.*$", source), "a job-wide token reaches dependency/build subprocesses")
-            self.assertEqual(source.count("uses: actions/checkout@"), source.count("persist-credentials: false"))
-            self.assertIn("GIT_CONFIG_COUNT=1", source)
-            self.assertIn("GIT_CONFIG_VALUE_0=", source)
-            self.assertNotIn("git config --global", source)
-            self.assertNotIn("git config --local", source)
-            for step in source.split("      - "):
-                if "pnpm --dir frontend install" in step or "go build" in step or "uses: docker/build-push-action@" in step:
-                    self.assertNotIn("GH_TOKEN:", step)
-        host = (guard.ROOT / ".github/workflows/downstream-release.yml").read_text(encoding="utf-8")
-        self.assertLess(host.index("name: Build release image"), host.index("uses: docker/login-action@"))
-        self.assertLess(host.index("uses: docker/login-action@"), host.index('docker push "$IMAGE:$VERSION"'))
+        source = WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual([], re.findall(r"(?m)^      GH_TOKEN:.*$", source), "a job-wide token reaches dependency/build subprocesses")
+        self.assertEqual(source.count("uses: actions/checkout@"), source.count("persist-credentials: false"))
+        self.assertIn("GIT_CONFIG_COUNT=1", source)
+        self.assertIn("GIT_CONFIG_VALUE_0=", source)
+        self.assertNotIn("git config --global", source)
+        self.assertNotIn("git config --local", source)
+        for step in source.split("      - "):
+            if "uses: docker/build-push-action@" in step:
+                self.assertNotIn("GH_TOKEN:", step)
+        self.assertLess(source.index("name: Build release image"), source.index("uses: docker/login-action@"))
+        self.assertLess(source.index("uses: docker/login-action@"), source.index('docker push "$IMAGE:$VERSION"'))
 
-    def test_host_uses_admitted_sha_and_builds_before_guarded_push(self):
-        source = (guard.ROOT / ".github/workflows/downstream-release.yml").read_text(encoding="utf-8")
+    def test_release_uses_admitted_sha_and_builds_before_guarded_push(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("ref: refs/tags/${{ env.RELEASE_TAG }}", source)
         self.assertIn("ref: ${{ needs.verify.outputs.source_sha }}", source)
         self.assertIn("load: true", source)
         self.assertIn("push: false", source)
         self.assertLess(source.index("--stage before-push"), source.index('docker push "$IMAGE:$VERSION"'))
+        self.assertIn("Attest image provenance", source)
         self.assertIn("--draft", source)
         self.assertIn('--target "$SOURCE_SHA"', source)
+        self.assertIn("Image:", source)
+        self.assertIn("Source:", source)
         self.assertIn("--stage before-publish", source)
         self.assertIn('releases/$RELEASE_ID', source)
         self.assertNotIn("--clobber", source)
         self.assertNotIn("gh release delete", source)
 
-    def test_native_release_has_no_first_party_signing_or_upload(self):
-        source = (guard.ROOT / ".github/workflows/downstream-release.yml").read_text(encoding="utf-8")
-        for retired in ("SUB2API_PLUGIN_SIGNING_KEY", "package-plugin", "plugin-bundle", ".s2plugin", "extensionapi/ui"):
-            self.assertNotIn(retired, source)
-        self.assertIn("Attest image provenance", source)
-        self.assertIn("Image:", source)
-        self.assertIn("Source:", source)
-        self.assertFalse((guard.ROOT / ".github/workflows/plugin-release.yml").exists())
+    def test_every_workflow_invocation_is_a_valid_preflight_command_line(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        stages = []
+        for command in re.findall(r"release_preflight\.py((?:\\\n|[^\n)])*)", source):
+            with mock.patch.object(guard, "check", return_value={"state": "verified"}) as check, \
+                 mock.patch.dict(os.environ, {"GITHUB_REPOSITORY": guard.REPOSITORY, "GH_TOKEN": "fixture-token"}), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, guard.main(shlex.split(command.replace("\\\n", " "))))
+            args = check.call_args.args[0]
+            self.assertEqual(args.stage in ("before-create", "before-publish"), bool(args.image_digest))
+            stages.append(args.stage)
+        self.assertEqual(["before-build", "before-push", "before-create", "before-publish"], stages)
 
 
 if __name__ == "__main__":

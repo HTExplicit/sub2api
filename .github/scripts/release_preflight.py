@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fixed read-only GitHub/GHCR publication checks; never signs or publishes."""
+"""Fixed read-only GitHub/GHCR publication checks; never publishes."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import base64
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
@@ -17,10 +16,9 @@ import urllib.parse
 import urllib.request
 
 
-ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY = "HTExplicit/sub2api"
 IMAGE = "ghcr.io/htexplicit/sub2api"
-HOST_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*")
+RELEASE_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*")
 SHA = re.compile(r"[a-f0-9]{40}")
 DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
 MAX_PAGES = 100
@@ -107,7 +105,7 @@ def http_get(url: str, headers: dict[str, str]):
 
 
 def registry_manifest(version: str, request=http_get, token=None, actor=None):
-    require(HOST_TAG.fullmatch("v" + version) is not None, "image_version_invalid")
+    require(RELEASE_TAG.fullmatch("v" + version) is not None, "image_version_invalid")
     token = token if token is not None else os.environ.get("GH_TOKEN", "")
     actor = actor if actor is not None else os.environ.get("GITHUB_ACTOR", "")
     require(bool(token) and bool(actor), "registry_auth_unavailable")
@@ -140,16 +138,9 @@ def registry_manifest(version: str, request=http_get, token=None, actor=None):
     return digest
 
 
-def local_assets(args, root: Path) -> dict[str, tuple[int, str]]:
-    # Native domains ship in the immutable OCI image; there are no separate
-    # first-party package assets attached to a host release.
-    return {}
-
-
-def check(args, github=github_json, registry=registry_manifest, root=ROOT):
+def check(args, github=github_json, registry=registry_manifest):
     require(SHA.fullmatch(args.source_sha) is not None, "source_sha_invalid")
-    require(args.kind == "host", "release_kind_invalid")
-    require(HOST_TAG.fullmatch(args.tag) is not None, "release_tag_invalid")
+    require(RELEASE_TAG.fullmatch(args.tag) is not None, "release_tag_invalid")
     releases = list_releases(github)
     matches = [release for release in releases if release["tag_name"] == args.tag]
     if args.stage == "before-publish":
@@ -160,25 +151,16 @@ def check(args, github=github_json, registry=registry_manifest, root=ROOT):
         # GitHub may retain a branch name for an existing tag; only the tag's
         # dereferenced commit below is authoritative. A supplied SHA must agree.
         require(SHA.fullmatch(target) is None or target == args.source_sha, "draft_target_mismatch")
-        expected = local_assets(args, root)
+        # The image is the whole release; its draft carries no assets.
         assets = release.get("assets")
-        require(isinstance(assets, list) and len(assets) == len(expected), "draft_assets_incomplete")
-        seen = set()
-        for asset in assets:
-            require(isinstance(asset, dict) and asset.get("name") in expected
-                    and asset["name"] not in seen and asset.get("state") == "uploaded", "draft_assets_incomplete")
-            seen.add(asset["name"])
-            size, digest = expected[asset["name"]]
-            require(type(asset.get("size")) is int and asset["size"] == size
-                    and asset.get("digest") == digest, "draft_asset_digest_mismatch")
+        require(isinstance(assets, list) and not assets, "draft_assets_unexpected")
     else:
         require(not matches, "release_already_exists")
-    if args.kind == "host":
-        digest = registry(args.tag[1:])
-        if args.stage in ("before-build", "before-push"):
-            require(digest is None, "version_image_already_exists")
-        else:
-            require(DIGEST.fullmatch(args.image_digest) is not None and digest == args.image_digest, "published_image_digest_mismatch")
+    digest = registry(args.tag[1:])
+    if args.stage in ("before-build", "before-push"):
+        require(digest is None, "version_image_already_exists")
+    else:
+        require(DIGEST.fullmatch(args.image_digest) is not None and digest == args.image_digest, "published_image_digest_mismatch")
     # These are deliberately the final remote reads before the workflow's next
     # write. They reduce the gap, but cannot replace server-side immutable tags.
     require(tag_commit(github, args.tag) == args.source_sha, "release_tag_changed")
@@ -190,7 +172,6 @@ def check(args, github=github_json, registry=registry_manifest, root=ROOT):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kind", choices=("host",), required=True)
     parser.add_argument("--stage", choices=("before-build", "before-push", "before-create", "before-publish"), required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source-sha", required=True)
