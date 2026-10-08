@@ -1785,7 +1785,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			// handshake cannot inherit this socket's old identity or anchor.
 			resetSessionLease(false)
 			return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, openAIWSNonInitialTurnRetryCloseReason,
-				errors.New("Codex fingerprint settings changed; a new handshake is required"))
+				errors.New("codex fingerprint settings changed; a new handshake is required"))
 		}
 		baseAcquireReq.FingerprintPolicy = codexFingerprintPolicyForContext(c, account)
 		baseAcquireReq.Headers = finalHeaders

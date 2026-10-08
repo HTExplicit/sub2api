@@ -560,7 +560,10 @@ func alignCodexSandboxMetadata(metadata map[string]any, target string) bool {
 	}
 	switch sandbox {
 	case "seatbelt", "seccomp", "windows_sandbox", "windows_elevated", "windows_mxc":
-		if target != "" && target != sandbox && !(strings.HasPrefix(sandbox, "windows_") && strings.HasPrefix(target, "windows_")) {
+		if strings.HasPrefix(sandbox, "windows_") && strings.HasPrefix(target, "windows_") {
+			return false
+		}
+		if target != "" && target != sandbox {
 			metadata["sandbox"] = target
 			return true
 		}

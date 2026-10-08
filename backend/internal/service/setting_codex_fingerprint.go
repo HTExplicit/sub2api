@@ -58,8 +58,12 @@ func currentCodexFingerprintPolicyForAccount(account *Account) *codexFingerprint
 		return policy
 	}
 	if value, ok := codexFingerprintAccountEpochs.Load(account.ID); ok {
+		epoch, valid := value.(uint64)
+		if !valid {
+			return policy
+		}
 		copy := *policy
-		copy.revision ^= value.(uint64) * 0x9e3779b97f4a7c15
+		copy.revision ^= epoch * 0x9e3779b97f4a7c15
 		return &copy
 	}
 	return policy

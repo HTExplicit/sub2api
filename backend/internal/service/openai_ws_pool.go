@@ -2403,10 +2403,7 @@ func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Head
 	if !policy.enabled || account == nil {
 		return key
 	}
-	mode := account.GetCodexFingerprintMode()
-	if _, ok := codexFingerprintSeed(account.Extra); !ok {
-		mode = codexFingerprintOff
-	}
+	mode := activeCodexFingerprintMode(account, policy)
 	if mode == codexFingerprintOff {
 		return key
 	}
@@ -2422,8 +2419,9 @@ func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Head
 	return key
 }
 
-func activeCodexFingerprintMode(account *Account) codexFingerprintMode {
-	if account == nil || !currentCodexFingerprintPolicy().enabled || account.GetCodexFingerprintMode() == codexFingerprintOff {
+func activeCodexFingerprintMode(account *Account, policies ...*codexFingerprintPolicy) codexFingerprintMode {
+	policy := selectCodexFingerprintPolicy(policies)
+	if account == nil || !policy.enabled || account.GetCodexFingerprintMode() == codexFingerprintOff {
 		return codexFingerprintOff
 	}
 	if _, ok := codexFingerprintSeed(account.Extra); !ok {

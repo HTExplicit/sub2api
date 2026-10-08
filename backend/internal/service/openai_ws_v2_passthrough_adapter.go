@@ -1082,7 +1082,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			if isResponseCreate {
 				if account.IsOpenAIOAuthLike() && currentCodexFingerprintPolicyForAccount(account).revision != connectionFingerprintPolicy.revision {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, openAIWSNonInitialTurnRetryCloseReason,
-						errors.New("Codex fingerprint settings changed; a new handshake is required"))
+						errors.New("codex fingerprint settings changed; a new handshake is required"))
 				}
 				responseCreateAt = time.Now()
 				if !turnLifecycle.beginResponseCreate(clientFrameConn.markTurnStarted) {

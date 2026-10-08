@@ -334,7 +334,7 @@ func TestEffectiveCodexOutboundUserAgentFollowsBridgeContract(t *testing.T) {
 	require.Equal(t, codexSandboxForUserAgent(CodexCanonicalUserAgent()), svc.resolveStagedCodexFingerprintIDs(c, account, clientHeaders).sandbox, "桥接 + ForceCodexCLI：跟随规范 UA")
 }
 
-// 全局强制统一关闭时终态只做配对、保留合法客户端 UA，staging 的 sandbox 必须跟随该客户端 UA。
+// 关闭整个模拟后不暂存收敛身份，保留客户端 UA 和实际 sandbox 元数据。
 func TestStagedFingerprintSandboxFollowsPairedClientUAWhenEnforcementOff(t *testing.T) {
 	t.Cleanup(func() { SetCodexIdentityEnforcementEnabled(true) })
 	account := &Account{ID: 22, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
@@ -347,9 +347,11 @@ func TestStagedFingerprintSandboxFollowsPairedClientUAWhenEnforcementOff(t *test
 	SetCodexIdentityEnforcementEnabled(true)
 	require.Equal(t, codexClientSandboxMac, svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders).sandbox, "强制统一开启：跟随账号身份")
 	SetCodexIdentityEnforcementEnabled(false)
-	require.Equal(t, codexClientSandboxWindows, svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders).sandbox, "强制统一关闭：跟随配对后的客户端 UA")
+	require.Nil(t, svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders))
+	require.Equal(t, clientHeaders.Get("user-agent"), svc.effectiveCodexOutboundUserAgent(nil, account, clientHeaders))
 	clientHeaders.Set("user-agent", "curl/8.0")
-	require.Equal(t, codexSandboxForUserAgent(resolveCodexOutboundIdentity("").userAgent), svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders).sandbox, "不合法客户端 UA 回落规范身份")
+	require.Nil(t, svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders))
+	require.Equal(t, "curl/8.0", svc.effectiveCodexOutboundUserAgent(nil, account, clientHeaders))
 }
 
 // turn metadata 的 sandbox 跟随最终出站 UA，而不是账号身份：管理员显式 UA 覆盖时二者可能不同。

@@ -270,22 +270,6 @@ func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string, policie
 	h.Set("version", identity.version)
 }
 
-// pairCodexIdentityHeaders 是关闭强制统一后的兜底收口：保留客户端真实身份，
-// 仅保证 originator 与最终 User-Agent 首段配套、version 不低于上游门槛（issue #3901）。
-func pairCodexIdentityHeaders(h http.Header) {
-	originator, pairedUA, ok := openai.PairCodexClientIdentity(h.Get("user-agent"))
-	if !ok {
-		identity := resolveCodexOutboundIdentity("")
-		originator, pairedUA = identity.originator, identity.userAgent
-		h.Set("version", identity.version)
-	}
-	h.Set("user-agent", pairedUA)
-	h.Set("originator", originator)
-	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
-		h.Set("version", resolveCodexOutboundIdentity("").version)
-	}
-}
-
 // resolveCodexOutboundIdentityForAccount 返回某个 OAuth 账号的出站身份三元组。
 // 优先级：管理员显式配置的账号级 User-Agent（只贡献客户端名与 OS / 架构 / 终端指纹，
 // 版本段仍由生效版本重建）> 账号持久化 / 种子派生的 Codex TUI 身份 > 全局规范身份。
