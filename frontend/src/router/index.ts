@@ -547,7 +547,7 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/codex-gateway-borrow',
     name: 'AdminCodexGatewayBorrow',
     component: () => import('@/views/admin/CodexGatewayBorrowView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Borrow Settings', titleKey: 'nav.codexGatewayBorrow' }
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Borrow Settings', titleKey: 'admin.codexGatewayBorrow.title' }
   },
   {
     path: '/admin/codex-gateway-borrow/status',

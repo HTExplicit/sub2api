@@ -19,7 +19,8 @@ nothing. While no Codex runtime row is stored,
 
 ## Codex gateway borrowing
 
-The Extensions navigation exposes three administrator pages: settings at
+The Extensions sidebar has one Codex Borrowing entry. Its in-page navigation
+switches between three independently addressable administrator pages: settings at
 `/admin/codex-gateway-borrow`, route status at
 `/admin/codex-gateway-borrow/status`, and manual comparison/history at
 `/admin/codex-pelican-comparison`. Opening or navigating these pages only reads

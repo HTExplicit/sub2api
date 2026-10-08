@@ -223,7 +223,7 @@ export default {
     auditLogs: 'Audit Logs',
     systemPrompts: 'System Prompts',
     reasoningRecovery: 'Reasoning Recovery',
-    codexGatewayBorrow: 'Codex Borrow Settings',
+    codexGatewayBorrow: 'Codex Borrowing',
     codexGatewayBorrowStatus: 'Codex Borrow Status',
     codexPelicanComparison: 'Pelican Comparison',
   },
