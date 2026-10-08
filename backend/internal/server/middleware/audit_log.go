@@ -147,6 +147,8 @@ var auditActionOverrides = map[string]string{
 	"PUT /api/v1/admin/system-prompts":                        "admin.system_prompts.update",
 	"PUT /api/v1/admin/system-prompts/bindings":               "admin.system_prompts.bindings.update",
 	"PUT /api/v1/admin/reasoning-recovery":                    "admin.reasoning_recovery.update",
+	"PUT /api/v1/admin/settings/codex-fingerprint":            "admin.codex_fingerprint.update",
+	"PUT /api/v1/admin/accounts/:id/codex-fingerprint":        "admin.account.codex_fingerprint.update",
 }
 
 // auditBodyOmittedRoutes 请求体几乎整体由凭证构成的路由（如整块粘贴 auth JSON 的导入接口）。

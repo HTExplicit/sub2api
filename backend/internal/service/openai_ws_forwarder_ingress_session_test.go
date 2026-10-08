@@ -1592,16 +1592,14 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 	}
 
 	require.Empty(t, captureDialer.lastHeaders.Get("session_id"), "真实 Codex 不发下划线 session_id")
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "pcache_passthrough"), captureDialer.lastHeaders.Get("session-id"), "只做一次账号作用域映射")
+	require.Equal(t, "pcache_passthrough", captureDialer.lastHeaders.Get("session-id"), "设备模式保留客户端会话标识")
 	require.Empty(t, captureDialer.lastHeaders.Get(openAIWSTurnStateHeader), "client turn state without account provenance must fail closed")
 	// 握手 turn metadata 经指纹层重建：非 JSON 的客户端值被替换为最小合法 metadata，
 	// installation 收敛为账号级设备，sandbox 跟随最终 UA 的系统。
 	handshakeTurnMetadata := captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader)
 	require.True(t, gjson.Valid(handshakeTurnMetadata), handshakeTurnMetadata)
 	require.Equal(t, resolveConvergedInstallationID(account, "5d2e8c1a-7b4f-4e3d-9a6c-0f1e2d3c4b5a"), gjson.Get(handshakeTurnMetadata, "installation_id").String())
-	passthroughIdentity, ok := account.CodexClientIdentity()
-	require.True(t, ok)
-	require.Equal(t, passthroughIdentity.Sandbox, gjson.Get(handshakeTurnMetadata, "sandbox").String())
+	require.False(t, gjson.Get(handshakeTurnMetadata, "sandbox").Exists(), "未提供实际沙箱时不生成 OS 推断值")
 	require.Len(t, upstreamConn.writes, 2)
 	forwarded := requestToJSONString(upstreamConn.writes[0])
 	require.Equal(t, gjson.Get(forwarded, "prompt_cache_key").String(), captureDialer.lastHeaders.Get("session-id"), "握手回退与首帧 prompt_cache_key 同源")

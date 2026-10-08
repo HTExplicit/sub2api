@@ -17,7 +17,17 @@ const accountTestReasoningContextKey = "account_test_reasoning_effort"
 
 // AccountTestReasoningOptions uses the same account mapping and capability
 // sources as the model catalog. Unknown model capabilities stay unknown.
-func AccountTestReasoningOptions(account *Account, model string) ([]string, string) {
+func AccountTestReasoningOptions(account *Account, model string) (efforts []string, defaultEffort string) {
+	// Ultra coordinates client-side work; it is never a single inference effort.
+	// Filter every capability source, including aliases and upstream metadata.
+	defer func() {
+		efforts = slices.DeleteFunc(slices.Clone(efforts), func(effort string) bool {
+			return normalizeReasoningLevel(effort) == "ultra"
+		})
+		if normalizeReasoningLevel(defaultEffort) == "ultra" {
+			defaultEffort = ""
+		}
+	}()
 	if account == nil || strings.TrimSpace(model) == "" {
 		return nil, ""
 	}
@@ -56,10 +66,6 @@ func AccountTestReasoningOptions(account *Account, model string) ([]string, stri
 	}
 	out := make([]string, 0, len(levels))
 	for _, level := range levels {
-		// Ultra is client orchestration, never a native inference effort.
-		if level.Effort == "ultra" && isOpenAIGPT6SolOrLunaModel(model) {
-			continue
-		}
 		out = append(out, level.Effort)
 	}
 	return out, ""
@@ -108,6 +114,9 @@ func accountTestSupportsReasoningWire(account *Account, model string) bool {
 func ValidateAccountTestReasoning(account *Account, model, mode, effort string) error {
 	if effort == "" {
 		return nil
+	}
+	if normalizeReasoningLevel(effort) == "ultra" {
+		return errors.New("reasoning effort is not supported by the selected account model")
 	}
 	if effort != strings.TrimSpace(effort) || len(effort) > 32 || (mode != "" && mode != AccountTestModeDefault && mode != AccountTestModeGrokText) {
 		return errors.New("reasoning effort is unsupported for this test mode")

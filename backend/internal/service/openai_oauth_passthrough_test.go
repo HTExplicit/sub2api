@@ -2670,7 +2670,7 @@ func TestOpenAIGatewayService_CodexFingerprintHTTPTransformedHeaderBodyParityAnd
 	require.True(t, ok)
 	wantInstall := resolveConvergedInstallationID(account, seed)
 	wantSession := resolveConvergedSessionID(seed)
-	wantThread := resolveConvergedThreadID(seed, "header-session")
+	wantThread := resolveConvergedThreadID(seed, scopeCodexAccountIdentityValue(account, 0, "body-thread"))
 
 	require.Empty(t, upstream.lastReq.Header.Get("x-codex-installation-id"), "installation id 只在 body client_metadata")
 	require.Equal(t, wantInstall, gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())
@@ -2733,7 +2733,7 @@ func TestOpenAIGatewayService_CodexFingerprintHTTPRawPassthroughHeaderBodyParity
 	require.True(t, ok)
 	wantInstall := resolveConvergedInstallationID(account, seed)
 	wantSession := resolveConvergedSessionID(seed)
-	wantThread := resolveConvergedThreadID(seed, "header-session")
+	wantThread := resolveConvergedThreadID(seed, scopeCodexAccountIdentityValue(account, 0, "body-thread"))
 
 	require.Empty(t, upstream.lastReq.Header.Get("x-codex-installation-id"), "installation id 只在 body client_metadata")
 	require.Equal(t, wantInstall, gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())

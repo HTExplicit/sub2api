@@ -95,11 +95,11 @@ func TestForwardAlphaSearchOAuthPreservesWire(t *testing.T) {
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
 	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Equal(t,
-		scopeCodexAccountIdentityValue(account, 0, "search-session"),
+		"search-session",
 		gjson.Get(upstream.lastReq.Header.Get("X-Codex-Turn-Metadata"), "session_id").String(),
 	)
 	require.Equal(t,
-		scopeCodexAccountIdentityValue(account, 0, "search-turn"),
+		"search-turn",
 		gjson.Get(upstream.lastReq.Header.Get("X-Codex-Turn-Metadata"), "turn_id").String(),
 	)
 	require.JSONEq(t, string(body), string(upstream.lastBody))
@@ -168,7 +168,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.Equal(t, "responses=experimental", upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
 	require.Equal(t,
-		scopeCodexAccountIdentityValue(account, 0, "turn-1"),
+		"turn-1",
 		gjson.Get(upstream.lastReq.Header.Get("X-Codex-Turn-Metadata"), "turn_id").String(),
 	)
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("Originator"))

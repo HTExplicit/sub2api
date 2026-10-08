@@ -440,6 +440,20 @@ async function changeRestrictionMode(wrapper: ReturnType<typeof mountModal>, mod
 }
 
 describe('EditAccountModal', () => {
+  it('omits the extension-owned fingerprint mode while saving an unrelated OAuth account edit', async () => {
+    const account = buildOpenAIOAuthParentAccount()
+    account.extra = { codex_fingerprint_mode: 'full', unrelated_setting: 'preserved' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="edit-codex-fingerprint-mode-select"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const payload = updateAccountMock.mock.calls.at(-1)?.[1]
+    expect(payload?.extra).not.toHaveProperty('codex_fingerprint_mode')
+    expect(payload?.extra?.unrelated_setting).toBe('preserved')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     authIsSimpleMode.value = true
     showErrorMock.mockReset()

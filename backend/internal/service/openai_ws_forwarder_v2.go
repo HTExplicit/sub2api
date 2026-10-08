@@ -74,7 +74,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
-	setOpenAIWSTurnMetadata(payload, turnMetadata)
+	clientMetadata, _ := payload["client_metadata"].(map[string]any)
+	if stringMetadataValue(clientMetadata, openAIWSTurnMetadataHeader) == "" {
+		setOpenAIWSTurnMetadata(payload, turnMetadata)
+	}
 	applyStagedCodexFingerprintClientMetadata(c, account, payload)
 	wirePayload, promptErr := s.finalizeResponsesForSend(c, account, payloadAsJSONBytes(payload))
 	if promptErr != nil {
@@ -251,9 +254,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	defer acquireCancel()
 
 	acquireReq := openAIWSAcquireRequest{
-		Account: account,
-		WSURL:   wsURL,
-		Headers: wsHeaders,
+		FingerprintPolicy: codexFingerprintPolicyForContext(c, account),
+		Account:           account,
+		WSURL:             wsURL,
+		Headers:           wsHeaders,
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},

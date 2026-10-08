@@ -5806,100 +5806,6 @@
                 </p>
               </div>
 
-              <!-- OpenAI Codex UA -->
-              <div>
-                <label
-                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  {{
-                    t(
-                      "admin.settings.gatewayForwarding.openaiCodexUserAgent",
-                    )
-                  }}
-                </label>
-                <input
-                  v-model="form.openai_codex_user_agent"
-                  type="text"
-                  class="input w-full font-mono text-sm"
-                  :placeholder="
-                    t(
-                      'admin.settings.gatewayForwarding.openaiCodexUserAgentPlaceholder',
-                    )
-                  "
-                />
-                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{
-                    t(
-                      "admin.settings.gatewayForwarding.openaiCodexUserAgentHint",
-                    )
-                  }}
-                </p>
-              </div>
-
-              <!-- Codex 客户端版本号 -->
-              <div>
-                <label
-                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  {{
-                    t(
-                      "admin.settings.gatewayForwarding.openaiCodexClientVersion",
-                    )
-                  }}
-                </label>
-                <input
-                  v-model="form.openai_codex_client_version"
-                  data-testid="openai-codex-client-version-input"
-                  type="text"
-                  class="input w-full font-mono text-sm"
-                  :placeholder="
-                    t(
-                      'admin.settings.gatewayForwarding.openaiCodexClientVersionPlaceholder',
-                    )
-                  "
-                />
-                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{
-                    t(
-                      "admin.settings.gatewayForwarding.openaiCodexClientVersionHint",
-                    )
-                  }}
-                </p>
-              </div>
-
-              <!-- Codex 版本号自动同步 -->
-              <div class="flex items-center justify-between" data-ui="setting-row">
-                <div>
-                  <label
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.openaiCodexVersionAutoSync",
-                      )
-                    }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      t(
-                        "admin.settings.gatewayForwarding.openaiCodexVersionAutoSyncHint",
-                      )
-                    }}
-                  </p>
-                  <p
-                    v-if="codexSyncedVersionLabel"
-                    data-testid="openai-codex-synced-version"
-                    class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
-                  >
-                    {{ codexSyncedVersionLabel }}
-                  </p>
-                </div>
-                <Toggle
-                  v-model="form.openai_codex_version_auto_sync_enabled"
-                  data-testid="openai-codex-version-auto-sync-toggle"
-                />
-              </div>
-
               <!-- Claude Code 客户端版本号 -->
               <div>
                 <label
@@ -9912,6 +9818,10 @@ type SettingsForm = Omit<
   | "wechat_connect_mp_enabled"
   | "wechat_connect_mobile_enabled"
   | "openai_oauth_scheduling_rate_multiplier"
+  | "openai_codex_user_agent"
+  | "openai_codex_client_version"
+  | "openai_codex_client_version_synced"
+  | "openai_codex_version_auto_sync_enabled"
 > & {
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
@@ -10221,11 +10131,7 @@ const form = reactive<SettingsForm>({
   rewrite_message_cache_control: false,
   enable_client_dateline_normalization: true,
   antigravity_user_agent_version: "",
-  openai_codex_user_agent: "",
-  openai_codex_client_version: "",
   // 只读展示：自动同步任务写入的官方最新稳定版，不参与提交（提交载荷按字段显式构造）
-  openai_codex_client_version_synced: "",
-  openai_codex_version_auto_sync_enabled: true,
   claude_code_client_version: "",
   // 只读展示：自动同步任务写入的官方最新稳定版，不参与提交（提交载荷按字段显式构造）
   claude_code_client_version_synced: "",
@@ -11348,14 +11254,6 @@ function removeCodexWhitelistRow(i: number): void {
   codexWhitelistRows.value.splice(i, 1);
 }
 
-const codexSyncedVersionLabel = computed(() => {
-  const synced = form.openai_codex_client_version_synced?.trim();
-  if (!synced) return "";
-  return t("admin.settings.gatewayForwarding.openaiCodexVersionSyncedValue", {
-    version: synced,
-  });
-});
-
 const claudeSyncedVersionLabel = computed(() => {
   const synced = form.claude_code_client_version_synced?.trim();
   if (!synced) return "";
@@ -12082,12 +11980,6 @@ async function saveSettings() {
         form.enable_client_dateline_normalization,
       antigravity_user_agent_version:
         form.antigravity_user_agent_version?.trim() || "",
-      openai_codex_user_agent:
-        form.openai_codex_user_agent?.trim() || "",
-      openai_codex_client_version:
-        form.openai_codex_client_version?.trim() || "",
-      openai_codex_version_auto_sync_enabled:
-        form.openai_codex_version_auto_sync_enabled,
       claude_code_client_version: form.claude_code_client_version?.trim() || "",
       claude_code_version_auto_sync_enabled:
         form.claude_code_version_auto_sync_enabled,

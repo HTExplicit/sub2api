@@ -929,7 +929,7 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	svc := NewSettingService(settingRepo, cfg)
 	// Observability and Codex request compression switches are read by
 	// package-level gates before the gateway starts.
-	for _, load := range []func(context.Context) error{svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig} {
+	for _, load := range []func(context.Context) error{svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig, svc.LoadCodexFingerprintSettings} {
 		if err := load(context.Background()); err != nil {
 			return nil, err
 		}

@@ -136,7 +136,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
 		headers.Set(openAIWSTurnMetadataHeader, metadata)
 	}
-	applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+	applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
 	applyStagedCodexFingerprintHeaders(c, account, headers)
 	if account != nil && account.UsesOpenAICodexProtocol() {
 		// 入站缺失连字符会话头时补齐：来自帧体 prompt_cache_key 的回退值由调用方传入最终线上值

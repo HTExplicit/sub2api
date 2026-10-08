@@ -111,6 +111,7 @@ describe('AppSidebar simple mode extensions', () => {
     expect(extensionLinks(wrapper)).toEqual([
       '/admin/system-prompts',
       '/admin/codex-runtime',
+      '/admin/codex-fingerprint',
       '/admin/codex-gateway-borrow',
       '/admin/pelican-tests',
       '/admin/reasoning-recovery',

@@ -974,24 +974,7 @@
         </div>
       </div>
 
-      <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
-      <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
-        <div class="mb-3 flex items-center justify-between">
-          <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
-          <input
-            id="bulk-edit-openai-codex-fingerprint-mode-enabled"
-            v-model="enableCodexFingerprintMode"
-            type="checkbox"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-          />
-        </div>
-        <div :class="!enableCodexFingerprintMode && 'pointer-events-none opacity-50'">
-          <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
-          </p>
-          <Select v-model="codexFingerprintMode" data-testid="bulk-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
-        </div>
-      </div>
+
 
       <!-- Upstream billing auto probe (any API-key platform) -->
       <div v-if="allBillingProbeCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
@@ -1710,15 +1693,6 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const upstreamBillingAutoProbeMode = ref<'enabled' | 'disabled'>('enabled')
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
-type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
-const enableCodexFingerprintMode = ref(false)
-const codexFingerprintMode = ref<CodexFingerprintMode>('device')
-const codexFingerprintModeOptions = computed(() => [
-  { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
-  { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
-  { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
-  { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
-])
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const rpmLimitEnabled = ref(false)
@@ -2093,26 +2067,6 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     extra.codex_cli_only_allow_app_server = codexCLIOnlyAppServerEnabled.value
   }
 
-  if (enableCodexFingerprintMode.value) {
-    const extra = ensureExtra()
-    // off 必须显式落键，不能靠删本地键表达。批量更新走 JSONB 顶层合并
-    // （extra = COALESCE(extra,'{}') || payload），删掉 payload 里的键只表示
-    // "本次不更新该键"，清不掉账号上已有的 device/session/full；而且只删不写会让
-    // 整个 payload 退化成 {extra:{}}，被后端 len(req.Extra) > 0 判为空更新直接 400
-    // "No updates provided"（#6327）。
-    //
-    // Create/Edit 那两个表单可以删键，是因为它们提交完整 extra 对象、后端整体
-    // SetExtra 覆盖；批量接口只合并增量键，两种持久化语义不能共用同一套写法。
-    //
-    // 读取侧对缺失键默认 device，因此显式 off 必须落键才能真正关闭收敛；
-    // ShouldEnsureCodexFingerprintSeedForExtraUpdates 只在显式 device/session/full
-    // 时要种子，off 不会触发。
-    //
-    // 与本函数里其它"关闭/清除"字段的写法一致：codex_cli_only 直接落 false，
-    // load_factor 落 0，proxy_id 落 0 —— 批量路径一律用显式哨兵值，不用省略。
-    extra.codex_fingerprint_mode = codexFingerprintMode.value
-  }
-
   if (enableOpenAICompactMode.value) {
     const extra = ensureExtra()
     extra.openai_compact_mode = openAICompactMode.value
@@ -2226,7 +2180,6 @@ const handleSubmit = async () => {
     enableUpstreamBillingAutoProbe.value ||
     enableCodexCLIOnly.value ||
     enableCodexCLIOnlyAppServer.value ||
-    enableCodexFingerprintMode.value ||
     enableOpenAICompactMode.value ||
     enableOpenAICompactModelMapping.value ||
     enableRpmLimit.value ||
@@ -2353,8 +2306,6 @@ watch(
       enableUpstreamBillingAutoProbe.value = false
       enableCodexCLIOnly.value = false
       enableCodexCLIOnlyAppServer.value = false
-      enableCodexFingerprintMode.value = false
-      codexFingerprintMode.value = 'device'
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
       enableRpmLimit.value = false

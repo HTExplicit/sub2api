@@ -108,7 +108,11 @@ func CodexCanonicalUserAgent() string {
 // （codex-rs login/default_client.rs 的 default_headers()），version 门槛
 // （issue #3901）只存在于 /backend-api/codex 推理面。
 func CodexCanonicalAuthIdentity() (userAgent, originator string) {
-	identity := resolveCodexOutboundIdentity("")
+	policy := currentCodexFingerprintPolicy()
+	if !policy.enabled {
+		return codexCLIUserAgent, openai.CodexDefaultOriginator
+	}
+	identity := resolveCodexOutboundIdentity("", policy)
 	return identity.userAgent, identity.originator
 }
 
@@ -156,8 +160,12 @@ type codexOutboundIdentity struct {
 // 其自带的版本段一律用当前生效版本重建：一条填写于某个历史版本的 UA 否则会把出站身份
 // 永久钉死在陈旧版本上，绕过版本自动同步，落回上游优先降载的那一侧。
 // 需要固定版本请填「Codex 客户端版本号」并关闭自动同步。
-func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
-	canonical := codexCanonicalUserAgent()
+func resolveCodexOutboundIdentity(candidateUA string, policies ...*codexFingerprintPolicy) codexOutboundIdentity {
+	policy := selectCodexFingerprintPolicy(policies)
+	canonical := policy.userAgent
+	if !policy.enabled {
+		canonical = codexCLIUserAgent
+	}
 	if _, _, ok := openai.PairCodexClientIdentity(canonical); !ok {
 		canonical = codexCLIUserAgent
 	}
@@ -192,11 +200,21 @@ func codexClientVersionFromUA(ua string) string {
 
 // ensureCodexIdentityHeaders 补齐 OAuth（ChatGPT 内部接口）出站请求所需的 Codex 身份头。
 // 已有 User-Agent 与 version 保持不变，交给紧随其后的 enforceCodexIdentityHeaders 收口。
-func ensureCodexIdentityHeaders(h http.Header) {
+func ensureCodexIdentityHeaders(h http.Header, policies ...*codexFingerprintPolicy) {
 	if h == nil {
 		return
 	}
-	identity := resolveCodexOutboundIdentity("")
+	policy := selectCodexFingerprintPolicy(policies)
+	identity := resolveCodexOutboundIdentity("", policy)
+	if !policy.enabled {
+		// Fill only missing headers, deriving them from the actual caller's UA.
+		if originator, _, ok := openai.PairCodexClientIdentity(h.Get("user-agent")); ok {
+			identity.originator = originator
+			if version := NormalizeCodexClientVersion(openai.CodexUserAgentVersion(h.Get("user-agent"))); version != "" {
+				identity.version = version
+			}
+		}
+	}
 	if strings.TrimSpace(h.Get("user-agent")) == "" {
 		h.Set("user-agent", identity.userAgent)
 	}
@@ -238,42 +256,30 @@ func enforceCodexIdentityHeaders(h http.Header) {
 // 仅对携带 originator 的请求生效：compat 桥接等非 ChatGPT 内部接口路径会显式删除 originator，
 // 不应被补回。需要从缺失身份头恢复的调用方应先调用 ensureCodexIdentityHeaders。
 // 必须在所有 User-Agent 改写之后调用。
-func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
+func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string, policies ...*codexFingerprintPolicy) {
 	if h == nil || h.Get("originator") == "" {
 		return
 	}
-	if !codexIdentityEnforcement.Load() {
-		pairCodexIdentityHeaders(h)
+	policy := selectCodexFingerprintPolicy(policies)
+	if !policy.enabled {
 		return
 	}
-	identity := resolveCodexOutboundIdentity(overrideUA)
+	identity := resolveCodexOutboundIdentity(overrideUA, policy)
 	h.Set("user-agent", identity.userAgent)
 	h.Set("originator", identity.originator)
 	h.Set("version", identity.version)
-}
-
-// pairCodexIdentityHeaders 是关闭强制统一后的兜底收口：保留客户端真实身份，
-// 仅保证 originator 与最终 User-Agent 首段配套、version 不低于上游门槛（issue #3901）。
-func pairCodexIdentityHeaders(h http.Header) {
-	originator, pairedUA, ok := openai.PairCodexClientIdentity(h.Get("user-agent"))
-	if !ok {
-		identity := resolveCodexOutboundIdentity("")
-		originator, pairedUA = identity.originator, identity.userAgent
-		h.Set("version", identity.version)
-	}
-	h.Set("user-agent", pairedUA)
-	h.Set("originator", originator)
-	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
-		h.Set("version", resolveCodexOutboundIdentity("").version)
-	}
 }
 
 // resolveCodexOutboundIdentityForAccount 返回某个 OAuth 账号的出站身份三元组。
 // 优先级：管理员显式配置的账号级 User-Agent（只贡献客户端名与 OS / 架构 / 终端指纹，
 // 版本段仍由生效版本重建）> 账号持久化 / 种子派生的 Codex TUI 身份 > 全局规范身份。
 // 版本号三处同源：UA 首段、UA 尾部括号组与 version 头都取当前生效的官方版本。
-func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) codexOutboundIdentity {
-	canonical := resolveCodexOutboundIdentity(overrideUA)
+func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string, policies ...*codexFingerprintPolicy) codexOutboundIdentity {
+	policy := selectCodexFingerprintPolicy(policies)
+	canonical := resolveCodexOutboundIdentity(overrideUA, policy)
+	if !policy.enabled {
+		return resolveCodexOutboundIdentity("", policy)
+	}
 	if overrideUA != "" {
 		return canonical
 	}
@@ -291,15 +297,15 @@ func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string)
 // enforceCodexIdentityHeadersForAccount 与 enforceCodexIdentityHeadersWithUA 语义相同，
 // 但强制统一时使用账号级身份而不是全局规范身份，使同一账号的所有出站请求
 // 表现为同一台机器上的同一个 Codex TUI。
-func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string) {
+func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string, policies ...*codexFingerprintPolicy) {
 	if h == nil || h.Get("originator") == "" {
 		return
 	}
-	if !codexIdentityEnforcement.Load() {
-		pairCodexIdentityHeaders(h)
+	policy := selectCodexFingerprintPolicy(policies)
+	if !policy.enabled {
 		return
 	}
-	identity := resolveCodexOutboundIdentityForAccount(account, overrideUA)
+	identity := resolveCodexOutboundIdentityForAccount(account, overrideUA, policy)
 	h.Set("user-agent", identity.userAgent)
 	h.Set("originator", identity.originator)
 	h.Set("version", identity.version)

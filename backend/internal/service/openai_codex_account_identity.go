@@ -27,6 +27,7 @@ const codexAccountIdentitySourceContextKey = "openai_codex_account_identity_sour
 // attempt. The handler reuses gin.Context across failover attempts, so every entry
 // point overwrites the staged source before projecting outbound identity.
 func (s *OpenAIGatewayService) prepareCodexAccountIdentitySource(ctx context.Context, c *gin.Context, account *Account) (*Account, error) {
+	stageCodexFingerprintPolicy(c, account)
 	source := account
 	if account != nil && account.IsShadow() {
 		resolved, err := resolveCredentialAccount(ctx, s.accountRepo, account)
@@ -162,19 +163,31 @@ var codexAccountIdentityFields = []string{
 	"session-id",
 	"thread_id",
 	"thread-id",
-	"turn_id",
-	"turn-id",
 	"window_id",
 	"x-codex-window-id",
 	"x-client-request-id",
+	"parent_thread_id",
+	"x-codex-parent-thread-id",
+	"forked_from_thread_id",
 }
 
-func applyCodexAccountIdentityFields(values map[string]any, account *Account, apiKeyID int64) bool {
-	if values == nil || codexAccountIdentityNamespace(account) == "" {
+func codexAccountIdentityProjectionFields(account *Account, policy *codexFingerprintPolicy) []string {
+	if account == nil || !policy.enabled || account.GetCodexFingerprintMode() == codexFingerprintOff {
+		return nil
+	}
+	if account.GetCodexFingerprintMode() == codexFingerprintDevice {
+		return []string{"installation_id", "x-codex-installation-id"}
+	}
+	return codexAccountIdentityFields
+}
+
+func applyCodexAccountIdentityFields(values map[string]any, account *Account, apiKeyID int64, policies ...*codexFingerprintPolicy) bool {
+	policy := selectCodexFingerprintPolicy(policies)
+	if values == nil || !policy.enabled || codexAccountIdentityNamespace(account) == "" {
 		return false
 	}
 	changed := false
-	for _, name := range codexAccountIdentityFields {
+	for _, name := range codexAccountIdentityProjectionFields(account, policy) {
 		raw, ok := values[name].(string)
 		if !ok || strings.TrimSpace(raw) == "" {
 			continue
@@ -188,7 +201,7 @@ func applyCodexAccountIdentityFields(values map[string]any, account *Account, ap
 	return changed
 }
 
-func applyCodexAccountIdentityEmbeddedMetadata(values map[string]any, account *Account, apiKeyID int64) bool {
+func applyCodexAccountIdentityEmbeddedMetadata(values map[string]any, account *Account, apiKeyID int64, policies ...*codexFingerprintPolicy) bool {
 	raw, ok := values[openAIWSTurnMetadataHeader].(string)
 	if !ok || strings.TrimSpace(raw) == "" {
 		return false
@@ -197,7 +210,7 @@ func applyCodexAccountIdentityEmbeddedMetadata(values map[string]any, account *A
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
 		return false
 	}
-	if !applyCodexAccountIdentityFields(metadata, account, apiKeyID) {
+	if !applyCodexAccountIdentityFields(metadata, account, apiKeyID, policies...) {
 		return false
 	}
 	rebuilt, err := marshalCodexTurnMetadata(metadata)
@@ -208,21 +221,23 @@ func applyCodexAccountIdentityEmbeddedMetadata(values map[string]any, account *A
 	return true
 }
 
-func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, account *Account, apiKeyID int64) bool {
-	if requestBody == nil || codexAccountIdentityNamespace(account) == "" {
+func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, account *Account, apiKeyID int64, policies ...*codexFingerprintPolicy) bool {
+	policy := selectCodexFingerprintPolicy(policies)
+	if requestBody == nil || !policy.enabled || codexAccountIdentityNamespace(account) == "" {
 		return false
 	}
 	changed := false
 	clientMetadata, _ := requestBody["client_metadata"].(map[string]any)
+	originalSessionID := stringMetadataValue(clientMetadata, "session_id")
 	if clientMetadata != nil {
-		if applyCodexAccountIdentityFields(clientMetadata, account, apiKeyID) {
+		if applyCodexAccountIdentityFields(clientMetadata, account, apiKeyID, policy) {
 			changed = true
 		}
-		if applyCodexAccountIdentityEmbeddedMetadata(clientMetadata, account, apiKeyID) {
+		if applyCodexAccountIdentityEmbeddedMetadata(clientMetadata, account, apiKeyID, policy) {
 			changed = true
 		}
 	}
-	if raw, ok := requestBody["prompt_cache_key"].(string); ok && strings.TrimSpace(raw) != "" {
+	if raw, ok := requestBody["prompt_cache_key"].(string); ok && raw != "" && raw == originalSessionID && (account.GetCodexFingerprintMode() == codexFingerprintSession || account.GetCodexFingerprintMode() == codexFingerprintFull) {
 		next := scopeCodexAccountIdentityValue(account, apiKeyID, raw)
 		if next != raw {
 			requestBody["prompt_cache_key"] = next
@@ -235,8 +250,9 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 // applyCodexAccountIdentityClientMetadataRaw scopes only the small identity
 // subobjects with gjson/sjson. The passthrough hot path never unmarshals the
 // potentially multi-megabyte request body.
-func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, apiKeyID int64) ([]byte, bool, error) {
-	if len(body) == 0 || codexAccountIdentityNamespace(account) == "" {
+func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, apiKeyID int64, policies ...*codexFingerprintPolicy) ([]byte, bool, error) {
+	policy := selectCodexFingerprintPolicy(policies)
+	if len(body) == 0 || !policy.enabled || codexAccountIdentityNamespace(account) == "" {
 		return body, false, nil
 	}
 	root := gjson.ParseBytes(body)
@@ -251,8 +267,8 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 		if err := json.Unmarshal([]byte(cm.Raw), &clientMetadata); err != nil {
 			return body, false, fmt.Errorf("decode client_metadata for account identity: %w", err)
 		}
-		metadataChanged := applyCodexAccountIdentityFields(clientMetadata, account, apiKeyID)
-		if applyCodexAccountIdentityEmbeddedMetadata(clientMetadata, account, apiKeyID) {
+		metadataChanged := applyCodexAccountIdentityFields(clientMetadata, account, apiKeyID, policy)
+		if applyCodexAccountIdentityEmbeddedMetadata(clientMetadata, account, apiKeyID, policy) {
 			metadataChanged = true
 		}
 		if metadataChanged {
@@ -268,7 +284,7 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 			changed = true
 		}
 	}
-	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" {
+	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && promptCacheKey.String() != "" && promptCacheKey.String() == gjson.GetBytes(body, "client_metadata.session_id").String() && (account.GetCodexFingerprintMode() == codexFingerprintSession || account.GetCodexFingerprintMode() == codexFingerprintFull) {
 		raw := promptCacheKey.String()
 		scoped := scopeCodexAccountIdentityValue(account, apiKeyID, raw)
 		if scoped != raw {
@@ -283,11 +299,12 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 	return next, changed, nil
 }
 
-func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, apiKeyID int64) {
-	if headers == nil || codexAccountIdentityNamespace(account) == "" {
+func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, apiKeyID int64, policies ...*codexFingerprintPolicy) {
+	policy := selectCodexFingerprintPolicy(policies)
+	if headers == nil || !policy.enabled || codexAccountIdentityNamespace(account) == "" {
 		return
 	}
-	for _, name := range codexAccountIdentityFields {
+	for _, name := range codexAccountIdentityProjectionFields(account, policy) {
 		switch name {
 		case "session_id":
 			// Underscore session/conversation headers are rebuilt separately by the
@@ -306,7 +323,7 @@ func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, api
 	}
 	if raw := strings.TrimSpace(headers.Get(openAIWSTurnMetadataHeader)); raw != "" {
 		metadata := map[string]any{}
-		if err := json.Unmarshal([]byte(raw), &metadata); err == nil && metadata != nil && applyCodexAccountIdentityFields(metadata, account, apiKeyID) {
+		if err := json.Unmarshal([]byte(raw), &metadata); err == nil && metadata != nil && applyCodexAccountIdentityFields(metadata, account, apiKeyID, policy) {
 			if rebuilt, err := marshalCodexTurnMetadata(metadata); err == nil {
 				headers.Set(openAIWSTurnMetadataHeader, string(rebuilt))
 			}

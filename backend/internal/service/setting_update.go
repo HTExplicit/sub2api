@@ -48,6 +48,11 @@ func (s *SettingService) UpdateSettingsOmitting(ctx context.Context, settings *S
 		return err
 	}
 	s.refreshCachedSettingsAfterWrite(ctx, settings, omitted)
+	if publishedCodexFingerprintPolicy.Load() != nil {
+		if err := s.LoadCodexFingerprintSettings(ctx); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -78,6 +83,11 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaultsOmitting(ctx contex
 		return err
 	}
 	s.refreshCachedSettingsAfterWrite(ctx, settings, omitted)
+	if publishedCodexFingerprintPolicy.Load() != nil {
+		if err := s.LoadCodexFingerprintSettings(ctx); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

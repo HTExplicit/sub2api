@@ -13,11 +13,14 @@ import (
 func TestAccountTestReasoningValidatedAgainstMappedModel(t *testing.T) {
 	a := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"model_mapping": map[string]any{"friendly": "gpt-6-astra"}}}
 	levels, _ := AccountTestReasoningOptions(a, "friendly")
-	require.Contains(t, levels, "ultra")
-	require.NoError(t, ValidateAccountTestReasoning(a, "friendly", "default", "ultra"))
-	require.NoError(t, ValidateAccountTestReasoning(a, "friendly", "text", "ultra"))
-	require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", "compact", "ultra"), "reasoning effort is unsupported for this test mode")
-	require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", "default", " ultra "), "reasoning effort is unsupported for this test mode")
+	require.NotContains(t, levels, "ultra")
+	require.NoError(t, ValidateAccountTestReasoning(a, "friendly", "default", "max"))
+	require.NoError(t, ValidateAccountTestReasoning(a, "friendly", "text", "max"))
+	require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", "compact", "max"), "reasoning effort is unsupported for this test mode")
+	for _, mode := range []string{"default", "text", "compact"} {
+		require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", mode, "ultra"), "reasoning effort is not supported by the selected account model")
+	}
+	require.Error(t, ValidateAccountTestReasoning(a, "friendly", "default", " ultra "))
 	require.EqualError(t, ValidateAccountTestReasoning(a, "friendly", "default", "invented"), "reasoning effort is not supported by the selected account model")
 	require.Error(t, ValidateAccountTestReasoning(a, "gpt-image-2", "default", "high"))
 	require.NoError(t, ValidateAccountTestReasoning(a, "unknown-model", "default", ""))

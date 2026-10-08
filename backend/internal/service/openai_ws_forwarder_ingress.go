@@ -238,6 +238,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	parseClientPayload := func(turn int, raw []byte) (openAIWSClientPayload, error) {
+		stageCodexFingerprintPolicy(c, account)
 		trimmed := bytes.TrimSpace(raw)
 		if len(trimmed) == 0 {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "empty websocket request payload", nil)
@@ -336,7 +337,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalized = next
 		}
 		accountIdentitySourceRaw := append([]byte(nil), normalized...)
-		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
 		if scopeErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 		}
@@ -864,9 +865,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 	turnState = strings.TrimSpace(wsHeaders.Get(openAIWSTurnStateHeader))
 	baseAcquireReq := openAIWSAcquireRequest{
-		Account: account,
-		WSURL:   wsURL,
-		Headers: wsHeaders,
+		FingerprintPolicy: codexFingerprintPolicyForContext(c, account),
+		Account:           account,
+		WSURL:             wsURL,
+		Headers:           wsHeaders,
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},
@@ -1777,6 +1779,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if headerErr != nil {
 			return headerErr
 		}
+		if sessionLease != nil && baseAcquireReq.FingerprintPolicy != nil &&
+			baseAcquireReq.FingerprintPolicy.revision != codexFingerprintPolicyForContext(c, account).revision {
+			// The preceding turn is complete. Ask the client to reopen so a new
+			// handshake cannot inherit this socket's old identity or anchor.
+			resetSessionLease(false)
+			return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, openAIWSNonInitialTurnRetryCloseReason,
+				errors.New("codex fingerprint settings changed; a new handshake is required"))
+		}
+		baseAcquireReq.FingerprintPolicy = codexFingerprintPolicyForContext(c, account)
 		baseAcquireReq.Headers = finalHeaders
 		if borrowTurn == nil {
 			borrowPreviousID := currentPreviousResponseID
