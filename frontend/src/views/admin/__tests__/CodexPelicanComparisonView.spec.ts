@@ -200,6 +200,44 @@ describe('CodexPelicanComparisonView request boundaries', () => {
     assertNoUpstreamOrConfigurationRequests()
   })
 
+  it('shows terminal preview explanations after SSE completion and preserves full reasons and answers', async () => {
+    let emit!: (event: BorrowTestEvent) => void
+    let finish!: () => void
+    mocks.streamTests.mockImplementation((_request, onEvent) => {
+      emit = onEvent
+      return new Promise<void>(resolve => { finish = resolve })
+    })
+    const wrapper = await mountView()
+    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
+    await wrapper.get('[data-test="borrow-test-account-3"]').setValue(true)
+    await wrapper.get('[data-test="borrow-test-start"]').trigger('click')
+    expect(wrapper.get('[data-test="borrow-result-grid"]').text()).toContain('admin.codexGatewayBorrow.previewPending')
+    const fullFailure = 'HTTP 429\n' + 'original upstream failure '.repeat(800)
+    const completedAnswer = 'Complete original answer without extractable HTML'
+    const unavailableReason = 'Original preview reason supplied by the server'
+    const withoutPreview = { preview_url: undefined, raw_html: '', html: '' }
+    emit({ type: 'task_complete', task: makeTask([
+      makeResult({ ...withoutPreview, id: 'skipped', account_id: 3, model_id: 'gpt-6-astra', status: 'skipped', error: 'no_matched_cache' }),
+      makeResult({ ...withoutPreview, id: 'failed', model_id: 'gpt-6-astra', status: 'failed', error: fullFailure }),
+      makeResult({ ...withoutPreview, id: 'cancelled', account_id: 3, status: 'cancelled', error: 'Cancelled by administrator', preview_unavailable: unavailableReason }),
+      makeResult({ ...withoutPreview, id: 'no-html', status: 'complete', raw_answer: completedAnswer })
+    ]) })
+    finish()
+    await flushPromises()
+    expect(wrapper.get('[data-test="borrow-result-grid"]').text()).not.toContain('admin.codexGatewayBorrow.previewPending')
+    expect(wrapper.get('[data-test="borrow-result-skipped"]').text()).toContain('admin.codexGatewayBorrow.previewNotGenerated')
+    expect(wrapper.get('[data-test="borrow-result-skipped"] [data-test="borrow-result-error"]').text()).toBe('no_matched_cache')
+    expect(wrapper.get('[data-test="borrow-result-failed"]').text()).toContain('admin.codexGatewayBorrow.previewNotGenerated')
+    expect(wrapper.get('[data-test="borrow-result-failed"] [data-test="borrow-result-error"]').text()).toBe(fullFailure.trim())
+    expect(wrapper.get('[data-test="borrow-result-cancelled"]').text()).toContain(unavailableReason)
+    expect(wrapper.get('[data-test="borrow-result-cancelled"]').text()).not.toContain('admin.codexGatewayBorrow.previewNotGenerated')
+    expect(wrapper.get('[data-test="borrow-result-cancelled"] [data-test="borrow-result-error"]').text()).toBe('Cancelled by administrator')
+    expect(wrapper.get('[data-test="borrow-result-no-html"]').text()).toContain('admin.codexGatewayBorrow.previewMissingHtml')
+    expect(wrapper.get('[data-test="borrow-result-no-html"] details pre').text()).toBe(completedAnswer)
+    expect(mocks.streamTests).toHaveBeenCalledOnce()
+    assertNoUpstreamOrConfigurationRequests()
+  })
+
   it('reads historical results and enlarged server previews without generating or changing configuration', async () => {
     const task = makeTask([makeResult()])
     mocks.listTests.mockResolvedValue({ items: [task], total: 1, page: 1, size: 12 })

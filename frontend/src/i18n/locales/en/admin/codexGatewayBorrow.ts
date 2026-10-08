@@ -134,6 +134,8 @@ export default {
     taskId: 'Task ID',
     duration: 'Duration',
     previewPending: 'Waiting for generation output',
+    previewMissingHtml: 'No preview could be extracted. Open the original answer.',
+    previewNotGenerated: 'No work was generated. See the status and reason.',
     enlarge: 'Enlarge preview',
     rawAnswer: 'Raw answer',
     htmlSource: 'HTML source',

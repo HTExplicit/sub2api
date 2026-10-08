@@ -126,7 +126,7 @@
               </header>
               <div class="aspect-[4/3] w-full bg-gray-50 dark:bg-dark-900">
                 <BorrowPelicanPreview v-if="result.preview_url" :preview-url="result.preview_url" :title="previewTitle(result)" />
-                <div v-else class="flex h-full items-center justify-center px-5 text-center text-xs text-muted"><span>{{ result.preview_unavailable || t('admin.codexGatewayBorrow.previewPending') }}</span></div>
+                <div v-else class="flex h-full items-center justify-center px-5 text-center text-xs text-muted"><span>{{ previewPlaceholder(result) }}</span></div>
               </div>
               <div class="space-y-3 border-t border-line p-3">
                 <div class="flex flex-wrap gap-2">
@@ -226,6 +226,11 @@ function resultStatusClass(value: string) {
   return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
 }
 function previewTitle(result: BorrowTestResult) { return `${result.account_name || accountName(result.account_id)} #${result.account_id} · ${result.model_id} · ${result.effort}` }
+function previewPlaceholder(result: BorrowTestResult) {
+  if (result.preview_unavailable) return result.preview_unavailable
+  if (result.status === 'pending' || result.status === 'running') return t('admin.codexGatewayBorrow.previewPending')
+  return t(`admin.codexGatewayBorrow.${result.status === 'complete' ? 'previewMissingHtml' : 'previewNotGenerated'}`)
+}
 async function changeTabWithKeyboard(event: KeyboardEvent) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
   event.preventDefault()

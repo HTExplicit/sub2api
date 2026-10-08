@@ -134,6 +134,8 @@ export default {
     taskId: '任务 ID',
     duration: '耗时',
     previewPending: '等待生成结果',
+    previewMissingHtml: '无法提取预览，可展开回答原文查看',
+    previewNotGenerated: '未生成作品，请查看状态与原因',
     enlarge: '放大预览',
     rawAnswer: '回答原文',
     htmlSource: 'HTML 源码',
