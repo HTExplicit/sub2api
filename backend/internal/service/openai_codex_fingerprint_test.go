@@ -485,7 +485,7 @@ func TestApplyCodexFingerprintClientMetadata_SessionMode(t *testing.T) {
 	require.True(t, ok)
 	convergedInstall := resolveConvergedInstallationID(account, seed)
 	convergedSession := resolveConvergedSessionID(seed)
-	convergedThread := resolveConvergedThreadID(seed, "client-session-aaa")
+	convergedThread := resolveConvergedThreadID(seed, "x")
 
 	assert.Equal(t, convergedInstall, cm["x-codex-installation-id"])
 	assert.Equal(t, convergedSession, cm["session_id"])
