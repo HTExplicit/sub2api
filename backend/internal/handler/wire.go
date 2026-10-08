@@ -51,6 +51,7 @@ func ProvideAdminHandlers(
 	systemPromptHandler *admin.SystemPromptHandler,
 	reasoningRecoveryHandler *admin.ReasoningRecoveryHandler,
 	codexGatewayBorrowHandler *admin.CodexGatewayBorrowHandler,
+	pelicanTestHandler *admin.PelicanTestHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	opencodeGoUsage *service.OpenCodeGoUsageService,
@@ -101,6 +102,7 @@ func ProvideAdminHandlers(
 		SystemPrompt:           systemPromptHandler,
 		ReasoningRecovery:      reasoningRecoveryHandler,
 		CodexGatewayBorrow:     codexGatewayBorrowHandler,
+		PelicanTest:            pelicanTestHandler,
 	}
 }
 
@@ -302,6 +304,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewSystemPromptHandler,
 	admin.NewReasoningRecoveryHandler,
 	admin.NewCodexGatewayBorrowHandler,
+	admin.NewPelicanTestHandler,
 	ProvideAccountJobRuntime,
 
 	// AdminHandlers and Handlers constructors

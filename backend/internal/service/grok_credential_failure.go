@@ -291,6 +291,9 @@ func classifyGrokCredentialFailure(account *Account, err error) grokCredentialFa
 }
 
 func (s *OpenAIGatewayService) applyGrokCredentialAccountFailure(ctx context.Context, account *Account, class grokCredentialFailureClass) (string, error) {
+	if IsAccountObservation(ctx) {
+		return "", nil
+	}
 	if s == nil || account == nil || ctx == nil || ctx.Err() != nil {
 		if ctx != nil {
 			return "", ctx.Err()

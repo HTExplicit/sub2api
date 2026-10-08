@@ -46,6 +46,7 @@ type codexGatewayBorrowWSTurn struct {
 	headers                          http.Header
 	qualified                        bool
 	finished                         sync.Once
+	pelicanOneShot                   bool
 }
 
 // Passthrough owns a direct socket for the entire client session. Its anchor is
@@ -227,6 +228,26 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowWSTurn(ctx context.Conte
 		return nil, err
 	}
 	selected := s.codexGatewayBorrowWSSelected(account, model, req)
+	if IsPelicanGeneration(ctx) {
+		if !selected {
+			return nil, nil
+		}
+		if previousID != "" {
+			return nil, errors.New("pelican generation starts a new conversation")
+		}
+		// A trusted administrator invocation has no customer's API key or
+		// continuation identity. It borrows through the normal preparation path
+		// but never creates a persistent client continuation anchor.
+		borrowed, application, applyErr := s.gatewayBorrow.Apply(req, account, model, proxyURL, nil, false)
+		if applyErr != nil {
+			return nil, applyErr
+		}
+		if borrowed == nil || application == nil || !application.Applied {
+			return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowChanged}
+		}
+		return &codexGatewayBorrowWSTurn{key: codexGatewayBorrowWSAnchorKey{account: account.ID, model: model},
+			model: model, headers: cloneHeader(borrowed.Header), expires: application.ExpiresAt, pelicanOneShot: true}, nil
+	}
 	key, err := codexGatewayBorrowWSKey(c, account, headers, rawClientBody, model, proxyURL)
 	if err != nil {
 		if !selected {
@@ -312,6 +333,9 @@ func (turn *codexGatewayBorrowWSTurn) bindLease(lease *openAIWSConnLease) error 
 		return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 	}
 	turn.connID = lease.ConnID()
+	if turn.pelicanOneShot {
+		return nil
+	}
 	lease.conn.anchorUntilNano.Store(turn.expires.UnixNano())
 	return nil
 }
@@ -326,7 +350,18 @@ func (turn *codexGatewayBorrowWSTurn) observe(message []byte) {
 }
 
 func (turn *codexGatewayBorrowWSTurn) finish(pool *openAIWSConnPool, result *OpenAIForwardResult, resultErr error) {
-	if turn == nil || turn.store == nil {
+	if turn == nil {
+		return
+	}
+	if turn.pelicanOneShot {
+		turn.finished.Do(func() {
+			if pool != nil && turn.connID != "" {
+				pool.evictConn(turn.key.account, turn.connID)
+			}
+		})
+		return
+	}
+	if turn.store == nil {
 		return
 	}
 	turn.finished.Do(func() {

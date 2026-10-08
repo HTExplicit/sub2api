@@ -993,7 +993,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		var headerGuard *openAIFirstOutputHeaderGuard
-		if firstOutputTimeout > 0 && !s.codexGatewayBorrowHTTPConfigured(account, upstreamModel) {
+		var pelicanHeaderPolicy *pelicanFirstOutputPolicy
+		if firstOutputTimeout > 0 && !IsPelicanGeneration(ctx) && !s.codexGatewayBorrowHTTPConfigured(account, upstreamModel) {
 			upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(
 				upstreamCtx, releaseUpstreamCtx, startTime.Add(borrowPreparationElapsed).Add(firstOutputTimeout),
 			)
@@ -1056,8 +1057,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		firstOutputStartedAt := startTime.Add(borrowPreparationElapsed)
 		if firstOutputTimeout > 0 && headerGuard == nil {
-			upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(upstreamReq.Context(), releaseUpstreamCtx, firstOutputStartedAt.Add(firstOutputTimeout))
-			upstreamReq = upstreamReq.WithContext(upstreamCtx)
+			if IsPelicanGeneration(ctx) {
+				pelicanHeaderPolicy = &pelicanFirstOutputPolicy{timeout: firstOutputTimeout}
+				upstreamReq = upstreamReq.WithContext(context.WithValue(upstreamReq.Context(), pelicanFirstOutputPolicyContextKey{}, pelicanHeaderPolicy))
+			} else {
+				upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(upstreamReq.Context(), releaseUpstreamCtx, firstOutputStartedAt.Add(firstOutputTimeout))
+				upstreamReq = upstreamReq.WithContext(upstreamCtx)
+			}
 		}
 		if _, borrowed := upstreamReq.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation); borrowed {
 			finalized, finalizationErr := s.applyCodexGatewayBorrowHTTP(upstreamReq, account, upstreamModel, proxyURL)
@@ -1078,6 +1084,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		upstreamStart := time.Now()
 		reasoningRecovery.MarkAttemptDispatched()
 		resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
+		if pelicanHeaderPolicy != nil {
+			headerGuard = pelicanHeaderPolicy.guard
+			if !pelicanHeaderPolicy.startedAt.IsZero() {
+				firstOutputStartedAt = pelicanHeaderPolicy.startedAt
+			}
+		}
 		reasoningRecovery.ObserveResponse(resp)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if IsCodexGatewayBorrowRequestFailure(err) {
@@ -1089,7 +1101,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
-		if headerGuard != nil && headerGuard.stopHeaderWait() {
+		headerTimedOut := false
+		if pelicanHeaderPolicy != nil {
+			headerTimedOut = pelicanHeaderPolicy.stopHeaderWait()
+		} else if headerGuard != nil {
+			headerTimedOut = headerGuard.stopHeaderWait()
+		}
+		if headerTimedOut {
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
 			}
@@ -1280,7 +1298,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if reqStream {
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 			streamCtx := ctx
-			if borrowPreparationElapsed > 0 {
+			if borrowPreparationElapsed > 0 || IsPelicanGeneration(ctx) {
 				streamCtx = withCodexGatewayBorrowHTTPFirstOutputStart(ctx, firstOutputStartedAt)
 			}
 			streamResult, err := s.handleStreamingResponseWithReasoning(streamCtx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)

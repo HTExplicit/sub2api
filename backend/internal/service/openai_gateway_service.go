@@ -1093,6 +1093,12 @@ func SnapshotOpenAICompatibilityFallbackMetrics() OpenAICompatibilityFallbackMet
 }
 
 func (s *OpenAIGatewayService) detectCodexClientRestriction(c *gin.Context, account *Account, body []byte) CodexClientRestrictionDetectionResult {
+	// A trusted administrator operation has no downstream client to admit.
+	// Its purpose is installed internally; upstream identity/authentication and
+	// every account/global sending policy still use the ordinary gateway path.
+	if c != nil && c.Request != nil && IsPelicanGeneration(c.Request.Context()) && !IsCodexGatewayBorrowObservation(c.Request.Context()) {
+		return CodexClientRestrictionDetectionResult{Reason: CodexClientRestrictionReasonDisabled}
+	}
 	// 安全默认：即便缺 settingService（仅测试/误配可达）也保持指纹门为默认种子，
 	// 避免零值 policy（nil 信号）让指纹门失败开放。有 settingService 时整体覆盖为全局策略。
 	policy := CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}

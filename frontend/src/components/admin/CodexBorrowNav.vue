@@ -1,6 +1,6 @@
 <template>
   <nav :aria-label="t('admin.codexGatewayBorrow.navLabel')">
-    <ol class="grid grid-cols-1 gap-1 rounded-lg border border-gray-200 bg-white p-1 sm:grid-cols-3 dark:border-dark-600 dark:bg-dark-800">
+    <ol class="grid grid-cols-1 gap-1 rounded-lg border border-gray-200 bg-white p-1 sm:grid-cols-2 dark:border-dark-600 dark:bg-dark-800">
       <li v-for="(item, index) in items" :key="item.path" class="min-w-0">
         <RouterLink
           :to="item.path"
@@ -27,6 +27,5 @@ const route = useRoute()
 const items = [
   { path: '/admin/codex-gateway-borrow', label: 'admin.codexGatewayBorrow.navSettings' },
   { path: '/admin/codex-gateway-borrow/status', label: 'admin.codexGatewayBorrow.navStatus' },
-  { path: '/admin/codex-pelican-comparison', label: 'admin.codexGatewayBorrow.navComparison' },
 ]
 </script>

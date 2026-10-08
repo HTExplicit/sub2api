@@ -73,6 +73,9 @@ type quotaActivityTrace struct {
 }
 
 func (s *QuotaActivityService) Attach(ctx context.Context) (context.Context, func()) {
+	if IsAccountObservation(ctx) {
+		return ctx, func() {}
+	}
 	if quotaActivity(ctx) != nil {
 		return ctx, func() {}
 	}
@@ -97,6 +100,7 @@ func quotaActivity(ctx context.Context) *quotaActivityTrace {
 }
 
 func CopyQuotaActivityContext(parent, base context.Context) context.Context {
+	base = CopyAccountObservationContext(parent, base)
 	if trace := quotaActivity(parent); trace != nil {
 		base = context.WithValue(base, quotaActivityContextKey{}, trace)
 	}
@@ -104,6 +108,9 @@ func CopyQuotaActivityContext(parent, base context.Context) context.Context {
 }
 
 func ObserveQuotaAccount(ctx context.Context, accountID int64) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	trace := quotaActivity(ctx)
 	if trace == nil || accountID <= 0 {
 		return
@@ -124,6 +131,9 @@ func ObserveQuotaAccount(ctx context.Context, accountID int64) {
 }
 
 func MarkQuotaLogPersisted(ctx context.Context, accountID int64) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if ctx != nil {
 		if receipt, ok := ctx.Value(quotaUsageTaskContextKey{}).(*quotaUsageTaskReceipt); ok && receipt.accountID == accountID {
 			receipt.logged.Store(true)
@@ -141,6 +151,9 @@ func MarkQuotaLogPersisted(ctx context.Context, accountID int64) {
 }
 
 func MarkQuotaLogFailed(ctx context.Context, accountID int64) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	trace := quotaActivity(ctx)
 	if trace == nil {
 		return
@@ -155,6 +168,11 @@ func MarkQuotaLogFailed(ctx context.Context, accountID int64) {
 // Pending is registered before queue submission, closing the gap between
 // releasing a network slot and a worker eventually committing the usage log.
 func TrackQuotaUsageTask(parent context.Context, task UsageRecordTask) (UsageRecordTask, func()) {
+	if IsAccountObservation(parent) {
+		return func(ctx context.Context) {
+			task(CopyAccountObservationContext(parent, ctx))
+		}, func() {}
+	}
 	if parent == nil {
 		return task, func() {}
 	}

@@ -164,6 +164,10 @@ type AccountTestService struct {
 	settingService              *SettingService
 	tlsFPProfileService         *TLSFingerprintProfileService
 	openaiGatewayService        *OpenAIGatewayService
+	pelicanGatewayService       *GatewayService
+	pelicanGeminiService        *GeminiMessagesCompatService
+	pelicanConcurrencyService   *ConcurrencyService
+	pelicanBorrowService        *CodexGatewayBorrowService
 	modelMetadataRegistryMu     sync.Mutex
 	modelMetadataRegistry       map[string]modelsDevProvider
 	modelMetadataRegistryAt     time.Time
@@ -194,7 +198,36 @@ func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayService) {
 	if s != nil {
 		s.openaiGatewayService = gateway
+		if gateway != nil && s.pelicanBorrowService != nil {
+			gateway.SetCodexGatewayBorrowService(s.pelicanBorrowService)
+		}
 	}
+}
+
+func (s *AccountTestService) SetCodexGatewayBorrowService(borrow *CodexGatewayBorrowService) {
+	if s != nil {
+		s.pelicanBorrowService = borrow
+		if s.openaiGatewayService != nil {
+			s.openaiGatewayService.SetCodexGatewayBorrowService(borrow)
+		}
+	}
+}
+
+// SetPelicanBusinessServices binds the same account senders used by ordinary
+// gateway requests. Dependencies are installed once during application wiring.
+func (s *AccountTestService) SetPelicanBusinessServices(gateway *GatewayService, gemini *GeminiMessagesCompatService, concurrency *ConcurrencyService) {
+	if s != nil {
+		s.pelicanGatewayService = gateway
+		s.pelicanGeminiService = gemini
+		s.pelicanConcurrencyService = concurrency
+	}
+}
+
+func (s *AccountTestService) setAccountTestError(ctx context.Context, accountID int64, message string) error {
+	if IsAccountObservation(ctx) {
+		return nil
+	}
+	return s.accountRepo.SetError(ctx, accountID, message)
 }
 
 // FetchOpenAIAccountModels projects shared discovery data into the account UI
@@ -430,10 +463,13 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
-	ctx, finishObservation := s.quotaActivity.Attach(ctx)
-	c.Request = c.Request.WithContext(ctx)
-	ObserveQuotaAccount(ctx, account.ID)
-	defer finishObservation()
+	if !IsAccountObservation(ctx) {
+		var finishObservation func()
+		ctx, finishObservation = s.quotaActivity.Attach(ctx)
+		c.Request = c.Request.WithContext(ctx)
+		ObserveQuotaAccount(ctx, account.ID)
+		defer finishObservation()
+	}
 	if account.IsOpenCodeGo() {
 		return s.testOpenCodeGoConnection(c, account, modelID, prompt)
 	}
@@ -633,7 +669,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 
 		// 403 表示账号被上游封禁，标记为 error 状态
 		if resp.StatusCode == http.StatusForbidden {
-			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+			_ = s.setAccountTestError(ctx, account.ID, errMsg)
 		}
 
 		return s.sendErrorAndEnd(c, errMsg)
@@ -701,7 +737,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 		body, _ := io.ReadAll(resp.Body)
 		errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))
 		if resp.StatusCode == http.StatusForbidden {
-			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+			_ = s.setAccountTestError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, errMsg)
 	}
@@ -993,7 +1029,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if isOAuth && !account.IsShadow() && s.accountRepo != nil {
+	if isOAuth && !account.IsShadow() && s.accountRepo != nil && !IsAccountObservation(ctx) {
 		if updates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(updates) > 0 {
 			_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
 			mergeAccountExtra(account, updates)
@@ -1018,7 +1054,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		// 401 Unauthorized: 标记账号为永久错误
 		if resp.StatusCode == http.StatusUnauthorized && !budgetExceeded && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
-			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+			_ = s.setAccountTestError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
@@ -1191,6 +1227,9 @@ func (s *AccountTestService) applyGrokTestRequestHeaders(req *http.Request, acco
 }
 
 func (s *AccountTestService) observeGrokTestResponse(ctx context.Context, account *Account, resp *http.Response) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if resp == nil {
 		return
 	}
@@ -2211,7 +2250,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		}
 		if resp.StatusCode == http.StatusUnauthorized && !budgetExceeded && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Chat Completions authentication failed (401): %s", string(body))
-			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+			_ = s.setAccountTestError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) returned %d: %s", resp.StatusCode, string(body)))
 	}
@@ -2335,7 +2374,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 
 	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
 	if err != nil {
-		if s.accountRepo != nil {
+		if s.accountRepo != nil && !IsAccountObservation(ctx) {
 			updates := buildOpenAICompactProbeExtraUpdates(nil, nil, err, false, time.Now())
 			_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
 			mergeAccountExtra(account, updates)
@@ -2357,7 +2396,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	}
 
 	compactionFound := openAICompactProbeFoundCompactionItem(body)
-	if s.accountRepo != nil {
+	if s.accountRepo != nil && !IsAccountObservation(ctx) {
 		updates := buildOpenAICompactProbeExtraUpdates(resp, body, nil, compactionFound, time.Now())
 		if !account.IsShadow() {
 			if codexUpdates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(codexUpdates) > 0 {
@@ -2377,7 +2416,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusUnauthorized && !budgetExceeded && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
-			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+			_ = s.setAccountTestError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
@@ -2392,7 +2431,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 }
 
 func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, account *Account, headers http.Header, body []byte) {
-	if s == nil || s.accountRepo == nil || account == nil {
+	if IsAccountObservation(ctx) || s == nil || s.accountRepo == nil || account == nil {
 		return
 	}
 	// Spark quota is observed through its own /wham scope, not global probe 429s.
@@ -2463,7 +2502,7 @@ func (s *AccountTestService) markOpenAIBudgetExceededFromTest(ctx context.Contex
 		(statusCode != http.StatusOK || !isOpenAIBudgetExceededTerminalEvent(body)) {
 		return false
 	}
-	if s != nil {
+	if s != nil && !IsAccountObservation(ctx) {
 		s.openaiGatewayService.handleOpenAIBudgetExceeded(ctx, account, body)
 	}
 	return true

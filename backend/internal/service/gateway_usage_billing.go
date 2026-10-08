@@ -144,6 +144,9 @@ func (p *postUsageBillingParams) shouldUpdateAccountQuota() bool {
 // billing repo is unavailable (nil). Production uses applyUsageBilling → repo.Apply
 // for atomic billing. This path only runs in tests or degraded mode.
 func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *billingDeps) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 
@@ -351,6 +354,9 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 }
 
 func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (bool, error) {
+	if IsAccountObservation(ctx) {
+		return false, nil
+	}
 	if p == nil || deps == nil {
 		return false, nil
 	}
@@ -390,6 +396,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 }
 
 func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if p == nil || p.Cost == nil || deps == nil {
 		return
 	}
@@ -574,6 +583,9 @@ func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Cont
 	if ctx == nil {
 		return context.Background(), func() {}
 	}
+	if IsAccountObservation(ctx) {
+		return ctx, func() {}
+	}
 	if !stream {
 		return ctx, func() {}
 	}
@@ -583,6 +595,9 @@ func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Cont
 func detachUpstreamContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		return context.Background(), func() {}
+	}
+	if IsAccountObservation(ctx) {
+		return ctx, func() {}
 	}
 	return context.WithoutCancel(ctx), func() {}
 }
@@ -616,6 +631,9 @@ func (s *GatewayService) billingDeps() *billingDeps {
 // successful synchronous fallback. An enqueue, timeout, or failed write alone
 // must not publish a log-backed statistics change.
 func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if repo == nil || usageLog == nil {
 		return false
 	}
@@ -660,6 +678,9 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
 func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInput) error {
+	if IsAccountObservation(ctx) {
+		return nil
+	}
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
 		Result:             input.Result,
 		APIKey:             input.APIKey,
@@ -776,6 +797,9 @@ func logResponseModelBillingApplied(component string, account *Account, requestI
 
 // recordUsageCore 是 RecordUsage 的核心实现。
 func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput) error {
+	if IsAccountObservation(ctx) {
+		return nil
+	}
 	result := input.Result
 	apiKey := input.APIKey
 	user := input.User

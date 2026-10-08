@@ -226,6 +226,7 @@ export default {
     codexGatewayBorrow: 'Codex 借用',
     codexGatewayBorrowStatus: 'Codex 借用状态',
     codexPelicanComparison: '鹈鹕对比',
+    pelicanTests: '鹈鹕测试',
   },
 
   // Auth

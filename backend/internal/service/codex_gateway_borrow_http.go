@@ -188,6 +188,9 @@ func withCodexGatewayBorrowHTTPFirstOutputStart(ctx context.Context, start time.
 }
 
 func codexGatewayBorrowHTTPFirstOutputStart(ctx context.Context, fallback time.Time) time.Time {
+	if IsPelicanGeneration(ctx) {
+		return PelicanFirstOutputStart(ctx, fallback)
+	}
 	if ctx != nil {
 		if start, ok := ctx.Value(codexGatewayBorrowHTTPFirstOutputContextKey{}).(time.Time); ok {
 			return start

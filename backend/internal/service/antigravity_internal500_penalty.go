@@ -35,6 +35,9 @@ func isAntigravityInternalServerError(statusCode int, body []byte) bool {
 func (s *AntigravityGatewayService) applyInternal500Penalty(
 	ctx context.Context, prefix string, account *Account, count int64,
 ) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	switch {
 	case count >= int64(internal500PenaltyTier3Threshold):
 		reason := fmt.Sprintf("INTERNAL 500 consecutive failures: %d rounds", count)
@@ -71,6 +74,9 @@ func (s *AntigravityGatewayService) applyInternal500Penalty(
 func (s *AntigravityGatewayService) handleInternal500RetryExhausted(
 	ctx context.Context, prefix string, account *Account,
 ) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s.internal500Cache == nil {
 		return
 	}
@@ -87,6 +93,9 @@ func (s *AntigravityGatewayService) handleInternal500RetryExhausted(
 func (s *AntigravityGatewayService) resetInternal500Counter(
 	ctx context.Context, prefix string, accountID int64,
 ) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s.internal500Cache == nil {
 		return
 	}

@@ -10,7 +10,6 @@ vi.mock('vue-i18n', () => ({
 const paths = [
   '/admin/codex-gateway-borrow',
   '/admin/codex-gateway-borrow/status',
-  '/admin/codex-pelican-comparison',
 ]
 
 async function renderNav(path: string) {
@@ -40,13 +39,9 @@ describe('Codex borrowing page navigation', () => {
     await wrapper.get(`a[href="${paths[1]}"]`).trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe(paths[1])
-    await wrapper.get(`a[href="${paths[2]}"]`).trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe(paths[2])
-
     router.back()
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(paths[1]))
-    expect(wrapper.get('a[aria-current="page"]').attributes('href')).toBe(paths[1])
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(paths[0]))
+    expect(wrapper.get('a[aria-current="page"]').attributes('href')).toBe(paths[0])
     wrapper.unmount()
   })
 })

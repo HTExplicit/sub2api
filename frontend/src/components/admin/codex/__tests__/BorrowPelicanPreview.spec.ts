@@ -9,6 +9,14 @@ const previewUrl = `/api/v1/codex-gateway-borrow/preview/${'a'.repeat(43)}/index
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('Borrow pelican isolated preview', () => {
+  it('accepts the independent pelican capability route with the same opaque sandbox', () => {
+    const standaloneUrl = `/api/v1/pelican-tests/preview/${'b'.repeat(43)}/index.html`
+    const wrapper = mount(BorrowPelicanPreview, { props: { previewUrl: standaloneUrl, title: 'Standalone output' } })
+    expect(wrapper.get('iframe').attributes('src')).toBe(new URL(standaloneUrl, window.location.origin).href)
+    expect(wrapper.get('iframe').attributes('sandbox')).toBe('allow-scripts')
+    wrapper.unmount()
+  })
+
   it('loads only a server capability with an opaque sandbox and a stable scaled viewport', async () => {
     const disconnect = vi.fn()
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect = disconnect })

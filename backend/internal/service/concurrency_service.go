@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -59,6 +60,160 @@ type APIKeyConcurrencyCache interface {
 	TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
 	ReleaseAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
 	GetAPIKeyConcurrencyBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]int, error)
+}
+
+// AccountSlotRefreshCache is an optional extension for explicitly retained
+// administrator observations. Refresh must only renew an existing request ID;
+// recreating a lost member could exceed ordinary business account capacity.
+type AccountSlotRefreshCache interface {
+	RefreshAccountSlot(ctx context.Context, accountID int64, requestID string) (bool, error)
+}
+
+const (
+	// The configured regular-slot TTL is an integer number of minutes, at
+	// least one minute. Thirty seconds also covers that minimum configuration.
+	observedAccountLeaseRefreshInterval = 30 * time.Second
+	observedAccountLeaseOperationTO     = 2 * time.Second
+)
+
+var ErrObservedAccountLeaseLost = errors.New("observed account concurrency lease lost")
+
+// ObservedAccountLease occupies the same regular account slot as a business
+// request, while renewing it for an explicitly long observation. Normal
+// AcquireAccountSlot callers do not create a timer or change their behavior.
+type ObservedAccountLease struct {
+	ctx       context.Context
+	cancel    context.CancelCauseFunc
+	cache     ConcurrencyCache
+	refresher AccountSlotRefreshCache
+	accountID int64
+	requestID string
+	onLost    func(error)
+	ticks     <-chan time.Time
+	stopTimer func()
+	stopCh    chan struct{}
+	done      chan struct{}
+
+	mu          sync.Mutex
+	released    bool
+	stopOnce    sync.Once
+	releaseOnce sync.Once
+}
+
+func (l *ObservedAccountLease) Context() context.Context {
+	if l == nil || l.ctx == nil {
+		return context.Background()
+	}
+	return l.ctx
+}
+
+func (l *ObservedAccountLease) Release() {
+	if l == nil {
+		return
+	}
+	l.stopOnce.Do(func() {
+		l.mu.Lock()
+		l.released = true
+		l.mu.Unlock()
+		if l.stopCh != nil {
+			close(l.stopCh)
+		}
+		if l.cancel != nil {
+			l.cancel(context.Canceled)
+		}
+		if l.done != nil {
+			<-l.done
+		}
+		l.releaseSlot()
+	})
+}
+
+func (l *ObservedAccountLease) releaseSlot() {
+	l.releaseOnce.Do(func() {
+		if l.cache == nil || l.accountID <= 0 || l.requestID == "" {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), observedAccountLeaseOperationTO)
+		defer cancel()
+		if err := l.cache.ReleaseAccountSlot(ctx, l.accountID, l.requestID); err != nil {
+			logger.L().Warn("observed_account_lease_release_failed", zap.Int64("account_id", l.accountID), zap.Error(err))
+		}
+	})
+}
+
+func (l *ObservedAccountLease) refreshLoop() {
+	defer close(l.done)
+	defer l.stopTimer()
+	defer l.releaseSlot()
+	for {
+		select {
+		case <-l.ctx.Done():
+			return
+		case <-l.stopCh:
+			return
+		case <-l.ticks:
+			if l.ctx.Err() != nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(l.ctx, observedAccountLeaseOperationTO)
+			owned, err := l.refresher.RefreshAccountSlot(ctx, l.accountID, l.requestID)
+			cancel()
+			if err == nil && owned {
+				continue
+			}
+			// A failed renewal is fail-closed. Cancel before releasing capacity
+			// rather than continuing an unconfirmed 30-minute model request.
+			cause := ErrObservedAccountLeaseLost
+			if err != nil {
+				cause = fmt.Errorf("%w: %v", cause, err)
+			}
+			l.mu.Lock()
+			if !l.released && l.ctx.Err() == nil {
+				l.cancel(cause)
+				if l.onLost != nil {
+					l.onLost(cause)
+				}
+			}
+			l.mu.Unlock()
+			return
+		}
+	}
+}
+
+func newObservedAccountLease(ctx context.Context, cache ConcurrencyCache, refresher AccountSlotRefreshCache, accountID int64, requestID string,
+	onLost func(error), ticks <-chan time.Time, stopTimer func()) *ObservedAccountLease {
+	leaseCtx, cancel := context.WithCancelCause(ctx)
+	lease := &ObservedAccountLease{ctx: leaseCtx, cancel: cancel, cache: cache, refresher: refresher,
+		accountID: accountID, requestID: requestID, onLost: onLost, ticks: ticks, stopTimer: stopTimer,
+		stopCh: make(chan struct{}), done: make(chan struct{})}
+	go lease.refreshLoop()
+	return lease
+}
+
+// AcquireObservedAccountLease is opt-in for long administrator observations.
+// Acquisition uses the unchanged account limit and slot namespace; the cache
+// extension only keeps that exact owner alive until release/cancellation/loss.
+func (s *ConcurrencyService) AcquireObservedAccountLease(ctx context.Context, accountID int64, maxConcurrency int, onLost func(error)) (*ObservedAccountLease, bool, error) {
+	if maxConcurrency <= 0 {
+		return nil, true, nil
+	}
+	if s == nil || s.cache == nil || accountID <= 0 {
+		return nil, false, errors.New("observed account concurrency cache is unavailable")
+	}
+	refresher, ok := s.cache.(AccountSlotRefreshCache)
+	if !ok {
+		return nil, false, errors.New("observed account concurrency lease renewal is unsupported")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	requestID := generateRequestID()
+	acquired, err := s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	if err != nil || !acquired {
+		return nil, acquired, err
+	}
+	ticker := time.NewTicker(observedAccountLeaseRefreshInterval)
+	return newObservedAccountLease(ctx, s.cache, refresher, accountID, requestID, onLost, ticker.C, ticker.Stop), true, nil
 }
 
 // OpenAIWSIngressLeaseCache owns the short-lived distributed lease used to

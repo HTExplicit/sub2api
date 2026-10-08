@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -300,12 +301,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		return nil, wrapOpenAIWSFallback(classifyOpenAIWSAcquireError(err), err)
 	}
-	// cleanExit 标记正常终端事件退出，此时上游不会再发送帧，连接可安全归还复用。
-	// 所有异常路径（读写错误、error 事件等）已在各自分支中提前调用 MarkBroken，
-	// 因此 defer 中只需处理正常退出时不 MarkBroken 即可。
+	// 正常业务终态可归还连接。管理员借用的一次性连接必须先移出池再
+	// 释放租约，避免等待中的业务请求取得它后又被借用清理关闭。
 	cleanExit := false
 	defer func() {
-		if !cleanExit {
+		if !cleanExit || (borrowTurn != nil && borrowTurn.pelicanOneShot) {
 			lease.MarkBroken()
 		}
 		lease.Release()
@@ -386,6 +386,37 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, handshakeTurnState)
 	}
 
+	var observePelicanFrame func([]byte) error
+	var releasePelican func()
+	pelicanPreparationCtx := ctx
+	ctx, observePelicanFrame, releasePelican, err = preparePelicanWSSend(ctx, account, wsURL, payload, borrowTurn != nil)
+	if err != nil {
+		return nil, err
+	}
+	defer releasePelican()
+	if IsPelicanGeneration(ctx) && borrowTurn != nil && !time.Now().Before(borrowTurn.expires) {
+		// No prompt has been written. Release the expired route and all execution
+		// resources, then perform the ordinary preparation on this same account.
+		releasePelican()
+		lease.MarkBroken()
+		lease.Release()
+		borrowTurn.finish(s.getOpenAIWSConnPool(), nil, ErrCodexGatewayBorrowChanged)
+		return s.forwardOpenAIWSV2(pelicanPreparationCtx, c, account, reqBody, clientPromptCacheKey, executionScope, token, decision,
+			isCodexCLI, reqStream, originalModel, mappedModel, startTime, attempt, lastFailureReason, agentTaskRecoveryTried)
+	}
+	if IsPelicanGeneration(ctx) && borrowTurn != nil {
+		prepared, prepareErr := codexGatewayBorrowWSRequest(ctx, wsURL, wsHeaders)
+		if prepareErr != nil {
+			return nil, codexGatewayBorrowWSPreparationError(c, account, prepareErr)
+		}
+		borrowed, application, applyErr := s.gatewayBorrow.Apply(prepared, account, openAIWSPayloadString(payload, "model"), proxyURL, nil, true)
+		if applyErr != nil {
+			return nil, codexGatewayBorrowWSPreparationError(c, account, applyErr)
+		}
+		if application == nil || !application.Applied || !application.ExpiresAt.Equal(borrowTurn.expires) || !slices.Equal(prepared.Header.Values("Cookie"), borrowed.Header.Values("Cookie")) {
+			return nil, codexGatewayBorrowWSPreparationError(c, account, ErrCodexGatewayBorrowChanged)
+		}
+	}
 	if err := s.performOpenAIWSGeneratePrewarm(
 		ctx,
 		lease,
@@ -398,6 +429,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		groupID,
 	); err != nil {
 		return nil, err
+	}
+	if IsPelicanGeneration(ctx) {
+		ctx = BeginPelicanGeneration(ctx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
@@ -456,7 +493,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		clientDisconnected = true
 		clientDisconnectDrainStartedAt = time.Now()
-		if !upstreamReadDetached {
+		if !upstreamReadDetached && !IsAccountObservation(ctx) {
 			upstreamReadCtx = context.WithoutCancel(ctx)
 			upstreamReadDetached = true
 		}
@@ -625,6 +662,12 @@ readLoop:
 			}
 			message, readErr = lease.ReadMessageWithContextTimeout(upstreamReadCtx, currentReadTimeout)
 			if readErr == nil {
+				if observeErr := observePelicanFrame(message); observeErr != nil {
+					lease.MarkBroken()
+					return nil, observeErr
+				}
+			}
+			if readErr == nil {
 				if documents, repaired := splitOpenAIConcatenatedJSONDocuments(message); repaired {
 					logOpenAIWSModeInfo(
 						"concatenated_json_repaired account_id=%d conn_id=%s documents=%d bytes=%d",
@@ -660,6 +703,9 @@ readLoop:
 		}
 		if readErr != nil {
 			lease.MarkBroken()
+			if IsAccountObservation(ctx) && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			logOpenAIWSModeInfo(
 				"read_fail account_id=%d conn_id=%s wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",
@@ -1032,12 +1078,12 @@ readLoop:
 		flushStreamWriter(true)
 	}
 
-	if responseID != "" && stateStore != nil {
+	if responseID != "" && stateStore != nil && !IsAccountObservation(ctx) {
 		ttl := s.openAIWSResponseStickyTTL()
 		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
 		stateStore.BindResponseConn(responseID, lease.ConnID(), ttl)
 	}
-	if stateStore != nil && storeDisabled && sessionHash != "" {
+	if stateStore != nil && storeDisabled && sessionHash != "" && !IsAccountObservation(ctx) {
 		stateStore.BindSessionConn(groupID, sessionHash, lease.ConnID(), s.openAIWSSessionStickyTTL())
 	}
 	firstTokenMsValue := -1

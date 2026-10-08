@@ -9,11 +9,17 @@ func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 // doOpenAIUpstream 只在 OpenAI OAuth 能力绑定已启用时把真实请求交给插件。
 // 插件返回标准 http.Response，响应解析、错误映射、SSE 和计费仍由现有核心链处理。
 func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL string, account *Account) (*http.Response, error) {
-	if s.pluginManager != nil {
+	if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
+		prepared, finish, prepareErr := PreparePelicanHTTPRequest(request, account.ID, account.Concurrency, "plugin")
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		request = prepared
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {
-			return response, err
+			return finish(response, err)
 		}
+		_, _ = finish(nil, nil)
 	}
 	return s.httpUpstream.Do(request, proxyURL, account.ID, account.Concurrency)
 }
@@ -28,11 +34,17 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	account *Account,
 	useTLSFallback bool,
 ) (*http.Response, error) {
-	if s.pluginManager != nil {
+	if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
+		prepared, finish, prepareErr := PreparePelicanHTTPRequest(request, account.ID, account.Concurrency, "plugin")
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		request = prepared
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {
-			return response, err
+			return finish(response, err)
 		}
+		_, _ = finish(nil, nil)
 	}
 	// 插件 round-trip 有意拿到明文请求；zstd 压缩是网关传输层的事，只在真正经
 	// HTTPUpstream 发出的副本上做。

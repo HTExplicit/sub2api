@@ -102,6 +102,9 @@ func openAIBudgetExceededAccountError(payload []byte) string {
 
 // handleOpenAIBudgetExceeded moves the account to the error state.
 func (s *RateLimitService) handleOpenAIBudgetExceeded(ctx context.Context, account *Account, payload []byte) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil {
 		return
 	}
@@ -118,6 +121,9 @@ func (s *RateLimitService) handleOpenAIBudgetExceeded(ctx context.Context, accou
 }
 
 func (s *OpenAIGatewayService) handleOpenAIBudgetExceeded(ctx context.Context, account *Account, payload []byte) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil {
 		return
 	}

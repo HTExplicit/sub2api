@@ -47,6 +47,7 @@ type AdminHandlers struct {
 	SystemPrompt           *admin.SystemPromptHandler
 	ReasoningRecovery      *admin.ReasoningRecoveryHandler
 	CodexGatewayBorrow     *admin.CodexGatewayBorrowHandler
+	PelicanTest            *admin.PelicanTestHandler
 }
 
 // Handlers contains all HTTP handlers

@@ -16,11 +16,12 @@ func NewCodexGatewayBorrowTestRepository(db *sql.DB) service.CodexGatewayBorrowT
 }
 
 const codexGatewayBorrowTestTaskColumns = `id, client_task_id, created_by, request_hash, status, prompt,
-    created_at, expires_at, started_at, finished_at, total, completed, error`
+    created_at, expires_at, started_at, finished_at, total, completed, error, generation_timeout_seconds, execution_mode`
 
 const codexGatewayBorrowTestResultColumns = `r.id, r.task_id, r.ordinal, r.account_id, r.account_name, r.model_id,
     r.upstream_model, r.effort, r.status, r.raw_answer, r.raw_response, r.raw_html, r.html, r.error,
-    r.started_at, r.finished_at, r.duration_ms, t.expires_at`
+    r.started_at, r.finished_at, r.duration_ms, t.expires_at, r.platform, r.actual_endpoint, r.actual_protocol,
+    r.actual_transport, r.borrow_applied, r.queue_duration_ms, r.preparation_duration_ms, r.generation_duration_ms, r.generation_started_at`
 
 type codexGatewayBorrowTestScanner interface{ Scan(...any) error }
 
@@ -29,7 +30,7 @@ func scanCodexGatewayBorrowTestTask(row codexGatewayBorrowTestScanner) (*service
 	var started, finished sql.NullTime
 	var rawError []byte
 	if err := row.Scan(&task.ID, &task.ClientTaskID, &task.CreatedBy, &task.RequestHash, &task.Status, &task.Prompt,
-		&task.CreatedAt, &task.ExpiresAt, &started, &finished, &task.Total, &task.Completed, &rawError); err != nil {
+		&task.CreatedAt, &task.ExpiresAt, &started, &finished, &task.Total, &task.Completed, &rawError, &task.GenerationTimeoutSeconds, &task.ExecutionMode); err != nil {
 		return nil, err
 	}
 	if started.Valid {
@@ -45,10 +46,11 @@ func scanCodexGatewayBorrowTestTask(row codexGatewayBorrowTestScanner) (*service
 func scanCodexGatewayBorrowTestResult(row codexGatewayBorrowTestScanner) (*service.CodexGatewayBorrowTestResult, error) {
 	result := &service.CodexGatewayBorrowTestResult{}
 	var answer, rawResponse, rawHTML, html, rawError []byte
-	var started, finished sql.NullTime
+	var started, finished, generationStarted sql.NullTime
 	if err := row.Scan(&result.ID, &result.TaskID, &result.Ordinal, &result.AccountID, &result.AccountName, &result.ModelID,
 		&result.UpstreamModel, &result.Effort, &result.Status, &answer, &rawResponse, &rawHTML, &html, &rawError,
-		&started, &finished, &result.DurationMS, &result.ExpiresAt); err != nil {
+		&started, &finished, &result.DurationMS, &result.ExpiresAt, &result.Platform, &result.ActualEndpoint, &result.ActualProtocol,
+		&result.ActualTransport, &result.BorrowApplied, &result.QueueDurationMS, &result.PreparationDurationMS, &result.GenerationDurationMS, &generationStarted); err != nil {
 		return nil, err
 	}
 	result.RawAnswer, result.RawResponse, result.RawHTML, result.HTML, result.Error = string(answer), string(rawResponse), string(rawHTML), string(html), string(rawError)
@@ -57,6 +59,9 @@ func scanCodexGatewayBorrowTestResult(row codexGatewayBorrowTestScanner) (*servi
 	}
 	if finished.Valid {
 		result.FinishedAt = &finished.Time
+	}
+	if generationStarted.Valid {
+		result.GenerationStartedAt = &generationStarted.Time
 	}
 	if result.Status != "complete" {
 		result.PreviewUnavailable = "test " + result.Status
@@ -75,10 +80,10 @@ func (r *codexGatewayBorrowTestRepository) Create(ctx context.Context, task *ser
 	}
 	defer func() { _ = tx.Rollback() }()
 	stored, err := scanCodexGatewayBorrowTestTask(tx.QueryRowContext(ctx, `INSERT INTO codex_gateway_borrow_test_tasks
-        (id,client_task_id,created_by,request_hash,status,prompt,total,created_at,expires_at)
-        VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8)
+        (id,client_task_id,created_by,request_hash,status,prompt,total,created_at,expires_at,generation_timeout_seconds,execution_mode)
+        VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10)
         ON CONFLICT (client_task_id) DO NOTHING RETURNING `+codexGatewayBorrowTestTaskColumns,
-		task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Prompt, task.Total, task.CreatedAt, task.ExpiresAt))
+		task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Prompt, task.Total, task.CreatedAt, task.ExpiresAt, task.GenerationTimeoutSeconds, task.ExecutionMode))
 	if errors.Is(err, sql.ErrNoRows) {
 		stored, err = scanCodexGatewayBorrowTestTask(tx.QueryRowContext(ctx, `SELECT `+codexGatewayBorrowTestTaskColumns+`
             FROM codex_gateway_borrow_test_tasks WHERE scope='manual_pelican' AND client_task_id=$1 FOR UPDATE`, task.ClientTaskID))
@@ -102,8 +107,8 @@ func (r *codexGatewayBorrowTestRepository) Create(ctx context.Context, task *ser
 	}
 	for _, result := range task.Results {
 		if _, err = tx.ExecContext(ctx, `INSERT INTO codex_gateway_borrow_test_results
-            (id,task_id,ordinal,account_id,account_name,model_id,effort,status)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')`, result.ID, stored.ID, result.Ordinal, result.AccountID, result.AccountName, result.ModelID, result.Effort); err != nil {
+            (id,task_id,ordinal,account_id,account_name,model_id,effort,status,platform)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8)`, result.ID, stored.ID, result.Ordinal, result.AccountID, result.AccountName, result.ModelID, result.Effort, result.Platform); err != nil {
 			return nil, false, err
 		}
 	}
@@ -221,12 +226,15 @@ func (r *codexGatewayBorrowTestRepository) SaveResult(ctx context.Context, resul
 	defer func() { _ = tx.Rollback() }()
 	if err = codexGatewayBorrowRequireAffected(tx.ExecContext(ctx, `UPDATE codex_gateway_borrow_test_results r
         SET account_name=$3,upstream_model=$4,effort=$5,status=$6,raw_answer=$7,raw_response=$8,raw_html=$9,html=$10,error=$11,
-            started_at=$12,finished_at=$13,duration_ms=$14,updated_at=CURRENT_TIMESTAMP
+            started_at=$12,finished_at=$13,duration_ms=$14,platform=$15,actual_endpoint=$16,actual_protocol=$17,
+            actual_transport=$18,borrow_applied=$19,queue_duration_ms=$20,preparation_duration_ms=$21,
+            generation_duration_ms=$22,generation_started_at=$23,updated_at=CURRENT_TIMESTAMP
         FROM codex_gateway_borrow_test_tasks t
         WHERE r.id=$1 AND r.task_id=$2 AND t.id=r.task_id AND t.scope='manual_pelican' AND t.expires_at>CURRENT_TIMESTAMP`,
 		result.ID, result.TaskID, result.AccountName, result.UpstreamModel, result.Effort, result.Status,
 		[]byte(result.RawAnswer), []byte(result.RawResponse), []byte(result.RawHTML), []byte(result.HTML), []byte(result.Error),
-		result.StartedAt, result.FinishedAt, result.DurationMS)); err != nil {
+		result.StartedAt, result.FinishedAt, result.DurationMS, result.Platform, result.ActualEndpoint, result.ActualProtocol,
+		result.ActualTransport, result.BorrowApplied, result.QueueDurationMS, result.PreparationDurationMS, result.GenerationDurationMS, result.GenerationStartedAt)); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE codex_gateway_borrow_test_tasks t

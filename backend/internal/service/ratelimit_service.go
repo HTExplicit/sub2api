@@ -184,6 +184,9 @@ func (s *RateLimitService) notifyAccountSchedulingBlockCleared(accountID int64) 
 // unschedulable until the winning window resets. Returns true when the account
 // is blocked (either newly or already paused for the same threshold reason).
 func (s *RateLimitService) ApplyAccountSchedulingThreshold(ctx context.Context, account *Account) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || s.settingService == nil || s.accountRepo == nil || account == nil || account.ID <= 0 {
 		return false
 	}
@@ -349,6 +352,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // HandleUpstreamError 处理上游错误响应，标记账号状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	// Team 联动熔断必须先于池模式/自定义错误码/临时不可调度的各类早退；
 	// 同请求内与 fastpath 调用点的重复触发由方法内去重吸收。
@@ -980,6 +986,9 @@ func (s *RateLimitService) GeminiCooldown(ctx context.Context, account *Account)
 
 // handleAuthError 处理认证类错误(401/403)，停止账号调度
 func (s *RateLimitService) handleAuthError(ctx context.Context, account *Account, errorMsg string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	s.notifyAccountSchedulingBlocked(account, time.Time{}, "auth_error")
 	if err := s.accountRepo.SetError(ctx, account.ID, errorMsg); err != nil {
 		slog.Warn("account_set_error_failed", "account_id", account.ID, "error", err)
@@ -2006,6 +2015,9 @@ func (s *RateLimitService) handle529(ctx context.Context, account *Account) {
 
 // UpdateSessionWindow 从成功响应更新5h窗口状态
 func (s *RateLimitService) UpdateSessionWindow(ctx context.Context, account *Account, headers http.Header) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	status := headers.Get("anthropic-ratelimit-unified-5h-status")
 	if status == "" {
 		return
@@ -2129,6 +2141,9 @@ func (s *RateLimitService) samplePassiveUsageFromHeaders(ctx context.Context, ac
 
 // ClearRateLimit 清除账号的限流状态
 func (s *RateLimitService) ClearRateLimit(ctx context.Context, accountID int64) error {
+	if IsAccountObservation(ctx) {
+		return nil
+	}
 	if err := s.accountRepo.ClearRateLimit(ctx, accountID); err != nil {
 		return err
 	}
@@ -2153,6 +2168,9 @@ func (s *RateLimitService) ClearRateLimit(ctx context.Context, accountID int64) 
 }
 
 func (s *RateLimitService) ResetOpenAI403Counter(ctx context.Context, accountID int64) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || s.openAI403CounterCache == nil || accountID <= 0 {
 		return
 	}
@@ -2163,6 +2181,9 @@ func (s *RateLimitService) ResetOpenAI403Counter(ctx context.Context, accountID 
 
 // RecoverAccountState 按需恢复账号的可恢复运行时状态。
 func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID int64, options AccountRecoveryOptions) (*SuccessfulTestRecoveryResult, error) {
+	if IsAccountObservation(ctx) {
+		return &SuccessfulTestRecoveryResult{}, nil
+	}
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -2204,6 +2225,9 @@ func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context
 }
 
 func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID int64) error {
+	if IsAccountObservation(ctx) {
+		return nil
+	}
 	if err := s.accountRepo.ClearTempUnschedulable(ctx, accountID); err != nil {
 		return err
 	}
@@ -2314,6 +2338,9 @@ func (s *RateLimitService) HandleTempUnschedulable(ctx context.Context, account 
 }
 
 func (s *RateLimitService) HandleOpenAIImageRateLimit(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || account == nil || s.accountRepo == nil {
 		return false
 	}
@@ -2341,6 +2368,9 @@ func (s *RateLimitService) HandleOpenAIImageRateLimit(ctx context.Context, accou
 // Spark 的 x-codex-* 使用率和 reset 时间只代表 Spark 模型维度，不能写入账号级
 // RateLimitResetAt，否则同一 OAuth 账号上的其他模型也会被错误停调。
 func (s *RateLimitService) HandleOpenAICodexSparkRateLimit(ctx context.Context, account *Account, requestedModel string, statusCode int, headers http.Header, responseBody []byte) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || account == nil || s.accountRepo == nil || statusCode != http.StatusTooManyRequests || !isOpenAIOAuthAccount(account) {
 		return false
 	}
@@ -2375,6 +2405,9 @@ func (s *RateLimitService) HandleOpenAICodexSparkRateLimit(ctx context.Context, 
 }
 
 func (s *RateLimitService) HandleOpenAIImageCapabilityLoss(ctx context.Context, account *Account, statusCode int, responseBody []byte) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || account == nil || s.accountRepo == nil {
 		return false
 	}
@@ -2523,6 +2556,9 @@ func modelRateLimitUpstreamMessage(body []byte) string {
 // cooldown expires, instead of re-selecting an account that can never serve
 // the model.
 func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, account *Account, requestedModel string, statusCode int, responseBody []byte) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || account == nil || s.accountRepo == nil {
 		return false
 	}
@@ -2671,6 +2707,10 @@ func matchTempUnschedulableRules(account *Account, statusCode int, responseBody 
 }
 
 func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) bool {
+	if IsAccountObservation(ctx) {
+		// Preserve request-local policy matching without publishing its cooldown.
+		return len(matchTempUnschedulableRules(account, statusCode, responseBody)) > 0
+	}
 	if account == nil {
 		return false
 	}
@@ -2808,6 +2848,9 @@ func truncateTempUnschedMessage(body []byte, maxBytes int) string {
 // 根据系统设置决定是否标记账户为临时不可调度或错误状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleStreamTimeout(ctx context.Context, account *Account, model string) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if account == nil {
 		return false
 	}
