@@ -68,9 +68,10 @@ func (e *openAIWSDialError) Unwrap() error {
 }
 
 type openAIWSAcquireRequest struct {
-	Account *Account
-	WSURL   string
-	Headers http.Header
+	FingerprintPolicy *codexFingerprintPolicy
+	Account           *Account
+	WSURL             string
+	Headers           http.Header
 	// HeadersFactory is evaluated inside dialConn. It exists so credentials
 	// whose authorization is per-dial (Agent Identity) are never cached in
 	// lastAcquire or delayed prewarm state.
@@ -87,6 +88,11 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
+	codexPolicyRevision uint64
+	codexMode           string
+	userAgent           string
+	originator          string
+	version             string
 	anchorScope         string
 	betaFeatures        string
 	codexInstallationID string
@@ -2349,7 +2355,7 @@ func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 }
 
 func normalizeOpenAIWSAcquireCompatibility(req openAIWSAcquireRequest) openAIWSHandshakeCompatibilityKey {
-	key := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
+	key := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers, req.FingerprintPolicy)
 	key.anchorScope = stringsTrim(req.AnchorScope)
 	return key
 }
@@ -2379,11 +2385,28 @@ func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 	return strings.Join(normalized, ",")
 }
 
-func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Header) openAIWSHandshakeCompatibilityKey {
+func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Header, policies ...*codexFingerprintPolicy) openAIWSHandshakeCompatibilityKey {
+	policy := selectCodexFingerprintPolicy(policies)
+	if len(policies) == 0 || policies[0] == nil {
+		policy = currentCodexFingerprintPolicyForAccount(account)
+	}
 	key := openAIWSHandshakeCompatibilityKey{
 		betaFeatures: normalizeOpenAIWSBetaFeatures(headers),
 	}
-	mode := activeCodexFingerprintMode(account)
+	if account != nil && account.IsOpenAIOAuthLike() {
+		key.codexPolicyRevision = policy.revision
+		key.codexMode = string(account.GetCodexFingerprintMode())
+		key.userAgent = headers.Get("user-agent")
+		key.originator = headers.Get("originator")
+		key.version = headers.Get("version")
+	}
+	if !policy.enabled || account == nil {
+		return key
+	}
+	mode := account.GetCodexFingerprintMode()
+	if _, ok := codexFingerprintSeed(account.Extra); !ok {
+		mode = codexFingerprintOff
+	}
 	if mode == codexFingerprintOff {
 		return key
 	}
@@ -2400,7 +2423,7 @@ func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Head
 }
 
 func activeCodexFingerprintMode(account *Account) codexFingerprintMode {
-	if account == nil || account.GetCodexFingerprintMode() == codexFingerprintOff {
+	if account == nil || !currentCodexFingerprintPolicy().enabled || account.GetCodexFingerprintMode() == codexFingerprintOff {
 		return codexFingerprintOff
 	}
 	if _, ok := codexFingerprintSeed(account.Extra); !ok {

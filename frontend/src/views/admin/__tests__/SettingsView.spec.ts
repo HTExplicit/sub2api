@@ -1224,36 +1224,17 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("loads and saves Codex version synchronization settings", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      openai_codex_client_version: "0.145.0",
-      openai_codex_client_version_synced: "0.146.0",
-      openai_codex_version_auto_sync_enabled: true,
-    });
+  it("leaves Codex fingerprint configuration to the extension page when saving general settings", async () => {
+    getSettings.mockResolvedValueOnce({ ...baseSettingsResponse, openai_codex_client_version: "0.145.0", openai_codex_client_version_synced: "0.146.0", openai_codex_version_auto_sync_enabled: false });
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
-
-    const versionInput = wrapper.get(
-      '[data-testid="openai-codex-client-version-input"]',
-    );
-    expect((versionInput.element as HTMLInputElement).value).toBe("0.145.0");
-    expect(wrapper.get('[data-testid="openai-codex-synced-version"]').text()).toContain(
-      "0.146.0",
-    );
-    await versionInput.setValue("0.147.0");
-    await wrapper
-      .get('[data-testid="openai-codex-version-auto-sync-toggle"]')
-      .setValue(false);
-
+    expect(wrapper.find('[data-testid="openai-codex-client-version-input"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="openai-codex-version-auto-sync-toggle"]').exists()).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
-
     const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(payload.openai_codex_client_version).toBe("0.147.0");
-    expect(payload.openai_codex_version_auto_sync_enabled).toBe(false);
-    expect(payload).not.toHaveProperty("openai_codex_client_version_synced");
+    for (const key of ["openai_codex_user_agent", "openai_codex_client_version", "openai_codex_client_version_synced", "openai_codex_version_auto_sync_enabled"]) expect(payload).not.toHaveProperty(key);
   });
 
   it("disables passkey sign-in when the RP configuration is unavailable", async () => {

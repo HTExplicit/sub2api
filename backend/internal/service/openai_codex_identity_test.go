@@ -260,7 +260,7 @@ func TestEnforceCodexIdentityHeaders_EnforcementDisabled(t *testing.T) {
 	require.Equal(t, "0.145.2", h.Get("version"))
 }
 
-// 关闭强制统一后，第三方 UA 仍整体回退为规范身份并对齐 version。
+// 关闭模拟后保留已声明的客户端身份，兜底只补缺失头。
 func TestEnforceCodexIdentityHeaders_EnforcementDisabledThirdPartyFallback(t *testing.T) {
 	SetCodexIdentityEnforcementEnabled(false)
 	t.Cleanup(func() { SetCodexIdentityEnforcementEnabled(true) })
@@ -272,9 +272,9 @@ func TestEnforceCodexIdentityHeaders_EnforcementDisabledThirdPartyFallback(t *te
 
 	enforceCodexIdentityHeaders(h)
 
-	require.Equal(t, openai.CodexDefaultOriginator, h.Get("originator"))
-	require.Equal(t, codexCLIUserAgent, h.Get("user-agent"))
-	require.Equal(t, codexCLIVersion, h.Get("version"))
+	require.Equal(t, "opencode", h.Get("originator"))
+	require.Equal(t, "luna/1.0.0", h.Get("user-agent"))
+	require.Equal(t, "2.1.0", h.Get("version"))
 }
 
 // 收口必须幂等：透传等路径可能先后多次经过收口。

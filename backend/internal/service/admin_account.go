@@ -1015,7 +1015,13 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if len(updates) == 0 {
 		return nil
 	}
-	return s.accountRepo.UpdateExtra(ctx, id, updates)
+	if err := s.accountRepo.UpdateExtra(ctx, id, updates); err != nil {
+		return err
+	}
+	if _, changed := updates[codexFingerprintModeExtraKey]; changed {
+		notifyCodexFingerprintAccountChanged(id)
+	}
+	return nil
 }
 
 // BulkUpdateAccounts updates multiple accounts in one request.

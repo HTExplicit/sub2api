@@ -189,6 +189,7 @@ export default {
     accounts: 'Accounts',
     plugins: 'Plugins',
     codexRuntime: 'Codex runtime settings',
+    codexFingerprint: 'Codex fingerprint',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',

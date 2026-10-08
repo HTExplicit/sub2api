@@ -1,7 +1,11 @@
 import type { AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 export function isAccountTestReasoningValid(model: AccountAvailableModel | undefined, effort: string): boolean {
-  return effort === '' || model?.reasoning_efforts?.includes(effort) === true
+  return effort === '' || (effort.trim().toLowerCase() !== 'ultra' && model?.reasoning_efforts?.includes(effort) === true)
+}
+
+export function accountTestReasoningLevels(model: AccountAvailableModel | undefined): string[] {
+  return (model?.reasoning_efforts || []).filter(effort => effort.trim().toLowerCase() !== 'ultra')
 }
 
 export function validateAccountTestPlan(value: unknown, accountID: number): AccountTestPlanView {
@@ -14,6 +18,8 @@ export function validateAccountTestPlan(value: unknown, accountID: number): Acco
     if (!model || typeof model.id !== 'string' || !model.id || ids.has(model.id) ||
         typeof model.display_name !== 'string' || !model.display_name) throw new Error('Invalid account test model')
     ids.add(model.id)
+    if (model.reasoning_efforts) model.reasoning_efforts = accountTestReasoningLevels(model)
+    if (model.default_reasoning_effort?.trim().toLowerCase() === 'ultra') delete model.default_reasoning_effort
   }
   for (const view of Object.values(plan.mode_views)) {
     if (!view || !Array.isArray(view.model_ids) || new Set(view.model_ids).size !== view.model_ids.length ||

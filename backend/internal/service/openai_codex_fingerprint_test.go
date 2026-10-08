@@ -253,7 +253,7 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 	assert.Equal(t, convergedInstall, meta["installation_id"])
 	assert.Equal(t, convergedSession, meta["session_id"])
 	assert.Equal(t, convergedThread, meta["thread_id"])
-	assert.NotEqual(t, "user-turn", meta["turn_id"], "turn_id 应被新生成的值替换")
+	assert.Equal(t, "user-turn", meta["turn_id"], "真实回合标识保持原样")
 	assert.Equal(t, identity.Sandbox, meta["sandbox"], "sandbox 跟随账号身份的操作系统")
 	assert.Equal(t, "user", meta["thread_source"], "thread_source 保留原样")
 }
@@ -332,7 +332,7 @@ func TestFingerprintIDs_HeaderAndBody_TurnID_Consistent(t *testing.T) {
 
 	// 头改写
 	h := http.Header{}
-	h.Set("x-codex-turn-metadata", `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","window_id":"x:0"}`)
+	h.Set("x-codex-turn-metadata", `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","turn_started_at_unix_ms":12345,"window_id":"x:0"}`)
 	applyCodexFingerprintHeaders(h, ids)
 
 	// 体改写（使用同一份 ids）
@@ -341,7 +341,7 @@ func TestFingerprintIDs_HeaderAndBody_TurnID_Consistent(t *testing.T) {
 			"x-codex-installation-id": "x",
 			"session_id":              "x",
 			"turn_id":                 "x",
-			"x-codex-turn-metadata":   `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","window_id":"x:0"}`,
+			"x-codex-turn-metadata":   `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","turn_started_at_unix_ms":12345,"window_id":"x:0"}`,
 		},
 	}
 	applyCodexFingerprintClientMetadata(reqBody, ids)
@@ -372,9 +372,9 @@ func TestFingerprintIDs_HeaderAndBody_TurnID_Consistent(t *testing.T) {
 
 	assert.Equal(t, headerTurnID, bodyTurnID, "头和体的 turn_id 必须一致")
 	assert.Equal(t, headerTurnID, bodyEmbeddedTurnID, "头和体内嵌 turn-metadata 的 turn_id 必须一致")
-	assert.Equal(t, ids.turnID, headerTurnID, "所有 turn_id 都应来自同一份 ids")
+	assert.Equal(t, "x", headerTurnID, "真实 turn_id 保持原样")
 	assert.Equal(t, headerTurnStartedAt, bodyTurnStartedAt, "头和体内嵌 turn-metadata 的开始时间必须一致")
-	assert.Equal(t, ids.turnStartedAtUnixMs, int64(headerTurnStartedAt), "所有开始时间都应来自同一份 ids")
+	assert.Equal(t, float64(12345), headerTurnStartedAt, "真实开始时间保持原样")
 }
 
 func TestFingerprintIDs_MalformedEmbeddedMetadataRebuiltConsistently(t *testing.T) {
@@ -797,7 +797,7 @@ func TestApplyCodexFingerprintClientMetadataRaw_PreservesUnrelatedFields(t *test
 	cm, _ := decoded["client_metadata"].(map[string]any)
 	require.NotNil(t, cm)
 	assert.Equal(t, ids.sessionID, cm["session_id"])
-	assert.Equal(t, ids.turnID, cm["turn_id"])
+	assert.NotContains(t, cm, "turn_id", "未提供的回合标识不应被伪造")
 }
 
 func TestApplyCodexFingerprintClientMetadataRaw_Noop(t *testing.T) {

@@ -141,6 +141,9 @@ func (s *OpenAICodexVersionSyncService) runOnce() {
 		return
 	}
 	s.settingService.InvalidateOpenAICodexClientVersionCache()
+	if err := s.settingService.LoadCodexFingerprintSettings(ctx); err != nil {
+		slog.Warn("openai_codex_fingerprint_policy_refresh_failed", "error", err)
+	}
 	slog.Info("openai_codex_version_synced", "previous", current, "version", latest)
 }
 

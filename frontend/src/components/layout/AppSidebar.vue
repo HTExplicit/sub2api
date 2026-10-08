@@ -833,6 +833,7 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 const adminExtensionNavItems = computed((): NavItem[] => [
   { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon },
   { path: '/admin/codex-runtime', label: t('nav.codexRuntime'), icon: PluginIcon },
+  { path: '/admin/codex-fingerprint', label: t('nav.codexFingerprint'), icon: ShieldIcon },
   { path: '/admin/codex-gateway-borrow', label: t('nav.codexGatewayBorrow'), icon: GatewayBorrowIcon },
   { path: '/admin/pelican-tests', label: t('nav.pelicanTests'), icon: GatewayBorrowIcon },
   { path: '/admin/reasoning-recovery', label: t('nav.reasoningRecovery'), icon: RecoveryIcon },

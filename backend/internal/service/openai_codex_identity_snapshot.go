@@ -43,14 +43,15 @@ type codexIdentitySnapshot struct {
 // resolveCodexIdentitySnapshot computes the identity and fingerprint state
 // from the routed account and the credential source used for this attempt.
 // It intentionally contains no credential, seed, cookie, or proxy URL data.
-func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string) codexIdentitySnapshot {
+func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, policies ...*codexFingerprintPolicy) codexIdentitySnapshot {
+	policy := selectCodexFingerprintPolicy(policies)
 	if source == nil {
 		source = routed
 	}
 
 	snapshot := codexIdentitySnapshot{
 		SchemaVersion:      1,
-		EnforcementEnabled: codexIdentityEnforcement.Load(),
+		EnforcementEnabled: policy.enabled,
 		ForceCodexCLI:      codexForceCLI.Load(),
 		UAOverridePresent:  strings.TrimSpace(overrideUA) != "",
 	}
@@ -69,10 +70,13 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string) co
 		if !routed.IsOpenAIOAuthLike() {
 			snapshot.FingerprintModeEffective = string(codexFingerprintOff)
 			snapshot.FingerprintReason = "non_oauth"
+		} else if !policy.enabled {
+			snapshot.FingerprintModeEffective = string(codexFingerprintOff)
+			snapshot.FingerprintReason = "simulation_disabled"
 		} else if snapshot.FingerprintModeConfigured == string(codexFingerprintOff) {
 			snapshot.FingerprintReason = "explicit_off"
 		} else if codexFingerprintModeRequiresSeed(codexFingerprintMode(snapshot.FingerprintModeEffective)) {
-			if _, ok := codexFingerprintSeed(routed.Extra); !ok {
+			if _, ok := codexFingerprintSeed(source.Extra); !ok {
 				snapshot.FingerprintModeEffective = string(codexFingerprintOff)
 				snapshot.FingerprintReason = "seed_missing"
 			}
@@ -90,12 +94,14 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string) co
 		}()
 	}
 
-	identity := resolveCodexOutboundIdentityForAccount(source, overrideUA)
+	identity := resolveCodexOutboundIdentityForAccount(source, overrideUA, policy)
 	snapshot.UserAgent = identity.userAgent
 	snapshot.Originator = identity.originator
 	snapshot.Version = identity.version
 	snapshot.IdentitySource = "canonical"
-	if strings.TrimSpace(overrideUA) != "" {
+	if !policy.enabled {
+		snapshot.IdentitySource = "protocol_fallback"
+	} else if strings.TrimSpace(overrideUA) != "" {
 		// The selector rebuilds the effective version. Comparing complete UA
 		// strings would mislabel a valid override carrying an older version.
 		if _, _, ok := openai.PairCodexClientIdentity(overrideUA); ok {

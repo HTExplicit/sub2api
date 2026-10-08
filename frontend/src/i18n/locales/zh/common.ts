@@ -189,6 +189,7 @@ export default {
     accounts: '账号管理',
     plugins: '插件管理',
     codexRuntime: 'Codex 运行设置',
+    codexFingerprint: 'Codex 指纹',
     proxies: 'IP管理',
     redeemCodes: '兑换码',
     ops: '运维监控',

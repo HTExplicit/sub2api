@@ -919,61 +919,13 @@ describe('BulkEditAccountModal', () => {
       status: 'active'
     })
   })
-  // issue #6327：批量编辑无法把 Codex 指纹收敛关掉。
-  //
-  // 批量更新走 JSONB 顶层合并（extra = COALESCE(extra,'{}') || payload），删掉 payload
-  // 里的键只表示「本次不更新该键」，清不掉账号已有的 device/session/full；而且只删不写会让
-  // payload 退化成 {extra:{}}，被后端 len(req.Extra) > 0 判为空更新直接 400
-  // "No updates provided"。Create/Edit 那两个表单能删键，是因为它们提交完整 extra 对象、
-  // 后端整体 SetExtra 覆盖——两种持久化语义不能共用同一套写法。
-  it('OpenAI OAuth 批量编辑选择「关闭」时应显式提交 codex_fingerprint_mode=off（issue #6327）', async () => {
-    const wrapper = mountModal({
-      selectedPlatforms: ['openai'],
-      selectedTypes: ['oauth']
-    })
-
-    // 下拉框默认是 device（后端对缺失键的默认值），显式选择 off 后提交——
-    // 必须落显式 off，缺失键会被后端当作 device。
-    await wrapper.get('#bulk-edit-openai-codex-fingerprint-mode-enabled').setValue(true)
-    await wrapper
-      .get('[data-testid="bulk-codex-fingerprint-mode-select"]')
-      .setValue('off')
+  it('leaves fingerprint mode changes to the extension page without submitting a phantom update', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['oauth'] })
+    expect(wrapper.find('[data-testid="bulk-codex-fingerprint-mode-select"]').exists()).toBe(false)
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()
-
-    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
-    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
-      extra: {
-        codex_fingerprint_mode: 'off'
-      }
-    })
-
-    // 缺陷时期的形状：extra 为空对象，后端必然回 400。显式钉死不得回退。
-    const payload = vi.mocked(adminAPI.accounts.bulkUpdate).mock.calls[0][1] as {
-      extra: Record<string, unknown>
-    }
-    expect(Object.keys(payload.extra).length).toBeGreaterThan(0)
-  })
-
-  // 与兄弟字段 codex_cli_only 的写法对齐：关闭态同样落显式值，不靠省略表达。
-  it('OpenAI OAuth 批量编辑显式 opt-in 模式仍原样提交', async () => {
-    const wrapper = mountModal({
-      selectedPlatforms: ['openai'],
-      selectedTypes: ['oauth']
-    })
-
-    await wrapper.get('#bulk-edit-openai-codex-fingerprint-mode-enabled').setValue(true)
-    await wrapper
-      .get('[data-testid="bulk-codex-fingerprint-mode-select"]')
-      .setValue('session')
-    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
-      extra: {
-        codex_fingerprint_mode: 'session'
-      }
-    })
+    expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   // 未勾选「编辑该项」时不得写入该键，否则批量编辑别的字段会顺手清掉账号的收敛设置。

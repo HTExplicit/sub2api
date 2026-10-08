@@ -996,7 +996,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 同样作为管理员
 		// 显式配置传入，否则测试用的身份与该账号真实出站的身份不是同一个。
-		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account))
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
@@ -1017,7 +1017,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		} else if req, err = prepareOpenAICodexWireRequest(req, account); err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 		}
-		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account))
 		snapshot := base.withWire(transport, req.Header)
 		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
 		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(req.Header)})
@@ -2347,7 +2347,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if isOAuth {
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 经 ForceCodexCLI
 		// 策略过滤后作为管理员显式配置传入（同普通 OAuth 连接测试）。
-		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account))
 	}
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
@@ -2359,7 +2359,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		// 指纹收敛：探测与真实转发走同一个 /responses 端点，身份也必须同构，
 		// 否则探测流量会以「缺 x-codex-installation-id + 非收敛 session」的
 		// 形态暴露在上游眼里。账号关闭收敛（off）时返回 nil，探测保持原样。
-		if fpIDs := resolveCodexFingerprintIDsFromRequest(account, req.Header); fpIDs != nil {
+		if fpIDs := resolveCodexFingerprintIDsFromRequest(account, req.Header, codexFingerprintPolicyForContext(c, account)); fpIDs != nil {
 			applyCodexFingerprintHeaders(req.Header, fpIDs)
 		}
 	}
@@ -3043,7 +3043,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	// 与真实转发一致（同普通 OAuth 连接测试）：使用该账号的 Codex TUI 身份，账号级自定义 UA
 	// 经 ForceCodexCLI 策略过滤后作为管理员显式配置传入。
-	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account))
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

@@ -17,6 +17,49 @@ other key or a non-boolean value (including `null`), returns HTTP 400 and stores
 nothing. While no Codex runtime row is stored,
 `gateway.openai_codex_request_zstd` decides the compression switch.
 
+## Codex fingerprint simulation
+
+Extensions owns `/admin/codex-fingerprint`. General settings and account
+create/edit/bulk-edit forms no longer submit fingerprint configuration.
+`GET/PUT /admin/settings/codex-fingerprint` uses `enabled`, `user_agent`,
+`client_version` and `version_auto_sync_enabled`; all four fields are required
+on PUT. GET also returns the synced and effective simulation versions and the
+default UA. Existing UA/version/sync setting keys remain authoritative; only
+`codex_fingerprint_enabled` is new. Without that key the startup identity flag
+provides the default. Writes use existing admin authentication and audit, with
+no additional step-up. Legacy settings APIs use the same keys.
+
+`GET/PUT /admin/accounts/:id/codex-fingerprint` applies only to OpenAI OAuth and
+setup-token accounts. GET computes effective identity through the forwarding
+selector, including credential shadows. PUT accepts only `mode`; bulk changes
+use ordinary account jobs with explicit frozen IDs and only that extra key.
+General account edits preserve the latest stored mode when it is omitted.
+Existing seeds and persisted TUI identities are retained, and new accounts still
+default to `device`.
+
+Enabled simulation applies a fixed account TUI identity to HTTP, passthrough,
+WS, account tests and credential refresh. Disabled simulation preserves caller
+identity and identifiers, filling only missing protocol identity headers.
+Mode `off` preserves device/session identifiers while simulation stays enabled;
+`device` changes only device identifiers; `session` keeps separate real threads
+and maps their parent references; `full` combines threads and removes self-parent
+references. Real turn IDs, parent/root turn IDs, window indices and timestamps
+are retained. Sandbox `none`, `external`, permission modes and unknown tags are
+preserved; known platform backends are aligned without inventing a sandbox for
+an absent tag. Explicit custom cache keys are not rewritten.
+
+The built-in protocol/version baseline is official Codex `rust-v0.161.0`.
+The existing six-hour stable-version sync and manual-version precedence remain.
+Successful saves publish an immutable policy; failed saves retain the old one.
+Each attempt shares it across headers/body. WS reuse includes identity and
+policy revision. Setting changes let the current turn finish, then request a
+retryable reconnect before another turn is sent through an old handshake.
+Account mode changes invalidate only that account's next handshake.
+
+Account connection tests exclude and reject `ultra` across every capability
+source before dispatch; stale UI selections reset to default. Codex client
+orchestration catalogs retain their existing capabilities.
+
 ## Codex gateway borrowing
 
 The Extensions sidebar has separate Codex Borrowing and Pelican Tests entries.

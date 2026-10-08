@@ -544,6 +544,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex runtime settings', titleKey: 'nav.codexRuntime' }
   },
   {
+    path: '/admin/codex-fingerprint',
+    name: 'AdminCodexFingerprint',
+    component: () => import('@/views/admin/CodexFingerprintView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex fingerprint', titleKey: 'nav.codexFingerprint' }
+  },
+  {
     path: '/admin/codex-gateway-borrow',
     name: 'AdminCodexGatewayBorrow',
     component: () => import('@/views/admin/CodexGatewayBorrowView.vue'),

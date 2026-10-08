@@ -526,21 +526,21 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     wrapper.unmount()
   })
 
-  it('submits the Codex fingerprint mode of an OAuth-based account, explicit off included, and none for an API-key account', async () => {
+  it('leaves fingerprint modes to the extension page and the backend default when creating accounts', async () => {
     const untouched = await openCodexImportStep()
     await untouched.get('[data-testid="import-codex-session"]').trigger('click')
     await flushPromises()
-    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.codex_fingerprint_mode).toBe('device')
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('codex_fingerprint_mode')
     untouched.unmount()
 
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
-    await wrapper.get('[data-testid="create-codex-fingerprint-mode-select"]').setValue('off')
+    expect(wrapper.find('[data-testid="create-codex-fingerprint-mode-select"]').exists()).toBe(false)
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await wrapper.get('[data-testid="import-codex-pat"]').trigger('click')
     await flushPromises()
-    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.codex_fingerprint_mode).toBe('off')
+    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('codex_fingerprint_mode')
     wrapper.unmount()
 
     const apiKey = await submitApiKeyAccount('openai')
