@@ -593,6 +593,7 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 		// Continuation diagnostics are self-bounded and stay on every retained
 		// attempt; boundOpsUpstreamErrors still enforces the entry byte budget.
 		out.ContinuationDiagnostic = sanitizeOpenAIContinuationDiagnostic(ev.ContinuationDiagnostic)
+		out.SignatureRecovery = sanitizeClaudeSignatureRecoveryDiagnostic(ev.SignatureRecovery)
 		urlMaxLen, messageMaxLen := 2048, 2048
 		if !keepBody {
 			urlMaxLen, messageMaxLen = opsUpstreamErrorsOlderURLMaxLen, opsUpstreamErrorsOlderMessageMaxLen
@@ -618,6 +619,9 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 		}
 		if out.UpstreamStatusCode < 0 {
 			out.UpstreamStatusCode = 0
+		}
+		if out.UpstreamHTTPStatusCode < 100 || out.UpstreamHTTPStatusCode > 599 {
+			out.UpstreamHTTPStatusCode = 0
 		}
 		if out.AtUnixMs < 0 {
 			out.AtUnixMs = 0

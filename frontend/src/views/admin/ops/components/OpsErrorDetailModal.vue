@@ -94,10 +94,21 @@
         </div>
 
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.upstreamStatus') }}</div>
+          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">
+            {{ terminalStreamError ? t('admin.ops.errorDetail.upstreamStreamStatus') : t('admin.ops.errorDetail.upstreamStatus') }}
+          </div>
           <div class="mt-1">
             <span :class="['inline-flex items-center rounded-lg px-2 py-1 text-xs font-black ring-1 ring-inset shadow-sm', upstreamStatusClass]">
-              {{ detail.upstream_status_code ?? '—' }}
+              {{ upstreamStatusCode ?? '—' }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="terminalStreamError" class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.upstreamHttpStatus') }}</div>
+          <div class="mt-1">
+            <span :class="['inline-flex items-center rounded-lg px-2 py-1 text-xs font-black ring-1 ring-inset shadow-sm', upstreamHttpStatusClass]">
+              {{ terminalStreamError.upstream_http_status_code }}
             </span>
           </div>
         </div>
@@ -233,7 +244,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import CodexContinuationDiagnostics from '@/components/admin/codex/CodexContinuationDiagnostics.vue'
 import { useAppStore } from '@/stores'
-import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
+import { opsAPI, type OpsErrorDetail, type OpsUpstreamErrorEvent } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
 import { resolveUpstreamPayload } from '../utils/errorDetailResponse'
 
@@ -261,6 +272,27 @@ const detail = ref<OpsErrorDetail | null>(null)
 const showUpstreamList = computed(() => props.errorType === 'request')
 
 const requestId = computed(() => detail.value?.request_id || detail.value?.client_request_id || '')
+
+const terminalStreamError = computed<OpsUpstreamErrorEvent | null>(() => {
+  const raw = detail.value?.upstream_errors
+  if (!raw) return null
+  try {
+    const events: unknown = JSON.parse(raw)
+    if (!Array.isArray(events) || !events.length) return null
+    const event = events[events.length - 1]
+    if (!event || typeof event !== 'object' || event.kind !== 'stream_error') return null
+    if (!isHttpStatusCode(event.upstream_http_status_code) || !isHttpStatusCode(event.upstream_status_code) || event.upstream_status_code < 400) return null
+    return event as OpsUpstreamErrorEvent
+  } catch {
+    return null
+  }
+})
+
+const upstreamStatusCode = computed(() => terminalStreamError.value?.upstream_status_code ?? detail.value?.upstream_status_code)
+
+function isHttpStatusCode(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599
+}
 
 type DiagnosticPayloadKey = 'client' | 'upstream_message' | 'upstream_detail' | 'upstream_events'
 
@@ -435,6 +467,8 @@ function statusBadgeClass(code: number): string {
 
 const statusClass = computed(() => statusBadgeClass(detail.value?.status_code ?? 0))
 
-const upstreamStatusClass = computed(() => statusBadgeClass(detail.value?.upstream_status_code ?? 0))
+const upstreamStatusClass = computed(() => statusBadgeClass(upstreamStatusCode.value ?? 0))
+
+const upstreamHttpStatusClass = computed(() => statusBadgeClass(terminalStreamError.value?.upstream_http_status_code ?? 0))
 
 </script>

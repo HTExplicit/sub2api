@@ -96,6 +96,26 @@ is the downloaded `model_catalog_json` file; a response over 1 MiB switches the
 Codex configuration to that file mode. OpenCode continues reading the manifest
 regardless of the Codex remote/file selection.
 
+## Claude streaming failures and signature recovery
+
+Ordinary Claude Messages forwarding classifies SSE error events by their error
+type, with a narrow thinking-signature fallback for third-party errors missing
+the type. A stream error is not an HTTP permission rejection. In Ops attempt
+JSON, `stream_error.upstream_status_code` retains the error's semantic status;
+the optional `upstream_http_status_code` records the actual response status.
+Existing records and HTTP error semantics remain compatible without a migration.
+
+When the existing signature rectifier permits it, ordinary Claude forwarding
+can repair rejected thinking history on the same account before any message
+event is committed. It buffers only `message_start`, up to 64 KiB, while sending
+ping immediately. Committing the next message event or exceeding the bound
+ends recovery eligibility. The first thinking repair has one attempt independent
+of the initial request's ten-second backoff budget; the existing HTTP-only tool
+fallback retains its original conditions. Automatic passthrough and other
+provider paths do not gain this repair. Fingerprint-only recovery diagnostics
+stay attached to the upstream attempt and do not replace its failure or expose
+new thinking text or signature values.
+
 ## OpenAI forwarding and model identity
 
 Explicit `reasoning.effort=none` is preserved on OpenAI-wire accounts, including

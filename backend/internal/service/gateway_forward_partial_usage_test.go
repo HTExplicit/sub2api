@@ -261,7 +261,7 @@ func TestGatewayService_Forward_PreOutputSSEOverloadedErrorUsesSemantic529(t *te
 	require.Empty(t, rec.Body.String(), "pre-output overload must remain eligible for account failover")
 }
 
-func TestGatewayService_Forward_PostOutputSSEOverloadedErrorKeepsExistingStatus(t *testing.T) {
+func TestGatewayService_Forward_PostOutputSSEOverloadedErrorUsesSemantic529(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -274,6 +274,7 @@ func TestGatewayService_Forward_PostOutputSSEOverloadedErrorKeepsExistingStatus(
 
 	const errorJSON = `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
 	fixture := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n" +
+		"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
 		"event: error\ndata: " + errorJSON + "\n\n"
 	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
@@ -296,10 +297,13 @@ func TestGatewayService_Forward_PostOutputSSEOverloadedErrorKeepsExistingStatus(
 
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
+	require.Equal(t, 529, failoverErr.StatusCode, "stream output must not change the upstream error classification")
 	require.JSONEq(t, errorJSON, string(failoverErr.ResponseBody))
 	require.Zero(t, repo.tempCalls)
+	require.Zero(t, repo.overloadCalls, "a post-output overload must not add the pre-output failover cooldown")
+	require.Empty(t, repo.modelRateLimitCalls)
 	require.Contains(t, rec.Body.String(), "message_start")
+	require.Contains(t, rec.Body.String(), "content_block_start")
 }
 
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamMissingTerminalPreservesPartialUsage(t *testing.T) {

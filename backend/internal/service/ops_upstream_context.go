@@ -424,6 +424,9 @@ type OpsUpstreamErrorEvent struct {
 	// Outcome
 	UpstreamStatusCode int    `json:"upstream_status_code,omitempty"`
 	UpstreamRequestID  string `json:"upstream_request_id,omitempty"`
+	// For Claude stream_error events, UpstreamStatusCode is the error's semantic
+	// status. Keep the actual HTTP response separately: SSE can fail after 200.
+	UpstreamHTTPStatusCode int `json:"upstream_http_status_code,omitempty"`
 
 	// UpstreamURL is the actual upstream URL that was called (host + path, query/fragment stripped).
 	// Helps debug 404/routing errors by showing which endpoint was targeted.
@@ -448,6 +451,9 @@ type OpsUpstreamErrorEvent struct {
 	// this for passthrough-rule matching or to decide whether a request can be
 	// retried.
 	ContinuationDiagnostic *OpenAIContinuationDiagnostic `json:"continuation_diagnostic,omitempty"`
+	// Signature recovery evidence is bounded and contains fingerprints only;
+	// bookkeeping must not replace the corresponding upstream failure.
+	SignatureRecovery *ClaudeSignatureRecoveryDiagnostic `json:"signature_recovery,omitempty"`
 
 	// SkipMonitoring is request-local rule state. It is intentionally excluded
 	// from persisted attempt JSON. The logger consults it only when this event is

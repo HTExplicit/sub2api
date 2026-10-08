@@ -351,6 +351,8 @@ export default {
         phase: 'Phase',
         status: 'Status',
         upstreamStatus: 'Upstream Status',
+        upstreamStreamStatus: 'Upstream Stream Error',
+        upstreamHttpStatus: 'Upstream HTTP',
         message: 'Message',
         rootCause: 'Root Cause',
         diagnosticPayloads: 'Diagnostic Payloads',

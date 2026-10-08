@@ -41,6 +41,9 @@ jobs:
       - name: Service tests
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|AlphaSearch|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|AccountTaxonomyRules|AccountTestReasoningValidated|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+      - name: Claude stream failure and signature recovery contracts
+        working-directory: backend
+        run: go test -p=1 -tags unit ./internal/service ./internal/handler -run '^TestClaude(ClassifyStreamError|ThinkingSignatureError|Prelude_|Signature|StreamError|StreamFailureStatus|OpsErrorLogger)|^TestGatewayService_Forward_(PreOutputSSE|PostOutputSSE)' -count=1
       - name: Native gateway borrowing contracts
         working-directory: backend
         run: |
@@ -140,6 +143,7 @@ jobs:
             src/components/payment/__tests__/StripePaymentInline.contrast.spec.ts \
             src/views/user/__tests__/StripePaymentView.spec.ts \
             src/views/admin/__tests__/ReasoningRecoveryView.spec.ts \
+            src/views/admin/ops/components/__tests__/OpsErrorDetailModal.spec.ts \
             src/api/admin/__tests__/codexGatewayBorrow.spec.ts \
             src/components/admin/codex/__tests__/BorrowPelicanPreview.spec.ts \
             src/views/admin/__tests__/CodexGatewayBorrowView.spec.ts \
