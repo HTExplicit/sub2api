@@ -464,10 +464,10 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesNamespacedC
 
 	require.NoError(t, err)
 	require.Empty(t, headers.Get("x-codex-installation-id"), "installation id 只在 body client_metadata")
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "client-window"), headers.Get("x-codex-window-id"))
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "client-session"), headers.Get("session-id"))
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "client-thread"), headers.Get("thread-id"))
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "client-request"), headers.Get("x-client-request-id"))
+	require.Equal(t, "client-window", headers.Get("x-codex-window-id"))
+	require.Equal(t, "client-session", headers.Get("session-id"))
+	require.Equal(t, "client-thread", headers.Get("thread-id"))
+	require.Equal(t, "client-request", headers.Get("x-client-request-id"))
 }
 
 func TestLogOpenAIWSBindResponseAccountWarn(t *testing.T) {
@@ -1158,7 +1158,7 @@ func TestOpenAIGatewayService_Forward_WSv2_CodexFingerprintHandshakeBodyParityAn
 	require.True(t, ok)
 	wantInstall := resolveConvergedInstallationID(account, seed)
 	wantSession := resolveConvergedSessionID(seed)
-	wantThread := resolveConvergedThreadID(seed, "header-session")
+	wantThread := resolveConvergedThreadID(seed, scopeCodexAccountIdentityValue(account, 0, "body-thread"))
 	payloadJSON := requestToJSONString(captureConn.lastWrite)
 
 	require.Empty(t, captureDialer.lastHeaders.Get("x-codex-installation-id"), "installation id 只在 body client_metadata")
@@ -1182,7 +1182,7 @@ func TestOpenAIGatewayService_Forward_WSv2_CodexFingerprintHandshakeBodyParityAn
 	require.Equal(t, wantThread, gjson.Get(bodyTurnMetadata, "thread_id").String())
 	require.Equal(t, wantSession, gjson.Get(headerTurnMetadata, "session_id").String())
 	require.Equal(t, gjson.Get(bodyTurnMetadata, "turn_id").String(), gjson.Get(headerTurnMetadata, "turn_id").String())
-	require.NotZero(t, gjson.Get(bodyTurnMetadata, "turn_started_at_unix_ms").Int())
+	require.False(t, gjson.Get(bodyTurnMetadata, "turn_started_at_unix_ms").Exists(), "未提供的真实时间不生成")
 	require.Equal(t,
 		gjson.Get(bodyTurnMetadata, "turn_started_at_unix_ms").Int(),
 		gjson.Get(headerTurnMetadata, "turn_started_at_unix_ms").Int(),

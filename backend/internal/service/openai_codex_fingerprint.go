@@ -297,6 +297,8 @@ type codexFingerprintIDs struct {
 	threadID                      string
 	windowID                      string
 	sandbox                       string
+	logicalMetadata               map[string]any
+	bodyIdentityCaptured          bool
 	originalBodySessionID         string
 	originalBodySessionIDCaptured bool
 }
@@ -463,6 +465,9 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	}
 
 	modified := false
+	// Body metadata describes the current logical turn. Use it consistently in
+	// the outgoing body and header without manufacturing a new turn or time.
+	ids.captureLogicalMetadata(existing)
 
 	if ids.installationID != "" {
 		existing["x-codex-installation-id"] = ids.installationID
@@ -478,7 +483,6 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	}
 
 	// session / full 模式
-	ids.captureThreadAndWindow(stringMetadataValue(existing, "thread_id"), stringMetadataValue(existing, "x-codex-window-id"))
 	existing["session_id"] = ids.sessionID
 	existing["thread_id"] = ids.threadID
 	existing["x-codex-window-id"] = ids.windowID
@@ -534,6 +538,9 @@ func (ids *codexFingerprintIDs) rewriteThreadReferences(metadata map[string]any)
 }
 
 func (ids *codexFingerprintIDs) rewriteTurnMetadata(metadata map[string]any) {
+	for key, value := range ids.logicalMetadata {
+		metadata[key] = value
+	}
 	metadata["installation_id"] = ids.installationID
 	if ids.mode != codexFingerprintDevice {
 		metadata["session_id"] = ids.sessionID
@@ -542,6 +549,36 @@ func (ids *codexFingerprintIDs) rewriteTurnMetadata(metadata map[string]any) {
 		ids.rewriteThreadReferences(metadata)
 	}
 	alignCodexSandboxMetadata(metadata, ids.sandbox)
+}
+
+func (ids *codexFingerprintIDs) captureLogicalMetadata(clientMetadata map[string]any) {
+	if ids.bodyIdentityCaptured {
+		return
+	}
+	ids.bodyIdentityCaptured = true
+	embedded := map[string]any{}
+	if raw := stringMetadataValue(clientMetadata, "x-codex-turn-metadata"); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &embedded)
+	}
+	if ids.logicalMetadata == nil {
+		ids.logicalMetadata = map[string]any{}
+	}
+	for _, key := range []string{"turn_id", "turn_started_at_unix_ms", "parent_turn_id", "root_turn_id", "window_number", "context_window_id"} {
+		if value, ok := embedded[key]; ok {
+			ids.logicalMetadata[key] = value
+		}
+		if value, ok := clientMetadata[key]; ok {
+			ids.logicalMetadata[key] = value
+		}
+	}
+	thread, window := stringMetadataValue(clientMetadata, "thread_id"), stringMetadataValue(clientMetadata, "x-codex-window-id")
+	if thread == "" {
+		thread = stringMetadataValue(embedded, "thread_id")
+	}
+	if window == "" {
+		window = stringMetadataValue(embedded, "window_id")
+	}
+	ids.captureThreadAndWindow(thread, window)
 }
 
 func alignCodexSandboxMetadata(metadata map[string]any, target string) bool {

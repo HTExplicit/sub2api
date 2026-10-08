@@ -1127,8 +1127,8 @@ func TestForwardAsAnthropic_KeepsInboundHyphenSessionHeaderOverCacheKeyFallback(
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, upstream.requests, 1)
-	scoped := scopeCodexAccountIdentityValue(account, 0, inboundSession)
-	require.Equal(t, scoped, upstream.requests[0].Header.Get("session-id"), "入站 R 只作用域改写一次，不被 K 回退覆盖")
+	scoped := inboundSession
+	require.Equal(t, scoped, upstream.requests[0].Header.Get("session-id"), "设备模式保留入站 R，不被 K 回退覆盖")
 	require.Equal(t, scoped, upstream.requests[0].Header.Get("thread-id"))
 	require.NotEqual(t, generateSessionUUID(isolateOpenAIUpstreamSessionID(0, account, "stable-cache-key")), upstream.requests[0].Header.Get("session-id"))
 	require.Empty(t, upstream.requests[0].Header.Get("session_id"))
