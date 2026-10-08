@@ -143,7 +143,7 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 	}
 
 	// Transport attempt reached the network path; count as Ollama Cloud / OpenCode Go activity.
-	if s != nil {
+	if s != nil && !IsAccountObservation(ctx) {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
 		scheduleOpenCodeGoUsageActivity(s.deferredService, account)
 	}
@@ -180,6 +180,9 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 // tempUnscheduleOpenAITransportError restores the upstream ten-minute durable
 // transport policy only for the marked ordinary HTTP account path.
 func (s *OpenAIGatewayService) tempUnscheduleOpenAITransportError(ctx context.Context, account *Account, safeErr string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || !IsOpenAIOfficialHTTPFailover(ctx, account) {
 		return
 	}

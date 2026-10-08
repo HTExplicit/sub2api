@@ -104,7 +104,9 @@ func (p *AntigravityTokenProvider) GetAccessToken(ctx context.Context, account *
 		result, err := p.refreshAPI.RefreshIfNeeded(refreshCtx, account, p.executor, antigravityTokenRefreshSkew)
 		if err != nil {
 			// 标记账号临时不可调度，避免后续请求继续命中
-			p.markTempUnschedulable(account, err)
+			if !IsAccountObservation(ctx) {
+				p.markTempUnschedulable(account, err)
+			}
 			if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
 				return "", err
 			}

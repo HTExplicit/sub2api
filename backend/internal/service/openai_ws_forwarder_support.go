@@ -186,7 +186,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	}
 
 	lease.MarkPrewarmed()
-	if prewarmResponseID != "" && stateStore != nil {
+	if !IsAccountObservation(ctx) && prewarmResponseID != "" && stateStore != nil {
 		ttl := s.openAIWSResponseStickyTTL()
 		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, prewarmResponseID, stateStore.BindResponseAccount(ctx, groupID, prewarmResponseID, account.ID, ttl))
 		stateStore.BindResponseConn(prewarmResponseID, lease.ConnID(), ttl)
@@ -878,6 +878,9 @@ func isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw string) bool {
 }
 
 func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string, canonicalModel ...string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || s.rateLimitService == nil || account == nil || account.Platform != PlatformOpenAI {
 		return
 	}

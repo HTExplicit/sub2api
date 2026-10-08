@@ -106,6 +106,23 @@ var (
 		return {0, now}
 	`)
 
+	// Renew one existing regular account-slot member. A removed or expired
+	// request ID is never recreated, even when the account has spare capacity.
+	refreshAccountSlotScript = redis.NewScript(`
+		redis.replicate_commands()
+		local key = KEYS[1]
+		local ttl = tonumber(ARGV[1])
+		local requestID = ARGV[2]
+		local now = tonumber(redis.call('TIME')[1])
+		redis.call('ZREMRANGEBYSCORE', key, '-inf', now - ttl)
+		if redis.call('ZSCORE', key, requestID) == false then
+			return {0, now}
+		end
+		redis.call('ZADD', key, now, requestID)
+		redis.call('EXPIRE', key, ttl)
+		return {1, now}
+	`)
+
 	// getCountScript 统计有序集合中的槽位数量并清理过期条目
 	// 使用 Redis TIME 命令获取服务器时间
 	// KEYS[1] = 普通槽位键，KEYS[2] = 对应 Live 槽位键
@@ -650,6 +667,19 @@ func (c *concurrencyCache) ReleaseAccountSlot(ctx context.Context, accountID int
 	// 释放后用真实负载刷新索引；若没有槽位和等待计数，会移除索引 member。
 	c.refreshAccountActiveIndex(ctx, accountID)
 	return nil
+}
+
+func (c *concurrencyCache) RefreshAccountSlot(ctx context.Context, accountID int64, requestID string) (bool, error) {
+	result, now, err := runScriptInt64Pair(ctx, c.rdb, refreshAccountSlotScript, []string{accountSlotKey(accountID)}, c.slotTTLSeconds, requestID)
+	if err != nil {
+		return false, err
+	}
+	if result == 1 {
+		c.touchActiveIndexAt(ctx, accountActiveIndexKey, accountID, now+int64(c.slotTTLSeconds))
+	} else {
+		c.refreshAccountActiveIndex(ctx, accountID)
+	}
+	return result == 1, nil
 }
 
 func (c *concurrencyCache) GetAccountConcurrency(ctx context.Context, accountID int64) (int, error) {

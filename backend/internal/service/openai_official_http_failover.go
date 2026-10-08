@@ -42,6 +42,9 @@ func (s *OpenAIGatewayService) ReportOpenAIOfficialHTTPAccountScheduleResult(
 	firstTokenMs *int,
 	observedErr error,
 ) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || !IsOpenAIOfficialHTTPFailover(ctx, account) {
 		return false
 	}
@@ -70,6 +73,9 @@ func (s *OpenAIGatewayService) ReportOpenAIOfficialHTTPAccountScheduleResult(
 // ObserveOpenAIOfficialHTTPAccountHealthFailure is also used when semantic
 // output has already committed, where observing health must not replay output.
 func (s *OpenAIGatewayService) ObserveOpenAIOfficialHTTPAccountHealthFailure(ctx context.Context, account *Account, observedErr error) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || s.rateLimitService == nil || observedErr == nil || !IsOpenAIOfficialHTTPFailover(ctx, account) {
 		return false
 	}

@@ -60,6 +60,9 @@ func (p *GrokTokenProvider) SetTempUnschedCache(cache TempUnschedCache) {
 }
 
 func (p *GrokTokenProvider) GetAccessToken(ctx context.Context, account *Account) (string, error) {
+	if IsAccountObservation(ctx) {
+		return p.GetAccessTokenForManualTest(ctx, account)
+	}
 	if account == nil {
 		return "", errors.New("account is nil")
 	}

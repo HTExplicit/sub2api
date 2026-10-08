@@ -59,6 +59,9 @@ func (a *Account) isCreditsExhausted() bool {
 
 // setCreditsExhausted 标记账号积分耗尽：写入 model_rate_limits["AICredits"] + 更新缓存。
 func (s *AntigravityGatewayService) setCreditsExhausted(ctx context.Context, account *Account) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if account == nil || account.ID == 0 {
 		return
 	}
@@ -74,6 +77,9 @@ func (s *AntigravityGatewayService) setCreditsExhausted(ctx context.Context, acc
 
 // clearCreditsExhausted 清除账号的 AICredits 限流 key。
 func (s *AntigravityGatewayService) clearCreditsExhausted(ctx context.Context, account *Account) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if account == nil || account.ID == 0 || account.Extra == nil {
 		return
 	}

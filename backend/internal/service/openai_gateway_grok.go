@@ -184,7 +184,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		s.handleGrokAccountUpstreamError(errCtx, account, resp.StatusCode, resp.Header, respBody)
 		// Quota/rate-limit responses stamp the team+model overlay. Capacity is
 		// request pressure and must not hide sibling accounts.
-		if shouldMarkGrokTeamModelRateLimit(resp.StatusCode, respBody) {
+		if !IsAccountObservation(ctx) && shouldMarkGrokTeamModelRateLimit(resp.StatusCode, respBody) {
 			markGrokTeamModelRateLimit(account, upstreamModel, resolveGrokTeamRateLimitUntil(time.Now().Add(grokTeamRateLimitDefaultTTL), time.Now()))
 		}
 		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
@@ -1632,6 +1632,9 @@ func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, acco
 }
 
 func (s *OpenAIGatewayService) updateGrokUsageSnapshotWithRateLimit(ctx context.Context, account *Account, snapshot *xai.QuotaSnapshot, installRateLimit bool) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil || account.ID <= 0 || snapshot == nil {
 		return
 	}
@@ -1687,6 +1690,9 @@ func (s *OpenAIGatewayService) updateGrokUsageSnapshotWithRateLimit(ctx context.
 }
 
 func (s *OpenAIGatewayService) updateGrokUsageFromResponse(ctx context.Context, account *Account, headers http.Header, statusCode int) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	snapshot := parseGrokQuotaSnapshot(headers, statusCode, time.Now())
 	if snapshot != nil {
 		stampGrokQuotaSnapshotForPlan(account, snapshot, grokRequestedModelFromCtx(ctx))
@@ -1848,6 +1854,9 @@ func isSuccessfulGrokRateLimitRecovery(account *Account, snapshot *xai.QuotaSnap
 }
 
 func clearGrokRateLimitAfterRecovery(ctx context.Context, repo AccountRepository, account *Account) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if repo == nil || account == nil || account.RateLimitedAt == nil || account.RateLimitResetAt == nil || ctx.Err() != nil {
 		return
 	}
@@ -1862,6 +1871,9 @@ func clearGrokRateLimitAfterRecovery(ctx context.Context, repo AccountRepository
 }
 
 func persistGrokRateLimit(ctx context.Context, repo AccountRepository, account *Account, resetAt time.Time) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if repo == nil || account == nil || account.ID <= 0 {
 		return
 	}
@@ -1880,6 +1892,9 @@ func persistGrokRateLimit(ctx context.Context, repo AccountRepository, account *
 }
 
 func (s *OpenAIGatewayService) rateLimitGrok(ctx context.Context, account *Account, resetAt time.Time) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil {
 		return
 	}
@@ -2019,6 +2034,9 @@ func persistGrokTransientModelCooldown(account *Account, decision GrokUpstreamFa
 }
 
 func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil {
 		return
 	}
@@ -2113,6 +2131,9 @@ func isGrokSpendingLimitError(responseBody []byte) bool {
 }
 
 func (s *OpenAIGatewayService) tempUnscheduleGrok(ctx context.Context, account *Account, cooldown time.Duration, reason string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil {
 		return
 	}

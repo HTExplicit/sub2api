@@ -23,6 +23,7 @@ func RegisterAdminRoutes(
 	// 插件 UI 使用短时能力 URL，仅提供经过安装校验的静态资源。
 	v1.GET("/plugin-ui/:token/*path", h.Admin.Plugin.ServeUIAsset)
 	v1.GET("/codex-gateway-borrow/preview/:cap/index.html", h.Admin.CodexGatewayBorrow.ServePreview)
+	v1.GET("/pelican-tests/preview/:cap/index.html", h.Admin.PelicanTest.ServePreview)
 
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))
@@ -133,6 +134,7 @@ func RegisterAdminRoutes(
 		// 推理恢复全局开关
 		registerReasoningRecoveryRoutes(admin, h)
 		registerCodexGatewayBorrowRoutes(admin, h)
+		registerPelicanTestRoutes(admin, h)
 
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)

@@ -2546,7 +2546,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					ms := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &ms
 				}
-				s.clearOpenAIProxyStreamDisconnect(account)
+				s.clearOpenAIProxyStreamDisconnectInContext(ctx, account)
 				recordOpenAIRefusalRecovery(ctx, c, account, "sse", false, refusalEarlyEmitted, openAIRefusalActionRewritten, refusalStream.evidence())
 				return resultWithUsage(), nil
 			case openAIRefusalStreamHold:
@@ -2623,7 +2623,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
 		}
-		s.recordOpenAIProxyStreamDisconnect(account, err, upstreamRequestID)
+		s.recordOpenAIProxyStreamDisconnectInContext(ctx, account, err, upstreamRequestID)
 		logger.LegacyPrintf("service.openai_gateway",
 			"[OpenAI passthrough] 流读取异常中断: account=%d request_id=%s err=%v",
 			account.ID,
@@ -2652,14 +2652,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", resp.StatusCode)
 		}
 		s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "stream_error", nil, "OpenAI stream ended before an authoritative terminal event")
-		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
+		s.recordOpenAIProxyStreamDisconnectInContext(ctx, account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
 	}
 	if terminalEventType != "response.completed" && terminalEventType != "response.done" {
 		return resultWithUsage(), fmt.Errorf("upstream response terminated with %s", terminalEventType)
 	}
 	if sawTerminalEvent && !sawFailedEvent {
-		s.clearOpenAIProxyStreamDisconnect(account)
+		s.clearOpenAIProxyStreamDisconnectInContext(ctx, account)
 	}
 	logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, terminalEventType, clientDisconnected)
 

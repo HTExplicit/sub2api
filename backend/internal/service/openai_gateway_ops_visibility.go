@@ -297,6 +297,9 @@ var (
 // written, was written inside the repeat window, or too many writes are in
 // flight. It does not change status, schedulability or any cooldown.
 func (s *OpenAIGatewayService) recordOpenAILastUpstreamError(ctx context.Context, account *Account, statusCode int, body []byte) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 {
 		return
 	}

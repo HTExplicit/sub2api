@@ -28,10 +28,12 @@ let observer: ResizeObserver | undefined
 const safeUrl = computed(() => {
   try {
     const url = new URL(props.previewUrl, window.location.origin)
-    const api = new URL(buildApiUrl('/codex-gateway-borrow/preview/'), window.location.origin)
-    const prefix = api.pathname.replace(/\/+$/, '')
+    const api = new URL(buildApiUrl('/pelican-tests/preview/'), window.location.origin)
+    const prefixes = ['/pelican-tests/preview/', '/codex-gateway-borrow/preview/']
+      .map(path => new URL(buildApiUrl(path), window.location.origin).pathname.replace(/\/+$/, ''))
     if (url.origin !== api.origin || url.search || url.hash || url.username || url.password) return ''
-    if (!url.pathname.startsWith(`${prefix}/`) || !/^[a-zA-Z0-9_-]{43}\/index\.html$/.test(url.pathname.slice(prefix.length + 1))) return ''
+    const prefix = prefixes.find(value => url.pathname.startsWith(`${value}/`))
+    if (!prefix || !/^[a-zA-Z0-9_-]{43}\/index\.html$/.test(url.pathname.slice(prefix.length + 1))) return ''
     return url.href
   } catch {
     return ''

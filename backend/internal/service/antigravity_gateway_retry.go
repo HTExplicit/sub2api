@@ -710,7 +710,7 @@ urlFallbackLoop:
 		}
 	}
 
-	if resp != nil && resp.StatusCode < 400 && usedBaseURL != "" {
+	if !IsAccountObservation(p.ctx) && resp != nil && resp.StatusCode < 400 && usedBaseURL != "" {
 		antigravity.DefaultURLAvailability.MarkSuccess(usedBaseURL)
 	}
 
@@ -807,6 +807,9 @@ const googleConfigErrorCooldown = 1 * time.Minute
 // tempUnscheduleGoogleConfigError 对服务端配置类 400 错误触发临时封禁，
 // 避免短时间内反复调度到同一个有问题的账号。
 func tempUnscheduleGoogleConfigError(ctx context.Context, repo AccountRepository, accountID int64, logPrefix string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	until := time.Now().Add(googleConfigErrorCooldown)
 	reason := "400: invalid project resource name (auto temp-unschedule 1m)"
 	if err := repo.SetTempUnschedulable(ctx, accountID, until, reason); err != nil {
@@ -822,6 +825,9 @@ const emptyResponseCooldown = 1 * time.Minute
 // tempUnscheduleEmptyResponse 对空流式响应触发临时封禁，
 // 避免短时间内反复调度到同一个返回空响应的账号。
 func tempUnscheduleEmptyResponse(ctx context.Context, repo AccountRepository, accountID int64, logPrefix string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	until := time.Now().Add(emptyResponseCooldown)
 	reason := "empty stream response (auto temp-unschedule 1m)"
 	if err := repo.SetTempUnschedulable(ctx, accountID, until, reason); err != nil {
@@ -867,6 +873,9 @@ func isSingleAccountRetry(ctx context.Context) bool {
 // 直接使用上游返回的模型 ID（如 claude-sonnet-4-5）作为限流 key
 // 返回是否已成功设置（若模型名为空或 repo 为 nil 将返回 false）
 func setModelRateLimitByModelName(ctx context.Context, repo AccountRepository, accountID int64, modelName, prefix string, statusCode int, resetAt time.Time, afterSmartRetry bool) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if repo == nil || modelName == "" {
 		return false
 	}
@@ -903,6 +912,9 @@ func (s *AntigravityGatewayService) setAntigravityModelRateLimits(ctx context.Co
 }
 
 func (s *AntigravityGatewayService) clearStickySession(ctx context.Context, groupID int64, sessionHash string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || s.cache == nil || strings.TrimSpace(sessionHash) == "" {
 		return
 	}
@@ -1159,6 +1171,9 @@ func (s *AntigravityGatewayService) handleModelRateLimit(p *handleModelRateLimit
 
 // setModelRateLimitAndClearSession 设置模型限流并清除粘性会话
 func (s *AntigravityGatewayService) setModelRateLimitAndClearSession(p *handleModelRateLimitParams, info *antigravitySmartRetryInfo) {
+	if IsAccountObservation(p.ctx) {
+		return
+	}
 	resetAt := time.Now().Add(info.RetryDelay)
 	logger.LegacyPrintf("service.antigravity_gateway", "%s status=%d model_rate_limited model=%s account=%d reset_in=%v",
 		p.prefix, p.statusCode, info.ModelName, p.account.ID, info.RetryDelay)
@@ -1173,6 +1188,9 @@ func (s *AntigravityGatewayService) setModelRateLimitAndClearSession(p *handleMo
 
 // updateAccountModelRateLimitInCache 立即更新 Redis 中账号的模型限流状态
 func (s *AntigravityGatewayService) updateAccountModelRateLimitInCache(ctx context.Context, account *Account, modelKey string, resetAt time.Time) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s.schedulerSnapshot == nil || account == nil || modelKey == "" {
 		return
 	}
@@ -1205,6 +1223,9 @@ func (s *AntigravityGatewayService) handleUpstreamError(
 	requestedModel string,
 	groupID int64, sessionHash string, isStickySession bool,
 ) *handleModelRateLimitResult {
+	if IsAccountObservation(ctx) {
+		return nil
+	}
 	// 遵守自定义错误码策略：未命中则跳过所有限流处理
 	if !account.ShouldHandleErrorCode(statusCode) {
 		return nil

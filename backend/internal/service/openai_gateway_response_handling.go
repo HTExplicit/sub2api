@@ -520,7 +520,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			terminalEventType = "response.failed"
 		}
 		if sawTerminalEvent && !sawFailedEvent && terminalResponseErr == nil {
-			s.clearOpenAIProxyStreamDisconnect(account)
+			s.clearOpenAIProxyStreamDisconnectInContext(ctx, account)
 		}
 		if !sawTerminalEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted) && !eventShouldFlush {
 			return resultWithUsage(), s.newOpenAIStreamFailoverError(
@@ -537,7 +537,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if !sawTerminalEvent {
 			s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "stream_error", nil, "OpenAI stream ended before an authoritative terminal event")
 			if openAIStreamClientOutputStarted(c, clientOutputStarted) && !clientDisconnected {
-				s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
+				s.recordOpenAIProxyStreamDisconnectInContext(ctx, account, errors.New("stream ended before terminal event"), upstreamRequestID)
 			}
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
@@ -606,7 +606,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
-		s.recordOpenAIProxyStreamDisconnect(account, scanErr, upstreamRequestID)
+		s.recordOpenAIProxyStreamDisconnectInContext(ctx, account, scanErr, upstreamRequestID)
 		code, message := classifyOpenAIUpstreamStreamReadError(scanErr)
 		sendErrorEvent(code, message)
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
@@ -1639,6 +1639,9 @@ func extractOpenAIResponseIDFromJSONBytes(body []byte) string {
 }
 
 func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *gin.Context, account *Account, responseID string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil || account.ID <= 0 {
 		return
 	}

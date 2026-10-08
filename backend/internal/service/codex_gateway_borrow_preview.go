@@ -196,7 +196,7 @@ func (p *CodexGatewayBorrowPreviewService) DecorateResult(result *CodexGatewayBo
 	}
 	p.capabilities[token] = codexGatewayBorrowPreviewCapability{ResultID: decorated.ID, ExpiresAt: expires}
 	p.mu.Unlock()
-	decorated.PreviewURL = "/api/v1/codex-gateway-borrow/preview/" + token + "/index.html"
+	decorated.PreviewURL = "/api/v1/pelican-tests/preview/" + token + "/index.html"
 	decorated.PreviewExpiresAt, decorated.PreviewUnavailable = &expires, ""
 	return &decorated
 }
