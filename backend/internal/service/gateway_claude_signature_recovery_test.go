@@ -23,6 +23,15 @@ import (
 const claudeRecoveryTestBody = `{"model":"claude-sonnet-5-5","stream":true,"thinking":{"type":"between_tools"},"output_config":{"effort":"high"},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"old reasoning","signature":"private-signature-value"},{"type":"text","text":"old answer"}]},{"role":"user","content":"continue"}]}`
 const claudeRecoverySignatureError = `{"type":"error","error":{"message":"Invalid signature in thinking block"}}`
 
+func claudeRecoveryOpsEvents(t *testing.T, c *gin.Context) []*OpsUpstreamErrorEvent {
+	t.Helper()
+	value, found := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, found)
+	events, valid := value.([]*OpsUpstreamErrorEvent)
+	require.True(t, valid)
+	return events
+}
+
 type claudeRecoverySequenceUpstream struct {
 	responses  []*http.Response
 	requests   []*http.Request
@@ -140,9 +149,7 @@ func TestClaudeSignatureRecoveryForwardHTTPAndSSE(t *testing.T) {
 			require.Equal(t, "between_tools", gjson.GetBytes(upstream.bodies[1], "thinking.type").String())
 			require.Equal(t, "high", gjson.GetBytes(upstream.bodies[1], "output_config.effort").String())
 			require.True(t, bytes.Equal(parsed.Body.Bytes(), upstream.bodies[1]))
-			events, ok := c.Get(OpsUpstreamErrorsKey)
-			require.True(t, ok)
-			trigger := events.([]*OpsUpstreamErrorEvent)[0]
+			trigger := claudeRecoveryOpsEvents(t, c)[0]
 			require.NotNil(t, trigger.SignatureRecovery)
 			require.Equal(t, "accepted", trigger.SignatureRecovery.Outcome)
 			require.Equal(t, 1, trigger.SignatureRecovery.Attempts)
@@ -180,8 +187,7 @@ func TestClaudeSignatureRecoveryDoesNotReplaySSEAgainOrAfterOutput(t *testing.T)
 				wantRequests = 1
 			}
 			require.Len(t, upstream.requests, wantRequests)
-			events, _ := c.Get(OpsUpstreamErrorsKey)
-			last := events.([]*OpsUpstreamErrorEvent)[wantRequests-1]
+			last := claudeRecoveryOpsEvents(t, c)[wantRequests-1]
 			wantReason := "attempt_limit"
 			if prefix != "" {
 				wantReason = "output_started"
@@ -314,8 +320,7 @@ func TestClaudeSignatureRecoverySharedHTTPAndSSELimit(t *testing.T) {
 	_, err = claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
 	require.Error(t, err)
 	require.Len(t, upstream.requests, 2)
-	events, _ := c.Get(OpsUpstreamErrorsKey)
-	attempts := events.([]*OpsUpstreamErrorEvent)
+	attempts := claudeRecoveryOpsEvents(t, c)
 	require.Equal(t, "attempt_limit", attempts[len(attempts)-1].SignatureRecovery.Reason)
 }
 
@@ -422,8 +427,7 @@ func TestClaudeSignatureRecoveryIncompleteRepairedStreamRecordsActualAttempt(t *
 			_, err = claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "missing terminal")
-			events, _ := c.Get(OpsUpstreamErrorsKey)
-			attempts := events.([]*OpsUpstreamErrorEvent)
+			attempts := claudeRecoveryOpsEvents(t, c)
 			require.Equal(t, "response_read_failed", attempts[0].SignatureRecovery.Outcome)
 			require.Equal(t, "stream_incomplete", attempts[0].SignatureRecovery.Reason)
 			last := attempts[len(attempts)-1]
@@ -458,8 +462,7 @@ func TestClaudeSignatureRecoveryHTTPToolOnlyKeepsExistingSecondStage(t *testing.
 	require.Equal(t, gjson.GetBytes(upstream.bodies[0], "messages").Raw, gjson.GetBytes(upstream.bodies[1], "messages").Raw)
 	require.NotContains(t, string(upstream.bodies[2]), `"type":"tool_use"`)
 	require.NotContains(t, string(upstream.bodies[2]), `"type":"tool_result"`)
-	events, _ := c.Get(OpsUpstreamErrorsKey)
-	first := events.([]*OpsUpstreamErrorEvent)[0]
+	first := claudeRecoveryOpsEvents(t, c)[0]
 	require.Equal(t, 2, first.SignatureRecovery.Attempts)
 	require.Equal(t, "accepted", first.SignatureRecovery.Outcome)
 }

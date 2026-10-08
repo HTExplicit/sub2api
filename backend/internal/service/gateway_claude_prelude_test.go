@@ -46,7 +46,7 @@ func (w *claudePreludeFlushObserver) Flush() {
 func runClaudePreludeTestStream(t *testing.T, svc *GatewayService, c *gin.Context, stream string, recoverPrelude bool) (*streamingResult, error) {
 	t.Helper()
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(stream))}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformAnthropic}, time.Now(), "claude-sonnet-5-5", "claude-sonnet-5-5", false, recoverPrelude)
 }
 
@@ -188,8 +188,8 @@ func TestClaudePrelude_RepairTimeoutSkipsHealthPenaltyAndNormalTimeoutKeepsIt(t 
 			svc.rateLimitService.SetSettingService(settings)
 			recorder, c := claudePreludeTestContext()
 			pr, pw := io.Pipe()
-			defer pr.Close()
-			defer pw.Close()
+			defer func() { _ = pr.Close() }()
+			defer func() { _ = pw.Close() }()
 			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: pr}
 
 			_, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false, false, suppressPenalty)
