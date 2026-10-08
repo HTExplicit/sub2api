@@ -143,6 +143,10 @@ jobs:
             src/api/admin/__tests__/codexGatewayBorrow.spec.ts \
             src/components/admin/codex/__tests__/BorrowPelicanPreview.spec.ts \
             src/views/admin/__tests__/CodexGatewayBorrowView.spec.ts \
+            src/views/admin/__tests__/CodexGatewayBorrowStatusView.spec.ts \
+            src/views/admin/__tests__/CodexPelicanComparisonView.spec.ts \
+            src/components/admin/__tests__/CodexBorrowNav.spec.ts \
+            src/router/__tests__/codex-borrow-routes.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
             src/utils/__tests__/openaiProtocolModeEdits.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \

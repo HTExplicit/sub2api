@@ -62,15 +62,15 @@ vi.mock('vue-i18n', async importOriginal => {
   }
 })
 
-async function renderSidebar(options: { admin?: boolean } = {}) {
+async function renderSidebar(options: { admin?: boolean; simple?: boolean; path?: string } = {}) {
   mocks.authStore.isAdmin = options.admin === true
-  mocks.authStore.isSimpleMode = true
+  mocks.authStore.isSimpleMode = options.simple !== false
 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
   })
-  await router.push(options.admin ? '/admin/dashboard' : '/dashboard')
+  await router.push(options.path ?? (options.admin ? '/admin/dashboard' : '/dashboard'))
   await router.isReady()
 
   return mount(AppSidebar, {
@@ -97,27 +97,42 @@ describe('AppSidebar simple mode extensions', () => {
     document.documentElement.classList.remove('dark')
   })
 
-  it('renders no extensions section for a regular user', async () => {
-    const wrapper = await renderSidebar()
+  it.each([true, false])('renders no extensions section for a regular user (simple: %s)', async simple => {
+    const wrapper = await renderSidebar({ simple })
 
     expect(wrapper.find('[data-testid="sidebar-extensions"]').exists()).toBe(false)
-    expect(wrapper.find('a[href="/usage"]').exists()).toBe(false)
+    if (simple) expect(wrapper.find('a[href="/usage"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
-  it('renders admin extensions for an admin in simple mode', async () => {
-    const wrapper = await renderSidebar({ admin: true })
+  it.each([true, false])('renders the three admin page entries in order (simple: %s)', async simple => {
+    const wrapper = await renderSidebar({ admin: true, simple })
 
     expect(extensionLinks(wrapper)).toEqual([
       '/admin/system-prompts',
       '/admin/codex-runtime',
       '/admin/codex-gateway-borrow',
+      '/admin/codex-gateway-borrow/status',
+      '/admin/codex-pelican-comparison',
       '/admin/reasoning-recovery',
     ])
-    expect(wrapper.text()).not.toContain('nav.myAccount')
+    if (simple) expect(wrapper.text()).not.toContain('nav.myAccount')
 
     wrapper.unmount()
-    const regularUser = await renderSidebar()
+    const regularUser = await renderSidebar({ simple })
     expect(regularUser.find('a[href="/admin/codex-gateway-borrow"]').exists()).toBe(false)
+    expect(regularUser.find('a[href="/admin/codex-gateway-borrow/status"]').exists()).toBe(false)
+    expect(regularUser.find('a[href="/admin/codex-pelican-comparison"]').exists()).toBe(false)
     regularUser.unmount()
+  })
+
+  it('marks only Borrow Status active on its own route', async () => {
+    const wrapper = await renderSidebar({ admin: true, path: '/admin/codex-gateway-borrow/status' })
+    const section = wrapper.get('[data-testid="sidebar-extensions"]')
+
+    expect(section.get('a[href="/admin/codex-gateway-borrow/status"]').classes()).toContain('sidebar-link-active')
+    expect(section.get('a[href="/admin/codex-gateway-borrow"]').classes()).not.toContain('sidebar-link-active')
+    expect(section.findAll('.sidebar-link-active')).toHaveLength(1)
+    wrapper.unmount()
   })
 })

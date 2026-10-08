@@ -223,7 +223,9 @@ export default {
     auditLogs: '操作日志',
     systemPrompts: '系统提示词',
     reasoningRecovery: '推理恢复',
-    codexGatewayBorrow: 'Codex 网关借用',
+    codexGatewayBorrow: 'Codex 借用设置',
+    codexGatewayBorrowStatus: 'Codex 借用状态',
+    codexPelicanComparison: '鹈鹕对比',
   },
 
   // Auth
