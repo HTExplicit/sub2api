@@ -547,7 +547,19 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/codex-gateway-borrow',
     name: 'AdminCodexGatewayBorrow',
     component: () => import('@/views/admin/CodexGatewayBorrowView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Gateway Borrow', titleKey: 'nav.codexGatewayBorrow' }
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Borrow Settings', titleKey: 'nav.codexGatewayBorrow' }
+  },
+  {
+    path: '/admin/codex-gateway-borrow/status',
+    name: 'AdminCodexGatewayBorrowStatus',
+    component: () => import('@/views/admin/CodexGatewayBorrowStatusView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Borrow Status', titleKey: 'nav.codexGatewayBorrowStatus' }
+  },
+  {
+    path: '/admin/codex-pelican-comparison',
+    name: 'AdminCodexPelicanComparison',
+    component: () => import('@/views/admin/CodexPelicanComparisonView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Pelican Comparison', titleKey: 'nav.codexPelicanComparison' }
   },
   {
     path: '/admin/reasoning-recovery',

@@ -113,7 +113,7 @@
             :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :class="{ 'sidebar-link-active': route.path === item.path, 'sidebar-link-collapsed': sidebarCollapsed }"
             :title="sidebarCollapsed ? item.label : undefined"
             @click="handleMenuItemClick(item.path)"
           >
@@ -507,6 +507,14 @@ const GatewayBorrowIcon = {
   render: () => h(Icon, { name: 'link', 'aria-hidden': 'true' })
 }
 
+const GatewayBorrowStatusIcon = {
+  render: () => h(Icon, { name: 'checkCircle', 'aria-hidden': 'true' })
+}
+
+const PelicanComparisonIcon = {
+  render: () => h(Icon, { name: 'grid', 'aria-hidden': 'true' })
+}
+
 const BellIcon = {
   render: () =>
     h(
@@ -834,6 +842,8 @@ const adminExtensionNavItems = computed((): NavItem[] => [
   { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon },
   { path: '/admin/codex-runtime', label: t('nav.codexRuntime'), icon: PluginIcon },
   { path: '/admin/codex-gateway-borrow', label: t('nav.codexGatewayBorrow'), icon: GatewayBorrowIcon },
+  { path: '/admin/codex-gateway-borrow/status', label: t('nav.codexGatewayBorrowStatus'), icon: GatewayBorrowStatusIcon },
+  { path: '/admin/codex-pelican-comparison', label: t('nav.codexPelicanComparison'), icon: PelicanComparisonIcon },
   { path: '/admin/reasoning-recovery', label: t('nav.reasoningRecovery'), icon: RecoveryIcon },
 ])
 

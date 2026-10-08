@@ -223,7 +223,9 @@ export default {
     auditLogs: 'Audit Logs',
     systemPrompts: 'System Prompts',
     reasoningRecovery: 'Reasoning Recovery',
-    codexGatewayBorrow: 'Codex Gateway Borrow',
+    codexGatewayBorrow: 'Codex Borrow Settings',
+    codexGatewayBorrowStatus: 'Codex Borrow Status',
+    codexPelicanComparison: 'Pelican Comparison',
   },
 
   // Auth

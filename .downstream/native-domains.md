@@ -19,6 +19,17 @@ nothing. While no Codex runtime row is stored,
 
 ## Codex gateway borrowing
 
+The Extensions navigation exposes three administrator pages: settings at
+`/admin/codex-gateway-borrow`, route status at
+`/admin/codex-gateway-borrow/status`, and manual comparison/history at
+`/admin/codex-pelican-comparison`. Opening or navigating these pages only reads
+local data. Settings drafts contain configuration IDs/options only, persist in
+the browser session, and never affect the saved configuration used by status or
+generation. Only explicit actions save, prepare, verify or generate. The status
+page polls read-only status every five seconds while preparation/verification is
+active; local countdowns expire displayed routes without renewing them. Leaving
+the comparison page cancels its active generation.
+
 `GET/PUT /admin/codex-gateway-borrow/config` owns one JSON setting,
 `codex_gateway_borrow_config`: `enabled`, `source_account_ids`,
 `target_account_ids` and `models`. A missing row is off with empty account
