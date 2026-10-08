@@ -226,6 +226,7 @@ export default {
     codexGatewayBorrow: 'Codex Borrowing',
     codexGatewayBorrowStatus: 'Codex Borrow Status',
     codexPelicanComparison: 'Pelican Comparison',
+    pelicanTests: 'Pelican Tests',
   },
 
   // Auth

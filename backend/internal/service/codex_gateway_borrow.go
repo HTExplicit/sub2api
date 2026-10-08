@@ -396,7 +396,7 @@ type codexGatewayBorrowObservationContextKey struct{}
 // The token provider may refresh credentials normally, but must not attach an
 // observation failure to account health, scheduling or quota.
 func WithCodexGatewayBorrowObservation(ctx context.Context) context.Context {
-	return context.WithValue(ctx, codexGatewayBorrowObservationContextKey{}, true)
+	return context.WithValue(WithAccountObservation(ctx), codexGatewayBorrowObservationContextKey{}, true)
 }
 func IsCodexGatewayBorrowObservation(ctx context.Context) bool {
 	return ctx != nil && ctx.Value(codexGatewayBorrowObservationContextKey{}) == true

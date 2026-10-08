@@ -19,17 +19,18 @@ nothing. While no Codex runtime row is stored,
 
 ## Codex gateway borrowing
 
-The Extensions sidebar has one Codex Borrowing entry. Its in-page navigation
-switches between three independently addressable administrator pages: settings at
+The Extensions sidebar has separate Codex Borrowing and Pelican Tests entries.
+Borrowing's in-page navigation switches between settings at
 `/admin/codex-gateway-borrow`, route status at
-`/admin/codex-gateway-borrow/status`, and manual comparison/history at
-`/admin/codex-pelican-comparison`. Opening or navigating these pages only reads
+`/admin/codex-gateway-borrow/status`. Pelican generation/history lives at
+`/admin/pelican-tests`; `/admin/codex-pelican-comparison` redirects there.
+Opening or navigating these pages only reads
 local data. Settings drafts contain configuration IDs/options only, persist in
 the browser session, and never affect the saved configuration used by status or
 generation. Only explicit actions save, prepare, verify or generate. The status
 page polls read-only status every five seconds while preparation/verification is
 active; local countdowns expire displayed routes without renewing them. Leaving
-the comparison page cancels its active generation.
+the Pelican page cancels its queued and active generation.
 
 `GET/PUT /admin/codex-gateway-borrow/config` owns one JSON setting,
 `codex_gateway_borrow_config`: `enabled`, `source_account_ids`,
@@ -54,17 +55,44 @@ one finite preparation; business cache misses prepare synchronously. There is
 no renewal timer. `/prepare` and `/verify` explicitly prepare or revalidate.
 All probes only record observations, including failures before business dispatch.
 
-`POST /admin/codex-gateway-borrow/tests` accepts a timestamped UUIDv7 and explicit
-account/model pairs. It sends the fixed pelican prompt once per pair, only with
-matching unexpired qualification, using at most three shared generation slots
-and serializing each account. It does not prepare missing routes. An expired
-or future UUID is rejected; replaying a saved UUID cannot dispatch again.
-Migration 275 adds only this feature's task/result tables. Records expire 24
-hours after task creation, disappear from reads immediately, and are removed
-by scoped minute cleanup. Output/errors retain their original bytes.
+The historical `/admin/codex-gateway-borrow/tests` endpoints retain their
+cache-qualified, 90-second request contract. They share execution admission with
+the independent tests described below.
+
+## Independent Pelican tests
+
+`/admin/pelican-tests` provides local account/model options, explicit generation
+with SSE progress, and stored history/detail. Candidates include all platforms,
+account types and account states, using local mappings, saved catalogs and
+platform defaults. Option reads never refresh credentials or request an upstream
+model directory. Each selected account/model receives the fixed Pelican prompt
+once. The server chooses its actual existing account sending path, model mapping,
+credentials, identity headers, proxy, TLS, protocol and borrowing configuration;
+it creates no API Key, group policy or client handshake, and never switches to a
+different account on failure. Unsupported text capabilities retain a skip reason.
+
+All batches share ten model execution slots, with one request per account.
+Nested borrowing probes participate in the same coordination and normal business
+account capacity. Generation starts after preparation and admission; its default
+budget is 600 seconds, configurable from 60 to 1800 seconds. Queue, preparation
+and generation durations are recorded separately. Observed business account slots
+renew every 30 seconds; lost capacity cancels the operation. Existing credential
+refresh remains available, while account health, quota, scheduling, affinity,
+usage and billing writes are suppressed, including background callbacks.
+
+Task IDs are timestamped UUIDv7 values. Expired/future IDs are rejected and replay
+cannot dispatch again. Migration 275 owns the task/result tables; migration 276
+adds budgets, execution phases and actual invocation metadata in place, preserving
+old records and raw BYTEA output. Existing records retain their 90-second budget.
+Records expire 24 hours after task creation, immediately disappear from reads,
+and are removed by scoped minute cleanup. Output/errors retain original bytes;
+binary upstream envelopes use lossless Base64. Truncated or incomplete output is
+recorded without another generation or automatic repair.
 
 Result previews use short random capability URLs under
-`/codex-gateway-borrow/preview/`, an opaque script-enabled sandbox and their own
+`/pelican-tests/preview/` (the historical borrowing path remains an alias),
+expire within 30 minutes and the task's remaining lifetime, and use an opaque
+script-enabled sandbox and their own
 response CSP. Inline animation and external scripts/styles/fonts/images are
 allowed. Preview documents receive no administrator token or UI bridge.
 Adaptation sources and retained notices are in

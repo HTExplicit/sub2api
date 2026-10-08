@@ -84,6 +84,7 @@ func TestCodexGatewayBorrowHandlerPreviewUsesOnlyCapabilityAndOverridesCSP(t *te
 	r := gin.New()
 	r.Use(middleware.SecurityHeaders(config.CSPConfig{Enabled: true}, nil))
 	r.GET("/api/v1/codex-gateway-borrow/preview/:cap/index.html", h.ServePreview)
+	r.GET("/api/v1/pelican-tests/preview/:cap/index.html", h.ServePreview)
 	r.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "main app") })
 	w := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, decorated.PreviewURL, nil)

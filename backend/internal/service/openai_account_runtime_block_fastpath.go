@@ -448,6 +448,9 @@ func isOpenAIAccount(account *Account) bool {
 // handleOpenAIAccountUpstreamError expects canonicalModel to be the model used
 // for scheduling after applying account mapping exactly once.
 func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, canonicalModel ...string) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	// Classify request-local failures before any policy can mutate account health.
 	// The same predicates are used by the HTTP failover and error constructors.
 	if isOpenAIRequestScopedSafetyRejection(responseBody) {
@@ -612,6 +615,9 @@ func shouldCooldownOpenAITransientUpstreamError(statusCode int, responseBody []b
 }
 
 func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || !isOpenAIOAuthAccount(account) {
 		return
 	}
@@ -1221,6 +1227,9 @@ func (s *OpenAIGatewayService) CooldownOpenAIRetryExhausted(
 	canonicalModel string,
 	failoverErr *UpstreamFailoverError,
 ) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) {
 		return
 	}

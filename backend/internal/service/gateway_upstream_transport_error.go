@@ -61,7 +61,9 @@ func (s *GatewayService) handleUpstreamTransportError(ctx context.Context, c *gi
 	}
 
 	// Transport attempt left local validation; count Ollama Cloud activity.
-	scheduleOllamaCloudUsageActivity(s.deferredService, account)
+	if !IsAccountObservation(ctx) {
+		scheduleOllamaCloudUsageActivity(s.deferredService, account)
+	}
 
 	if classifyUpstreamTransportError(err).Persistent {
 		s.tempUnscheduleTransportError(ctx, account, safeErr)
@@ -95,6 +97,9 @@ func (s *GatewayService) tempUnscheduleTransportError(ctx context.Context, accou
 // shared by every forward path whose scheduler reads the persisted
 // temp-unschedulable state (Anthropic/Bedrock and Gemini).
 func tempUnscheduleAccountForTransportError(ctx context.Context, repo AccountRepository, account *Account, safeErr string) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if account == nil || repo == nil {
 		return
 	}

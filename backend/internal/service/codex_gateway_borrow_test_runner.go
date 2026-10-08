@@ -17,13 +17,12 @@ import (
 const (
 	CodexGatewayBorrowTestTTL        = 24 * time.Hour
 	CodexGatewayBorrowPelicanPrompt  = "创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试"
-	codexGatewayBorrowTestTimeout    = 90 * time.Second
 	codexGatewayBorrowTestMaxTargets = 5000
 )
 
 var (
 	ErrCodexGatewayBorrowTestNotFound       = errors.New("codex gateway borrow test not found or expired")
-	ErrCodexGatewayBorrowTestReplayConflict = errors.New("client_task_id was reused with different targets")
+	ErrCodexGatewayBorrowTestReplayConflict = errors.New("client_task_id was reused with different test parameters")
 	ErrCodexGatewayBorrowTestExpired        = errors.New("codex gateway borrow test has expired")
 	ErrCodexGatewayBorrowTestInvalidRequest = errors.New("invalid manual pelican test request")
 )
@@ -35,50 +34,63 @@ type CodexGatewayBorrowTestTarget struct {
 }
 
 type CodexGatewayBorrowTestRequest struct {
-	ClientTaskID string                         `json:"client_task_id"`
-	Targets      []CodexGatewayBorrowTestTarget `json:"targets"`
+	ClientTaskID             string                         `json:"client_task_id"`
+	GenerationTimeoutSeconds int                            `json:"generation_timeout_seconds"`
+	Targets                  []CodexGatewayBorrowTestTarget `json:"targets"`
+	Standalone               bool                           `json:"-"`
 }
 
 type CodexGatewayBorrowTestResult struct {
-	ID                 string     `json:"id"`
-	TaskID             string     `json:"task_id"`
-	Ordinal            int        `json:"ordinal"`
-	AccountID          int64      `json:"account_id"`
-	AccountName        string     `json:"account_name"`
-	ModelID            string     `json:"model_id"`
-	UpstreamModel      string     `json:"upstream_model"`
-	Effort             string     `json:"effort"`
-	Status             string     `json:"status"`
-	RawAnswer          string     `json:"raw_answer"`
-	RawResponse        string     `json:"raw_response"`
-	RawHTML            string     `json:"raw_html"`
-	HTML               string     `json:"html"`
-	Error              string     `json:"error"`
-	StartedAt          *time.Time `json:"started_at,omitempty"`
-	FinishedAt         *time.Time `json:"finished_at,omitempty"`
-	DurationMS         int64      `json:"duration_ms"`
-	ExpiresAt          time.Time  `json:"expires_at"`
-	PreviewURL         string     `json:"preview_url,omitempty"`
-	PreviewExpiresAt   *time.Time `json:"preview_expires_at,omitempty"`
-	PreviewUnavailable string     `json:"preview_unavailable"`
+	ID                    string     `json:"id"`
+	TaskID                string     `json:"task_id"`
+	Ordinal               int        `json:"ordinal"`
+	AccountID             int64      `json:"account_id"`
+	AccountName           string     `json:"account_name"`
+	Platform              string     `json:"platform"`
+	ModelID               string     `json:"model_id"`
+	UpstreamModel         string     `json:"upstream_model"`
+	Effort                string     `json:"effort"`
+	Status                string     `json:"status"`
+	RawAnswer             string     `json:"raw_answer"`
+	RawResponse           string     `json:"raw_response"`
+	RawHTML               string     `json:"raw_html"`
+	HTML                  string     `json:"html"`
+	Error                 string     `json:"error"`
+	StartedAt             *time.Time `json:"started_at,omitempty"`
+	FinishedAt            *time.Time `json:"finished_at,omitempty"`
+	DurationMS            int64      `json:"duration_ms"`
+	GenerationStartedAt   *time.Time `json:"generation_started_at,omitempty"`
+	QueueDurationMS       int64      `json:"queue_duration_ms"`
+	PreparationDurationMS int64      `json:"preparation_duration_ms"`
+	GenerationDurationMS  int64      `json:"generation_duration_ms"`
+	ActualEndpoint        string     `json:"actual_endpoint"`
+	ActualProtocol        string     `json:"actual_protocol"`
+	ActualTransport       string     `json:"actual_transport"`
+	BorrowApplied         bool       `json:"borrow_applied"`
+	ExpiresAt             time.Time  `json:"expires_at"`
+	PreviewURL            string     `json:"preview_url,omitempty"`
+	PreviewExpiresAt      *time.Time `json:"preview_expires_at,omitempty"`
+	PreviewUnavailable    string     `json:"preview_unavailable"`
 }
 
 type CodexGatewayBorrowTestTask struct {
-	ID           string                          `json:"id"`
-	ClientTaskID string                          `json:"client_task_id"`
-	CreatedBy    int64                           `json:"created_by"`
-	RequestHash  string                          `json:"-"`
-	Status       string                          `json:"status"`
-	Prompt       string                          `json:"prompt"`
-	CreatedAt    time.Time                       `json:"created_at"`
-	ExpiresAt    time.Time                       `json:"expires_at"`
-	StartedAt    *time.Time                      `json:"started_at,omitempty"`
-	FinishedAt   *time.Time                      `json:"finished_at,omitempty"`
-	Total        int                             `json:"total"`
-	Completed    int                             `json:"completed"`
-	Error        string                          `json:"error"`
-	Results      []*CodexGatewayBorrowTestResult `json:"results,omitempty"`
-	Replayed     bool                            `json:"replayed"`
+	ID                       string                          `json:"id"`
+	ClientTaskID             string                          `json:"client_task_id"`
+	CreatedBy                int64                           `json:"created_by"`
+	RequestHash              string                          `json:"-"`
+	GenerationTimeoutSeconds int                             `json:"generation_timeout_seconds"`
+	ExecutionMode            string                          `json:"execution_mode"`
+	Status                   string                          `json:"status"`
+	Prompt                   string                          `json:"prompt"`
+	CreatedAt                time.Time                       `json:"created_at"`
+	ExpiresAt                time.Time                       `json:"expires_at"`
+	StartedAt                *time.Time                      `json:"started_at,omitempty"`
+	FinishedAt               *time.Time                      `json:"finished_at,omitempty"`
+	Total                    int                             `json:"total"`
+	Completed                int                             `json:"completed"`
+	Error                    string                          `json:"error"`
+	Results                  []*CodexGatewayBorrowTestResult `json:"results,omitempty"`
+	Replayed                 bool                            `json:"replayed"`
 }
 
 type CodexGatewayBorrowTestList struct {
@@ -111,30 +123,26 @@ type codexGatewayBorrowAccountReader interface {
 	GetByID(context.Context, int64) (*Account, error)
 }
 
-type codexGatewayBorrowAccountSlot struct {
-	slot chan struct{}
-	refs int
-}
-
-// All batches share these three slots and account locks. No native test service,
-// recovery service, rate-limit writer or account-state writer is used here.
+// All batches, including legacy cache-only tests, share ten outbound execution
+// slots. Account leases surround actual requests rather than route preparation.
 type CodexGatewayBorrowTestRunner struct {
-	repo         CodexGatewayBorrowTestRepository
-	generator    codexGatewayBorrowPelicanGenerator
-	accounts     codexGatewayBorrowAccountReader
-	slots        chan struct{}
-	accountMu    sync.Mutex
-	accountSlots map[int64]*codexGatewayBorrowAccountSlot
-	initMu       sync.Mutex
-	initialized  bool
-	stopCtx      context.Context
-	stop         context.CancelFunc
-	stopOnce     sync.Once
-	cleanupDone  chan struct{}
-	runMu        sync.Mutex
-	running      sync.WaitGroup
-	stopped      bool
-	now          func() time.Time
+	repo                CodexGatewayBorrowTestRepository
+	generator           codexGatewayBorrowPelicanGenerator
+	standaloneGenerator codexGatewayBorrowPelicanGenerator
+	accounts            codexGatewayBorrowAccountReader
+	coordinator         *pelicanExecutionCoordinator
+	initMu              sync.Mutex
+	initialized         bool
+	stopCtx             context.Context
+	stop                context.CancelFunc
+	stopOnce            sync.Once
+	cleanupDone         chan struct{}
+	runMu               sync.Mutex
+	running             sync.WaitGroup
+	stopped             bool
+	activeTasks         map[string]bool
+	now                 func() time.Time
+	generationContext   func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
 
 func NewCodexGatewayBorrowTestRunner(repo CodexGatewayBorrowTestRepository, core *CodexGatewayBorrowService, accounts AccountRepository) *CodexGatewayBorrowTestRunner {
@@ -144,10 +152,16 @@ func NewCodexGatewayBorrowTestRunner(repo CodexGatewayBorrowTestRepository, core
 func newCodexGatewayBorrowTestRunner(repo CodexGatewayBorrowTestRepository, generator codexGatewayBorrowPelicanGenerator, accounts codexGatewayBorrowAccountReader) *CodexGatewayBorrowTestRunner {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &CodexGatewayBorrowTestRunner{repo: repo, generator: generator, accounts: accounts,
-		slots: make(chan struct{}, 3), accountSlots: make(map[int64]*codexGatewayBorrowAccountSlot),
-		stopCtx: ctx, stop: cancel, cleanupDone: make(chan struct{}), now: time.Now}
+		coordinator: sharedPelicanExecution, activeTasks: make(map[string]bool),
+		stopCtx: ctx, stop: cancel, cleanupDone: make(chan struct{}), now: time.Now, generationContext: context.WithTimeout}
 	go r.cleanupLoop()
 	return r
+}
+
+// SetStandaloneGenerator is configured once before serving. Both entry points
+// use the same runner so restart interruption and outbound capacity stay shared.
+func (r *CodexGatewayBorrowTestRunner) SetStandaloneGenerator(generator codexGatewayBorrowPelicanGenerator) {
+	r.standaloneGenerator = generator
 }
 
 func (r *CodexGatewayBorrowTestRunner) Stop() {
@@ -204,19 +218,26 @@ func normalizeCodexGatewayBorrowTestRequest(request CodexGatewayBorrowTestReques
 		return request, fmt.Errorf("%w: client_task_id timestamp is in the future", ErrCodexGatewayBorrowTestInvalidRequest)
 	}
 	request.ClientTaskID = id.String()
+	if request.GenerationTimeoutSeconds == 0 {
+		request.GenerationTimeoutSeconds = PelicanDefaultGenerationTimeoutSeconds
+	}
+	if request.GenerationTimeoutSeconds < PelicanMinGenerationTimeoutSeconds || request.GenerationTimeoutSeconds > PelicanMaxGenerationTimeoutSeconds {
+		return request, fmt.Errorf("%w: generation_timeout_seconds must be between %d and %d", ErrCodexGatewayBorrowTestInvalidRequest,
+			PelicanMinGenerationTimeoutSeconds, PelicanMaxGenerationTimeoutSeconds)
+	}
 	targets := make([]CodexGatewayBorrowTestTarget, 0, len(request.Targets))
 	seen := make(map[string]bool, len(request.Targets))
 	for _, target := range request.Targets {
 		target.ModelID = strings.TrimSpace(target.ModelID)
 		target.Effort = strings.ToLower(strings.TrimSpace(target.Effort))
-		if target.Effort == "" {
+		if target.Effort == "" && !request.Standalone {
 			target.Effort = "high"
 		}
 		if target.AccountID <= 0 || target.ModelID == "" || len(target.ModelID) > 512 || strings.ContainsRune(target.ModelID, '\x00') {
 			return request, fmt.Errorf("%w: each target needs a positive account_id and a valid model_id", ErrCodexGatewayBorrowTestInvalidRequest)
 		}
 		switch target.Effort {
-		case "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra":
+		case "", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra":
 		default:
 			return request, fmt.Errorf("%w: invalid reasoning effort %q", ErrCodexGatewayBorrowTestInvalidRequest, target.Effort)
 		}
@@ -244,24 +265,43 @@ func (r *CodexGatewayBorrowTestRunner) Create(ctx context.Context, createdBy int
 	if err = r.initialize(ctx); err != nil {
 		return nil, false, err
 	}
+	mode := PelicanExecutionModeLegacyCache
+	if request.Standalone {
+		mode = PelicanExecutionModeAccount
+	}
+	// Default legacy requests retain their existing hash so bookmarks/replays
+	// continue to read records created before this migration. New execution
+	// parameters participate in every standalone request's idempotency check.
 	raw, _ := json.Marshal(request.Targets)
+	if request.Standalone || request.GenerationTimeoutSeconds != PelicanDefaultGenerationTimeoutSeconds {
+		raw, _ = json.Marshal(struct {
+			Targets                  []CodexGatewayBorrowTestTarget `json:"targets"`
+			GenerationTimeoutSeconds int                            `json:"generation_timeout_seconds"`
+			ExecutionMode            string                         `json:"execution_mode"`
+		}{request.Targets, request.GenerationTimeoutSeconds, mode})
+	}
 	hash := sha256.Sum256(raw)
 	now := r.now().UTC()
 	task := &CodexGatewayBorrowTestTask{ID: uuid.NewString(), ClientTaskID: request.ClientTaskID,
 		CreatedBy: createdBy, RequestHash: hex.EncodeToString(hash[:]), Status: "pending",
+		GenerationTimeoutSeconds: request.GenerationTimeoutSeconds, ExecutionMode: mode,
 		Prompt: CodexGatewayBorrowPelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(CodexGatewayBorrowTestTTL),
 		Total: len(request.Targets), Results: make([]*CodexGatewayBorrowTestResult, 0, len(request.Targets))}
-	names := make(map[int64]string)
+	accountInfo := make(map[int64]*Account)
 	for i, target := range request.Targets {
-		name, found := names[target.AccountID]
+		account, found := accountInfo[target.AccountID]
 		if !found && r.accounts != nil {
-			if account, readErr := r.accounts.GetByID(ctx, target.AccountID); readErr == nil && account != nil {
-				name = account.Name
+			if read, readErr := r.accounts.GetByID(ctx, target.AccountID); readErr == nil {
+				account = read
 			}
-			names[target.AccountID] = name
+			accountInfo[target.AccountID] = account
+		}
+		name, platform := "", ""
+		if account != nil {
+			name, platform = account.Name, account.Platform
 		}
 		task.Results = append(task.Results, &CodexGatewayBorrowTestResult{ID: uuid.NewString(), TaskID: task.ID,
-			Ordinal: i + 1, AccountID: target.AccountID, AccountName: name, ModelID: target.ModelID,
+			Ordinal: i + 1, AccountID: target.AccountID, AccountName: name, Platform: platform, ModelID: target.ModelID,
 			Effort: target.Effort, Status: "pending", ExpiresAt: task.ExpiresAt,
 			PreviewUnavailable: "test has not completed"})
 	}
@@ -288,62 +328,34 @@ func (r *CodexGatewayBorrowTestRunner) Get(ctx context.Context, id string) (*Cod
 
 type CodexGatewayBorrowTestEvent struct {
 	Type   string                        `json:"type"`
+	Phase  string                        `json:"phase,omitempty"`
 	TaskID string                        `json:"task_id,omitempty"`
 	Task   *CodexGatewayBorrowTestTask   `json:"task,omitempty"`
 	Result *CodexGatewayBorrowTestResult `json:"result,omitempty"`
-}
-
-func (r *CodexGatewayBorrowTestRunner) acquire(ctx context.Context, accountID int64) (func(), bool) {
-	r.accountMu.Lock()
-	entry := r.accountSlots[accountID]
-	if entry == nil {
-		entry = &codexGatewayBorrowAccountSlot{slot: make(chan struct{}, 1)}
-		r.accountSlots[accountID] = entry
-	}
-	entry.refs++
-	r.accountMu.Unlock()
-	dropReference := func() {
-		r.accountMu.Lock()
-		entry.refs--
-		if entry.refs == 0 {
-			delete(r.accountSlots, accountID)
-		}
-		r.accountMu.Unlock()
-	}
-	select {
-	case entry.slot <- struct{}{}:
-	case <-ctx.Done():
-		dropReference()
-		return nil, false
-	}
-	select {
-	case r.slots <- struct{}{}:
-	case <-ctx.Done():
-		<-entry.slot
-		dropReference()
-		return nil, false
-	}
-	if ctx.Err() != nil {
-		<-r.slots
-		<-entry.slot
-		dropReference()
-		return nil, false
-	}
-	return func() { <-r.slots; <-entry.slot; dropReference() }, true
 }
 
 // Run is synchronous with the SSE request. Cancellation stops both queued and
 // in-flight targets; detached, short writes retain their final observations.
 func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGatewayBorrowTestTask, emit func(CodexGatewayBorrowTestEvent)) error {
 	r.runMu.Lock()
+	if task.Replayed || task.Status != "pending" || r.activeTasks[task.ID] {
+		r.runMu.Unlock()
+		return nil
+	}
 	if r.stopped {
 		r.runMu.Unlock()
 		return r.finishUnstarted(parent, task, "cancelled", "test runner stopped", emit)
 	}
 	r.running.Add(1)
+	r.activeTasks[task.ID] = true
 	r.runMu.Unlock()
-	defer r.running.Done()
-	ctx, cancel := context.WithCancel(parent)
+	defer func() {
+		r.runMu.Lock()
+		delete(r.activeTasks, task.ID)
+		r.runMu.Unlock()
+		r.running.Done()
+	}()
+	ctx, cancel := context.WithDeadline(parent, task.ExpiresAt)
 	defer cancel()
 	stopLink := context.AfterFunc(r.stopCtx, cancel)
 	defer stopLink()
@@ -352,6 +364,9 @@ func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGa
 		return ErrCodexGatewayBorrowTestExpired
 	}
 	if err := r.repo.StartTask(ctx, task.ID, started); err != nil {
+		if errors.Is(err, ErrCodexGatewayBorrowTestNotFound) {
+			return err
+		}
 		status := "incomplete"
 		if ctx.Err() != nil {
 			status = "cancelled"
@@ -367,13 +382,48 @@ func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGa
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if release, ok := r.acquire(ctx, result.AccountID); ok {
-				defer release()
-				r.runOne(ctx, result, emit)
+			budget := task.GenerationTimeoutSeconds
+			if budget == 0 {
+				budget = PelicanDefaultGenerationTimeoutSeconds
+			}
+			state := newPelicanExecutionState(ctx, r.coordinator, time.Duration(budget)*time.Second, r.now)
+			state.withTimeout = r.generationContext
+			state.onPhase = func(phase string, snapshot pelicanExecutionSnapshot) {
+				if emit != nil {
+					copy := *result
+					applyPelicanExecutionSnapshot(&copy, snapshot)
+					emit(CodexGatewayBorrowTestEvent{Type: "result_phase", Phase: phase, TaskID: task.ID, Result: &copy})
+				}
+			}
+			testCtx := context.WithValue(state.parent, pelicanExecutionContextKey{}, state)
+			if emit != nil {
+				copy := *result
+				emit(CodexGatewayBorrowTestEvent{Type: "result_phase", Phase: "queued", TaskID: task.ID, Result: &copy})
+			}
+			if task.ExecutionMode == PelicanExecutionModeAccount {
+				r.runOne(testCtx, result, r.standaloneGenerator, false, emit)
 			} else {
-				finished := r.now().UTC()
-				result.Status, result.Error, result.FinishedAt = "cancelled", "test cancelled before dispatch", &finished
-				result.PreviewUnavailable = "test cancelled"
+				// The existing cache-only generator never prepares nested routes.
+				// Its outer lease also covers legacy callers without sender hooks.
+				leasedCtx, release, acquireErr := AcquirePelicanExecution(testCtx, result.AccountID)
+				if acquireErr == nil {
+					r.runOne(leasedCtx, result, r.generator, true, emit)
+					release()
+				} else {
+					finished := r.now().UTC()
+					result.Status, result.Error, result.FinishedAt = "cancelled", "test cancelled before dispatch", &finished
+					result.PreviewUnavailable = "test cancelled"
+				}
+			}
+			snapshot := state.finish()
+			applyPelicanExecutionSnapshot(result, snapshot)
+			if snapshot.generationTimedOut && ctx.Err() == nil && result.Status != "skipped" {
+				result.Status = "incomplete"
+				result.PreviewUnavailable = "test incomplete"
+				if result.Error != "" {
+					result.Error += "\n"
+				}
+				result.Error += "generation budget exhausted"
 			}
 			writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
 			writeErr := r.repo.SaveResult(writeCtx, result)
@@ -408,7 +458,8 @@ func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGa
 	return nil
 }
 
-func (r *CodexGatewayBorrowTestRunner) runOne(ctx context.Context, result *CodexGatewayBorrowTestResult, emit func(CodexGatewayBorrowTestEvent)) {
+func (r *CodexGatewayBorrowTestRunner) runOne(ctx context.Context, result *CodexGatewayBorrowTestResult, generator codexGatewayBorrowPelicanGenerator, legacy bool, emit func(CodexGatewayBorrowTestEvent)) {
+	callerCtx := ctx
 	now := r.now().UTC()
 	if !result.ExpiresAt.After(now) {
 		result.Status, result.Error, result.FinishedAt = "skipped", "test record expired before dispatch", &now
@@ -432,11 +483,18 @@ func (r *CodexGatewayBorrowTestRunner) runOne(ctx context.Context, result *Codex
 		result.PreviewUnavailable = "test cancelled"
 		return
 	}
-	testCtx, cancel := context.WithTimeout(ctx, codexGatewayBorrowTestTimeout)
-	generated, err := r.generator.GeneratePelican(testCtx, result.AccountID, result.ModelID, result.Effort)
-	cancel()
+	BeginPelicanPreparation(ctx)
+	if generator == nil {
+		result.Status, result.Error, result.FinishedAt = "skipped", "account Pelican generator is unavailable", &now
+		result.PreviewUnavailable = "test skipped"
+		return
+	}
+	if legacy {
+		ctx = BeginPelicanGeneration(ctx)
+	}
+	generated, err := generator.GeneratePelican(ctx, result.AccountID, result.ModelID, result.Effort)
 	finished := r.now().UTC()
-	result.FinishedAt, result.DurationMS = &finished, finished.Sub(now).Milliseconds()
+	result.FinishedAt, result.DurationMS = &finished, nonnegativePelicanDuration(finished.Sub(now)).Milliseconds()
 	if generated != nil {
 		result.RawAnswer, result.RawResponse, result.Error = generated.RawAnswer, generated.RawResponse, generated.Error
 		result.UpstreamModel = generated.ModelID
@@ -454,11 +512,24 @@ func (r *CodexGatewayBorrowTestRunner) runOne(ctx context.Context, result *Codex
 		if result.Status != "skipped" && result.Status != "incomplete" && result.Status != "failed" {
 			result.Status = "failed"
 		}
+		if errors.Is(err, context.DeadlineExceeded) && result.Status != "skipped" {
+			result.Status = "incomplete"
+		}
 	}
-	if ctx.Err() != nil {
+	if callerCtx.Err() != nil {
 		result.Status = "cancelled"
+		if errors.Is(context.Cause(callerCtx), context.DeadlineExceeded) {
+			result.Status = "incomplete"
+		}
+		if cause := context.Cause(callerCtx); errors.Is(cause, ErrObservedAccountLeaseLost) {
+			result.Status = "incomplete"
+			if result.Error != "" {
+				result.Error += "\n"
+			}
+			result.Error += cause.Error()
+		}
 		if result.Error == "" {
-			result.Error = ctx.Err().Error()
+			result.Error = callerCtx.Err().Error()
 		}
 	}
 	switch result.Status {

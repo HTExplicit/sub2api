@@ -556,10 +556,16 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Borrow Status', titleKey: 'nav.codexGatewayBorrowStatus' }
   },
   {
+    path: '/admin/pelican-tests',
+    name: 'AdminPelicanTests',
+    component: () => import('@/views/admin/CodexPelicanComparisonView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Pelican Tests', titleKey: 'nav.pelicanTests' }
+  },
+  {
     path: '/admin/codex-pelican-comparison',
     name: 'AdminCodexPelicanComparison',
-    component: () => import('@/views/admin/CodexPelicanComparisonView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Pelican Comparison', titleKey: 'nav.codexPelicanComparison' }
+    redirect: '/admin/pelican-tests',
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Pelican Tests', titleKey: 'nav.pelicanTests' }
   },
   {
     path: '/admin/reasoning-recovery',

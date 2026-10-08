@@ -235,6 +235,18 @@ func openAIProxyStreamCircuitProxyID(account *Account) (int64, bool) {
 	return *account.ProxyID, true
 }
 
+func (s *OpenAIGatewayService) recordOpenAIProxyStreamDisconnectInContext(ctx context.Context, account *Account, streamErr error, upstreamRequestID string) {
+	if !IsAccountObservation(ctx) {
+		s.recordOpenAIProxyStreamDisconnect(account, streamErr, upstreamRequestID)
+	}
+}
+
+func (s *OpenAIGatewayService) clearOpenAIProxyStreamDisconnectInContext(ctx context.Context, account *Account) {
+	if !IsAccountObservation(ctx) {
+		s.clearOpenAIProxyStreamDisconnect(account)
+	}
+}
+
 func (s *OpenAIGatewayService) recordOpenAIProxyStreamDisconnect(account *Account, streamErr error, upstreamRequestID string) {
 	proxyID, ok := openAIProxyStreamCircuitProxyID(account)
 	if !ok || streamErr == nil || errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {

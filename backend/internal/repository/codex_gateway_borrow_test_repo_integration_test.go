@@ -63,7 +63,42 @@ func codexGatewayBorrowPrivateIntegrationDB(t *testing.T, ctx context.Context) *
 	ddl, err := migrations.FS.ReadFile("275_codex_gateway_borrow_tests.sql")
 	require.NoError(t, err)
 	_, err = privateDB.ExecContext(ctx, string(ddl))
-	require.NoError(t, err, "apply the actual new migration inside the private fixture")
+	require.NoError(t, err, "apply the original observation schema inside the private fixture")
+	// Put one legacy record in the original schema before applying the new
+	// migration. Its existing output and retention must survive unchanged.
+	legacyTask, legacyResult := uuid.NewString(), uuid.NewString()
+	legacyClient, err := uuid.NewV7()
+	require.NoError(t, err)
+	created := time.Now().UTC().Truncate(time.Microsecond)
+	legacyAnswer := []byte("legacy original answer\x00tail")
+	_, err = privateDB.ExecContext(ctx, `INSERT INTO codex_gateway_borrow_test_tasks
+        (id,client_task_id,created_by,request_hash,status,prompt,total,created_at,expires_at)
+        VALUES ($1,$2,7,'legacy-hash','complete',$3,1,$4,$5)`, legacyTask, legacyClient.String(), service.CodexGatewayBorrowPelicanPrompt, created, created.Add(service.CodexGatewayBorrowTestTTL))
+	require.NoError(t, err)
+	_, err = privateDB.ExecContext(ctx, `INSERT INTO codex_gateway_borrow_test_results
+        (id,task_id,ordinal,account_id,model_id,effort,status,raw_answer,error)
+        VALUES ($1,$2,1,42,'gpt-6-astra','high','complete',$3,$3)`, legacyResult, legacyTask, legacyAnswer)
+	require.NoError(t, err)
+	ddl, err = migrations.FS.ReadFile("276_pelican_test_execution.sql")
+	require.NoError(t, err)
+	_, err = privateDB.ExecContext(ctx, string(ddl))
+	require.NoError(t, err, "apply the actual additive execution migration")
+	var answer, originalError []byte
+	var executionMode string
+	var timeout int
+	var retention int64
+	err = privateDB.QueryRowContext(ctx, `SELECT r.raw_answer,r.error,t.execution_mode,t.generation_timeout_seconds,
+        EXTRACT(EPOCH FROM (t.expires_at-t.created_at))::BIGINT
+        FROM codex_gateway_borrow_test_results r JOIN codex_gateway_borrow_test_tasks t ON t.id=r.task_id
+        WHERE r.id=$1`, legacyResult).Scan(&answer, &originalError, &executionMode, &timeout, &retention)
+	require.NoError(t, err)
+	require.Equal(t, legacyAnswer, answer)
+	require.Equal(t, legacyAnswer, originalError)
+	require.Equal(t, service.PelicanExecutionModeLegacyCache, executionMode)
+	require.Equal(t, 90, timeout, "historical observations retain their actual legacy budget")
+	require.Equal(t, int64(service.CodexGatewayBorrowTestTTL/time.Second), retention)
+	_, err = privateDB.ExecContext(ctx, `DELETE FROM codex_gateway_borrow_test_tasks WHERE id=$1`, legacyTask)
+	require.NoError(t, err)
 	return privateDB
 }
 
@@ -76,10 +111,11 @@ func codexGatewayBorrowIntegrationTask(t *testing.T, accountID int64) *service.C
 		ID: uuid.NewString(), ClientTaskID: clientID.String(), CreatedBy: 7,
 		RequestHash: strings.Repeat("a", 64), Status: "pending", Prompt: service.CodexGatewayBorrowPelicanPrompt,
 		CreatedAt: created, ExpiresAt: created.Add(service.CodexGatewayBorrowTestTTL), Total: 1,
+		GenerationTimeoutSeconds: service.PelicanDefaultGenerationTimeoutSeconds, ExecutionMode: service.PelicanExecutionModeAccount,
 	}
 	task.Results = []*service.CodexGatewayBorrowTestResult{{
 		ID: uuid.NewString(), TaskID: task.ID, Ordinal: 1, AccountID: accountID,
-		AccountName: "private integration fixture", ModelID: "gpt-6-astra", Effort: "high",
+		AccountName: "private integration fixture", Platform: "openai", ModelID: "gpt-6-astra", Effort: "high",
 		Status: "pending", ExpiresAt: task.ExpiresAt,
 	}}
 	return task
@@ -100,6 +136,8 @@ func TestCodexGatewayBorrowTestRepositoryIntegrationLifecycle(t *testing.T) {
 	require.Equal(t, task.ID, stored.ID)
 	require.Equal(t, "pending", stored.Status)
 	require.Len(t, stored.Results, 1)
+	require.Equal(t, service.PelicanDefaultGenerationTimeoutSeconds, stored.GenerationTimeoutSeconds)
+	require.Equal(t, service.PelicanExecutionModeAccount, stored.ExecutionMode)
 	require.Equal(t, service.CodexGatewayBorrowTestTTL, stored.ExpiresAt.Sub(stored.CreatedAt))
 
 	started := time.Now().UTC().Truncate(time.Microsecond)
@@ -108,6 +146,10 @@ func TestCodexGatewayBorrowTestRepositoryIntegrationLifecycle(t *testing.T) {
 	finished := started.Add(250 * time.Millisecond)
 	result.Status, result.UpstreamModel = "complete", "gpt-6-astra-reported"
 	result.StartedAt, result.FinishedAt, result.DurationMS = &started, &finished, 250
+	generationStarted := started.Add(50 * time.Millisecond)
+	result.GenerationStartedAt = &generationStarted
+	result.QueueDurationMS, result.PreparationDurationMS, result.GenerationDurationMS = 20, 30, 200
+	result.ActualEndpoint, result.ActualProtocol, result.ActualTransport, result.BorrowApplied = "https://local.test/responses", "responses", "http", true
 	result.RawAnswer = "```svg\n<svg><script>animatePelican()</script>鹈鹕\x00tail</svg>\n```"
 	result.RawResponse = "data: {\"original\":\"full stream\"}\n\n\x00end"
 	result.RawHTML = "<svg><script>animatePelican()</script>鹈鹕\x00tail</svg>"
@@ -127,6 +169,15 @@ func TestCodexGatewayBorrowTestRepositoryIntegrationLifecycle(t *testing.T) {
 	require.Equal(t, "gpt-6-astra", readResult.ModelID)
 	require.Equal(t, result.UpstreamModel, readResult.UpstreamModel)
 	require.Equal(t, result.DurationMS, readResult.DurationMS)
+	require.Equal(t, result.Platform, readResult.Platform)
+	require.Equal(t, result.ActualEndpoint, readResult.ActualEndpoint)
+	require.Equal(t, result.ActualProtocol, readResult.ActualProtocol)
+	require.Equal(t, result.ActualTransport, readResult.ActualTransport)
+	require.True(t, readResult.BorrowApplied)
+	require.Equal(t, result.QueueDurationMS, readResult.QueueDurationMS)
+	require.Equal(t, result.PreparationDurationMS, readResult.PreparationDurationMS)
+	require.Equal(t, result.GenerationDurationMS, readResult.GenerationDurationMS)
+	require.True(t, readResult.GenerationStartedAt.Equal(generationStarted))
 	require.True(t, readResult.StartedAt.Equal(started))
 	require.True(t, readResult.FinishedAt.Equal(finished))
 	require.True(t, readResult.ExpiresAt.Equal(task.ExpiresAt))

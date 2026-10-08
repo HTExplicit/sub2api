@@ -301,6 +301,27 @@ func (s *CodexGatewayBorrowService) fireObservation(ctx context.Context, headers
 
 func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *Account, proxy string, profile *tlsfingerprint.Profile, expectedModel string, maxBody int64) (codexGatewayBorrowObservation, error) {
 	var shot codexGatewayBorrowObservation
+	leasedCtx, release, acquireErr := AcquirePelicanExecution(req.Context(), account.ID)
+	if acquireErr != nil {
+		shot.errorText = acquireErr.Error()
+		return shot, acquireErr
+	}
+	defer release()
+	req = req.WithContext(leasedCtx)
+	if pelicanExecutionFromContext(leasedCtx) != nil {
+		var capacity *ConcurrencyService
+		if capture := pelicanCaptureFromContext(leasedCtx); capture != nil {
+			capacity = capture.concurrency
+		} else if s.gateway != nil {
+			capacity = s.gateway.concurrencyService
+		}
+		releaseCapacity, capacityErr := acquirePelicanBusinessAccountSlot(leasedCtx, capacity, account.ID, account.Concurrency)
+		if capacityErr != nil {
+			shot.errorText = capacityErr.Error()
+			return shot, capacityErr
+		}
+		defer releaseCapacity()
+	}
 	wire, err := prepareOpenAICodexWireRequest(req, account)
 	if err != nil {
 		return shot, err

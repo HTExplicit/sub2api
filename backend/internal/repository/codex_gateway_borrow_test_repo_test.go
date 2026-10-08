@@ -24,13 +24,14 @@ func newCodexGatewayBorrowRepoTest(t *testing.T) (*codexGatewayBorrowTestReposit
 }
 
 func codexGatewayBorrowTaskTestRows(task *service.CodexGatewayBorrowTestTask) *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "client_task_id", "created_by", "request_hash", "status", "prompt", "created_at", "expires_at", "started_at", "finished_at", "total", "completed", "error"}).AddRow(
-		task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Status, task.Prompt, task.CreatedAt, task.ExpiresAt, nil, nil, task.Total, task.Completed, []byte(task.Error))
+	return sqlmock.NewRows([]string{"id", "client_task_id", "created_by", "request_hash", "status", "prompt", "created_at", "expires_at", "started_at", "finished_at", "total", "completed", "error", "generation_timeout_seconds", "execution_mode"}).AddRow(
+		task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Status, task.Prompt, task.CreatedAt, task.ExpiresAt, nil, nil, task.Total, task.Completed, []byte(task.Error), task.GenerationTimeoutSeconds, task.ExecutionMode)
 }
 
 func codexGatewayBorrowResultTestRows(result *service.CodexGatewayBorrowTestResult) *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "task_id", "ordinal", "account_id", "account_name", "model_id", "upstream_model", "effort", "status", "raw_answer", "raw_response", "raw_html", "html", "error", "started_at", "finished_at", "duration_ms", "expires_at"}).AddRow(
-		result.ID, result.TaskID, result.Ordinal, result.AccountID, result.AccountName, result.ModelID, result.UpstreamModel, result.Effort, result.Status, []byte(result.RawAnswer), []byte(result.RawResponse), []byte(result.RawHTML), []byte(result.HTML), []byte(result.Error), nil, nil, result.DurationMS, result.ExpiresAt)
+	return sqlmock.NewRows([]string{"id", "task_id", "ordinal", "account_id", "account_name", "model_id", "upstream_model", "effort", "status", "raw_answer", "raw_response", "raw_html", "html", "error", "started_at", "finished_at", "duration_ms", "expires_at", "platform", "actual_endpoint", "actual_protocol", "actual_transport", "borrow_applied", "queue_duration_ms", "preparation_duration_ms", "generation_duration_ms", "generation_started_at"}).AddRow(
+		result.ID, result.TaskID, result.Ordinal, result.AccountID, result.AccountName, result.ModelID, result.UpstreamModel, result.Effort, result.Status, []byte(result.RawAnswer), []byte(result.RawResponse), []byte(result.RawHTML), []byte(result.HTML), []byte(result.Error), result.StartedAt, result.FinishedAt, result.DurationMS, result.ExpiresAt,
+		result.Platform, result.ActualEndpoint, result.ActualProtocol, result.ActualTransport, result.BorrowApplied, result.QueueDurationMS, result.PreparationDurationMS, result.GenerationDurationMS, result.GenerationStartedAt)
 }
 
 func codexGatewayBorrowRepoFixture(t *testing.T) *service.CodexGatewayBorrowTestTask {
@@ -38,8 +39,9 @@ func codexGatewayBorrowRepoFixture(t *testing.T) *service.CodexGatewayBorrowTest
 	now := time.Now().UTC()
 	clientID, err := uuid.NewV7()
 	require.NoError(t, err)
-	task := &service.CodexGatewayBorrowTestTask{ID: uuid.NewString(), ClientTaskID: clientID.String(), CreatedBy: 7, RequestHash: "hash", Status: "pending", Prompt: service.CodexGatewayBorrowPelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(service.CodexGatewayBorrowTestTTL), Total: 1}
-	task.Results = []*service.CodexGatewayBorrowTestResult{{ID: uuid.NewString(), TaskID: task.ID, Ordinal: 1, AccountID: 42, AccountName: "paused target", ModelID: "gpt-6-astra", Effort: "high", Status: "pending", ExpiresAt: task.ExpiresAt}}
+	task := &service.CodexGatewayBorrowTestTask{ID: uuid.NewString(), ClientTaskID: clientID.String(), CreatedBy: 7, RequestHash: "hash", Status: "pending", Prompt: service.CodexGatewayBorrowPelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(service.CodexGatewayBorrowTestTTL), Total: 1,
+		GenerationTimeoutSeconds: service.PelicanDefaultGenerationTimeoutSeconds, ExecutionMode: service.PelicanExecutionModeAccount}
+	task.Results = []*service.CodexGatewayBorrowTestResult{{ID: uuid.NewString(), TaskID: task.ID, Ordinal: 1, AccountID: 42, AccountName: "paused target", Platform: "openai", ModelID: "gpt-6-astra", Effort: "high", Status: "pending", ExpiresAt: task.ExpiresAt}}
 	return task
 }
 
@@ -47,15 +49,17 @@ func TestCodexGatewayBorrowTestRepositoryCreateAtomicAndReplayReadsWithoutWrites
 	repo, mock := newCodexGatewayBorrowRepoTest(t)
 	task := codexGatewayBorrowRepoFixture(t)
 	mock.ExpectBegin()
-	mock.ExpectQuery("INSERT INTO codex_gateway_borrow_test_tasks").WithArgs(task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Prompt, task.Total, task.CreatedAt, task.ExpiresAt).WillReturnRows(codexGatewayBorrowTaskTestRows(task))
+	mock.ExpectQuery("INSERT INTO codex_gateway_borrow_test_tasks").WithArgs(task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Prompt, task.Total, task.CreatedAt, task.ExpiresAt, task.GenerationTimeoutSeconds, task.ExecutionMode).WillReturnRows(codexGatewayBorrowTaskTestRows(task))
 	result := task.Results[0]
-	mock.ExpectExec("INSERT INTO codex_gateway_borrow_test_results").WithArgs(result.ID, task.ID, 1, result.AccountID, result.AccountName, result.ModelID, result.Effort).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO codex_gateway_borrow_test_results").WithArgs(result.ID, task.ID, 1, result.AccountID, result.AccountName, result.ModelID, result.Effort, result.Platform).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	stored, replayed, err := repo.Create(context.Background(), task)
 	require.NoError(t, err)
 	require.False(t, replayed)
 	require.Equal(t, task.ID, stored.ID)
 	require.Len(t, stored.Results, 1)
+	require.Equal(t, task.GenerationTimeoutSeconds, stored.GenerationTimeoutSeconds)
+	require.Equal(t, task.ExecutionMode, stored.ExecutionMode)
 	// A repeated client UUID gets the original full observation, not another child.
 	task.Status = "complete"
 	result.Status, result.RawAnswer, result.RawResponse, result.Error = "complete", "<html>answer\x00tail</html>", "full raw stream\x00end", "untruncated upstream diagnostic"
@@ -71,6 +75,7 @@ func TestCodexGatewayBorrowTestRepositoryCreateAtomicAndReplayReadsWithoutWrites
 	require.Equal(t, result.RawAnswer, stored.Results[0].RawAnswer)
 	require.Equal(t, result.RawResponse, stored.Results[0].RawResponse)
 	require.Equal(t, result.Error, stored.Results[0].Error)
+	require.Equal(t, result.Platform, stored.Results[0].Platform)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -121,6 +126,11 @@ func TestCodexGatewayBorrowTestRepositoryExpiredReadsAndScopedCleanup(t *testing
 	require.Contains(t, string(data), "client_task_id UUID NOT NULL UNIQUE")
 	require.Contains(t, string(data), "expires_at - created_at = INTERVAL '24 hours'")
 	require.Contains(t, string(data), "raw_answer BYTEA NOT NULL")
+	data, err = migrations.FS.ReadFile("276_pelican_test_execution.sql")
+	require.NoError(t, err)
+	require.Contains(t, string(data), "generation_timeout_seconds BETWEEN 60 AND 1800")
+	require.Contains(t, string(data), "DEFAULT 'legacy_cache'")
+	require.NotContains(t, string(data), "DROP")
 }
 
 func TestCodexGatewayBorrowTestRepositorySavesFullRawValuesAndMarksRestartIncomplete(t *testing.T) {
@@ -128,11 +138,22 @@ func TestCodexGatewayBorrowTestRepositorySavesFullRawValuesAndMarksRestartIncomp
 	task := codexGatewayBorrowRepoFixture(t)
 	result := task.Results[0]
 	result.Status, result.UpstreamModel, result.RawAnswer, result.RawResponse, result.RawHTML, result.HTML, result.Error = "incomplete", "reported", "answer\x00tail", "SSE\x00raw", "source\x00raw", "html\x00raw", "API returned 403: entire original body\x00tail"
+	started := time.Now().UTC()
+	result.ActualEndpoint, result.ActualProtocol, result.ActualTransport, result.BorrowApplied = "https://upstream.test/responses", "responses", "http", true
+	result.QueueDurationMS, result.PreparationDurationMS, result.GenerationDurationMS, result.GenerationStartedAt = 1200, 2300, 3400, &started
 	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE codex_gateway_borrow_test_results r.*t.expires_at>CURRENT_TIMESTAMP").WithArgs(result.ID, result.TaskID, result.AccountName, result.UpstreamModel, result.Effort, result.Status, []byte(result.RawAnswer), []byte(result.RawResponse), []byte(result.RawHTML), []byte(result.HTML), []byte(result.Error), nil, nil, int64(0)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE codex_gateway_borrow_test_results r.*t.expires_at>CURRENT_TIMESTAMP").WithArgs(result.ID, result.TaskID, result.AccountName, result.UpstreamModel, result.Effort, result.Status, []byte(result.RawAnswer), []byte(result.RawResponse), []byte(result.RawHTML), []byte(result.HTML), []byte(result.Error), nil, nil, int64(0),
+		result.Platform, result.ActualEndpoint, result.ActualProtocol, result.ActualTransport, result.BorrowApplied, result.QueueDurationMS, result.PreparationDurationMS, result.GenerationDurationMS, result.GenerationStartedAt).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("UPDATE codex_gateway_borrow_test_tasks t.*completed=.*status NOT IN").WithArgs(task.ID).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	require.NoError(t, repo.SaveResult(context.Background(), result))
+	mock.ExpectQuery("WHERE t.scope='manual_pelican' AND r.id=\\$1 AND t.expires_at>CURRENT_TIMESTAMP").WithArgs(result.ID).WillReturnRows(codexGatewayBorrowResultTestRows(result))
+	stored, err := repo.GetResult(context.Background(), result.ID)
+	require.NoError(t, err)
+	result.PreviewUnavailable = "test incomplete"
+	require.Equal(t, result, stored, "actual invocation and phase durations round-trip alongside untruncated raw observations")
+	// The reader derives the preview reason from the terminal status.
+	require.Equal(t, "test incomplete", stored.PreviewUnavailable)
 	mock.ExpectBegin()
 	mock.ExpectExec("UPDATE codex_gateway_borrow_test_results r.*status='incomplete'.*t.scope='manual_pelican'.*r.status IN").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("UPDATE codex_gateway_borrow_test_tasks t.*status='incomplete'.*t.scope='manual_pelican'").WillReturnResult(sqlmock.NewResult(0, 1))

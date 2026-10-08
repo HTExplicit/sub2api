@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CodexPelicanComparisonView from '../CodexPelicanComparisonView.vue'
-import { PELICAN_BORROW_PROMPT, type BorrowTestEvent, type BorrowTestResult, type BorrowTestTask, type CodexGatewayBorrowConfig, type CodexGatewayBorrowStatus } from '@/api/admin/codexGatewayBorrow'
+import { PELICAN_PROMPT, type PelicanOptions, type PelicanAccountOption, type PelicanTestEvent, type PelicanTestResult, type PelicanTestTask } from '@/api/admin/pelicanTests'
 import type { AccountListItem } from '@/types'
 
 const mocks = vi.hoisted(() => ({
-  getConfig: vi.fn(), saveConfig: vi.fn(), getStatus: vi.fn(), prepare: vi.fn(), verify: vi.fn(), listTests: vi.fn(), getTest: vi.fn(), streamTests: vi.fn(),
-  listAccounts: vi.fn(), getAvailableModels: vi.fn(), testAccount: vi.fn()
+  getOptions: vi.fn(), getAccountOptions: vi.fn(), listTests: vi.fn(), getTest: vi.fn(), streamTests: vi.fn(),
+  listAccounts: vi.fn(), getAvailableModels: vi.fn(), testAccount: vi.fn(),
+  getConfig: vi.fn(), getStatus: vi.fn(), prepare: vi.fn(), verify: vi.fn(), saveConfig: vi.fn()
+}))
+vi.mock('@/api/admin/pelicanTests', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/api/admin/pelicanTests')>()), pelicanTestsAPI: mocks
 }))
 vi.mock('@/api/admin/codexGatewayBorrow', async importOriginal => ({
-  ...(await importOriginal<typeof import('@/api/admin/codexGatewayBorrow')>()),
-  codexGatewayBorrowAPI: mocks
+  ...(await importOriginal<typeof import('@/api/admin/codexGatewayBorrow')>()), codexGatewayBorrowAPI: mocks
 }))
 vi.mock('@/api/admin/accounts', () => {
   const accountsAPI = { list: mocks.listAccounts, getAvailableModels: mocks.getAvailableModels, testAccount: mocks.testAccount }
@@ -22,333 +25,263 @@ vi.mock('vue-i18n', async importOriginal => ({
 }))
 
 const wrappers: ReturnType<typeof mount>[] = []
-const disabledConfig: CodexGatewayBorrowConfig = { enabled: false, source_account_ids: [], target_account_ids: [], models: ['gpt-6-astra', 'gpt-6.1-sol'] }
-const enabledConfig: CodexGatewayBorrowConfig = { ...disabledConfig, enabled: true, source_account_ids: [1], target_account_ids: [2, 3] }
 const localAccounts = [
-  { id: 1, name: 'Source', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, proxy_id: 7, proxy: { id: 7, name: 'Bound proxy' }, extra: {} },
-  { id: 2, name: 'Paused target', platform: 'openai', type: 'setup-token', status: 'error', schedulable: false, proxy_id: null, parent_account_id: 1, extra: {}, error_message: 'Original account error' },
-  { id: 3, name: 'Target without cache', platform: 'openai', type: 'oauth', status: 'active', schedulable: true, proxy_id: null, extra: {} },
-  { id: 4, name: 'API key', platform: 'openai', type: 'apikey', status: 'active' }
+  { id: 1, name: 'Source', platform: 'openai', type: 'oauth', status: 'active', schedulable: true },
+  { id: 2, name: 'Paused target', platform: 'openai', type: 'setup-token', status: 'error', schedulable: false, error_message: 'Original account error' },
+  { id: 3, name: 'Unconfigured API key', platform: 'openai', type: 'apikey', status: 'active', schedulable: true },
+  { id: 4, name: 'Claude API key', platform: 'anthropic', type: 'apikey', status: 'active', schedulable: true },
+  { id: 5, name: 'Gemini OAuth', platform: 'gemini', type: 'oauth', status: 'active', schedulable: true }
 ] as unknown as AccountListItem[]
 
-function makeStatus(config = enabledConfig): CodexGatewayBorrowStatus {
-  const now = new Date().toISOString()
-  const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-  return {
-    enabled: config.enabled, revision: 1, generated_at: now, preparing: false, config: structuredClone(config),
-    candidate: { source_account_id: 1, expires_at: expires, remaining_seconds: 3600, cookie_fingerprint: 'full-fingerprint' },
-    sources: [{ account_id: 1, state: 'ready', reason: 'candidate_ready', remaining_seconds: 3600 }],
-    targets: config.target_account_ids.flatMap(account_id => config.models.map(model => ({ account_id, model, state: account_id === 2 ? 'valid' : 'missing', reason: account_id === 2 ? 'validated' : 'no_matched_cache', cache_valid: account_id === 2, expires_at: expires, remaining_seconds: 3600, mint_status: 200, continue_status: 200, minted: true, new_ticket: true }))),
-    model_efforts: { 'gpt-6-astra': ['medium', 'high', 'max'], 'gpt-6.1-sol': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] }
-  }
+function makeOptions(accounts: PelicanAccountOption[] = []): PelicanOptions {
+  return { generated_at: new Date().toISOString(), max_concurrency: 10, default_generation_timeout_seconds: 600, min_generation_timeout_seconds: 60, max_generation_timeout_seconds: 1800, accounts }
 }
-function makeResult(overrides: Partial<BorrowTestResult> = {}): BorrowTestResult {
-  return { id: 'result-1', account_id: 2, account_name: 'Paused target', model_id: 'gpt-6.1-sol', effort: 'high', status: 'complete', raw_answer: '<html><script>window.generated=1</script><svg></svg></html>', raw_response: 'data: {"response":"full"}\n\ndata: [DONE]\n\n', raw_html: '<html><script>window.generated=1</script><svg></svg></html>', html: '<html><script>window.generated=1</script><svg></svg></html>', error: '', duration_ms: 1500, started_at: new Date().toISOString(), preview_url: `/api/v1/codex-gateway-borrow/preview/${'a'.repeat(43)}/index.html`, ...overrides }
+function accountOptions(id: number): PelicanAccountOption {
+  const account = localAccounts.find(item => item.id === id)!
+  const ids = account.platform === 'openai' ? ['gpt-6-astra', 'gpt-6.1-sol'] : account.platform === 'anthropic' ? ['claude-sonnet-5-5'] : ['gemini-3-pro']
+  return { id, name: account.name, platform: account.platform, type: account.type, status: account.status, schedulable: account.schedulable,
+    parent_account_id: null, proxy_id: null, proxy_name: '', rate_limited_until: null, overload_until: null, temp_unschedulable_until: null,
+    capability_reason: '', manual_model_allowed: true, default_model_id: ids[0],
+    models: ids.map(model => ({ id: model, display_name: model, upstream_model: model, reasoning_efforts: account.platform === 'openai' ? ['low', 'high', 'max'] : [], default_effort: account.platform === 'openai' ? 'high' : '', text_supported: true, capability_reason: '' })) }
 }
-function makeTask(results: BorrowTestResult[] = []): BorrowTestTask {
-  return { id: 'server-task', client_task_id: 'client-task', status: 'complete', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), total: results.length, completed: results.length, results }
+function makeResult(overrides: Partial<PelicanTestResult> = {}): PelicanTestResult {
+  return { id: 'result-1', account_id: 2, account_name: 'Paused target with a complete unabridged name', platform: 'openai', model_id: 'gpt-6.1-sol', upstream_model: 'mapped-model', effort: 'high', status: 'complete',
+    raw_answer: '<html><script>window.generated=1</script><svg></svg></html>', raw_response: 'data: {"response":"full"}\n\ndata: [DONE]\n\n',
+    raw_html: '<html><script>window.generated=1</script><svg></svg></html>', html: '<html><script>window.generated=1</script><svg></svg></html>', error: '', duration_ms: 1500,
+    actual_endpoint: 'https://local-upstream.invalid/v1/responses', actual_protocol: 'responses', actual_transport: 'http', borrow_applied: true,
+    queue_duration_ms: 20, preparation_duration_ms: 30, generation_duration_ms: 1450, started_at: new Date().toISOString(),
+    preview_url: `/api/v1/pelican-tests/preview/${'a'.repeat(43)}/index.html`, ...overrides }
 }
-async function mountView(config = enabledConfig, statusOverrides: Partial<CodexGatewayBorrowStatus> = {}) {
-  mocks.getStatus.mockResolvedValue({ ...makeStatus(config), ...statusOverrides })
+function makeTask(results: PelicanTestResult[] = []): PelicanTestTask {
+  return { id: 'server-task', client_task_id: 'client-task', status: 'complete', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), generation_timeout_seconds: 600, execution_mode: 'account', total: results.length, completed: results.length, results }
+}
+async function mountView() {
   const wrapper = mount(CodexPelicanComparisonView, { global: { stubs: {
     AppLayout: { template: '<div><slot /></div>' },
-    CodexBorrowNav: true,
-    RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
-    BaseDialog: { props: ['show'], template: '<div v-if="show" data-test="enlarged-dialog"><slot /></div>' },
+    BaseDialog: { props: ['show'], template: '<div v-if="show" data-test="result-dialog"><slot /></div>' },
     BorrowPelicanPreview: { props: { previewUrl: String, interactive: Boolean }, template: '<div data-test="preview-cap" :data-interactive="interactive">{{ previewUrl }}</div>' }
   } } })
   wrappers.push(wrapper)
   await flushPromises()
   return wrapper
 }
-function assertNoUpstreamOrConfigurationRequests() {
-  expect(mocks.getConfig).not.toHaveBeenCalled()
-  expect(mocks.saveConfig).not.toHaveBeenCalled()
-  expect(mocks.prepare).not.toHaveBeenCalled()
-  expect(mocks.verify).not.toHaveBeenCalled()
-  expect(mocks.getAvailableModels).not.toHaveBeenCalled()
-  expect(mocks.testAccount).not.toHaveBeenCalled()
+function assertNoUpstreamOrBorrowRequests() {
+  for (const key of ['getConfig', 'saveConfig', 'getStatus', 'prepare', 'verify', 'getAvailableModels', 'testAccount'] as const) expect(mocks[key]).not.toHaveBeenCalled()
 }
-function unmountView(wrapper: ReturnType<typeof mount>) {
-  wrappers.splice(wrappers.indexOf(wrapper), 1)
-  wrapper.unmount()
+async function selectAccount(wrapper: ReturnType<typeof mount>, id: number) {
+  await wrapper.get(`[data-test="pelican-account-${id}"]`).setValue(true)
+  await flushPromises()
 }
 
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset()
-  mocks.listAccounts.mockResolvedValue({ items: localAccounts, total: 4, page: 1, page_size: 100, pages: 1 })
+  localStorage.clear()
+  vi.stubGlobal('IntersectionObserver', undefined)
+  mocks.getOptions.mockResolvedValue(makeOptions())
+  mocks.getAccountOptions.mockImplementation((ids: number[]) => Promise.resolve(makeOptions(ids.map(accountOptions))))
+  mocks.listAccounts.mockResolvedValue({ items: localAccounts, total: 5, page: 1, page_size: 100, pages: 1 })
   mocks.listTests.mockResolvedValue({ items: [], total: 0, page: 1, size: 12 })
+  mocks.streamTests.mockResolvedValue(undefined)
 })
-afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers() })
+afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers(); vi.unstubAllGlobals() })
 
-describe('CodexPelicanComparisonView request boundaries', () => {
-  it('only reads saved status, local inventory and history, and keeps the fixed prompt collapsed and read-only', async () => {
-    const wrapper = await mountView(disabledConfig)
-    expect(mocks.getStatus).toHaveBeenCalledOnce()
-    expect(mocks.listAccounts).toHaveBeenCalledWith(1, 100, { platform: 'openai', types: 'oauth,setup-token' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(mocks.listTests).toHaveBeenCalledOnce()
-    expect(wrapper.find('[data-test="borrow-test-account-4"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="borrow-save"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="borrow-prepare"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="borrow-enabled"]').exists()).toBe(false)
-    expect(wrapper.get<HTMLDetailsElement>('[data-test="pelican-prompt-details"]').element.open).toBe(false)
-    expect(wrapper.get<HTMLTextAreaElement>('[data-test="borrow-fixed-prompt"]').element.value).toBe(PELICAN_BORROW_PROMPT)
-    expect(PELICAN_BORROW_PROMPT).toBe('创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试')
-    expect(wrapper.get('[data-test="borrow-fixed-prompt"]').attributes('readonly')).toBeDefined()
-    expect(wrapper.get('[data-test="pelican-status-link"]').attributes('href')).toBe('/admin/codex-gateway-borrow/status')
-    await wrapper.get('[data-test="borrow-refresh"]').trigger('click')
-    await wrapper.get('[data-test="borrow-tab-history"]').trigger('click')
-    await wrapper.get('[data-test="borrow-history-refresh"]').trigger('click')
-    await flushPromises()
-    expect(mocks.getStatus).toHaveBeenCalledTimes(2)
-    expect(mocks.streamTests).not.toHaveBeenCalled()
-    assertNoUpstreamOrConfigurationRequests()
-  })
-
-  it('requires explicit account selection, includes paused targets, and shows every combination and supported effort', async () => {
+describe('Standalone Pelican account tests', () => {
+  it('reads all local accounts with no platform/type filter, starts with no selection, and preserves the fixed read-only prompt', async () => {
     const wrapper = await mountView()
-    expect(wrapper.get('[data-test="borrow-test-account-2"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get<HTMLInputElement>('[data-test="borrow-test-account-2"]').element.checked).toBe(false)
-    expect(wrapper.text()).toContain('admin.codexGatewayBorrow.paused')
-    expect(wrapper.get('[data-test="pelican-qualification-2-gpt-6.1-sol"]').text()).toContain('admin.codexGatewayBorrow.lineStates.ready')
-    expect(wrapper.get('[data-test="pelican-qualification-2-gpt-6.1-sol"]').text()).toContain('admin.codexGatewayBorrow.reasons.validated')
-    expect(wrapper.get('[data-test="pelican-qualification-3-gpt-6.1-sol"]').text()).toContain('admin.codexGatewayBorrow.willSkip')
-    expect(wrapper.get('[data-test="pelican-qualification-3-gpt-6.1-sol"]').text()).toContain('admin.codexGatewayBorrow.reasons.no_matched_cache')
-    expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-test-start"]').element.disabled).toBe(true)
-    const efforts = wrapper.findAll('select').map(select => select.findAll('option').map(option => option.element.value))
-    expect(efforts).toEqual([['medium', 'high', 'max'], ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']])
-    expect(wrapper.findAll<HTMLSelectElement>('select').every(select => select.element.value === 'high')).toBe(true)
-    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
-    await wrapper.get('[data-test="borrow-test-account-3"]').setValue(true)
-    expect(wrapper.get('[data-test="borrow-test-start"]').text()).toContain('(4)')
-    await wrapper.get('[data-test="borrow-test-model-gpt-6.1-sol"]').setValue(false)
-    expect(wrapper.get('[data-test="borrow-test-start"]').text()).toContain('(2)')
-    expect(mocks.streamTests).not.toHaveBeenCalled()
-    assertNoUpstreamOrConfigurationRequests()
+    expect(mocks.getOptions).toHaveBeenCalledOnce()
+    expect(mocks.listAccounts).toHaveBeenCalledWith(1, 100, undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(5)
+    expect(wrapper.findAll<HTMLInputElement>('input[type="checkbox"]').every(input => !input.element.checked)).toBe(true)
+    expect(wrapper.find('nav').exists()).toBe(false)
+    expect(wrapper.find('a[href*="codex-gateway-borrow"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLDetailsElement>('[data-test="pelican-prompt-details"]').element.open).toBe(false)
+    expect(wrapper.get<HTMLTextAreaElement>('[data-test="pelican-fixed-prompt"]').element.value).toBe('创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试')
+    expect(wrapper.get('[data-test="pelican-fixed-prompt"]').attributes('readonly')).toBeDefined()
+    expect(PELICAN_PROMPT).toBe(wrapper.get<HTMLTextAreaElement>('[data-test="pelican-fixed-prompt"]').element.value)
+    expect(wrapper.get<HTMLInputElement>('[data-test="pelican-budget"]').element.value).toBe('10')
+    expect(wrapper.get<HTMLButtonElement>('[data-test="pelican-test-start"]').element.disabled).toBe(true)
+    expect(mocks.getAccountOptions).not.toHaveBeenCalled()
+    assertNoUpstreamOrBorrowRequests()
   })
 
-  it('submits selected missing-cache combinations once with the existing parameters and server-clock task ID', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+  it('filters and batch-selects all account types, keeps paused accounts selectable, and configures each account separately', async () => {
+    const wrapper = await mountView()
+    await wrapper.get('[data-test="pelican-platform-filter"]').setValue('anthropic')
+    await wrapper.get('[data-test="pelican-select-filtered"]').trigger('click')
+    await flushPromises()
+    expect(mocks.getAccountOptions).toHaveBeenLastCalledWith([4], expect.any(AbortSignal))
+    expect(wrapper.get<HTMLSelectElement>('[data-test="pelican-effort-4-0"]').element.value).toBe('')
+    await wrapper.get('[data-test="pelican-platform-filter"]').setValue('')
+    await wrapper.get('[data-test="pelican-account-search"]').setValue('Paused')
+    expect(wrapper.get('[data-test="pelican-account-list"]').text()).toContain('Original account error')
+    expect(wrapper.get('[data-test="pelican-account-list"]').text()).toContain('admin.codexGatewayBorrow.paused')
+    expect(wrapper.get('[data-test="pelican-account-2"]').attributes('disabled')).toBeUndefined()
+    await selectAccount(wrapper, 2)
+    expect(wrapper.get<HTMLSelectElement>('[data-test="pelican-effort-2-0"]').element.value).toBe('high')
+    await wrapper.get('[data-test="pelican-model-2-0"]').setValue('gpt-6.1-sol')
+    await wrapper.get('[data-test="pelican-effort-2-0"]').setValue('max')
+    await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
+    await flushPromises()
+    expect(mocks.streamTests.mock.calls[0][0].targets).toEqual([
+      { account_id: 4, model_id: 'claude-sonnet-5-5', effort: '' }, { account_id: 2, model_id: 'gpt-6.1-sol', effort: 'max' }
+    ])
+    assertNoUpstreamOrBorrowRequests()
+  })
+
+  it('submits current account/model pairs and a server-clock UUID once, accepts manual models, and enforces 1–30 minute budgets', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-08T03:30:00Z'))
     const serverTime = Date.now() - 20 * 60 * 1000
-    const wrapper = await mountView(enabledConfig, { generated_at: new Date(serverTime).toISOString() })
-    await wrapper.get('[data-test="borrow-test-account-3"]').setValue(true)
-    await wrapper.get('[data-test="borrow-effort-gpt-6-astra"]').setValue('max')
-    mocks.streamTests.mockImplementation((request, emit: (event: BorrowTestEvent) => void) => {
-      const skipped = request.targets.map((target: BorrowTestRequestTarget, index: number) => makeResult({ ...target, id: `skipped-${index}`, status: 'skipped', error: 'no_matched_cache', preview_url: undefined }))
-      emit({ type: 'task_complete', task: makeTask(skipped) })
-      return Promise.resolve()
-    })
-    await wrapper.get('[data-test="borrow-test-start"]').trigger('click')
+    mocks.getOptions.mockResolvedValue({ ...makeOptions(), generated_at: new Date(serverTime).toISOString() })
+    mocks.getAccountOptions.mockImplementation((ids: number[]) => Promise.resolve({ ...makeOptions(ids.map(accountOptions)), generated_at: new Date(serverTime).toISOString() }))
+    const wrapper = await mountView()
+    await selectAccount(wrapper, 3)
+    await wrapper.get('[data-test="pelican-add-model-3"]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[data-test="pelican-model-3-1"]').element.value).toBe('gpt-6.1-sol')
+    await wrapper.get('[data-test="pelican-model-3-1"]').setValue('custom/text-model')
+    expect(wrapper.get<HTMLSelectElement>('[data-test="pelican-effort-3-1"]').element.value).toBe('')
+    for (const invalid of [0, 31, 1.5]) {
+      await wrapper.get('[data-test="pelican-budget"]').setValue(invalid)
+      expect(wrapper.get<HTMLButtonElement>('[data-test="pelican-test-start"]').element.disabled).toBe(true)
+    }
+    await wrapper.get('[data-test="pelican-budget"]').setValue(10)
+    await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
     await flushPromises()
     const request = mocks.streamTests.mock.calls[0][0]
-    expect(Object.keys(request).sort()).toEqual(['client_task_id', 'targets'])
-    expect(request.client_task_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(Object.keys(request).sort()).toEqual(['client_task_id', 'generation_timeout_seconds', 'targets'])
+    expect(request.generation_timeout_seconds).toBe(600)
     expect(Number.parseInt(request.client_task_id.replaceAll('-', '').slice(0, 12), 16)).toBe(serverTime - 1000)
-    expect(request.targets).toEqual([{ account_id: 3, model_id: 'gpt-6-astra', effort: 'max' }, { account_id: 3, model_id: 'gpt-6.1-sol', effort: 'high' }])
-    expect(wrapper.findAll('[data-test="borrow-result-error"]').map(error => error.text())).toEqual(['no_matched_cache', 'no_matched_cache'])
+    expect(request.targets).toEqual([{ account_id: 3, model_id: 'gpt-6-astra', effort: 'high' }, { account_id: 3, model_id: 'custom/text-model', effort: '' }])
     expect(mocks.streamTests).toHaveBeenCalledOnce()
-    assertNoUpstreamOrConfigurationRequests()
+    assertNoUpstreamOrBorrowRequests()
   })
 
-  it('shows immediate progress, updates one card per result, preserves full errors and originals, and aborts on stop', async () => {
-    let emit!: (event: BorrowTestEvent) => void
+  it('keeps missing text capability visible and records explicit choices without availability gating', async () => {
+    const candidate = accountOptions(5)
+    candidate.capability_reason = 'Account currently has no text capability'
+    candidate.models[0] = { ...candidate.models[0], text_supported: false, capability_reason: 'This model only generates images' }
+    mocks.getAccountOptions.mockResolvedValue(makeOptions([candidate]))
+    const wrapper = await mountView()
+    await selectAccount(wrapper, 5)
+    expect(wrapper.text()).toContain(candidate.capability_reason)
+    expect(wrapper.text()).toContain(candidate.models[0].capability_reason)
+    expect(wrapper.get<HTMLButtonElement>('[data-test="pelican-test-start"]').element.disabled).toBe(false)
+    expect(mocks.streamTests).not.toHaveBeenCalled()
+    assertNoUpstreamOrBorrowRequests()
+  })
+
+  it('shows phase progress, keeps full answers/errors in details, and cancels queued and active tasks on stop', async () => {
+    let emit!: (event: PelicanTestEvent) => void
     let signal!: AbortSignal
     mocks.streamTests.mockImplementation((_request, onEvent, abortSignal) => {
       emit = onEvent; signal = abortSignal
       return new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
     })
     const wrapper = await mountView()
-    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
-    await wrapper.get('[data-test="borrow-test-start"]').trigger('click')
-    expect(wrapper.findAll('article[data-test^="borrow-result-"]')).toHaveLength(2)
-    expect(wrapper.get('[data-test="pelican-progress"]').text()).toContain('0 / 2')
+    await selectAccount(wrapper, 2)
+    await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
     const result = makeResult({ status: 'running' })
-    const pending = makeResult({ id: 'result-2', model_id: 'gpt-6-astra', status: 'pending', preview_url: undefined })
+    const pending = makeResult({ id: 'result-2', account_id: 3, status: 'pending', preview_url: undefined })
     emit({ type: 'task_start', task: { ...makeTask([result, pending]), status: 'running', completed: 0 } })
-    emit({ type: 'result_started', task_id: 'server-task', result })
+    emit({ type: 'result_phase', task_id: 'server-task', result, phase: 'preparing' })
+    await flushPromises()
+    expect(wrapper.get('[data-test="pelican-result-result-1"]').text()).toContain('admin.pelicanTests.phases.preparing')
     const fullError = 'HTTP 429\n' + 'full error '.repeat(1800)
     emit({ type: 'result_complete', task_id: 'server-task', result: { ...result, status: 'failed', error: fullError } })
     await flushPromises()
-    expect(wrapper.findAll('[data-test="borrow-result-result-1"]')).toHaveLength(1)
-    expect(wrapper.get('[data-test="borrow-result-error"]').text()).toBe(fullError.trim())
-    const originalDetails = wrapper.get('[data-test="borrow-result-result-1"]').findAll<HTMLDetailsElement>('details')
-    expect(originalDetails).toHaveLength(3)
-    expect(originalDetails.every(details => !details.element.open)).toBe(true)
-    expect(originalDetails[0].get('pre').text()).toBe(result.raw_answer)
-    expect(originalDetails[1].get('pre').text()).toBe(result.raw_html)
-    expect(originalDetails[2].get('pre').text()).toBe(result.raw_response.trim())
+    expect(wrapper.find('[data-test="pelican-result-error"]').exists()).toBe(false)
+    await wrapper.get('[data-test="pelican-details-result-1"]').trigger('click')
+    expect(wrapper.get('[data-test="pelican-result-error"]').text()).toBe(fullError.trim())
+    expect(wrapper.get('[data-test="pelican-raw-answer"]').text()).toBe(result.raw_answer)
+    expect(wrapper.get('[data-test="pelican-raw-html"]').text()).toBe(result.raw_html)
+    expect(wrapper.get('[data-test="pelican-raw-response"]').text()).toBe(result.raw_response.trim())
+    expect(wrapper.get('[data-test="pelican-detail-content"]').text()).toContain(result.actual_endpoint)
+    expect(wrapper.get('[data-test="pelican-detail-content"]').text()).toContain('mapped-model')
     expect(wrapper.find('script').exists()).toBe(false)
-    await wrapper.get('[data-test="borrow-test-stop"]').trigger('click')
-    expect(signal.aborted).toBe(true)
+    await wrapper.get('[data-test="pelican-test-stop"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="borrow-result-result-2"]').text()).toContain('admin.codexGatewayBorrow.states.cancelled')
+    expect(signal.aborted).toBe(true)
+    expect(wrapper.get('[data-test="pelican-result-result-2"]').text()).toContain('admin.codexGatewayBorrow.states.cancelled')
     expect(mocks.streamTests).toHaveBeenCalledOnce()
-    assertNoUpstreamOrConfigurationRequests()
   })
 
-  it('reports an interrupted stream in full without retrying or preparing another route', async () => {
+  it('reports an interrupted stream in full without generating again and cancels on unmount', async () => {
     const failure = 'stream ended without task_complete\n' + 'upstream original '.repeat(800)
-    mocks.streamTests.mockRejectedValue(new Error(failure))
+    mocks.streamTests.mockRejectedValueOnce(new Error(failure))
     const wrapper = await mountView()
-    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
-    await wrapper.get('[data-test="borrow-test-start"]').trigger('click')
+    await selectAccount(wrapper, 1)
+    await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[role="alert"]').text()).toBe(failure.trim())
-    expect(wrapper.findAll('article[data-test^="borrow-result-"]').every(card => card.text().includes('admin.codexGatewayBorrow.states.incomplete'))).toBe(true)
-    expect(mocks.streamTests).toHaveBeenCalledOnce()
-    assertNoUpstreamOrConfigurationRequests()
-  })
-
-  it('shows terminal preview explanations after SSE completion and preserves full reasons and answers', async () => {
-    let emit!: (event: BorrowTestEvent) => void
-    let finish!: () => void
-    mocks.streamTests.mockImplementation((_request, onEvent) => {
-      emit = onEvent
-      return new Promise<void>(resolve => { finish = resolve })
-    })
-    const wrapper = await mountView()
-    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
-    await wrapper.get('[data-test="borrow-test-account-3"]').setValue(true)
-    await wrapper.get('[data-test="borrow-test-start"]').trigger('click')
-    expect(wrapper.get('[data-test="borrow-result-grid"]').text()).toContain('admin.codexGatewayBorrow.previewPending')
-    const fullFailure = 'HTTP 429\n' + 'original upstream failure '.repeat(800)
-    const completedAnswer = 'Complete original answer without extractable HTML'
-    const unavailableReason = 'Original preview reason supplied by the server'
-    const withoutPreview = { preview_url: undefined, raw_html: '', html: '' }
-    emit({ type: 'task_complete', task: makeTask([
-      makeResult({ ...withoutPreview, id: 'skipped', account_id: 3, model_id: 'gpt-6-astra', status: 'skipped', error: 'no_matched_cache' }),
-      makeResult({ ...withoutPreview, id: 'failed', model_id: 'gpt-6-astra', status: 'failed', error: fullFailure }),
-      makeResult({ ...withoutPreview, id: 'cancelled', account_id: 3, status: 'cancelled', error: 'Cancelled by administrator', preview_unavailable: unavailableReason }),
-      makeResult({ ...withoutPreview, id: 'no-html', status: 'complete', raw_answer: completedAnswer })
-    ]) })
-    finish()
-    await flushPromises()
-    expect(wrapper.get('[data-test="borrow-result-grid"]').text()).not.toContain('admin.codexGatewayBorrow.previewPending')
-    expect(wrapper.get('[data-test="borrow-result-skipped"]').text()).toContain('admin.codexGatewayBorrow.previewNotGenerated')
-    expect(wrapper.get('[data-test="borrow-result-skipped"] [data-test="borrow-result-error"]').text()).toBe('no_matched_cache')
-    expect(wrapper.get('[data-test="borrow-result-failed"]').text()).toContain('admin.codexGatewayBorrow.previewNotGenerated')
-    expect(wrapper.get('[data-test="borrow-result-failed"] [data-test="borrow-result-error"]').text()).toBe(fullFailure.trim())
-    expect(wrapper.get('[data-test="borrow-result-cancelled"]').text()).toContain(unavailableReason)
-    expect(wrapper.get('[data-test="borrow-result-cancelled"]').text()).not.toContain('admin.codexGatewayBorrow.previewNotGenerated')
-    expect(wrapper.get('[data-test="borrow-result-cancelled"] [data-test="borrow-result-error"]').text()).toBe('Cancelled by administrator')
-    expect(wrapper.get('[data-test="borrow-result-no-html"]').text()).toContain('admin.codexGatewayBorrow.previewMissingHtml')
-    expect(wrapper.get('[data-test="borrow-result-no-html"] details pre').text()).toBe(completedAnswer)
-    expect(mocks.streamTests).toHaveBeenCalledOnce()
-    assertNoUpstreamOrConfigurationRequests()
-  })
-
-  it('reads historical results and enlarged server previews without generating or changing configuration', async () => {
-    const task = makeTask([makeResult()])
-    mocks.listTests.mockResolvedValue({ items: [task], total: 1, page: 1, size: 12 })
-    mocks.getTest.mockResolvedValue(task)
-    const wrapper = await mountView()
-    await wrapper.get('[data-test="borrow-tab-results"]').trigger('keydown', { key: 'ArrowRight' })
-    expect(wrapper.get('[data-test="borrow-tab-history"]').attributes('aria-selected')).toBe('true')
-    await wrapper.get('[data-test="borrow-history-server-task"]').trigger('click')
-    await flushPromises()
-    expect(mocks.getTest).toHaveBeenCalledWith('server-task', expect.any(AbortSignal))
-    expect(wrapper.get('[data-test="preview-cap"]').text()).toBe(task.results![0].preview_url)
-    await wrapper.get('[data-test="borrow-enlarge-result-1"]').trigger('click')
-    expect(wrapper.get('[data-test="enlarged-dialog"] [data-test="preview-cap"]').attributes('data-interactive')).toBe('true')
-    expect(wrapper.findAll('[data-test="preview-cap"]').every(preview => preview.text() === task.results![0].preview_url)).toBe(true)
-    expect(wrapper.find('script').exists()).toBe(false)
-    expect(mocks.streamTests).not.toHaveBeenCalled()
-    assertNoUpstreamOrConfigurationRequests()
-  })
-
-  it('aborts in-flight generation and read requests on leaving and does not refresh history afterward', async () => {
-    let testSignal!: AbortSignal
-    mocks.streamTests.mockImplementation((_request, _event, signal) => {
-      testSignal = signal
+    expect(wrapper.get('[data-test="pelican-result-grid"]').text()).toContain('admin.codexGatewayBorrow.states.incomplete')
+    let signal!: AbortSignal
+    mocks.streamTests.mockImplementation((_request, _onEvent, abortSignal) => {
+      signal = abortSignal
       return new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
     })
-    const wrapper = await mountView()
-    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
-    await wrapper.get('[data-test="borrow-test-start"]').trigger('click')
-    const statusSignal = mocks.getStatus.mock.calls[0][0] as AbortSignal
-    const inventorySignal = mocks.listAccounts.mock.calls[0][3].signal as AbortSignal
-    const historySignal = mocks.listTests.mock.calls[0][1] as AbortSignal
-    unmountView(wrapper)
-    expect(testSignal.aborted).toBe(true)
-    expect(statusSignal.aborted).toBe(true)
-    expect(inventorySignal.aborted).toBe(true)
-    expect(historySignal.aborted).toBe(true)
+    await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
+    wrappers.splice(wrappers.indexOf(wrapper), 1)
+    wrapper.unmount()
     await flushPromises()
-    expect(mocks.listTests).toHaveBeenCalledOnce()
-    expect(mocks.streamTests).toHaveBeenCalledOnce()
-    assertNoUpstreamOrConfigurationRequests()
+    expect(signal.aborted).toBe(true)
+    expect(mocks.streamTests).toHaveBeenCalledTimes(2)
+    assertNoUpstreamOrBorrowRequests()
   })
 
-  it('blocks generation while a historical task is loading and ignores its reply after leaving', async () => {
-    const task = makeTask([makeResult()])
-    mocks.listTests.mockResolvedValue({ items: [task], total: 1, page: 1, size: 12 })
-    let resolveHistory!: (task: BorrowTestTask) => void
-    mocks.getTest.mockImplementation(() => new Promise<BorrowTestTask>(resolve => { resolveHistory = resolve }))
-    const wrapper = await mountView()
-    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
-    expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-test-start"]').element.disabled).toBe(false)
-    await wrapper.get('[data-test="borrow-tab-history"]').trigger('click')
-    await wrapper.get('[data-test="borrow-history-server-task"]').trigger('click')
-    expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-test-start"]').element.disabled).toBe(true)
-    await wrapper.get('[data-test="borrow-test-start"]').trigger('click')
-    expect(mocks.streamTests).not.toHaveBeenCalled()
-    const readSignal = mocks.getTest.mock.calls[0][1] as AbortSignal
-    const viewState = wrapper.vm as unknown as { activeTask: BorrowTestTask | null }
-    expect(viewState.activeTask).toBeNull()
-    unmountView(wrapper)
-    expect(readSignal.aborted).toBe(true)
-    resolveHistory(task)
-    await flushPromises()
-    expect(viewState.activeTask).toBeNull()
-    expect(mocks.streamTests).not.toHaveBeenCalled()
-    assertNoUpstreamOrConfigurationRequests()
-  })
-
-  it('expires qualification locally, shows original unknown reasons and stops its local clock on leaving', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
-    vi.setSystemTime(new Date('2026-10-08T03:30:00Z'))
-    const status = makeStatus()
-    status.targets[0].expires_at = new Date(Date.now() + 1000).toISOString()
-    status.targets[2].reason = 'unknown upstream reason with details'
-    const wrapper = await mountView(enabledConfig, status)
-    expect(wrapper.get('[data-test="pelican-qualification-2-gpt-6-astra"]').text()).toContain('admin.codexGatewayBorrow.lineStates.ready')
-    expect(wrapper.get('[data-test="pelican-qualification-3-gpt-6-astra"]').text()).toContain('unknown upstream reason with details')
-    await vi.advanceTimersByTimeAsync(1100)
-    const expired = wrapper.get('[data-test="pelican-qualification-2-gpt-6-astra"]').text()
-    expect(expired).toContain('admin.codexGatewayBorrow.lineStates.expired')
-    expect(expired).toContain('admin.codexGatewayBorrow.reasons.route_expired')
-    expect(expired).toContain('admin.codexGatewayBorrow.willSkip')
-    expect(expired).not.toContain('admin.codexGatewayBorrow.lineStates.ready')
-    expect(mocks.getStatus).toHaveBeenCalledOnce()
-    expect(mocks.streamTests).not.toHaveBeenCalled()
-    unmountView(wrapper)
-    expect(vi.getTimerCount()).toBe(0)
-    assertNoUpstreamOrConfigurationRequests()
-  })
-
-  it('keeps history readable after status loading fails and prevents generation without a server clock', async () => {
+  it('reads history and changes compact gallery size/details/enlargement without model calls or removing records', async () => {
     const task = makeTask([makeResult()])
     mocks.listTests.mockResolvedValue({ items: [task], total: 1, page: 1, size: 12 })
     mocks.getTest.mockResolvedValue(task)
-    mocks.getStatus.mockRejectedValueOnce(new Error('Status read failed'))
     const wrapper = await mountView()
-    expect(wrapper.get('[role="alert"]').text()).toBe('Status read failed')
-    await wrapper.get('[data-test="borrow-tab-history"]').trigger('click')
-    await wrapper.get('[data-test="borrow-history-server-task"]').trigger('click')
+    await wrapper.get('[data-test="pelican-tab-results"]').trigger('keydown', { key: 'ArrowRight' })
+    await wrapper.get('[data-test="pelican-history-server-task"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="borrow-result-result-1"]').exists()).toBe(true)
-    const badClockStatus = makeStatus()
-    badClockStatus.generated_at = 'invalid timestamp'
-    mocks.getStatus.mockResolvedValue(badClockStatus)
-    await wrapper.get('[data-test="borrow-refresh"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-test="borrow-test-account-2"]').setValue(true)
-    expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-test-start"]').element.disabled).toBe(true)
-    expect(wrapper.text()).toContain('admin.codexGatewayBorrow.clockUnavailable')
+    expect(mocks.getTest).toHaveBeenCalledWith('server-task', expect.any(AbortSignal))
+    expect(wrapper.get('[data-test="pelican-result-grid"]').attributes('data-size')).toBe('standard')
+    const card = wrapper.get('[data-test="pelican-result-result-1"]')
+    expect(card.text()).not.toContain('mapped-model')
+    expect(card.text()).not.toContain(task.results![0].actual_endpoint)
+    expect(card.find('details').exists()).toBe(false)
+    expect(wrapper.get('[data-test="preview-cap"]').text()).toBe(task.results![0].preview_url)
+    await wrapper.get('[data-test="pelican-card-size"]').setValue('compact')
+    expect(wrapper.get('[data-test="pelican-result-grid"]').attributes('data-size')).toBe('compact')
+    expect(localStorage.getItem('pelican_card_size')).toBe('compact')
+    expect(wrapper.findAll('[data-test="pelican-result-result-1"]')).toHaveLength(1)
+    await wrapper.get('[data-test="pelican-enlarge-result-1"]').trigger('click')
+    expect(wrapper.get('[data-test="pelican-enlarged-content"] [data-test="preview-cap"]').attributes('data-interactive')).toBe('true')
+    await wrapper.get('[data-test="pelican-details-result-1"]').trigger('click')
+    expect(wrapper.get('[data-test="pelican-detail-content"]').text()).toContain(task.results![0].account_name)
     expect(mocks.streamTests).not.toHaveBeenCalled()
-    assertNoUpstreamOrConfigurationRequests()
+    assertNoUpstreamOrBorrowRequests()
+  })
+
+  it('mounts previews only while cards are visible and unloads animations outside the viewport', async () => {
+    let onIntersection!: IntersectionObserverCallback
+    const disconnect = vi.fn()
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) { onIntersection = callback }
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = disconnect
+    })
+    const task = makeTask([makeResult(), makeResult({ id: 'result-2' })])
+    mocks.listTests.mockResolvedValue({ items: [task], total: 1, page: 1, size: 12 })
+    mocks.getTest.mockResolvedValue(task)
+    const wrapper = await mountView()
+    await wrapper.get('[data-test="pelican-tab-history"]').trigger('click')
+    await wrapper.get('[data-test="pelican-history-server-task"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="preview-cap"]').exists()).toBe(false)
+    const target = wrapper.get('[data-preview-result="result-1"]').element
+    onIntersection([{ target, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="preview-cap"]')).toHaveLength(1)
+    onIntersection([{ target, isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await flushPromises()
+    expect(wrapper.find('[data-test="preview-cap"]').exists()).toBe(false)
+    wrappers.splice(wrappers.indexOf(wrapper), 1)
+    wrapper.unmount()
+    expect(disconnect).toHaveBeenCalledOnce()
+    expect(mocks.streamTests).not.toHaveBeenCalled()
   })
 })
-
-type BorrowTestRequestTarget = { account_id: number; model_id: string; effort: string }

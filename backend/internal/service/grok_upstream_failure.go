@@ -556,6 +556,9 @@ func (s *OpenAIGatewayService) applyGrokUpstreamFailureDecision(
 	account *Account,
 	decision GrokUpstreamFailureDecision,
 ) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	if s == nil || account == nil || !decision.ShouldCooldown || decision.Cooldown <= 0 {
 		return false
 	}

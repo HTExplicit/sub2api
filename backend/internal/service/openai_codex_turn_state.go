@@ -139,6 +139,9 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 	sessionHash string,
 	turnState string,
 ) {
+	if c != nil && c.Request != nil && IsAccountObservation(c.Request.Context()) {
+		return
+	}
 	turnState = strings.TrimSpace(turnState)
 	if stateStore != nil && sessionHash != "" {
 		if turnState == "" {
