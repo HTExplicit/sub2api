@@ -286,7 +286,7 @@ func resolveConvergedThreadID(seed, clientSessionID string) string {
 
 // codexFingerprintIDs 收敛后的完整 ID 集合。
 // 由 resolveCodexFingerprintIDs 一次性生成，同一个实例在头改写和体改写之间共享，
-// 确保所有载体中的 turn_id 等随机字段一致。体改写时还会补记原始
+// 确保所有载体中的设备、线程和窗口标识一致。体改写时还会补记原始
 // client_metadata.session_id，用于识别 root prompt_cache_key 的默认值。
 type codexFingerprintIDs struct {
 	seed                          string
