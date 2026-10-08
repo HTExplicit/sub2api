@@ -216,7 +216,7 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 		if resp.StatusCode >= http.StatusBadRequest {
 			raw, readErr := io.ReadAll(io.LimitReader(resp.Body, codexGatewayBorrowPelicanMaxBody+1))
 			_ = resp.Body.Close()
-			attempt.raw.Write(raw)
+			_, _ = attempt.raw.Write(raw)
 			attempt.err = readErr
 			release()
 			resp.Body = io.NopCloser(bytes.NewReader(raw))
@@ -288,8 +288,8 @@ func preparePelicanWSSend(ctx context.Context, account *Account, endpoint string
 			attempt.err = errors.New("upstream response exceeds the pelican record size limit")
 			return attempt.err
 		}
-		attempt.raw.Write(message)
-		attempt.raw.WriteByte('\n')
+		_, _ = attempt.raw.Write(message)
+		_ = attempt.raw.WriteByte('\n')
 		return nil
 	}
 	return ctx, observe, release, nil
@@ -309,7 +309,7 @@ func (b *pelicanCapturingBody) Read(data []byte) (int, error) {
 			b.attempt.err = errors.New("upstream response exceeds the pelican record size limit")
 			return 0, b.attempt.err
 		}
-		b.attempt.raw.Write(data[:n])
+		_, _ = b.attempt.raw.Write(data[:n])
 	}
 	if err != nil && err != io.EOF {
 		b.attempt.err = err
@@ -542,19 +542,19 @@ func (s *AccountTestService) sendPelicanWithAccount(ctx context.Context, c *gin.
 		body, _ := json.Marshal(payload)
 		if account.IsGemini() {
 			if s.pelicanGeminiService == nil {
-				return errors.New("Gemini account sender is unavailable")
+				return errors.New("gemini account sender is unavailable")
 			}
 			_, err := s.pelicanGeminiService.ForwardNative(ctx, c, account, model, "streamGenerateContent", true, body)
 			return err
 		}
 		if s.antigravityGatewayService == nil {
-			return errors.New("Antigravity account sender is unavailable")
+			return errors.New("antigravity account sender is unavailable")
 		}
 		_, err := s.antigravityGatewayService.ForwardGemini(ctx, c, account, model, "streamGenerateContent", true, body, false)
 		return err
 	case account.Platform == PlatformAnthropic:
 		if s.pelicanGatewayService == nil {
-			return errors.New("Anthropic account sender is unavailable")
+			return errors.New("anthropic account sender is unavailable")
 		}
 		body := pelicanMessagesBody(model, upstreamModel, effort, budget)
 		parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), PlatformAnthropic)
@@ -565,7 +565,7 @@ func (s *AccountTestService) sendPelicanWithAccount(ctx context.Context, c *gin.
 		return err
 	case account.Platform == PlatformAntigravity:
 		if s.antigravityGatewayService == nil {
-			return errors.New("Antigravity account sender is unavailable")
+			return errors.New("antigravity account sender is unavailable")
 		}
 		_, err := s.antigravityGatewayService.Forward(ctx, c, account, pelicanMessagesBody(model, upstreamModel, effort, budget), false)
 		return err
@@ -590,7 +590,7 @@ func parsePelicanTextResponse(protocol, raw string) (answer string, limited bool
 	var text strings.Builder
 	emit := func(event TestEvent) {
 		if event.Type == "content" {
-			text.WriteString(event.Text)
+			_, _ = text.WriteString(event.Text)
 		}
 	}
 	if !json.Valid([]byte(raw)) && pelicanHasSSEDataLine(raw) {
@@ -648,7 +648,7 @@ func parsePelicanWSFrames(raw string) (answer string, limited bool, model string
 	var text strings.Builder
 	p := connectionStreamState{protocol: "responses", emit: func(event TestEvent) {
 		if event.Type == "content" {
-			text.WriteString(event.Text)
+			_, _ = text.WriteString(event.Text)
 		}
 	}}
 	decoder := json.NewDecoder(strings.NewReader(raw))

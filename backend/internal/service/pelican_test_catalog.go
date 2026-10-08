@@ -162,7 +162,7 @@ func pelicanTestAccountOptions(account *Account) PelicanTestAccountOption {
 func pelicanTestLocalModelIDs(account *Account) []string {
 	defaults := pelicanTestPlatformModelIDs(account)
 	mapping := account.GetModelMapping()
-	useMapping := len(mapping) > 0 && !account.IsOpenAIPassthroughEnabled() && !(account.Platform == PlatformAntigravity && account.Type == AccountTypeUpstream)
+	useMapping := len(mapping) > 0 && !account.IsOpenAIPassthroughEnabled() && (account.Platform != PlatformAntigravity || account.Type != AccountTypeUpstream)
 	ids := make(map[string]bool)
 	add := func(id string) {
 		id = strings.TrimSpace(id)
