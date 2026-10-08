@@ -19,6 +19,7 @@ export type OpsUpstreamErrorEvent = {
   account_id?: number
   account_name?: string
   upstream_status_code?: number
+  upstream_http_status_code?: number
   upstream_request_id?: string
   kind?: string
   message?: string

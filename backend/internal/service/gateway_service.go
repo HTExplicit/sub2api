@@ -784,6 +784,9 @@ func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 // 提取 RawData 并构造 UpstreamFailoverError.ResponseBody。
 type sseStreamErrorEventError struct {
 	RawData string
+	// MessageStarted excludes keepalive pings/comments and HTTP headers. Once
+	// a message event reaches the client, another attempt cannot replace it.
+	MessageStarted bool
 }
 
 func (e *sseStreamErrorEventError) Error() string { return "have error in stream" }

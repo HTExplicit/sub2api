@@ -658,6 +658,11 @@ type streamingResult struct {
 	clientDisconnect bool // 客户端是否在流式传输过程中断开
 }
 
+// Only message_start is held back, so a signature rejection before content can
+// be repaired without exposing two message IDs to the client. Larger preludes
+// are committed immediately rather than retaining an unbounded upstream frame.
+const claudeMessageStartPreludeLimit = 64 * 1024
+
 // hasObservedTokens 报告流式过程中是否已观测到任何上游计量的 token。
 func (u *ClaudeUsage) hasObservedTokens() bool {
 	if u == nil {
@@ -700,7 +705,7 @@ func partialStreamUsageResult(c *gin.Context, resp *http.Response, streamResult 
 	}
 }
 
-func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string, mimicClaudeCode bool) (*streamingResult, error) {
+func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string, mimicClaudeCode bool, allowPreludeRecovery ...bool) (*streamingResult, error) {
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -845,6 +850,42 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 	needModelReplace := originalModel != mappedModel
 	clientDisconnected := false // 客户端断开标志，断开后继续读取上游以获取完整usage
+	messageStarted := false     // 本次尝试已提交非 ping 事件；HTTP headers/ping 不妨碍签名恢复。
+	preludeRecoveryEnabled := len(allowPreludeRecovery) > 0 && allowPreludeRecovery[0]
+	// The second optional flag is used only by a sent signature repair. A
+	// failed repair belongs to the rejected request, not the account's health.
+	suppressAccountHealthPenalty := len(allowPreludeRecovery) > 1 && allowPreludeRecovery[1]
+	bufferPrelude := preludeRecoveryEnabled
+	var pendingPrelude []string
+	pendingPreludeBytes := 0
+	writeBlocks := func(blocks []string, eventType string) {
+		for _, block := range blocks {
+			if clientDisconnected {
+				continue
+			}
+			restored := reverseToolNamesIfPresent(c, []byte(block))
+			written, werr := fmt.Fprint(w, string(restored))
+			if written > 0 && eventType != "ping" {
+				messageStarted = true
+			}
+			if werr != nil {
+				clientDisconnected = true
+				logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
+				continue
+			}
+			flusher.Flush()
+			lastDataAt = time.Now()
+			resetKeepaliveTimer()
+		}
+	}
+	commitPrelude := func() {
+		if len(pendingPrelude) == 0 {
+			return
+		}
+		writeBlocks(pendingPrelude, "message_start")
+		pendingPrelude = nil
+		pendingPreludeBytes = 0
+	}
 	sawTerminalEvent := false
 	useNoopDeltaKeepalive := c != nil && c.Request != nil && shouldUseClaudeCodeNoopDeltaKeepalive(c.GetHeader("User-Agent"))
 	noopDeltaKeepaliveBlockIndex := -1
@@ -852,9 +893,9 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 	pendingEventLines := make([]string, 0, 4)
 
-	processSSEEvent := func(lines []string) ([]string, string, *sseUsagePatch, error) {
+	processSSEEvent := func(lines []string) ([]string, string, *sseUsagePatch, string, error) {
 		if len(lines) == 0 {
-			return nil, "", nil, nil
+			return nil, "", nil, "", nil
 		}
 
 		eventName := ""
@@ -871,11 +912,16 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 		}
 
 		if eventName == "error" {
-			return nil, dataLine, nil, &sseStreamErrorEventError{RawData: dataLine}
+			return nil, dataLine, nil, "error", &sseStreamErrorEventError{RawData: dataLine}
 		}
 
 		if dataLine == "" {
-			return []string{strings.Join(lines, "\n") + "\n\n"}, "", nil, nil
+			// SSE comments are keepalives too; they must not commit a message prelude.
+			kind := eventName
+			if kind == "" {
+				kind = "ping"
+			}
+			return []string{strings.Join(lines, "\n") + "\n\n"}, "", nil, kind, nil
 		}
 
 		if dataLine == "[DONE]" {
@@ -885,7 +931,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				block = "event: " + eventName + "\n"
 			}
 			block += "data: " + dataLine + "\n\n"
-			return []string{block}, dataLine, nil, nil
+			return []string{block}, dataLine, nil, "message_stop", nil
 		}
 
 		var event map[string]any
@@ -896,13 +942,28 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				block = "event: " + eventName + "\n"
 			}
 			block += "data: " + dataLine + "\n\n"
-			return []string{block}, dataLine, nil, nil
+			kind := eventName
+			if kind == "" {
+				kind = "unknown"
+			}
+			return []string{block}, dataLine, nil, kind, nil
 		}
 
 		eventType, _ := event["type"].(string)
+		if eventType == "error" {
+			return nil, dataLine, nil, "error", &sseStreamErrorEventError{RawData: dataLine}
+		}
 		observer.ObserveAnthropic([]byte(dataLine))
 		if eventName == "" {
 			eventName = eventType
+		}
+		eventKind := eventName
+		if eventType != "" && eventKind != eventType {
+			// A contradictory event name/payload is not a safe ping or prelude.
+			eventKind = "unknown"
+		}
+		if eventKind == "" {
+			eventKind = "unknown"
 		}
 		eventChanged := false
 
@@ -991,7 +1052,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				block = "event: " + eventName + "\n"
 			}
 			block += "data: " + dataLine + "\n\n"
-			return []string{block}, dataLine, usagePatch, nil
+			return []string{block}, dataLine, usagePatch, eventKind, nil
 		}
 
 		newData, err := json.Marshal(event)
@@ -1002,7 +1063,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				block = "event: " + eventName + "\n"
 			}
 			block += "data: " + dataLine + "\n\n"
-			return []string{block}, dataLine, usagePatch, nil
+			return []string{block}, dataLine, usagePatch, eventKind, nil
 		}
 
 		block := ""
@@ -1010,20 +1071,29 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			block = "event: " + eventName + "\n"
 		}
 		block += "data: " + string(newData) + "\n\n"
-		return []string{block}, string(newData), usagePatch, nil
+		return []string{block}, string(newData), usagePatch, eventKind, nil
 	}
 
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				hadPendingPrelude := len(pendingPrelude) > 0
+				commitPrelude()
 				// 上游完成，返回结果
 				if !sawTerminalEvent {
+					if hadPendingPrelude && !clientDisconnected {
+						// Committing the held start makes the response streaming; finish it
+						// explicitly rather than relying on a handler JSON fallback.
+						sendErrorEvent("upstream_error", "Upstream stream ended before completion")
+						MarkResponseCommitted(c)
+					}
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
 				}
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
 			}
 			if ev.err != nil {
+				commitPrelude()
 				if sawTerminalEvent {
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
 				}
@@ -1074,39 +1144,58 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 					continue
 				}
 
-				outputBlocks, data, usagePatch, err := processSSEEvent(pendingEventLines)
+				outputBlocks, data, usagePatch, eventType, err := processSSEEvent(pendingEventLines)
 				pendingEventLines = pendingEventLines[:0]
 				if err != nil {
 					if clientDisconnected {
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 					}
+					var sseErr *sseStreamErrorEventError
+					if errors.As(err, &sseErr) {
+						// Custom rectifier patterns share the same matcher as HTTP recovery.
+						requestRejected := ClassifyClaudeStreamError([]byte(data)).StatusCode == http.StatusBadRequest
+						signatureRejected := requestRejected && s.isThinkingBlockSignatureError([]byte(data))
+						if requestRejected && !signatureRejected && bufferPrelude && s.settingService != nil {
+							signatureRejected = s.isSignatureErrorPattern(ctx, account, []byte(data))
+						}
+						if bufferPrelude && signatureRejected && !messageStarted {
+							pendingPrelude = nil
+							pendingPreludeBytes = 0
+						} else {
+							commitPrelude()
+						}
+						sseErr.MessageStarted = messageStarted
+					}
+					if usage.hasObservedTokens() {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
+					}
 					return nil, err
 				}
 
-				for _, block := range outputBlocks {
-					if !clientDisconnected {
-						restored := reverseToolNamesIfPresent(c, []byte(block))
-						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
-							clientDisconnected = true
-							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-							// 不 break：客户端断开后仍需继续合并本事件及后续事件的 usage，
-							// 否则会漏计当前事件携带的 usage 导致少计费。后续写入由
-							// clientDisconnected 守卫跳过。
-						} else {
-							flusher.Flush()
-							lastDataAt = time.Now()
-							resetKeepaliveTimer()
-						}
+				if data != "" {
+					if firstTokenMs == nil && data != "[DONE]" && (!(preludeRecoveryEnabled || suppressAccountHealthPenalty) || eventType != "ping") {
+						ms := int(time.Since(startTime).Milliseconds())
+						firstTokenMs = &ms
 					}
-					if data != "" {
-						if firstTokenMs == nil && data != "[DONE]" {
-							ms := int(time.Since(startTime).Milliseconds())
-							firstTokenMs = &ms
-						}
-						if usagePatch != nil {
-							mergeSSEUsagePatch(usage, usagePatch)
-						}
+					if usagePatch != nil {
+						// Metering belongs to this attempt even while its prelude is held.
+						mergeSSEUsagePatch(usage, usagePatch)
 					}
+				}
+				if bufferPrelude && !messageStarted && len(pendingPrelude) == 0 && eventType == "message_start" {
+					pendingPrelude = append(pendingPrelude, outputBlocks...)
+					for _, block := range outputBlocks {
+						pendingPreludeBytes += len(block)
+					}
+					if pendingPreludeBytes > claudeMessageStartPreludeLimit {
+						commitPrelude()
+						bufferPrelude = false
+					}
+				} else {
+					if eventType != "ping" {
+						commitPrelude()
+					}
+					writeBlocks(outputBlocks, eventType)
 				}
 				continue
 			}
@@ -1118,12 +1207,13 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			if time.Since(lastRead) < streamInterval {
 				continue
 			}
+			commitPrelude()
 			if clientDisconnected {
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
 			}
 			logger.LegacyPrintf("service.gateway", "Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
 			// 处理流超时，可能标记账户为临时不可调度或错误状态
-			if s.rateLimitService != nil {
+			if s.rateLimitService != nil && !suppressAccountHealthPenalty {
 				s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
 			}
 			sendErrorEvent("stream_timeout", fmt.Sprintf("upstream stream idle for %s", streamInterval))

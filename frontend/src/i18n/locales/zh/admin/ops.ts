@@ -351,6 +351,8 @@ export default {
         phase: '阶段',
         status: '状态码',
         upstreamStatus: '上游状态码',
+        upstreamStreamStatus: '上游流内错误',
+        upstreamHttpStatus: '上游 HTTP',
         message: '消息',
         rootCause: '根因',
         diagnosticPayloads: '诊断载荷',

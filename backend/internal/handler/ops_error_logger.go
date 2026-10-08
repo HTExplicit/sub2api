@@ -2140,7 +2140,26 @@ func inferResponsesFailedOpsErrorType(code string) string {
 	}
 }
 
-func inferStreamFailureStatus(_ *gin.Context, parsed parsedOpsError) int {
+func inferStreamFailureStatus(c *gin.Context, parsed parsedOpsError) int {
+	// New Claude SSE attempts preserve the existing semantic status convention
+	// and independently capture the real carrying HTTP response. Only those
+	// events may override generic terminal inference (529 would otherwise be
+	// reduced to its client-facing 503). Ordinary HTTP attempts stay independent
+	// of the terminal semantics, including earlier attempts on a recovered path.
+	if c != nil {
+		if value, ok := c.Get(service.OpsUpstreamErrorsKey); ok {
+			if events, ok := value.([]*service.OpsUpstreamErrorEvent); ok {
+				for i := len(events) - 1; i >= 0; i-- {
+					if event := events[i]; event != nil {
+						if event.Platform == service.PlatformAnthropic && event.Kind == "stream_error" && event.UpstreamHTTPStatusCode > 0 && event.UpstreamStatusCode >= 400 && event.UpstreamStatusCode <= 599 {
+							return event.UpstreamStatusCode
+						}
+						break
+					}
+				}
+			}
+		}
+	}
 	if parsed.StatusCode >= 400 && parsed.StatusCode <= 599 {
 		return parsed.StatusCode
 	}
