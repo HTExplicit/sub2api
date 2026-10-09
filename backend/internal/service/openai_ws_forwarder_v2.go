@@ -447,7 +447,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if capture := pelicanCaptureFromContext(ctx); capture != nil {
 		capture.mu.Lock()
 		if len(capture.attempts) > 0 {
-			capture.attempts[len(capture.attempts)-1].dispatched = true
+			attempt := capture.attempts[len(capture.attempts)-1]
+			attempt.mu.Lock()
+			attempt.dispatched = true
+			attempt.mu.Unlock()
 		}
 		capture.mu.Unlock()
 	}

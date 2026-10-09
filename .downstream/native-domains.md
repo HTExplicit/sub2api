@@ -118,6 +118,11 @@ Status adds `setup`, `observed_since` and `recent_usage`. The last actual dispat
 and in-process counters are retained per configured target/model/protocol/purpose;
 configuration publication resets this index. HTTP/SSE, pooled WS and native WS
 relay observations record application independently from upstream completion.
+HTTP application is checked against the immutable preparation proof and final
+cookie, including after restoring the caller context. A parsed successful terminal
+and visible text remain authoritative when read-ahead cleanup later reports
+cancellation; that detail remains available as `read_error`. Captures are snapshotted
+under a lock, and the usage index preserves the first terminal event.
 Diagnostic and business requests are distinguished. This index contains no request
 payloads or credential/cookie values; the existing administrator error records remain.
 

@@ -5,13 +5,80 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
+
+// A real HTTP stream can deliver its final bytes together with cancellation
+// while the gateway shuts down read-ahead after committing response.completed.
+type borrowDiagnosticCancelledTail struct{ *strings.Reader }
+
+func (r *borrowDiagnosticCancelledTail) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if r.Reader.Len() == 0 {
+		return n, context.Canceled
+	}
+	return n, err
+}
+func (*borrowDiagnosticCancelledTail) Close() error { return nil }
+
+func TestCodexBorrowDiagnoseHTTPTerminalAndDispatchEvidence(t *testing.T) {
+	for _, complete := range []bool{true, false} {
+		t.Run(map[bool]string{true: "completed then read cancellation", false: "missing terminal"}[complete], func(t *testing.T) {
+			account := borrowCoreAccount(2)
+			generator, repo := newPelicanGeneratorForTest(account, &pelicanGeneratorUpstream{})
+			gateway := generator.openaiGatewayService
+			raw := borrowCoreSSE("gpt-6-astra", "OK")
+			if !complete {
+				raw = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\n"
+			}
+			gateway.httpUpstream = borrowCoreProbe(func(req *http.Request, _ string, id int64, n int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+				_, finish, err := PreparePelicanHTTPRequest(req, id, n, "http")
+				if err != nil {
+					return nil, err
+				}
+				return finish(&http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: &borrowDiagnosticCancelledTail{strings.NewReader(raw)}}, nil)
+			})
+			s := NewCodexGatewayBorrowService(nil, repo, gateway, borrowCoreProbe(func(*http.Request, string, int64, int, *tlsfingerprint.Profile) (*http.Response, error) {
+				return borrowCoreResponse("gpt-6-astra", "OK", "stable", ""), nil
+			}), nil)
+			s.publishConfig(CodexGatewayBorrowConfig{Enabled: true, SourceAccountIDs: []int64{1}, TargetAccountIDs: []int64{2}, Models: []string{"gpt-6-astra"}}, false)
+			defer s.Stop()
+			borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
+			var results []CodexBorrowDiagnosticResult
+			err := s.Diagnose(context.Background(), CodexBorrowDiagnosticRequest{AccountID: 2, Model: "gpt-6-astra", Transport: "http"}, func(e CodexBorrowDiagnosticEvent) {
+				if e.Result != nil {
+					results = append(results, *e.Result)
+				}
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2)
+			for _, r := range results {
+				require.Equal(t, complete, r.Completed, r.Error)
+				require.True(t, r.Dispatched)
+			}
+			require.False(t, results[0].Applied)
+			require.True(t, results[1].Applied)
+			usage := s.Status().RecentUsage
+			require.Len(t, usage, 1)
+			require.True(t, usage[0].Applied)
+			require.EqualValues(t, 1, usage[0].AppliedCount)
+			if complete {
+				require.Equal(t, "completed", usage[0].Outcome)
+			} else {
+				require.NotEqual(t, "completed", usage[0].Outcome)
+			}
+		})
+	}
+}
+
+var _ io.ReadCloser = (*borrowDiagnosticCancelledTail)(nil)
 
 func TestCodexBorrowDiagnoseHTTPUsesRealSenderAndIsolatesModes(t *testing.T) {
 	account := borrowCoreAccount(2)

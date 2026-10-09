@@ -39,6 +39,7 @@ export interface CodexGatewayBorrowUsage {
 }
 export interface CodexBorrowDiagnosticResult {
   dispatched?: boolean
+  read_error?: string
   mode: string; turn: number; applied: boolean; completed: boolean; response_id?: string
   reported_model?: string; answer: string; raw_response: string; error?: string; duration_ms: number
 }
