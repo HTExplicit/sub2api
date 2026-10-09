@@ -105,8 +105,11 @@ func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64)
 	if err != nil {
 		return nil, err.Error(), err
 	}
-	shot, err := s.fireObservation(ctx, template.Header, a, codexGatewayBorrowSourceModel, "Reply with OK only.", "medium", proxy, nil,
-		"", nil, HTTPUpstreamProfileCodexBorrowSource, codexGatewayBorrowProbeMaxBody)
+	req, err := borrowSourceObservationRequest(ctx, template.Header)
+	if err != nil {
+		return nil, err.Error(), err
+	}
+	shot, err := s.sendObservation(req, a, proxy, nil, codexGatewayBorrowSourceModel, codexGatewayBorrowProbeMaxBody)
 	if err != nil {
 		return nil, shot.errorText, err
 	}
@@ -123,6 +126,36 @@ func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64)
 	}
 	candidate.sourceID = id
 	return candidate, "", nil
+}
+
+// The pinned ranxi source acquisition uses the ordinary OAuth account-test
+// payload, not the target's two-shot STATE-probe protocol. Preserve the shared
+// account identity and observation isolation, but do not manufacture probe
+// sessions, a window or a routing hint, or force this normal source connection
+// closed. The source keeps its own configured OpenAI transport and proxy.
+func borrowSourceObservationRequest(ctx context.Context, headers http.Header) (*http.Request, error) {
+	ctx = WithCodexGatewayBorrowObservation(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, HTTPUpstreamProfileCodexBorrowSource)))
+	payload := createOpenAITestPayload(codexGatewayBorrowSourceModel, true, "Reply with OK only.")
+	payload["reasoning"] = map[string]string{"effort": "medium"}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatgptCodexURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Host, req.Header = "chatgpt.com", headers.Clone()
+	if req.Header == nil {
+		req.Header = make(http.Header)
+	}
+	for _, name := range []string{"Cookie", "Content-Length", "Content-Encoding", "Content-MD5", "X-Codex-Turn-State", "X-Codex-Turn-Metadata", "X-OpenAI-Internal-Codex-Responses-Lite", "conversation_id", "session_id", "session-id", "thread-id", "x-client-request-id", "x-codex-window-id", openAICodexRoutingHintHeader} {
+		deleteOpenAIHeaderEqualFold(req.Header, name)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("OpenAI-Beta", "responses=experimental")
+	return req, nil
 }
 
 func borrowCookieScoped(cookie *http.Cookie, path string) bool {
