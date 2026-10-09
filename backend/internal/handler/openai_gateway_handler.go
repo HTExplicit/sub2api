@@ -990,21 +990,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					retryAction := openAIFailoverRetrySwitchAccount
-					switch {
-					default:
-						retryAction = retryState.HandleHTTP(
-							c.Request.Context(),
-							h.gatewayService,
-							account,
-							account.GetMappedModel(routingModel),
-							failoverErr,
-							true,
-							sameAccountRetryDelay,
-							"responses",
-						)
-					}
-					h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
+					retryAction := retryState.HandleHTTP(
+						c.Request.Context(),
+						h.gatewayService,
+						account,
+						account.GetMappedModel(routingModel),
+						failoverErr,
+						true,
+						sameAccountRetryDelay,
+						"responses",
+					)
+
 					switch retryAction {
 					case openAIFailoverRetryReselect:
 						continue

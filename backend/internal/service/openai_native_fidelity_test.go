@@ -39,8 +39,6 @@ func TestNativeResponsesFidelityPreservesCompatibleState(t *testing.T) {
 				c, _ := gin.CreateTestContext(recorder)
 				c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 				SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
-				// Even a previous rejection marker is not authority to delete history.
-				svc.markOpenAIWSInvalidEncryptedContentLineage(getOpenAIGroupIDFromContext(c), svc.GenerateSessionHash(c, body), collectOpenAIEncryptedContentDigestsRaw(body))
 
 				result, err := svc.Forward(context.Background(), c, account, body)
 

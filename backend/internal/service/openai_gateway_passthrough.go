@@ -413,6 +413,7 @@ retryUpstream:
 			return nil, integrityErr
 		}
 
+		freezeOpenAIContinuationWire(c, upstreamReq, wireBody)
 		upstreamStart := time.Now()
 
 		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, actualModel)
@@ -2157,9 +2158,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		failureDelivered = true
 		flushPending = true
 		flushPendingOutput()
-		if !clientDisconnected {
 
-		}
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -2217,9 +2216,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamEventType := effectiveOpenAISSEEventType(rawDataBytes, pendingSSEEventType)
 			s.parseSSEUsageBytesWithType(rawDataBytes, upstreamEventType, usage)
 			if upstreamEventType == "response.failed" || upstreamEventType == "error" || (upstreamEventType == "response.done" && gjson.GetBytes(rawDataBytes, "response.status").String() == "failed") {
-				if upstreamEventType != "error" {
-
-				}
 
 				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, c, account, resp.StatusCode, resp.Header, rawDataBytes); ok {
 					// Classification must happen on the untouched event, before error
@@ -2527,9 +2523,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				flushPending = true
 				if line == "" {
 					flushPendingOutput()
-					if terminalFramePending && sawFailedEvent && !clientDisconnected {
 
-					}
 				}
 			}
 		}

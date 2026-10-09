@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -119,6 +120,19 @@ type openAIContinuationHistory struct {
 	NestedEncrypted int `json:"nested_encrypted"`
 }
 
+type openAIContinuationWireSnapshot struct {
+	request *http.Request
+	body    []byte
+}
+
+func freezeOpenAIContinuationWire(c *gin.Context, request *http.Request, body []byte) {
+	if c != nil {
+		c.Set("openai_continuation_wire", openAIContinuationWireSnapshot{request: request, body: bytes.Clone(body)})
+	}
+	// Retry decisions belong to the gateway rather than transparent POST replay.
+	request.GetBody = nil
+}
+
 func buildOpenAIContinuationDiagnostic(c *gin.Context, incomingBody []byte, upstreamReq *http.Request, preparedBody, upstreamError []byte, classification string) *OpenAIContinuationDiagnostic {
 	var incomingHeaders, wireHeaders http.Header
 	if c != nil && c.Request != nil {
@@ -128,6 +142,13 @@ func buildOpenAIContinuationDiagnostic(c *gin.Context, incomingBody []byte, upst
 		wireHeaders = upstreamReq.Header
 	}
 	wireBody, wireSource, limited := continuationDiagnosticWireBody(upstreamReq, preparedBody)
+	if c != nil {
+		if value, exists := c.Get("openai_continuation_wire"); exists {
+			if snapshot, ok := value.(openAIContinuationWireSnapshot); ok && snapshot.request == upstreamReq {
+				wireBody, wireSource, limited = snapshot.body, "frozen_request", len(snapshot.body) > openAIContinuationDiagnosticBodyLimit
+			}
+		}
+	}
 	diagnostic := &OpenAIContinuationDiagnostic{
 		Version: 1, Classification: continuationDiagnosticClassification(classification),
 		UpstreamError: continuationDiagnosticError(upstreamError),

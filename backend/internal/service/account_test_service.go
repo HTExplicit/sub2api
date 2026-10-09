@@ -449,6 +449,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 	c.Set(accountTestReasoningContextKey, testOpts.ReasoningEffort)
 	bindAccountTestPlatform(c, account)
+	ctx = c.Request.Context()
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
 	// interactions, but intentionally do not send their placeholder credentials
@@ -2285,6 +2286,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	applyOpenCodeSessionHeader(c, account, apiURL, req.Header, payloadBytes)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

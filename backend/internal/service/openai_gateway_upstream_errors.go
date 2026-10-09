@@ -689,10 +689,6 @@ func (e *UpstreamFailoverError) IsOpenAIContinuationStateUnavailable() bool {
 
 // openAIRequestHoldsServerContext reports a request whose history lives with
 // the upstream account that created it.
-func openAIRequestHoldsServerContext(body []byte) bool {
-	conversation := gjson.GetBytes(body, "conversation")
-	return gjson.GetBytes(body, "previous_response_id").String() != "" || (conversation.Exists() && conversation.Type != gjson.Null)
-}
 
 func marshalOpenAIUpstreamJSON(v any) ([]byte, error) {
 	var buf bytes.Buffer

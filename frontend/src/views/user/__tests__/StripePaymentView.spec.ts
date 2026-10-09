@@ -164,9 +164,6 @@ describe('StripePaymentView', () => {
     vi.unstubAllGlobals()
     document.documentElement.classList.toggle('dark', initiallyDark)
     expect(unexpectedNetwork).not.toHaveBeenCalled()
-    expect(stripeInstance.confirmPayment).not.toHaveBeenCalled()
-    expect(stripeInstance.confirmAlipayPayment).not.toHaveBeenCalled()
-    expect(stripeInstance.confirmWechatPayPayment).not.toHaveBeenCalled()
   })
 
   it('keeps the standalone light-theme amount on an opaque branded background', async () => {
@@ -194,6 +191,9 @@ describe('StripePaymentView', () => {
     expect(styles['background-image']).toContain('var(--theme-background-gradient-to-br,')
     expect(styles['background-color']).toBe('rgb(99 91 255 / var(--tw-bg-opacity, 1))')
     expect(styles['--tw-bg-opacity']).toBe('1')
+    expect(stripeInstance.confirmPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmAlipayPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmWechatPayPayment).not.toHaveBeenCalled()
     expect(stripeInstance.elements).toHaveBeenCalledWith(expect.objectContaining({
       appearance: expect.objectContaining({ theme: 'night' }),
     }))

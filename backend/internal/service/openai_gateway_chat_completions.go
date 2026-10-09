@@ -73,9 +73,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 ) (*OpenAIForwardResult, error) {
 	// A scheduler may reuse gin.Context for another account or protocol.
 	// Never leave an earlier recovery state attached to a fallback route.
-	if c != nil {
 
-	}
 	rememberOpenCodeInboundBody(c, body)
 	beginUpstreamResponseModelObservation(c)
 	if account != nil && account.IsOpenAI() {
@@ -353,91 +351,89 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	var result *OpenAIForwardResult
 	var handleErr error
 	var wireBody []byte
-	for {
-		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, upstreamPromptCacheKey, false)
-		releaseUpstreamCtx()
-		if err != nil {
-			return nil, fmt.Errorf("build upstream request: %w", err)
-		}
-		// A stream attempt cancels its own context before closing its body. That
-		// context is derived per attempt, so it never cancels the single
-		// same-source reasoning recovery; PrepareRequest reapplies client
-		// cancellation and its deadline to that recovery attempt.
-		cancelUpstream := func() {}
-		if clientStream {
-			var attemptCtx context.Context
-			attemptCtx, cancelUpstream = context.WithCancel(upstreamReq.Context())
-			upstreamReq = upstreamReq.WithContext(attemptCtx)
-		}
-		wireBody, err = finalWireRequestBody(upstreamReq, responsesBody)
-		if err != nil {
-			cancelUpstream()
-			return nil, err
-		}
-		finalCacheKey := finalWirePromptCacheKey(wireBody, upstreamPromptCacheKey)
-		if finalCacheKey != "" {
-			sessionKey := finalCacheKey
-			if !compatPromptCacheTenantIsolated {
-				sessionKey = isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), codexAccountIdentitySource(c, account), finalCacheKey)
-			}
-			if account.UsesOpenAICodexProtocol() {
-				fillCodexSessionIdentityHeaders(upstreamReq.Header, generateSessionUUID(sessionKey))
-			} else {
-				upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
-			}
-		}
-		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
-		if err != nil {
-			cancelUpstream()
 
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
-		}
-		if clientStream {
-			// Stream/error handlers can close the body before this outer loop
-			// regains control. Attach cancellation to Close itself so every
-			// cleanup path unblocks the reader before waiting for it to stop.
-			resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: cancelUpstream}
-		}
-		closeUpstreamResponse := func() {
-			cancelUpstream()
-			_ = resp.Body.Close()
-		}
-		if resp.StatusCode >= 400 {
-			respBody, upstreamMsg := s.readOpenAIUpstreamError(resp, c)
-
-			defer closeUpstreamResponse()
-			if !agentIdentityTaskRecoveryWasTried(ctx) && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
-				expectedTaskID := account.GetCredential("task_id")
-				if err := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); err != nil {
-					return nil, fmt.Errorf("agent identity task recovery failed: %w", err)
-				}
-				return s.forwardAsChatCompletions(markAgentIdentityTaskRecoveryTried(ctx), c, account, body, retryPromptCacheKey, defaultMappedModel, compatPromptCacheTenantIsolated)
-			}
-			if account.Type == AccountTypeAPIKey &&
-				openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportUnknown &&
-				!isResponsesEndpointSupportedByStatus(resp.StatusCode) {
-				logger.L().Info("openai chat_completions: /responses unsupported, falling back to raw chat completions",
-					zap.Int64("account_id", account.ID),
-					zap.Int("upstream_status", resp.StatusCode),
-					zap.String("upstream_message", upstreamMsg),
-				)
-				return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
-			}
-			if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamModel); foErr != nil {
-				return nil, foErr
-			}
-			return s.handleChatCompletionsErrorResponse(resp, c, account, billingModel)
-		}
-		if clientStream {
-			result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime, len(body))
-		} else {
-			result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
-		}
-		closeUpstreamResponse()
-
-		break
+	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, upstreamPromptCacheKey, false)
+	releaseUpstreamCtx()
+	if err != nil {
+		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
+	// A stream attempt cancels its own context before closing its body. That
+	// context is derived per attempt, so it never cancels the single
+	// same-source reasoning recovery; PrepareRequest reapplies client
+	// cancellation and its deadline to that recovery attempt.
+	cancelUpstream := func() {}
+	if clientStream {
+		var attemptCtx context.Context
+		attemptCtx, cancelUpstream = context.WithCancel(upstreamReq.Context())
+		upstreamReq = upstreamReq.WithContext(attemptCtx)
+	}
+	wireBody, err = finalWireRequestBody(upstreamReq, responsesBody)
+	if err != nil {
+		cancelUpstream()
+		return nil, err
+	}
+	finalCacheKey := finalWirePromptCacheKey(wireBody, upstreamPromptCacheKey)
+	if finalCacheKey != "" {
+		sessionKey := finalCacheKey
+		if !compatPromptCacheTenantIsolated {
+			sessionKey = isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), codexAccountIdentitySource(c, account), finalCacheKey)
+		}
+		if account.UsesOpenAICodexProtocol() {
+			fillCodexSessionIdentityHeaders(upstreamReq.Header, generateSessionUUID(sessionKey))
+		} else {
+			upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
+		}
+	}
+	resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
+	if err != nil {
+		cancelUpstream()
+
+		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+	}
+	if clientStream {
+		// Stream/error handlers can close the body before this outer loop
+		// regains control. Attach cancellation to Close itself so every
+		// cleanup path unblocks the reader before waiting for it to stop.
+		resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: cancelUpstream}
+	}
+	closeUpstreamResponse := func() {
+		cancelUpstream()
+		_ = resp.Body.Close()
+	}
+	if resp.StatusCode >= 400 {
+		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp, c)
+
+		defer closeUpstreamResponse()
+		if !agentIdentityTaskRecoveryWasTried(ctx) && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
+			expectedTaskID := account.GetCredential("task_id")
+			if err := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); err != nil {
+				return nil, fmt.Errorf("agent identity task recovery failed: %w", err)
+			}
+			return s.forwardAsChatCompletions(markAgentIdentityTaskRecoveryTried(ctx), c, account, body, retryPromptCacheKey, defaultMappedModel, compatPromptCacheTenantIsolated)
+		}
+		if account.Type == AccountTypeAPIKey &&
+			openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportUnknown &&
+			!isResponsesEndpointSupportedByStatus(resp.StatusCode) {
+			logger.L().Info("openai chat_completions: /responses unsupported, falling back to raw chat completions",
+				zap.Int64("account_id", account.ID),
+				zap.Int("upstream_status", resp.StatusCode),
+				zap.String("upstream_message", upstreamMsg),
+			)
+			return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+		}
+		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamModel); foErr != nil {
+			return nil, foErr
+		}
+		return s.handleChatCompletionsErrorResponse(resp, c, account, billingModel)
+	}
+	if clientStream {
+		result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime, len(body))
+	} else {
+		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+	}
+	closeUpstreamResponse()
+
 	stampOpenAIResponsesUpstreamEndpoint(c, result)
 
 	// cyber_policy：标记已设、error 已按 Chat Completions 格式发给客户端。丢弃 result、
@@ -739,7 +735,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 	var streamFailoverErr *UpstreamFailoverError
 	var streamNonFailoverErr error
-	var pendingReasoningRejection []byte
 	// Grok chat bridge reuses Responses SSE; count native search tools for surcharge.
 	searchCount := 0
 	streamSearchSeen := make(map[string]struct{})
@@ -790,9 +785,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		rawPayloadBytes := []byte(payload)
 
 		rawEventType := strings.TrimSpace(gjson.GetBytes(rawPayloadBytes, "type").String())
-		if isOpenAICompatResponsesTerminalEvent(rawEventType) {
-			pendingReasoningRejection = nil
-		}
 
 		if firstChunk {
 			firstChunk = false
@@ -1071,9 +1063,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 	}
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
-		if len(pendingReasoningRejection) > 0 {
 
-		}
 		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
 	processFrame := func(frame openAICompatSSEFrame) bool {

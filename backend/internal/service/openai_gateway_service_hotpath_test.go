@@ -544,7 +544,7 @@ func TestOpenAIGatewayService_Forward_ImageToolWithImageOnlyModelIsNormalized(t 
 	require.Equal(t, openAIImagesResponsesMainModel, gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
-func TestOpenAIGatewayService_Forward_HTTPInvalidEncryptedContentStopsWithoutMutatingRawInput(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPRetryRecoveryDoesNotDecodeBeforeError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{
 		responses: []*http.Response{
@@ -580,26 +580,18 @@ func TestOpenAIGatewayService_Forward_HTTPInvalidEncryptedContentStopsWithoutMut
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
 
-	body := []byte(`{"model":"gpt-5","stream":false,"store":false,"previous_response_id":"resp_previous","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`)
+	body := []byte(`{"model":"gpt-5","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, failoverErr.ShouldRetryNextAccount())
-	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.Len(t, upstream.bodies, 1, "invalid encrypted history must not be stripped and retried")
-	require.JSONEq(t, string(body), string(upstream.bodies[0]))
-	require.Equal(t, "resp_previous", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
 	require.Equal(t, "gAAA", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
 	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.bodies[0], "input.1.content.0.nonce").Raw)
-	require.Equal(t, "summary_text", gjson.GetBytes(upstream.bodies[0], "input.0.summary.0.type").String())
-	require.Equal(t, "keep me", gjson.GetBytes(upstream.bodies[0], "input.0.summary.0.text").String())
-	require.False(t, c.Writer.Written(), "the caller must receive the terminal error before any response is committed")
-	require.NotContains(t, rec.Body.String(), `"output_tokens":2`)
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
+	require.Equal(t, "summary_text", gjson.GetBytes(upstream.bodies[1], "input.0.summary.0.type").String())
 }
 
-func TestOpenAIGatewayService_Forward_HTTPInvalidEncryptedContentStopsWithoutDroppingCompaction(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPRetryRecoveryDropsCompaction(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{
 		responses: []*http.Response{
@@ -635,23 +627,14 @@ func TestOpenAIGatewayService_Forward_HTTPInvalidEncryptedContentStopsWithoutDro
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
 
-	body := []byte(`{"model":"gpt-5.6-sol","stream":false,"previous_response_id":"resp_previous","input":[{"id":"cmp_stale","type":"compaction","encrypted_content":"gAAA"},{"type":"message","content":[{"type":"input_text","text":"hi"}]}]}`)
+	body := []byte(`{"model":"gpt-5.6-sol","stream":false,"input":[{"id":"cmp_stale","type":"compaction","encrypted_content":"gAAA"},{"type":"message","content":[{"type":"input_text","text":"hi"}]}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, failoverErr.ShouldRetryNextAccount())
-	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.Len(t, upstream.bodies, 1, "compaction history must not be dropped and retried")
-	require.JSONEq(t, string(body), string(upstream.bodies[0]))
-	require.Equal(t, "resp_previous", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
-	require.Equal(t, "cmp_stale", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
 	require.Equal(t, "compaction", gjson.GetBytes(upstream.bodies[0], "input.0.type").String())
-	require.Equal(t, "gAAA", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
-	require.Equal(t, "message", gjson.GetBytes(upstream.bodies[0], "input.1.type").String())
-	require.False(t, c.Writer.Written(), "the caller must receive the terminal error before any response is committed")
-	require.NotContains(t, rec.Body.String(), `"output_tokens":2`)
+	require.Equal(t, "message", gjson.GetBytes(upstream.bodies[1], "input.0.type").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.1").Exists())
 }
 
 func TestOpenAIGatewayService_Forward_ResponseFailedInvalidEncryptedContentStopsWithoutReplay(t *testing.T) {

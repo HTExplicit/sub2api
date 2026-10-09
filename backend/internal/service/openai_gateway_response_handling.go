@@ -540,9 +540,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		if sawFailedEvent {
-			if !clientDisconnected && (failureDelivered || !eventInProgress) {
 
-			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if terminalResponseErr != nil {
@@ -643,9 +641,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			rawEventType := effectiveOpenAISSEEventType(rawDataBytes, pendingSSEEventType)
 			if rawEventType == "response.failed" || rawEventType == "error" || (rawEventType == "response.done" && gjson.GetBytes(rawDataBytes, "response.status").String() == "failed") {
 				s.parseSSEUsageBytesWithType(rawDataBytes, rawEventType, usage)
-				if rawEventType != "error" {
-
-				}
 
 				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
 					ctx, c, account, resp.StatusCode, resp.Header, rawDataBytes,
@@ -679,9 +674,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				bareErrorAccountSideEffectsPending = false
 				failedMessage = ""
 			}
-			if eventType == "response.completed" || eventType == "response.done" {
 
-			}
 			if codexFailureTerminal && sawBareError && !sawResponseFailed && eventType != "response.failed" {
 				suppressCurrentEvent = true
 			}
@@ -797,9 +790,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						return
 					}
 				}
-				if !cyberPolicyHit {
 
-				}
 				if !cyberPolicyHit && !outputStarted {
 					if openAIStreamFailedEventShouldFailoverForAccount(account, dataBytes, failedMessage) {
 						sawFailedEvent = true

@@ -836,40 +836,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		var wsErr error
 		wsLastFailureReason := ""
 		agentTaskRecoveryTried := false
-		wsPrevResponseRecoveryTried := false
 		wsInvalidEncryptedContentRecoveryTried := false
-		recoverPrevResponseNotFound := func(attempt int) bool {
-			if wsPrevResponseRecoveryTried {
-				return false
-			}
-			previousResponseID := openAIWSPayloadString(wsReqBody, "previous_response_id")
-			if previousResponseID == "" {
-				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=missing_previous_response_id previous_response_id_present=false",
-					account.ID,
-					attempt,
-				)
-				return false
-			}
-			if HasFunctionCallOutput(wsReqBody) {
-				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=has_function_call_output previous_response_id_present=true",
-					account.ID,
-					attempt,
-				)
-				return false
-			}
-			delete(wsReqBody, "previous_response_id")
-			wsPrevResponseRecoveryTried = true
-			logOpenAIWSModeInfo(
-				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id=%s previous_response_id_kind=%s",
-				account.ID,
-				attempt,
-				truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
-				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
-			)
-			return true
-		}
 		recoverInvalidEncryptedContent := func(attempt int) bool {
 			if wsInvalidEncryptedContentRecoveryTried {
 				return false
@@ -951,9 +918,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			// previous_response_not_found 说明续链锚点不可用：
 			// 对非 function_call_output 场景，允许一次“去掉 previous_response_id 后重放”。
-			if reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
-				continue
-			}
+
 			if reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
 				continue
 			}
@@ -1044,6 +1009,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsResult.BillingModel = imageBillingModel
 			}
 			return wsResult, nil
+		}
+		if reason, _ := classifyOpenAIWSReconnectReason(wsErr); strings.TrimPrefix(reason, "prewarm_") == "previous_response_not_found" {
+			s.recordOpenAIWSContinuationStateError(c, account, wsErr)
+			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 		return nil, wsErr
@@ -1159,6 +1128,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// pointer; wire compression still uses its separate outbound copy.
 
 		// Send request
+		freezeOpenAIContinuationWire(c, upstreamReq, wireBody)
 		upstreamStart := time.Now()
 
 		resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
@@ -1228,6 +1198,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+			if classifyOpenAIContinuationStateError(upstreamMsg, respBody) == openAIContinuationStateErrorPreviousResponseNotFound {
+				s.recordOpenAIRequestTerminalUpstreamError(ctx, c, account, resp.StatusCode, resp.Header, body, respBody, "continuation_state", false,
+					buildOpenAIContinuationDiagnostic(c, diagnosticIncomingBody, upstreamReq, body, respBody, "previous_response_not_found"))
+				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
+			}
 			if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
 				agentTaskRecoveryTried = true
 				expectedTaskID := account.GetCredential("task_id")
