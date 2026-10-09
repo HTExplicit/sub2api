@@ -37,3 +37,12 @@ func TestCodexBorrowSessionItemsStillRequireSuccessfulTerminal(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestCodexBorrowSessionSeparatesCompletionFromTaskResult(t *testing.T) {
+	diagnostic := &codexBorrowDiagnostic{history: []any{"user", "tool-output"}}
+	result := CodexBorrowDiagnosticResult{RawResponse: "data: " + `{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"different answer"}]}]}}` + "\n\n"}
+	diagnostic.completeHTTPSessionTurn(&result, nil, 200)
+	require.True(t, result.Completed, "upstream completion is independent of the fixed-answer check")
+	require.False(t, result.ToolRoundTrip)
+	require.NotEmpty(t, result.Error)
+}

@@ -184,7 +184,7 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 			result := s.diagnoseTurn(operation, account, request.Model, previous)
 			result.Mode, result.Turn = mode, turn
 			emit(CodexBorrowDiagnosticEvent{Type: "result", Mode: mode, Result: &result, Requests: requests.Load(), Limit: limit})
-			if !result.Completed {
+			if !result.Completed || result.Error != "" {
 				break
 			}
 			previous = result.ResponseID

@@ -99,6 +99,7 @@ func codexBorrowSessionTerminal(raw string) (gjson.Result, error) {
 
 func (d *codexBorrowDiagnostic) completeHTTPSessionTurn(result *CodexBorrowDiagnosticResult, sendErr error, status int) {
 	response, err := codexBorrowSessionTerminal(result.RawResponse)
+	result.Completed = err == nil && status >= 200 && status < 300
 	if sendErr != nil {
 		result.Error = sendErr.Error()
 		return
@@ -137,9 +138,8 @@ func (d *codexBorrowDiagnostic) completeHTTPSessionTurn(result *CodexBorrowDiagn
 		}
 	}
 	result.Answer = strings.TrimSpace(answer.String())
-	result.Completed = result.Answer == codexBorrowEchoValue
-	result.ToolRoundTrip = result.Completed
-	if !result.Completed {
+	result.ToolRoundTrip = result.Answer == codexBorrowEchoValue
+	if !result.ToolRoundTrip {
 		result.Error = "continuation did not return the fixed tool result"
 	}
 }
