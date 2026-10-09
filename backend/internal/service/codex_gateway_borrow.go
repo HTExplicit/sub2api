@@ -47,6 +47,7 @@ var (
 // request failing upstream. Callers must surface it before ordinary account
 // failover, stream-timeout or health hooks. Unwrap preserves the specific cause.
 type CodexGatewayBorrowFailure struct {
+	Revision          uint64
 	CookieFingerprint string
 	Cause             error
 	Stage             string
@@ -80,9 +81,9 @@ func IsCodexGatewayBorrowFailure(err error) bool {
 	return errors.As(err, &failure)
 }
 
-func borrowVerificationFailure(check codexGatewayBorrowTargetCheck) error {
+func borrowVerificationFailure(check codexGatewayBorrowTargetCheck, revision uint64) error {
 	result := check.result
-	failure := &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "target_validation", Reason: result.Reason, Detail: result.Error, Verification: &result, CookieFingerprint: check.cookieKey}
+	failure := &CodexGatewayBorrowFailure{Revision: revision, Cause: ErrCodexGatewayBorrowUnavailable, Stage: "target_validation", Reason: result.Reason, Detail: result.Error, Verification: &result, CookieFingerprint: check.cookieKey}
 	if !check.retryAfter.IsZero() {
 		retry := check.retryAfter
 		failure.RetryAfter = &retry
@@ -277,6 +278,7 @@ type codexGatewayBorrowTargetCheck struct {
 type CodexGatewayBorrowService struct {
 	rejectedCookie     string
 	rejectedCause      error
+	rejectedRoutes     map[string]time.Time
 	validationSequence uint64
 	sourceSequence     uint64
 	qualifications     map[string]codexGatewayBorrowTargetCheck
@@ -414,6 +416,7 @@ func (s *CodexGatewayBorrowService) publishConfig(cfg CodexGatewayBorrowConfig, 
 	s.config, s.loaded = cloneCodexGatewayBorrowConfig(cfg), true
 	s.candidate = nil
 	s.rejectedCookie, s.rejectedCause = "", nil
+	s.rejectedRoutes = nil
 	s.setup = CodexGatewayBorrowSetup{}
 	if saved && cfg.Enabled {
 		s.setup = CodexGatewayBorrowSetup{State: "queued", Total: len(cfg.TargetAccountIDs) * len(cfg.Models), StartedAt: time.Now()}
@@ -732,7 +735,17 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 				return nil, ErrCodexGatewayBorrowChanged
 			}
 			row := CodexGatewayBorrowSourceStatus{AccountID: id, State: "rejected", Reason: "source_probe_failed", CheckedAt: &now, Error: detail}
-			if err == nil && candidate != nil && s.rejectedCookie != "" && borrowHash(candidate.cookie.Value) == s.rejectedCookie {
+			previouslyRejected := false
+			if candidate != nil {
+				key := borrowHash(candidate.cookie.Value)
+				if until, found := s.rejectedRoutes[key]; found {
+					previouslyRejected = now.Before(until)
+					if !previouslyRejected {
+						delete(s.rejectedRoutes, key)
+					}
+				}
+			}
+			if err == nil && candidate != nil && previouslyRejected {
 				// Keep the old candidate and expiry: reacquiring the identical
 				// rejected credential must not renew its lease or qualify it.
 				err = errors.New("source returned the same rejected route")
@@ -940,7 +953,7 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 		s.qualifications[qualificationKey] = check
 		s.mu.Unlock()
 		if !result.Success {
-			return nil, borrowVerificationFailure(check)
+			return nil, borrowVerificationFailure(check, rev)
 		}
 		return check, nil
 	})
@@ -972,6 +985,9 @@ func (s *CodexGatewayBorrowService) cachedTarget(rev uint64, key codexGatewayBor
 		return old, false, nil
 	}
 	now := time.Now()
+	if !now.Before(old.expires) {
+		return old, false, nil
+	}
 	if old.result.Success && now.Before(old.expires) {
 		if candidate.expires.Before(old.expires) {
 			old.expires = candidate.expires
@@ -979,7 +995,7 @@ func (s *CodexGatewayBorrowService) cachedTarget(rev uint64, key codexGatewayBor
 		return old, true, nil
 	}
 	if !old.result.Success && now.Before(old.retryAfter) {
-		return old, false, borrowVerificationFailure(old)
+		return old, false, borrowVerificationFailure(old, rev)
 	}
 	return old, false, nil
 }

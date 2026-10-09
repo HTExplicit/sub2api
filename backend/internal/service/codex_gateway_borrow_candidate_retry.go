@@ -24,13 +24,16 @@ func (s *CodexGatewayBorrowService) rejectCandidateForRetry(err error, cooling b
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.config.Enabled || s.candidate == nil || s.revisionCtx.Err() != nil {
+	if s.revision != failure.Revision || !s.config.Enabled || s.candidate == nil || s.revisionCtx.Err() != nil {
 		return false
 	}
 	if borrowHash(s.candidate.cookie.Value) != failure.CookieFingerprint {
 		// A concurrent waiter has already replaced this candidate. Retry the
 		// published replacement; never retire it using the older observation.
 		return !cooling
+	}
+	if failure.Verification != nil && failure.Verification.ExpiresAt != nil && !failure.Verification.ExpiresAt.Equal(s.candidate.expires) {
+		return !cooling // A fresh lease cannot be retired by its predecessor's result.
 	}
 	now := time.Now()
 	if now.Before(s.prepareFailedUntil) {
@@ -46,6 +49,22 @@ func (s *CodexGatewayBorrowService) rejectCandidateForRetry(err error, cooling b
 			return false
 		}
 	}
+	if s.rejectedRoutes == nil {
+		s.rejectedRoutes = make(map[string]time.Time)
+	}
+	// Remember retired credentials through their original lease, including
+	// A -> B -> A source responses. Never forget a live rejection to make room.
+	if len(s.rejectedRoutes) >= 1024 {
+		for key, expires := range s.rejectedRoutes {
+			if !now.Before(expires) {
+				delete(s.rejectedRoutes, key)
+			}
+		}
+		if _, known := s.rejectedRoutes[failure.CookieFingerprint]; !known && len(s.rejectedRoutes) >= 1024 {
+			return false
+		}
+	}
+	s.rejectedRoutes[failure.CookieFingerprint] = s.candidate.expires
 	s.rejectedCookie, s.rejectedCause = failure.CookieFingerprint, err
 	if cooling {
 		s.prepareFailedUntil = now.Add(codexGatewayBorrowFailureWait)

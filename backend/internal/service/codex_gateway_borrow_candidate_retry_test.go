@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,9 +83,117 @@ func TestCodexBorrowCandidateReplacementPreservesOtherProofsAndWaiters(t *testin
 			} else {
 				s.targets[codexGatewayBorrowTargetKey{3, "gpt-6-astra"}] = check
 			}
-			err := &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Reason: "target_state_changed", CookieFingerprint: key}
+			err := &CodexGatewayBorrowFailure{Revision: s.revision, Cause: ErrCodexGatewayBorrowUnavailable, Reason: "target_state_changed", CookieFingerprint: key}
 			require.False(t, s.rejectCandidateForRetry(err, false))
 			require.Empty(t, s.rejectedCookie)
 		})
 	}
+}
+
+func TestCodexBorrowReplacementCannotRetireNewConfiguration(t *testing.T) {
+	s := newBorrowCoreTest(t, nil)
+	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
+	err := &CodexGatewayBorrowFailure{Revision: s.revision, Cause: ErrCodexGatewayBorrowUnavailable, Reason: "target_state_changed", CookieFingerprint: borrowHash(s.candidate.cookie.Value)}
+	s.publishConfig(CodexGatewayBorrowConfig{Enabled: true, SourceAccountIDs: []int64{4}, TargetAccountIDs: []int64{2}, Models: []string{"gpt-6-astra"}}, false)
+	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
+	require.False(t, s.rejectCandidateForRetry(err, false), "even an identical cookie belongs to the new config revision")
+	require.Empty(t, s.rejectedCookie)
+}
+
+func TestCodexBorrowReplacementBudgetDoesNotCoolOtherCallers(t *testing.T) {
+	var sourceCalls int
+	a := borrowCoreAccount(2)
+	s := newBorrowCoreTest(t, func(req *http.Request, _ string, id int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		if id == 1 {
+			sourceCalls++
+			return borrowCoreResponse("gpt-6-astra", "OK", "source", "__oailb=replacement-cookie; Secure; Path=/; Max-Age=230"), nil
+		}
+		state := "first"
+		cookie, _ := req.Cookie("__oailb")
+		if req.Header.Get("X-Codex-Turn-State") != "" && cookie != nil && cookie.Value != "replacement-cookie" {
+			state = "changed"
+		}
+		return borrowCoreResponse("gpt-6.1-sol", "OK", state), nil
+	}, borrowCoreAccount(1), a)
+	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
+	_, req, _, err := s.accountTemplate(context.Background(), 2, "gpt-6.1-sol")
+	require.NoError(t, err)
+	var used atomic.Int32
+	limited := context.WithValue(req.Context(), codexBorrowDiagnosticContextKey{}, &codexBorrowDiagnostic{limit: 2, requests: &used, borrow: true})
+	_, _, err = s.Apply(req.WithContext(limited), a, "gpt-6.1-sol", "", nil, false)
+	require.ErrorIs(t, err, ErrCodexBorrowDiagnosticBudget)
+	require.EqualValues(t, 2, used.Load())
+	require.Zero(t, sourceCalls)
+	require.True(t, s.prepareFailedUntil.IsZero(), "a caller's cap is not a source failure")
+	_, applied, err := s.Apply(req, a, "gpt-6.1-sol", "", nil, false)
+	require.NoError(t, err)
+	require.True(t, applied.Applied)
+	require.Equal(t, 1, sourceCalls)
+}
+
+func TestCodexBorrowReplacementCannotReplayEarlierRejectedCredential(t *testing.T) {
+	var sources, targets int
+	a := borrowCoreAccount(2)
+	s := newBorrowCoreTest(t, func(req *http.Request, _ string, id int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		if id == 1 {
+			sources++
+			cookie := "replacement-cookie"
+			if sources == 2 {
+				cookie = "synthetic-borrowed-cookie"
+			}
+			return borrowCoreResponse("gpt-6-astra", "OK", "source", "__oailb="+cookie+"; Secure; Path=/; Max-Age=230"), nil
+		}
+		targets++
+		state := "first"
+		if req.Header.Get("X-Codex-Turn-State") != "" {
+			state = "changed"
+		}
+		return borrowCoreResponse("gpt-6.1-sol", "OK", state), nil
+	}, borrowCoreAccount(1), a)
+	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
+	_, req, _, err := s.accountTemplate(context.Background(), 2, "gpt-6.1-sol")
+	require.NoError(t, err)
+	_, _, err = s.Apply(req, a, "gpt-6.1-sol", "", nil, false)
+	require.Error(t, err)
+	require.Equal(t, 1, sources)
+	require.Equal(t, 4, targets)
+	expires := s.candidate.expires
+	s.prepareFailedUntil = time.Time{}
+	_, _, err = s.Apply(req, a, "gpt-6.1-sol", "", nil, false)
+	require.Error(t, err)
+	require.Equal(t, 2, sources)
+	require.Equal(t, 4, targets, "an earlier rejected cookie is not qualified again")
+	require.Equal(t, "replacement-cookie", s.candidate.cookie.Value)
+	require.Equal(t, expires, s.candidate.expires)
+}
+
+func TestCodexBorrowExpiredRejectionRequiresFreshSourceAndProof(t *testing.T) {
+	var sources, targets int
+	a := borrowCoreAccount(2)
+	s := newBorrowCoreTest(t, func(_ *http.Request, _ string, id int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		if id == 1 {
+			sources++
+			return borrowCoreResponse("gpt-6-astra", "OK", "source", "__oailb=synthetic-borrowed-cookie; Secure; Path=/; Max-Age=230"), nil
+		}
+		targets++
+		return borrowCoreResponse("gpt-6.1-sol", "OK", "fresh-stable-state"), nil
+	}, borrowCoreAccount(1), a)
+	oldExpiry := time.Now().Add(-time.Second)
+	borrowCoreCandidate(s, oldExpiry)
+	_, req, _, err := s.accountTemplate(context.Background(), 2, "gpt-6.1-sol")
+	require.NoError(t, err)
+	key := borrowHash(s.candidate.cookie.Value)
+	s.rejectedCookie = key
+	s.rejectedRoutes = map[string]time.Time{key: oldExpiry}
+	s.targets[codexGatewayBorrowTargetKey{2, "gpt-6.1-sol"}] = codexGatewayBorrowTargetCheck{
+		key: borrowTargetFingerprint(req, a, "gpt-6.1-sol", "", nil, s.candidate.cookie.Value), cookieKey: key,
+		expires: oldExpiry, retryAfter: time.Now().Add(time.Minute),
+		result: CodexGatewayBorrowVerification{Reason: "target_state_changed", ExpiresAt: &oldExpiry},
+	}
+	_, applied, err := s.Apply(req, a, "gpt-6.1-sol", "", nil, false)
+	require.NoError(t, err)
+	require.True(t, applied.Applied)
+	require.Equal(t, 1, sources, "expiration requires a new source observation")
+	require.Equal(t, 2, targets, "an old failure cooldown cannot certify or reject the new lease")
+	require.Empty(t, s.rejectedRoutes)
 }
