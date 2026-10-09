@@ -110,7 +110,7 @@
                 <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(target.checked_at) }}</dd></div>
                 <div><dt class="text-muted">{{ text('候选线路到期时间', 'Candidate route expiry') }}</dt><dd class="mt-1">{{ formatTime(target.expires_at) }}</dd></div>
                 <div v-if="target.expires_at"><dt class="sr-only">{{ text('候选线路剩余时间', 'Candidate time remaining') }}</dt><dd data-test="borrow-line-remaining">{{ t('admin.codexGatewayBorrow.remainingSeconds', { seconds: remainingSeconds(target.expires_at) }) }}</dd></div>
-                <p v-if="!target.cache_valid && target.expires_at" class="text-muted">{{ text('候选尚未到期也不代表验证通过。', 'An unexpired candidate does not mean validation passed.') }}</p>
+                <div v-if="!target.cache_valid && target.expires_at"><dt class="sr-only">{{ text('验证说明', 'Validation note') }}</dt><dd class="text-muted">{{ text('候选尚未到期也不代表验证通过。', 'An unexpired candidate does not mean validation passed.') }}</dd></div>
                 <div v-if="target.retry_after"><dt class="text-muted">{{ t('admin.codexGatewayBorrow.retryAfter') }}</dt><dd class="mt-1">{{ formatTime(target.retry_after) }}</dd></div>
               </dl>
               <div>

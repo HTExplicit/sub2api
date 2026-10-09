@@ -780,7 +780,11 @@ func (s *CodexGatewayBorrowService) Apply(req *http.Request, account *Account, m
 	if err != nil && !IsCodexGatewayBorrowFailure(err) {
 		err = &CodexGatewayBorrowFailure{Cause: err}
 	}
-	if d := borrowDiagnosticFromContext(req.Context()); d != nil {
+	var diagnostic *codexBorrowDiagnostic
+	if req != nil {
+		diagnostic = borrowDiagnosticFromContext(req.Context())
+	}
+	if d := diagnostic; d != nil {
 		if application != nil {
 			result := application.Verification
 			d.verification.Store(&result)

@@ -13,6 +13,14 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func TestCodexBorrowNilRequestDoesNotCreateDiagnosticEvidence(t *testing.T) {
+	s := newBorrowCoreTest(t, nil)
+	wire, application, err := s.Apply(nil, borrowCoreAccount(2), "gpt-6.1-sol", "", nil, false)
+	require.NoError(t, err)
+	require.Nil(t, wire)
+	require.Nil(t, application)
+}
+
 // The pinned ranxi probe changes only the legacy session_id per shot. Native
 // session/thread headers belong to the template and must survive both shots.
 // A synthetic upstream rotates STATE when those headers change, reproducing
