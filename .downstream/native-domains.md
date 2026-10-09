@@ -109,6 +109,13 @@ stable synthetic window per account/model so cached-only generation can reuse
 their proof without changing actual client windows. The pinned upstream's
 HTTP borrowing is Astra-only: Sol is a downstream extension, independently
 validated against Sol rather than certified by an Astra pass.
+When both completed target shots reject a candidate's STATE or the upstream
+replaces its route, a request may acquire and validate one replacement through
+the existing source/proxy configuration. Replacement is capped at 90 seconds and
+never retires a candidate with another live successful proof or validation in
+flight. Another rejection cools acquisition for 15 seconds. Receiving the same
+rejected cookie cannot renew or qualify it. This remains demand-driven, with no
+exit rotation, renewal timer, ordinary fallback or business replay.
 Source and target probes use separate HTTP/TLS pools. Business WS connections
 stay in the ordinary account pool, with fixed one-hour continuation anchors.
 
@@ -163,6 +170,10 @@ Optional `service_tier` exercises the effective routing tier. Results include th
 specific verification (shape, actual model/tier, both completions, STATE lengths
 and route replacement), failure stage and tool-round-trip result. HTTP diagnostic
 history and STATE live only within that invocation, never in client sessions.
+Complete `response.output_item.done` events rebuild tool calls and reasoning
+items when the final successful envelope has empty output; a successful terminal
+is still required. This matches native streaming continuation instead of assuming
+all output is repeated inside `response.completed`.
 
 Ranxi reference: v2.10.2 (`d3e43f2de33af9e987cffa511d76dfabbcd749da`). Its five
 fingerprint, gateway-cookie, target-probe and automatic-setup core files are

@@ -153,6 +153,8 @@ export default {
       not_configured: '此账号与模型未包含在已保存配置中',
       disabled: '借用功能当前关闭',
       route_expired: '借用线路已过期，请重新准备或验证',
+      source_passed_target_failed: '来源返回了候选，但目标验证失败；按需限次重新获取，冷却期间不重复采集。',
+      source_returned_rejected_route: '来源再次返回同一条失败线路，未延长租期；冷却后再按需尝试。',
       source_qualified: '来源账号可以提供借用线路',
       source_probe_failed: '采集来源线路失败，请查看技术详情',
       source_response_not_qualified: '来源响应未满足借用条件',
