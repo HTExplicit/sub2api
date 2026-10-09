@@ -19,7 +19,7 @@ vi.mock('@/api/admin/accounts', () => {
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showSuccess: mocks.showSuccess }) }))
 vi.mock('vue-i18n', async importOriginal => ({
   ...(await importOriginal<typeof import('vue-i18n')>()),
-  useI18n: () => ({ t: (key: string, params?: Record<string, unknown>) => params ? `${key}:${JSON.stringify(params)}` : key, te: () => true })
+  useI18n: () => ({ locale: { value: 'zh' }, t: (key: string, params?: Record<string, unknown>) => params ? `${key}:${JSON.stringify(params)}` : key, te: () => true })
 }))
 
 const wrappers: ReturnType<typeof mount>[] = []
@@ -41,7 +41,7 @@ function makeStatus(config = enabledConfig, preparing = false): CodexGatewayBorr
 async function mountView(config = enabledConfig) {
   mocks.getConfig.mockResolvedValue(structuredClone(config))
   const wrapper = mount(CodexGatewayBorrowView, { global: { stubs: {
-    AppLayout: { template: '<div><slot /></div>' },
+    CodexLayout: { template: '<div><slot /></div>' }, CodexGatewayBorrowStatusView: true, CodexBorrowActivity: true, AppLayout: { template: '<div><slot /></div>' },
     CodexBorrowNav: true,
     RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }
   } } })
@@ -96,6 +96,7 @@ describe('Codex borrow settings', () => {
   })
 
   it('keeps roles disjoint, preserves source selection order and saves once without duplicate preparation', async () => {
+    mocks.listAccounts.mockResolvedValue({ items: localAccounts.map(account => account.id === 2 ? { ...account, status: 'active', credentials: {} } : account), total: 4 })
     const wrapper = await mountView(disabledConfig)
     await wrapper.get('[data-test="borrow-enabled"]').trigger('click')
     expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-save"]').element.disabled).toBe(true)
@@ -113,7 +114,7 @@ describe('Codex borrow settings', () => {
     expect(mocks.getStatus).toHaveBeenCalledTimes(2)
     expect(wrapper.get('[data-test="borrow-save-result"]').text()).toContain('admin.codexGatewayBorrow.saved')
     expect(wrapper.get('[data-test="borrow-save-result"]').text()).toContain('admin.codexGatewayBorrow.preparing')
-    expect(wrapper.get('[data-test="borrow-status-link"]').attributes('href')).toBe('/admin/codex-gateway-borrow/status')
+    expect(wrapper.get('[data-test="borrow-status-link"]').attributes('href')).toBe('/admin/codex#status')
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
     expectNoModelRequests()
   })

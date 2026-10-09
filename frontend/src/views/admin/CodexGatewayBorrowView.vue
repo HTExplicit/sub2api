@@ -1,29 +1,20 @@
 <template>
-  <AppLayout>
+  <CodexLayout>
     <div class="mx-auto max-w-[1664px] space-y-6 px-1" data-ui="codex-gateway-borrow">
       <header class="space-y-1 border-b border-line pb-4">
-        <h1 class="text-xl font-semibold">{{ t('admin.codexGatewayBorrow.title') }}</h1>
-        <p class="max-w-4xl text-sm text-muted">{{ t('admin.codexGatewayBorrow.description') }}</p>
+        <h2 class="text-xl font-semibold">{{ text('线路借用', 'Route borrowing') }}</h2>
+        <p class="max-w-4xl text-sm text-muted">{{ text('借用来源账号取得的路由信息，目标账号仍使用自己的凭据。客户端身份模拟在另一页独立管理。', 'Reuse routing information acquired by a source account; targets keep their own credentials. Client identity simulation is managed separately.') }}</p>
       </header>
-      <CodexBorrowNav />
       <pre v-if="loadError" role="alert" class="borrow-error">{{ loadError }}</pre>
       <p v-if="loading" class="py-8 text-center text-sm text-muted">{{ t('common.loading') }}</p>
 
-      <section v-if="saved" class="card space-y-3 p-4 sm:p-5" aria-labelledby="borrow-saved-title" data-test="borrow-saved-configuration">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="borrow-saved-title" class="font-semibold">{{ t('admin.codexGatewayBorrow.savedConfiguration') }}</h2>
-          <RouterLink to="/admin/codex-gateway-borrow/status" class="btn btn-secondary btn-sm" data-test="borrow-status-link">{{ t('admin.codexGatewayBorrow.viewBorrowStatus') }}</RouterLink>
-        </div>
-        <p class="text-sm">{{ saved.enabled ? t('admin.codexGatewayBorrow.on') : t('admin.codexGatewayBorrow.off') }} · {{ t('admin.codexGatewayBorrow.savedSelection', { sources: saved.source_account_ids.length, targets: saved.target_account_ids.length, models: saved.models.length }) }}</p>
-        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
-          <p v-if="statusRefreshing" class="text-sm text-muted">{{ t('admin.codexGatewayBorrow.currentPreparationState') }}: {{ t('common.loading') }}</p>
-          <p v-else-if="status && !statusError" class="text-sm text-muted" data-test="borrow-preparation-state">{{ t('admin.codexGatewayBorrow.currentPreparationState') }}: {{ status.preparing ? t('admin.codexGatewayBorrow.preparing') : t('admin.codexGatewayBorrow.preparationIdle') }} <span class="block text-xs">{{ t('admin.codexGatewayBorrow.observedAt') }}: {{ formatTime(status.generated_at) }}</span></p>
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || statusRefreshing || saving" data-test="borrow-refresh" @click="refreshStatus"><Icon name="refresh" size="sm" aria-hidden="true" />{{ t('admin.codexGatewayBorrow.refreshStatus') }}</button>
-        </div>
-        <pre v-if="statusError" role="alert" class="borrow-error">{{ statusError }}</pre>
-      </section>
-
-      <section v-if="draft" class="card space-y-4 p-4 sm:p-5" aria-labelledby="borrow-config-title">
+      <div v-if="saved" class="flex flex-wrap items-center justify-between gap-3 text-sm text-muted" data-test="borrow-saved-configuration">
+        <p>{{ t('admin.codexGatewayBorrow.savedSelection', { sources: saved.source_account_ids.length, targets: saved.target_account_ids.length, models: saved.models.length }) }}</p>
+        <button type="button" class="btn btn-secondary btn-sm" :disabled="statusRefreshing" data-test="borrow-refresh" @click="refreshStatus">{{ t('admin.codexGatewayBorrow.refreshStatus') }}</button>
+      </div>
+      <details v-if="draft" :open="!saved?.enabled || dirty" class="rounded-lg border border-line p-4 sm:p-5" data-test="borrow-configuration-panel">
+        <summary class="cursor-pointer font-semibold text-ink">{{ text('配置借用 · 三步完成', 'Configure borrowing · three steps') }}</summary>
+        <section class="mt-4 space-y-4" aria-labelledby="borrow-config-title">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             <h2 id="borrow-config-title" class="font-semibold">{{ t('admin.codexGatewayBorrow.configuration') }}</h2>
@@ -31,7 +22,7 @@
           </div>
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn btn-secondary btn-sm" :disabled="!dirty || saving" data-test="borrow-reset" @click="resetDraft">{{ t('admin.codexGatewayBorrow.resetDraft') }}</button>
-            <button type="button" class="btn btn-primary btn-sm" :disabled="loading || !dirty || !!configError || saving || statusRefreshing" data-test="borrow-save" @click="saveConfig">{{ saving ? t('common.saving') : t('common.save') }}</button>
+
           </div>
         </div>
         <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.draftHint') }}</p>
@@ -40,25 +31,19 @@
           <span class="text-sm font-medium">{{ t('admin.codexGatewayBorrow.enabled') }}</span>
         </label>
         <p class="text-sm text-muted">{{ t('admin.codexGatewayBorrow.saveHint') }}</p>
-        <fieldset :disabled="saving" class="flex flex-wrap items-center gap-4">
-          <legend class="mb-2 text-sm font-medium">{{ t('admin.codexGatewayBorrow.models') }}</legend>
-          <label v-for="model in BORROW_MODELS" :key="model" class="flex items-center gap-2 text-sm">
-            <input v-model="draft.models" type="checkbox" class="checkbox" :value="model" :data-test="`borrow-config-model-${model}`" />
-            <span>{{ model === 'gpt-6-astra' ? 'Astra' : '6.1 Sol' }} <span class="text-xs text-muted">{{ model }}</span></span>
-          </label>
-        </fieldset>
+
         <div class="grid gap-4 lg:grid-cols-2">
           <fieldset v-for="role in accountRoles" :key="role.key" :disabled="saving" class="min-w-0 space-y-2">
-            <legend class="text-sm font-medium">{{ t(role.label) }} · {{ draft[role.key].length }}</legend>
+            <legend class="text-sm font-medium">{{ role.key === 'source_account_ids' ? text('1. 选择来源账号', '1. Choose source accounts') : text('2. 选择使用借用的账号', '2. Choose target accounts') }} · {{ draft[role.key].length }}</legend>
             <p class="text-xs text-muted">{{ t(role.hint) }}</p>
             <input v-model="accountSearch[role.key]" type="search" class="input w-full" :aria-label="t('admin.codexGatewayBorrow.searchAccounts')" :placeholder="t('admin.codexGatewayBorrow.searchAccounts')" />
             <div class="max-h-96 overflow-auto rounded-lg border border-line">
               <div v-for="account in filteredAccounts(role.key)" :key="account.id" class="space-y-2 border-b border-line px-3 py-3 last:border-b-0" :data-test="`borrow-account-${role.key}-${account.id}`">
                 <label class="flex cursor-pointer items-start gap-3">
-                  <input v-model="draft[role.key]" type="checkbox" class="checkbox mt-1 shrink-0" :value="account.id" :disabled="draft[role.other].includes(account.id)" :data-test="`borrow-${role.key}-${account.id}`" />
+                  <input v-model="draft[role.key]" type="checkbox" class="checkbox mt-1 shrink-0" :value="account.id" :disabled="draft[role.other].includes(account.id) || (!!accountRestriction(account, role.key) && !draft[role.key].includes(account.id))" :data-test="`borrow-${role.key}-${account.id}`" />
                   <span class="min-w-0 flex-1 space-y-1">
                     <span class="flex flex-wrap items-center gap-2 text-sm font-medium"><span class="break-words">{{ account.name }} <span class="font-normal text-muted">#{{ account.id }}</span></span><span v-if="draft[role.key].includes(account.id)" class="text-xs text-primary-700 dark:text-primary-300">{{ t('admin.codexGatewayBorrow.selected') }}</span><span v-else-if="draft[role.other].includes(account.id)" class="text-xs font-normal text-muted">{{ t('admin.codexGatewayBorrow.selectedAsOtherRole') }}</span></span>
-                    <span class="block text-xs text-muted">{{ accountStateLabel(account) }}</span>
+                    <span class="block text-xs text-muted">{{ accountStateLabel(account) }}</span><span v-if="accountRestriction(account, role.key)" class="block text-xs text-amber-800 dark:text-amber-200">{{ accountRestriction(account, role.key) }}</span>
                     <span class="block break-words text-xs text-muted">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ proxyLabel(account) }}</span>
                   </span>
                 </label>
@@ -80,35 +65,48 @@
             </div>
           </fieldset>
         </div>
+        <fieldset :disabled="saving" class="flex flex-wrap items-center gap-4">
+          <legend class="mb-2 text-sm font-medium">{{ t('admin.codexGatewayBorrow.models') }}</legend>
+          <label v-for="model in BORROW_MODELS" :key="model" class="flex items-center gap-2 text-sm">
+            <input v-model="draft.models" type="checkbox" class="checkbox" :value="model" :data-test="`borrow-config-model-${model}`" />
+            <span>{{ model === 'gpt-6-astra' ? 'Astra' : '6.1 Sol' }} <span class="text-xs text-muted">{{ model }}</span></span>
+          </label>
+        </fieldset>
         <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.localInventoryHint') }}</p>
         <p v-if="configError" role="alert" class="text-sm text-red-700 dark:text-red-300">{{ configError }}</p>
+            <button type="button" class="btn btn-primary btn-sm" :disabled="loading || !dirty || !!configError || saving || statusRefreshing" data-test="borrow-save" @click="saveConfig">{{ saving ? t('common.saving') : text('3. 保存并检查', '3. Save and check') }}</button>
         <pre v-if="saveError" role="alert" class="borrow-error">{{ saveError }}</pre>
         <div v-if="savedNotice" class="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950" role="status" data-test="borrow-save-result">
           <p class="font-medium text-emerald-800 dark:text-emerald-200">{{ t('admin.codexGatewayBorrow.saved') }}</p>
           <p v-if="statusRefreshing" class="text-muted">{{ t('admin.codexGatewayBorrow.currentPreparationState') }}: {{ t('common.loading') }}</p>
           <p v-else-if="statusError" class="text-muted">{{ t('admin.codexGatewayBorrow.statusReadFailed') }}</p>
           <p v-else-if="status" class="text-muted">{{ t('admin.codexGatewayBorrow.currentPreparationState') }}: {{ status.preparing ? t('admin.codexGatewayBorrow.preparing') : t('admin.codexGatewayBorrow.preparationIdle') }}</p>
-          <RouterLink to="/admin/codex-gateway-borrow/status" class="inline-block font-medium text-primary-700 underline dark:text-primary-300">{{ t('admin.codexGatewayBorrow.viewBorrowStatus') }}</RouterLink>
+          <RouterLink data-test="borrow-status-link" to="/admin/codex#status" class="inline-block font-medium text-primary-700 underline dark:text-primary-300">{{ t('admin.codexGatewayBorrow.viewBorrowStatus') }}</RouterLink>
         </div>
-      </section>
+        </section>
+      </details>
+      <CodexGatewayBorrowStatusView ref="statusPanel" v-if="saved && !loading" id="status" :key="statusEpoch" embedded />
     </div>
-  </AppLayout>
+  </CodexLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import CodexLayout from '@/components/admin/codex/CodexLayout.vue'
+import CodexGatewayBorrowStatusView from './CodexGatewayBorrowStatusView.vue'
 import Toggle from '@/components/common/Toggle.vue'
-import Icon from '@/components/icons/Icon.vue'
-import CodexBorrowNav from '@/components/admin/CodexBorrowNav.vue'
 import { BORROW_MODELS, codexGatewayBorrowAPI, type CodexGatewayBorrowConfig, type CodexGatewayBorrowStatus } from '@/api/admin/codexGatewayBorrow'
 import { useCodexBorrowInventory } from '@/composables/useCodexBorrowUI'
 import { useAppStore } from '@/stores/app'
+import type { AccountListItem } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const text = (zh: string, en: string) => locale.value.startsWith('en') ? en : zh
+const statusEpoch = ref(0)
+const statusPanel = ref<InstanceType<typeof CodexGatewayBorrowStatusView> | null>(null)
 const appStore = useAppStore()
 const lifecycle = new AbortController()
 const { accounts, loadAccounts, accountById, accountName, accountStateLabel, proxyLabel, wsLabel, modelMappingLabel } = useCodexBorrowInventory(lifecycle.signal)
@@ -180,12 +178,22 @@ function resetDraft() {
   clearStoredDraft()
   saveError.value = ''
 }
+function accountRestriction(account: AccountListItem, role: AccountRole) {
+  if (account.status !== 'active') return text('账号未启用，不能准备借用。', 'Inactive account; borrowing cannot be prepared.')
+  const mapping = account.credentials?.model_mapping as Record<string, unknown> | undefined
+  if (!mapping || typeof mapping !== 'object' || !Object.keys(mapping).length) return ''
+  const models = role === 'source_account_ids' ? ['gpt-6-astra'] : (draft.value?.models || [])
+  for (const model of models) {
+    if (typeof mapping[model] === 'string' && mapping[model] !== model) return text('模型映射到其他模型：', 'Maps to a different model: ') + model + ' → ' + mapping[model]
+    if (!Object.keys(mapping).some(key => key.includes('*')) && !Object.prototype.hasOwnProperty.call(mapping, model)) return text('账号未允许模型：', 'Model is not allowed: ') + model
+  }
+  return ''
+}
 function filteredAccounts(role: AccountRole) {
   const search = accountSearch.value[role].trim().toLowerCase()
   return accounts.value.filter(account => !search || `${account.name} ${account.id}`.toLowerCase().includes(search))
 }
 function unknownSelectedAccounts(role: AccountRole) { return draft.value?.[role].filter(id => !accountById(id)) || [] }
-function formatTime(value: string) { const time = new Date(value); return Number.isNaN(time.getTime()) ? value : time.toLocaleString() }
 
 async function refreshStatus() {
   if (statusRefreshing.value || lifecycle.signal.aborted) return
@@ -193,7 +201,7 @@ async function refreshStatus() {
   statusError.value = ''
   try { const value = await codexGatewayBorrowAPI.getStatus(lifecycle.signal); if (!lifecycle.signal.aborted) status.value = value }
   catch (value) { if (!lifecycle.signal.aborted) statusError.value = extractApiErrorMessage(value, t('admin.codexGatewayBorrow.statusLoadFailed')) }
-  finally { statusRefreshing.value = false }
+  finally { statusRefreshing.value = false; await statusPanel.value?.refreshStatus?.() }
 }
 async function saveConfig() {
   if (!draft.value || !dirty.value || configError.value || loading.value || saving.value || statusRefreshing.value || lifecycle.signal.aborted) return
@@ -205,6 +213,7 @@ async function saveConfig() {
     if (lifecycle.signal.aborted) return
     receiveConfig(value)
     savedNotice.value = true
+    statusEpoch.value++
     appStore.showSuccess(t('admin.codexGatewayBorrow.saved'))
     await refreshStatus()
   } catch (value) { if (!lifecycle.signal.aborted) saveError.value = extractApiErrorMessage(value, t('admin.codexGatewayBorrow.saveFailed')) }

@@ -188,6 +188,7 @@ export default {
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     plugins: 'Plugins',
+    codex: 'Codex',
     codexRuntime: 'Codex runtime settings',
     codexFingerprint: 'Codex fingerprint',
     proxies: 'Proxies',

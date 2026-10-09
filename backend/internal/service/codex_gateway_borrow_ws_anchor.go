@@ -47,6 +47,8 @@ type codexGatewayBorrowWSTurn struct {
 	qualified                        bool
 	finished                         sync.Once
 	pelicanOneShot                   bool
+	diagnostic                       bool
+	diagnosticApplied                bool
 }
 
 // Passthrough owns a direct socket for the entire client session. Its anchor is
@@ -226,6 +228,9 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowWSTurn(ctx context.Conte
 	req, err := codexGatewayBorrowWSRequest(ctx, wsURL, headers)
 	if err != nil {
 		return nil, err
+	}
+	if d := borrowDiagnosticFromContext(ctx); d != nil {
+		return d.prepareWS(ctx, s.gatewayBorrow, req, account, model, previousID, proxyURL)
 	}
 	selected := s.codexGatewayBorrowWSSelected(account, model, req)
 	if IsPelicanGeneration(ctx) {

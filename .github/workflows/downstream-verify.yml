@@ -47,6 +47,9 @@ jobs:
         run: |
           go test -p=1 -tags unit ./internal/service ./internal/repository ./internal/handler ./internal/handler/admin -run '^Test(CodexGatewayBorrow|Pelican|AccountObservation|ObservedAccountLease)' -count=1
           go test -p=1 -tags integration ./internal/repository -run '^TestCodexGatewayBorrowTestRepositoryIntegrationLifecycle$' -count=1
+      - name: Codex preparation coordination race tests
+        working-directory: backend
+        run: go test -p=1 -race ./internal/service -run '^TestCodexBorrow(Flight|DifferentTargets)' -count=1
       - name: Upstream automation classifier tests
         run: |
           python3 .github/scripts/test_upstream_risk.py
@@ -145,6 +148,7 @@ jobs:
             src/components/admin/codex/__tests__/BorrowPelicanPreview.spec.ts \
             src/views/admin/__tests__/CodexGatewayBorrowView.spec.ts \
             src/views/admin/__tests__/CodexGatewayBorrowStatusView.spec.ts \
+            src/components/admin/codex/__tests__/CodexBorrowActivity.spec.ts \
             src/views/admin/__tests__/CodexPelicanComparisonView.spec.ts \
             src/api/admin/__tests__/pelicanTests.spec.ts \
             src/components/admin/__tests__/CodexBorrowNav.spec.ts \

@@ -85,6 +85,7 @@ export function borrowTargetState(target: BorrowTargetStatus | undefined, now: n
 }
 
 const knownReasons = new Set([
+  'account_unavailable', 'account_inactive', 'model_not_allowed', 'model_mapping_mismatch', 'identity_changed',
   'not_prepared', 'not_verified', 'not_configured', 'disabled', 'route_expired',
   'source_qualified', 'source_probe_failed', 'source_response_not_qualified', 'source_routing_cookie_unavailable',
   'target_probe_passed', 'target_probe_failed', 'target_route_changed', 'target_state_missing', 'target_state_changed', 'validating',

@@ -1,8 +1,8 @@
 <template>
-  <AppLayout>
+  <CodexLayout>
     <section class="space-y-6" data-ui="codex-fingerprint">
       <div>
-        <h1 class="text-xl font-semibold text-ink">{{ text('Codex 指纹模拟', 'Codex fingerprint simulation') }}</h1>
+        <h2 class="text-xl font-semibold text-ink">{{ advanced ? text('高级设置', 'Advanced settings') : text('客户端身份', 'Client identity') }}</h2>
         <p class="mt-2 text-sm text-muted">{{ text('统一管理指纹模拟并查看完整固定设备身份与当前策略。账号列表仅包含 OpenAI OAuth 和 Setup Token 账号；设备身份由后台自动生成并保留。', 'Manage fingerprint simulation and inspect complete fixed device identities and current policies. The list includes only OpenAI OAuth and setup-token accounts; device identities are generated and preserved by the backend.') }}</p>
       </div>
       <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
@@ -11,10 +11,10 @@
         <fieldset :disabled="!settings || settingsBusy" class="space-y-4 disabled:opacity-60">
           <label class="flex items-center gap-3 text-sm font-medium text-ink">
             <input v-model="draft.enabled" data-test="fingerprint-enabled" type="checkbox" />
-            {{ text('启用 Codex 指纹模拟', 'Enable Codex fingerprint simulation') }}
+            {{ text('启用客户端身份模拟', 'Enable client identity simulation') }}
           </label>
           <p class="text-sm text-muted">{{ text('开启：使用每账号固定 TUI 身份，并按账号模式收敛标识。关闭：新请求保留客户端指纹；保存的配置和账号身份继续保留。', 'On: use a fixed TUI identity per account and converge identifiers according to its mode. Off: new requests retain the client fingerprint; saved configuration and account identities are preserved.') }}</p>
-          <div class="grid gap-4 lg:grid-cols-2">
+          <div v-if="advanced" class="grid gap-4 lg:grid-cols-2">
             <label class="block text-sm text-ink lg:col-span-2" for="codex-fingerprint-ua">
               {{ text('全局 UA', 'Global User-Agent') }}
               <input id="codex-fingerprint-ua" v-model.trim="draft.user_agent" data-test="fingerprint-ua" type="text" maxlength="512" class="input mt-1 w-full font-mono" />
@@ -39,16 +39,16 @@
         <p v-if="!settings" class="text-sm text-muted">{{ t('common.loading') }}</p>
       </form>
 
-      <section class="space-y-4" :aria-label="text('账号收敛设置', 'Account convergence settings')">
+      <section class="space-y-4" :aria-label="text('账号身份', 'Account identities')">
         <div class="flex flex-wrap items-end justify-between gap-3">
-          <div><h2 class="text-lg font-semibold text-ink">{{ text('账号收敛设置', 'Account convergence settings') }}</h2><p class="mt-1 text-sm text-muted">{{ text('模式只控制标识收敛；上方总开关控制整个模拟功能。', 'Modes control identifier convergence; the master switch above controls the entire simulation.') }}</p></div>
+          <div><h2 class="text-lg font-semibold text-ink">{{ text('账号身份', 'Account identities') }}</h2><p class="mt-1 text-sm text-muted">{{ text('固定设备为每个账号保留一套设备身份。线路借用在“使用与状态”页独立配置。', 'Fixed device keeps one device identity for each account. Route borrowing is configured separately in Setup & status.') }}</p></div>
           <form class="flex items-center gap-2" @submit.prevent="searchAccounts">
             <label class="sr-only" for="codex-fingerprint-search">{{ text('搜索账号', 'Search accounts') }}</label>
             <input id="codex-fingerprint-search" v-model="search" class="input w-48" :placeholder="text('搜索账号', 'Search accounts')" />
             <button type="submit" class="btn btn-secondary" :disabled="rowsLoading">{{ text('搜索', 'Search') }}</button>
           </form>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
+        <div v-if="advanced" class="flex flex-wrap items-center gap-3">
           <label class="text-sm text-ink" for="codex-fingerprint-bulk-mode">{{ text('选中账号的模式', 'Mode for selected accounts') }} ({{ selectedIDs.length }})</label>
           <select id="codex-fingerprint-bulk-mode" v-model="bulkMode" data-test="fingerprint-bulk-mode" class="input w-auto" :disabled="bulkBusy">
             <option v-for="mode in modes" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
@@ -59,37 +59,40 @@
         <div class="overflow-x-auto rounded-lg border border-line" :aria-busy="rowsLoading">
           <table class="w-full text-left text-sm">
             <thead class="border-b border-line bg-surface text-muted"><tr>
-              <th class="p-3"><input type="checkbox" :checked="allPageSelected" :indeterminate="somePageSelected && !allPageSelected" :aria-label="text('选择本页账号', 'Select accounts on this page')" @change="selectPage(($event.target as HTMLInputElement).checked)" /></th>
-              <th class="p-3">{{ text('账号', 'Account') }}</th><th class="p-3">{{ text('标识收敛模式', 'Identifier convergence mode') }}</th><th class="p-3">{{ text('操作', 'Actions') }}</th>
+              <th v-if="advanced" class="p-3"><input type="checkbox" :checked="allPageSelected" :indeterminate="somePageSelected && !allPageSelected" :aria-label="text('选择本页账号', 'Select accounts on this page')" @change="selectPage(($event.target as HTMLInputElement).checked)" /></th>
+              <th class="p-3">{{ text('账号', 'Account') }}</th><th class="p-3">{{ text('身份模式', 'Identity mode') }}</th><th class="p-3">{{ text('操作', 'Actions') }}</th>
             </tr></thead>
             <tbody class="divide-y divide-line text-ink">
               <template v-for="account in rows" :key="account.id">
                 <tr>
-                  <td class="p-3"><input type="checkbox" :checked="selectedIDs.includes(account.id)" :aria-label="text('选择账号 ', 'Select account ') + account.name" @change="selectAccount(account.id, ($event.target as HTMLInputElement).checked)" /></td>
+                  <td v-if="advanced" class="p-3"><input type="checkbox" :checked="selectedIDs.includes(account.id)" :aria-label="text('选择账号 ', 'Select account ') + account.name" @change="selectAccount(account.id, ($event.target as HTMLInputElement).checked)" /></td>
                   <td class="p-3"><span class="block font-medium">{{ account.name }}</span><span class="text-xs text-muted">#{{ account.id }} · {{ account.type }}{{ account.parent_account_id ? text(' · 影子账号', ' · shadow account') : '' }}</span></td>
-                  <td class="p-3"><select v-model="draftModes[account.id]" :data-test="`fingerprint-mode-${account.id}`" :aria-label="text('账号模式 ', 'Account mode ') + account.name" class="input w-auto" :disabled="rowBusy[account.id]"><option v-for="mode in modes" :key="mode.value" :value="mode.value">{{ mode.label }}</option></select></td>
-                  <td class="p-3"><div class="flex flex-wrap gap-2"><button type="button" class="btn btn-secondary btn-sm" :data-test="`fingerprint-account-save-${account.id}`" :disabled="rowBusy[account.id] || settingsBusy || rowsLoading || draftModes[account.id] === savedMode(account)" @click="saveAccount(account)">{{ text('保存', 'Save') }}</button><button type="button" class="btn btn-secondary btn-sm" :data-test="'fingerprint-account-refresh-' + account.id" :aria-label="text('刷新账号身份 ', 'Refresh account identity ') + account.name" :disabled="rowBusy[account.id] || detailLoading[account.id] || settingsBusy || rowsLoading" @click="requestIdentity(account.id)">{{ text('刷新身份', 'Refresh identity') }}</button></div></td>
+                  <td class="p-3"><span v-if="!advanced">{{ modes.find(mode => mode.value === savedMode(account))?.label }} <RouterLink to="/admin/codex/advanced" class="text-primary-700 underline dark:text-primary-300">{{ text('修改', 'Change') }}</RouterLink></span><select v-else v-model="draftModes[account.id]" :data-test="`fingerprint-mode-${account.id}`" :aria-label="text('账号模式 ', 'Account mode ') + account.name" class="input w-auto" :disabled="rowBusy[account.id]"><option v-for="mode in modes" :key="mode.value" :value="mode.value">{{ mode.label }}</option></select></td>
+                  <td class="p-3"><div class="flex flex-wrap gap-2"><button v-if="advanced" type="button" class="btn btn-secondary btn-sm" :data-test="`fingerprint-account-save-${account.id}`" :disabled="rowBusy[account.id] || settingsBusy || rowsLoading || draftModes[account.id] === savedMode(account)" @click="saveAccount(account)">{{ text('保存', 'Save') }}</button><button type="button" class="btn btn-secondary btn-sm" :data-test="'fingerprint-account-refresh-' + account.id" :aria-label="text('刷新账号身份 ', 'Refresh account identity ') + account.name" :disabled="rowBusy[account.id] || detailLoading[account.id] || settingsBusy || rowsLoading" @click="requestIdentity(account.id)">{{ text('刷新身份', 'Refresh identity') }}</button></div></td>
                 </tr>
-                <tr><td colspan="4" class="bg-surface p-4" :aria-busy="detailLoading[account.id] || settingsBusy">
+                <tr><td :colspan="advanced ? 4 : 3" class="bg-surface p-4" :aria-busy="detailLoading[account.id] || settingsBusy">
                   <div v-if="detailErrors[account.id]" class="flex flex-wrap items-center gap-3"><p role="alert" class="text-sm text-red-600 dark:text-red-400">{{ detailErrors[account.id] }}</p><button type="button" class="btn btn-secondary btn-sm" :data-test="'fingerprint-account-retry-' + account.id" :aria-label="text('重试读取账号身份 ', 'Retry account identity ') + account.name" :disabled="detailLoading[account.id] || rowBusy[account.id] || settingsBusy || rowsLoading" @click="requestIdentity(account.id)">{{ text('重试读取身份', 'Retry identity') }}</button></div>
-                  <CodexFingerprintIdentity v-if="accountViews[account.id]" :view="accountViews[account.id]!" :account-id="account.id" />
+                  <details v-if="accountViews[account.id]"><summary class="cursor-pointer text-sm text-ink">{{ text('查看完整保存身份与当前生效身份', 'Inspect complete saved and effective identities') }}</summary><CodexFingerprintIdentity class="mt-3" :view="accountViews[account.id]!" :account-id="account.id" /></details>
                   <p v-else-if="!detailErrors[account.id]" role="status" class="text-sm text-muted">{{ settingsBusy ? text('正在保存策略，保存结束后重新读取身份', 'Saving policy; identities will reload when the save finishes') : text('正在读取完整身份…', 'Loading complete identity…') }}</p>
                 </td></tr>
               </template>
-              <tr v-if="!rows.length"><td colspan="4" class="p-6 text-center text-muted">{{ rowsLoading ? t('common.loading') : text('没有符合条件的账号', 'No matching accounts') }}</td></tr>
+              <tr v-if="!rows.length"><td :colspan="advanced ? 4 : 3" class="p-6 text-center text-muted">{{ rowsLoading ? t('common.loading') : text('没有符合条件的账号', 'No matching accounts') }}</td></tr>
             </tbody>
           </table>
         </div>
         <div class="flex items-center justify-between gap-3 text-sm text-muted"><span>{{ page }} / {{ Math.max(1, Math.ceil(total / pageSize)) }} · {{ total }}</span><div class="flex gap-2"><button class="btn btn-secondary btn-sm" :disabled="rowsLoading || page <= 1" @click="changePage(-1)">{{ text('上一页', 'Previous') }}</button><button class="btn btn-secondary btn-sm" :disabled="rowsLoading || page * pageSize >= total" @click="changePage(1)">{{ text('下一页', 'Next') }}</button></div></div>
       </section>
+      <CodexRuntimeSettings v-if="advanced" />
     </section>
-  </AppLayout>
+  </CodexLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import CodexLayout from '@/components/admin/codex/CodexLayout.vue'
+import CodexRuntimeSettings from '@/components/admin/codex/CodexRuntimeSettings.vue'
+import { RouterLink } from 'vue-router'
 import CodexFingerprintIdentity from '@/components/admin/CodexFingerprintIdentity.vue'
 import accountsAPI from '@/api/admin/accounts'
 import { codexFingerprintAPI, type CodexFingerprintSettings, type CodexFingerprintSettingsView, type CodexFingerprintMode, type CodexFingerprintAccountView } from '@/api/admin/codexFingerprint'
@@ -97,6 +100,7 @@ import { useAccountJobsStore, isTerminalAccountJob } from '@/stores/accountJobs'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import type { AccountListItem } from '@/types'
 
+defineProps<{ advanced?: boolean }>()
 const { t, locale } = useI18n()
 const text = (zh: string, en: string) => locale.value.startsWith('en') ? en : zh
 const jobs = useAccountJobsStore()
@@ -122,9 +126,9 @@ type DetailTask = { id: number; epoch: number; serial: number; list: number; gen
 const detailQueue: DetailTask[] = []
 const modes = computed(() => [
   { value: 'off' as const, label: text('保留设备／会话标识', 'Preserve device/session identifiers') },
-  { value: 'device' as const, label: text('仅设备', 'Device only') },
-  { value: 'session' as const, label: text('设备＋会话', 'Device + session') },
-  { value: 'full' as const, label: text('设备＋会话＋线程', 'Device + session + thread') }
+  { value: 'device' as const, label: text('固定设备（推荐）', 'Fixed device (recommended)') },
+  { value: 'session' as const, label: text('固定设备，分别映射会话', 'Fixed device, separate mapped sessions') },
+  { value: 'full' as const, label: text('固定设备，合并会话与线程', 'Fixed device, merged sessions and threads') }
 ])
 const settingsDirty = computed(() => settings.value && (draft.enabled !== settings.value.enabled || draft.user_agent !== settings.value.user_agent || draft.client_version !== settings.value.client_version || draft.version_auto_sync_enabled !== settings.value.version_auto_sync_enabled))
 const allPageSelected = computed(() => rows.value.length > 0 && rows.value.every(row => selectedIDs.value.includes(row.id)))

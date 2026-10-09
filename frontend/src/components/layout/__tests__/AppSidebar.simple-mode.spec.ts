@@ -110,31 +110,29 @@ describe('AppSidebar simple mode extensions', () => {
 
     expect(extensionLinks(wrapper)).toEqual([
       '/admin/system-prompts',
-      '/admin/codex-runtime',
-      '/admin/codex-fingerprint',
-      '/admin/codex-gateway-borrow',
+      '/admin/codex',
       '/admin/pelican-tests',
     ])
     if (simple) expect(wrapper.text()).not.toContain('nav.myAccount')
 
     wrapper.unmount()
     const regularUser = await renderSidebar({ simple })
-    expect(regularUser.find('a[href="/admin/codex-gateway-borrow"]').exists()).toBe(false)
-    expect(regularUser.find('a[href="/admin/codex-gateway-borrow/status"]').exists()).toBe(false)
+    expect(regularUser.find('a[href="/admin/codex"]').exists()).toBe(false)
+    expect(regularUser.find('a[href="/admin/codex/identity"]').exists()).toBe(false)
     expect(regularUser.find('a[href="/admin/codex-pelican-comparison"]').exists()).toBe(false)
     expect(regularUser.find('a[href="/admin/pelican-tests"]').exists()).toBe(false)
     regularUser.unmount()
   })
 
   it.each([
-    '/admin/codex-gateway-borrow',
-    '/admin/codex-gateway-borrow/status',
+    '/admin/codex',
+    '/admin/codex/identity',
   ])('keeps the single borrowing entry active on %s', async path => {
     const wrapper = await renderSidebar({ admin: true, path })
     const section = wrapper.get('[data-testid="sidebar-extensions"]')
 
-    expect(section.get('a[href="/admin/codex-gateway-borrow"]').classes()).toContain('sidebar-link-active')
-    expect(section.find('a[href="/admin/codex-gateway-borrow/status"]').exists()).toBe(false)
+    expect(section.get('a[href="/admin/codex"]').classes()).toContain('sidebar-link-active')
+    expect(section.find('a[href="/admin/codex/identity"]').exists()).toBe(false)
     expect(section.find('a[href="/admin/codex-pelican-comparison"]').exists()).toBe(false)
     expect(section.findAll('.sidebar-link-active')).toHaveLength(1)
     wrapper.unmount()
@@ -144,7 +142,7 @@ describe('AppSidebar simple mode extensions', () => {
     const wrapper = await renderSidebar({ admin: true, path: '/admin/pelican-tests' })
     const section = wrapper.get('[data-testid="sidebar-extensions"]')
     expect(section.get('a[href="/admin/pelican-tests"]').classes()).toContain('sidebar-link-active')
-    expect(section.get('a[href="/admin/codex-gateway-borrow"]').classes()).not.toContain('sidebar-link-active')
+    expect(section.get('a[href="/admin/codex"]').classes()).not.toContain('sidebar-link-active')
     expect(section.findAll('.sidebar-link-active')).toHaveLength(1)
     wrapper.unmount()
   })

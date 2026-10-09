@@ -32,7 +32,26 @@ export interface BorrowTargetStatus extends BorrowSourceStatus {
   reported_model?: string
 }
 
+export interface CodexGatewayBorrowUsage {
+  account_id: number; model: string; transport: string; origin: string
+  applied: boolean; reason: string; started_at: string; finished_at?: string
+  outcome: string; request_id?: string; reported_model?: string; count: number; applied_count: number
+}
+export interface CodexBorrowDiagnosticResult {
+  dispatched?: boolean
+  mode: string; turn: number; applied: boolean; completed: boolean; response_id?: string
+  reported_model?: string; answer: string; raw_response: string; error?: string; duration_ms: number
+}
+export interface CodexBorrowDiagnosticEvent {
+  type: 'phase' | 'request' | 'result' | 'done' | 'error'; mode?: string; requests: number; limit: number
+  result?: CodexBorrowDiagnosticResult; error?: string
+}
+export interface CodexBorrowDiagnosticRequest { account_id: number; model: string; transport: 'http' | 'ws'; request_limit?: number }
+
 export interface CodexGatewayBorrowStatus {
+  setup?: { state: string; phase: string; account_id: number; model: string; completed: number; total: number; failed: number; started_at: string; finished_at?: string; error?: string }
+  recent_usage?: CodexGatewayBorrowUsage[]
+  observed_since?: string
   enabled: boolean
   revision: number
   generated_at: string
@@ -203,6 +222,71 @@ export async function streamBorrowTests(
     reader.releaseLock()
   }
 }
+export async function streamBorrowDiagnostic(
+  request: CodexBorrowDiagnosticRequest,
+  onEvent: (event: CodexBorrowDiagnosticEvent) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const token = localStorage.getItem('auth_token')
+  const response = await fetch(buildApiUrl(`${basePath}/diagnose`), {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      [ADMIN_UI_REQUEST_HEADER]: '1'
+    },
+    credentials: 'include',
+    body: JSON.stringify(request),
+    signal
+  })
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`HTTP ${response.status}${body ? `: ${body}` : ''}`)
+  }
+  if (!response.body) throw new Error('Borrow test stream has no response body')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let complete = false
+  const abort = () => { void reader.cancel().catch(() => {}) }
+  signal.addEventListener('abort', abort, { once: true })
+
+  function consume(block: string) {
+    const data = block.split(/\r?\n/).filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).replace(/^ /, '')).join('\n')
+    if (!data) return
+    const event = JSON.parse(data) as CodexBorrowDiagnosticEvent
+    if (event.type === 'error') throw new Error(event.error || data)
+    onEvent(event)
+    if (event.type === 'done') complete = true
+  }
+
+  try {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+    while (!complete) {
+      const { value, done } = await reader.read()
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+      let boundary: RegExpExecArray | null
+      while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
+        const block = buffer.slice(0, boundary.index)
+        buffer = buffer.slice(boundary.index + boundary[0].length)
+        consume(block)
+        if (complete) break
+      }
+      if (done) {
+        if (buffer.trim() && !complete) consume(buffer)
+        break
+      }
+    }
+    if (!complete) throw new Error('Borrow test stream ended before done')
+  } finally {
+    signal.removeEventListener('abort', abort)
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+}
 
 export const codexGatewayBorrowAPI = {
   getConfig: async (signal?: AbortSignal) => (await apiClient.get<CodexGatewayBorrowConfig>(`${basePath}/config`, { signal })).data,
@@ -212,7 +296,8 @@ export const codexGatewayBorrowAPI = {
   verify: async (accountId: number, model: string, signal?: AbortSignal) => (await apiClient.post<BorrowVerification>(`${basePath}/verify`, { account_id: accountId, model }, { signal, timeout: 0 })).data,
   listTests: async (page = 1, signal?: AbortSignal) => (await apiClient.get<BorrowTestHistory>(`${basePath}/tests`, { params: { page, size: 12 }, signal })).data,
   getTest: async (id: string, signal?: AbortSignal) => (await apiClient.get<BorrowTestTask>(`${basePath}/tests/${encodeURIComponent(id)}`, { signal })).data,
-  streamTests: streamBorrowTests
+  streamTests: streamBorrowTests,
+  diagnose: streamBorrowDiagnostic
 }
 
 export default codexGatewayBorrowAPI

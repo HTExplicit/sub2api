@@ -538,29 +538,27 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/codex-runtime',
-    name: 'AdminCodexRuntime',
-    component: () => import('@/views/admin/CodexRuntimeView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex runtime settings', titleKey: 'nav.codexRuntime' }
-  },
-  {
-    path: '/admin/codex-fingerprint',
-    name: 'AdminCodexFingerprint',
-    component: () => import('@/views/admin/CodexFingerprintView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex fingerprint', titleKey: 'nav.codexFingerprint' }
-  },
-  {
-    path: '/admin/codex-gateway-borrow',
-    name: 'AdminCodexGatewayBorrow',
+    path: '/admin/codex',
+    name: 'AdminCodex',
     component: () => import('@/views/admin/CodexGatewayBorrowView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Borrow Settings', titleKey: 'admin.codexGatewayBorrow.title' }
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex', titleKey: 'nav.codex' }
   },
   {
-    path: '/admin/codex-gateway-borrow/status',
-    name: 'AdminCodexGatewayBorrowStatus',
-    component: () => import('@/views/admin/CodexGatewayBorrowStatusView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex Borrow Status', titleKey: 'nav.codexGatewayBorrowStatus' }
+    path: '/admin/codex/identity',
+    name: 'AdminCodexIdentity',
+    component: () => import('@/views/admin/CodexFingerprintView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex', titleKey: 'nav.codex' }
   },
+  {
+    path: '/admin/codex/advanced',
+    name: 'AdminCodexAdvanced',
+    component: () => import('@/views/admin/CodexRuntimeView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex', titleKey: 'nav.codex' }
+  },
+  { path: '/admin/codex-runtime', redirect: '/admin/codex/advanced', meta: { requiresAuth: true, requiresAdmin: true } },
+  { path: '/admin/codex-fingerprint', redirect: '/admin/codex/identity', meta: { requiresAuth: true, requiresAdmin: true } },
+  { path: '/admin/codex-gateway-borrow', redirect: '/admin/codex', meta: { requiresAuth: true, requiresAdmin: true } },
+  { path: '/admin/codex-gateway-borrow/status', redirect: '/admin/codex#status', meta: { requiresAuth: true, requiresAdmin: true } },
   {
     path: '/admin/pelican-tests',
     name: 'AdminPelicanTests',

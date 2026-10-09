@@ -19,8 +19,14 @@ nothing. While no Codex runtime row is stored,
 
 ## Codex fingerprint simulation
 
-Extensions owns `/admin/codex-fingerprint`. General settings and account
-create/edit/bulk-edit forms no longer submit fingerprint configuration.
+The Extensions sidebar owns one Codex entry. `/admin/codex` combines borrowing
+configuration and status; `/admin/codex/identity` shows client identity; and
+`/admin/codex/advanced` owns manual UA/version, identifier modes and compression.
+The previous runtime, fingerprint, borrowing and status URLs redirect to these
+pages. Configured borrowing opens with its editor folded; a new setup opens the
+three-step editor. Full saved/effective identity fields remain available in
+keyboard-accessible disclosures. General settings and account create/edit/bulk
+forms do not submit fingerprint configuration.
 `GET/PUT /admin/settings/codex-fingerprint` uses `enabled`, `user_agent`,
 `client_version` and `version_auto_sync_enabled`; all four fields are required
 on PUT. GET also returns the synced and effective simulation versions and the
@@ -71,18 +77,13 @@ orchestration catalogs retain their existing capabilities.
 
 ## Codex gateway borrowing
 
-The Extensions sidebar has separate Codex Borrowing and Pelican Tests entries.
-Borrowing's in-page navigation switches between settings at
-`/admin/codex-gateway-borrow`, route status at
-`/admin/codex-gateway-borrow/status`. Pelican generation/history lives at
-`/admin/pelican-tests`; `/admin/codex-pelican-comparison` redirects there.
-Opening or navigating these pages only reads
-local data. Settings drafts contain configuration IDs/options only, persist in
-the browser session, and never affect the saved configuration used by status or
-generation. Only explicit actions save, prepare, verify or generate. The status
-page polls read-only status every five seconds while preparation/verification is
-active; local countdowns expire displayed routes without renewing them. Leaving
-the Pelican page cancels its queued and active generation.
+The unified Codex page separates configuration, route qualification, actual
+request usage and upstream completion. Pelican stays at `/admin/pelican-tests`;
+its legacy comparison URL redirects there. Page reads and navigation only read
+local data. Unsaved configuration stays in browser-session storage. Saving an
+enabled configuration starts exactly one finite preparation, shown as queued
+before the worker starts. Status polls every five seconds only while work is
+active; countdowns expire routes without renewing them.
 
 `GET/PUT /admin/codex-gateway-borrow/config` owns one JSON setting,
 `codex_gateway_borrow_config`: `enabled`, `source_account_ids`,
@@ -103,9 +104,43 @@ Source and target probes use separate HTTP/TLS pools. Business WS connections
 stay in the ordinary account pool, with fixed one-hour continuation anchors.
 
 Status/config/history reads do not call models. Saving an enabled config starts
-one finite preparation; business cache misses prepare synchronously. There is
-no renewal timer. `/prepare` and `/verify` explicitly prepare or revalidate.
-All probes only record observations, including failures before business dispatch.
+one finite preparation; business misses prepare on demand. There is no renewal
+timer. `/prepare` and `/verify` retain their interfaces. Same-revision, same-wire
+qualifications share work; cancelling one caller does not cancel other waiters,
+and the final departing waiter cancels abandoned work. Distinct targets no longer
+fail because another target is validating. Outbound observations share the existing
+ten execution slots and serialize by account. Preparation has a ten-minute bound,
+continues after a target failure, and reports partial readiness after rechecking
+expiry. Policy, credential/model-map and exit changes invalidate displayed evidence;
+actual dispatch still verifies the finalized request fingerprint.
+
+Status adds `setup`, `observed_since` and `recent_usage`. The last actual dispatch
+and in-process counters are retained per configured target/model/protocol/purpose;
+configuration publication resets this index. HTTP/SSE, pooled WS and native WS
+relay observations record application independently from upstream completion.
+Diagnostic and business requests are distinguished. This index contains no request
+payloads or credential/cookie values; the existing administrator error records remain.
+
+`POST /admin/codex-gateway-borrow/diagnose` streams an explicit fixed-account
+comparison with `account_id`, `model`, `transport` (`http` or `ws`), and optional
+`request_limit` (1–8, default 8). Its ordinary and borrowed requests use the normal
+sender with observation isolation and a fixed short prompt. WS uses separate
+short-lived diagnostic anchors and performs one continuation on each socket;
+account/global WS settings must already permit WS. Source/target probes and all
+compatibility sends count toward the same hard request limit. Events include
+`phase`, `request`, `result`, `done`, and `error`; results contain original output,
+completion, actual borrow application and reported model. Cancellation releases
+owned work and sockets. The UI retains the current run and can download JSON;
+there is no new table or migration. These observations do not prove intelligence
+or physical model identity. Normal token refresh remains permitted.
+
+Ranxi reference: v2.10.2 (`d3e43f2de33af9e987cffa511d76dfabbcd749da`). Its five
+fingerprint, gateway-cookie, target-probe and automatic-setup core files are
+unchanged from the retained v2.10.0 reference. OAuth search-history compatibility
+is supplied by the official v0.2.15 integration. Automatic group membership,
+Mihomo exit rotation and removal of harvesting attempt/concurrency bounds are
+not adopted; existing account mappings, network routes and protocol switches stay
+under their existing owners.
 
 The historical `/admin/codex-gateway-borrow/tests` endpoints retain their
 cache-qualified, 90-second request contract. They share execution admission with

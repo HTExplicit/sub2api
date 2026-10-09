@@ -66,7 +66,7 @@ func (h *CodexGatewayBorrowHandler) SaveConfig(c *gin.Context) {
 
 func (h *CodexGatewayBorrowHandler) Status(c *gin.Context) {
 	codexGatewayBorrowPrivateHeaders(c)
-	response.Success(c, h.core.Status())
+	response.Success(c, h.core.CurrentStatus(c.Request.Context()))
 }
 
 func (h *CodexGatewayBorrowHandler) Prepare(c *gin.Context) {
@@ -267,4 +267,41 @@ func (h *CodexGatewayBorrowHandler) ServePreview(c *gin.Context) {
 		return
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+// Diagnose streams explicit administrator observations; opening a page never invokes it.
+func (h *CodexGatewayBorrowHandler) Diagnose(c *gin.Context) {
+	codexGatewayBorrowPrivateHeaders(c)
+	var request service.CodexBorrowDiagnosticRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	middleware.SetAuditExtra(c, map[string]any{"result": "codex_gateway_borrow_diagnostic", "account_id": request.AccountID, "model": request.Model, "transport": request.Transport})
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+	var emission sync.Mutex
+	var observedRequests int32
+	emit := func(event service.CodexBorrowDiagnosticEvent) {
+		emission.Lock()
+		defer emission.Unlock()
+		if event.Requests > observedRequests {
+			observedRequests = event.Requests
+		}
+		if event.Type == "error" {
+			event.Requests = observedRequests
+		}
+		if c.Request.Context().Err() != nil {
+			return
+		}
+		raw, err := json.Marshal(event)
+		if err == nil {
+			_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", raw)
+			c.Writer.Flush()
+		}
+	}
+	if err := h.core.Diagnose(c.Request.Context(), request, emit); err != nil {
+		emit(service.CodexBorrowDiagnosticEvent{Type: "error", Error: err.Error(), Limit: service.CodexBorrowDiagnosticMaxRequests})
+	}
 }

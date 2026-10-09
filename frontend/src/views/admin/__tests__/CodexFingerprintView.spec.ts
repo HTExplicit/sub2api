@@ -50,7 +50,7 @@ function viewFor(id: number, mode: CodexFingerprintMode = serverModes[id] || 'de
   return view
 }
 async function open() {
-  const wrapper = mount(CodexFingerprintView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+  const wrapper = mount(CodexFingerprintView, { props: { advanced: true }, global: { stubs: { CodexLayout: { template: '<div><slot /></div>' }, CodexRuntimeSettings: true, AppLayout: { template: '<div><slot /></div>' } } } })
   await flushPromises()
   return wrapper
 }

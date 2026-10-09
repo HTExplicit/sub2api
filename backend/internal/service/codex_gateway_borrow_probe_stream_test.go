@@ -108,8 +108,8 @@ func TestCodexGatewayBorrowObservationStopsAtTerminal(t *testing.T) {
 				borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
 				_, template, _, err := s.accountTemplate(ctx, 2, "gpt-6.1-sol")
 				require.NoError(t, err)
-				key := borrowRequestFingerprint(template, "gpt-6.1-sol", "", nil, s.candidate.cookie.Value)
-				s.targets[codexGatewayBorrowTargetKey{2, "gpt-6.1-sol"}] = codexGatewayBorrowTargetCheck{key: key, cookieKey: borrowHash(s.candidate.cookie.Value), expires: s.candidate.expires, result: CodexGatewayBorrowVerification{Success: true}}
+				key := borrowTargetFingerprint(template, target, "gpt-6.1-sol", "", nil, s.candidate.cookie.Value)
+				s.targets[codexGatewayBorrowTargetKey{2, "gpt-6.1-sol"}] = codexGatewayBorrowTargetCheck{policyRevision: currentCodexFingerprintPolicyForAccount(target).revision, key: key, cookieKey: borrowHash(s.candidate.cookie.Value), expires: s.candidate.expires, result: CodexGatewayBorrowVerification{Success: true}}
 				result, err := s.GeneratePelican(ctx, 2, "gpt-6.1-sol", "high")
 				require.NoError(t, err)
 				require.Equal(t, "complete", result.Status)

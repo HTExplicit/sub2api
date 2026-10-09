@@ -89,6 +89,7 @@ type pelicanGenerationCapture struct {
 }
 
 type pelicanHTTPAttempt struct {
+	dispatched  bool
 	protocol    string
 	contentType string
 	status      int
@@ -188,14 +189,14 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	firstOutputPolicy, _ := ctx.Value(pelicanFirstOutputPolicyContextKey{}).(*pelicanFirstOutputPolicy)
 	ctx = firstOutputPolicy.arm(ctx)
 	req = req.WithContext(ctx)
-	borrowApplied := false
+	borrowApplied := ctx.Value(codexBorrowAppliedContextKey{}) == true
 	if prepared, ok := ctx.Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation); ok {
 		borrowApplied = prepared.application != nil && prepared.application.Applied
 	}
 	invocation := PelicanInvocation{Platform: capture.account.Platform, Model: model, Effort: effort,
 		Endpoint: req.URL.Scheme + "://" + req.URL.Host + req.URL.EscapedPath(), Protocol: protocol, Transport: transport, BorrowApplied: borrowApplied}
 	RecordPelicanInvocation(ctx, invocation)
-	attempt := &pelicanHTTPAttempt{protocol: protocol, model: model, effort: effort}
+	attempt := &pelicanHTTPAttempt{protocol: protocol, model: model, effort: effort, dispatched: true}
 	capture.mu.Lock()
 	capture.attempts = append(capture.attempts, attempt)
 	capture.mu.Unlock()

@@ -256,11 +256,9 @@ func TestCodexGatewayBorrowTargetCacheModelAndFingerprintIsolation(t *testing.T)
 		require.Contains(t, template.Header.Get("Cookie"), "__oailb=old", "input request is not modified")
 	}
 	require.Equal(t, 4, calls)
-	s.targetProbeMu.Lock()
 	_, app, err := s.Apply(template, a, "gpt-6.1-sol", "target-exit", nil, false)
 	require.NoError(t, err)
 	require.True(t, app.Applied, "hot cache is read before global target lock")
-	s.targetProbeMu.Unlock()
 	for _, header := range []string{"Authorization", "ChatGPT-Account-ID", "User-Agent", "Originator", "Version", "X-Codex-Turn-State"} {
 		req := template.Clone(template.Context())
 		req.Header.Set(header, req.Header.Get(header)+"-changed")
@@ -372,8 +370,8 @@ func TestCodexGatewayBorrowGatePreserves100MiBBodyAndOtherRoutes(t *testing.T) {
 	require.NoError(t, err)
 	req.ContentLength = 100 << 20
 	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
-	key := borrowRequestFingerprint(req, "gpt-6.1-sol", "", nil, s.candidate.cookie.Value)
-	s.targets[codexGatewayBorrowTargetKey{2, "gpt-6.1-sol"}] = codexGatewayBorrowTargetCheck{key: key, cookieKey: borrowHash(s.candidate.cookie.Value), expires: s.candidate.expires, result: CodexGatewayBorrowVerification{Success: true}}
+	key := borrowTargetFingerprint(req, a, "gpt-6.1-sol", "", nil, s.candidate.cookie.Value)
+	s.targets[codexGatewayBorrowTargetKey{2, "gpt-6.1-sol"}] = codexGatewayBorrowTargetCheck{policyRevision: currentCodexFingerprintPolicyForAccount(a).revision, key: key, cookieKey: borrowHash(s.candidate.cookie.Value), expires: s.candidate.expires, result: CodexGatewayBorrowVerification{Success: true}}
 	wire, app, err := s.Apply(req, a, "gpt-6.1-sol", "", nil, false)
 	require.NoError(t, err)
 	require.True(t, app.Applied)
@@ -467,10 +465,8 @@ func TestCodexGatewayBorrowQualificationFailuresRemainTyped(t *testing.T) {
 	require.True(t, IsCodexGatewayBorrowFailure(err))
 	require.ErrorIs(t, err, ErrCodexGatewayBorrowUnavailable)
 	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
-	s.targetProbeMu.Lock()
 	_, _, err = s.Apply(req, a, "gpt-6-astra", "", nil, false)
-	s.targetProbeMu.Unlock()
 	require.True(t, IsCodexGatewayBorrowFailure(err))
-	require.ErrorIs(t, err, ErrCodexGatewayBorrowBusy)
+	require.ErrorIs(t, err, ErrCodexGatewayBorrowUnavailable)
 	require.False(t, IsCodexGatewayBorrowFailure(errors.New("ordinary business failure")))
 }

@@ -17,7 +17,7 @@ vi.mock('@/api/admin/accounts', () => {
 })
 vi.mock('vue-i18n', async importOriginal => ({
   ...(await importOriginal<typeof import('vue-i18n')>()),
-  useI18n: () => ({ t: (key: string, values?: object) => values ? `${key} ${JSON.stringify(values)}` : key, te: () => true })
+  useI18n: () => ({ locale: { value: 'zh' }, t: (key: string, values?: object) => values ? `${key} ${JSON.stringify(values)}` : key, te: () => true })
 }))
 
 const startTime = new Date('2026-10-08T06:00:00.000Z').getTime()
@@ -52,7 +52,7 @@ function deferred<T>() {
 }
 async function mountView() {
   const wrapper = mount(CodexGatewayBorrowStatusView, { global: { stubs: {
-    AppLayout: { template: '<div><slot /></div>' }, CodexBorrowNav: true
+    CodexLayout: { template: '<div><slot /></div>' }, CodexGatewayBorrowStatusView: true, CodexBorrowActivity: true, AppLayout: { template: '<div><slot /></div>' }, CodexBorrowNav: true
   } } })
   wrappers.push(wrapper)
   await flushPromises()
@@ -138,7 +138,7 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     await flushPromises()
     await vi.advanceTimersByTimeAsync(5000)
     expect(mocks.getStatus).toHaveBeenCalledTimes(3)
-    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('idle')
+    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('部分线路可用')
     await vi.advanceTimersByTimeAsync(20_000)
     expect(mocks.getStatus).toHaveBeenCalledTimes(3)
     expect(mocks.prepare).not.toHaveBeenCalled()
@@ -193,7 +193,7 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expect(mocks.getStatus).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(1)
     expect(mocks.getStatus).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('idle')
+    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('部分线路可用')
     expect(wrapper.get('[data-test="borrow-status-3-gpt-6.1-sol"] [data-test="borrow-line-state"]').text()).toContain('lineStates.ready')
     expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-prepare"]').element.disabled).toBe(false)
     await vi.advanceTimersByTimeAsync(10_000)

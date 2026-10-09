@@ -91,6 +91,9 @@ func (s *OpenAIGatewayService) codexGatewayBorrowHTTPConfigured(account *Account
 func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context, req *http.Request, account *Account, model, proxy string) (*http.Request, time.Duration, error) {
 	// Ordinary requests retain their exact identity: continuation diagnostics
 	// bind an immutable body snapshot to this pointer after GetBody is disabled.
+	if d := borrowDiagnosticFromContext(ctx); d != nil && !d.borrow {
+		return req, 0, nil
+	}
 	if !CodexGatewayBorrowRequestEligible(req) || !s.codexGatewayBorrowHTTPConfigured(account, model) {
 		return req, 0, nil
 	}
