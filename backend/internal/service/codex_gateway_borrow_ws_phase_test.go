@@ -23,6 +23,7 @@ func TestCodexGatewayBorrowWS_PreparationFailureUsesNeutralExistingFailoverBefor
 			seedBorrowWSTarget(t, svc, borrow, account, borrowWSContext(), "gpt-6.1-sol")
 			for key, check := range borrow.targets {
 				check.result.Success = false
+				check.result.Reason = "target_state_changed"
 				check.retryAfter = time.Now().Add(codexGatewayBorrowFailureWait)
 				borrow.targets[key] = check
 			}
@@ -81,6 +82,12 @@ func TestCodexGatewayBorrowWS_PreparationFailureUsesNeutralExistingFailoverBefor
 			require.Empty(t, dialer.headers, "no business dial occurs for a failed local preparation")
 			require.Empty(t, probe.requests, "the cached failed qualification is not reprobed")
 			require.Empty(t, borrow.wsAnchors.busy)
+			usage := borrow.Status().RecentUsage
+			require.Len(t, usage, 1)
+			require.EqualValues(t, 1, usage[0].AttemptCount)
+			require.EqualValues(t, 1, usage[0].BlockedCount)
+			require.Zero(t, usage[0].Count)
+			require.Equal(t, "target_state_changed", usage[0].Reason)
 		})
 	}
 }

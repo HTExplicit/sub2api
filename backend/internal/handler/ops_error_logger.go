@@ -1796,7 +1796,7 @@ func applyOpsUpstreamErrorEvents(entry *service.OpsInsertErrorLogInput, events [
 	entry.UpstreamStatusCode = nil
 	entry.UpstreamErrorMessage = nil
 	entry.UpstreamErrorDetail = nil
-	if last.Stage == string(service.GatewayFailureStageAccountAuth) {
+	if last.Stage == string(service.GatewayFailureStageAccountAuth) || last.Kind == string(service.CodexGatewayBorrowPreparationFailureReason) {
 		code := 0
 		entry.UpstreamStatusCode = &code
 	} else if last.UpstreamStatusCode > 0 {
@@ -2272,6 +2272,9 @@ func normalizeOpsErrorType(errType string, code string) string {
 }
 
 func classifyOpsPhase(errType, message, code string) string {
+	if code == "CODEX_GATEWAY_BORROW_UNAVAILABLE" {
+		return "routing"
+	}
 	msg := strings.ToLower(message)
 	// Standardized phases: request|auth|account_auth|routing|upstream|network|internal
 	// Map billing/concurrency/response => request; scheduling => routing.
@@ -2324,6 +2327,11 @@ func classifyOpsSeverity(errType string, status int) string {
 }
 
 func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status int) (phase string, isBusinessLimited bool, errorOwner string, errorSource string) {
+	if code == "CODEX_GATEWAY_BORROW_UNAVAILABLE" {
+		// A local qualification rejection is a real client failure, but no
+		// inference request was dispatched and no upstream HTTP 503 was seen.
+		return "routing", false, "platform", "gateway"
+	}
 	phase = classifyOpsPhase(errType, message, code)
 	routingCapacityLimited := isOpsRoutingCapacityLimited(c)
 	clientBusinessLimited := service.HasOpsClientBusinessLimited(c)

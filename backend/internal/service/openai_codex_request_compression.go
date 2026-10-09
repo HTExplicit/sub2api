@@ -155,10 +155,12 @@ func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account 
 	req = borrowed
 	wire, err := prepareOpenAICodexWireRequest(req, account)
 	if err != nil {
+		codexBorrowUsageFromContext(req.Context()).blocked(err)
 		return nil, err
 	}
 	applied := codexBorrowHTTPApplied(wire)
 	if err := consumeBorrowDiagnosticRequest(wire.Context()); err != nil {
+		codexBorrowUsageFromContext(req.Context()).blocked(err)
 		return nil, err
 	}
 	tracker := s.gatewayBorrow.beginUsage(wire.Context(), account.ID, model, "http", applied)

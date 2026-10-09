@@ -30,14 +30,25 @@ export interface BorrowTargetStatus extends BorrowSourceStatus {
   minted: boolean
   new_ticket: boolean
   reported_model?: string
+  request_shape?: string
+  service_tier?: string
+  mint_completed?: boolean
+  continue_completed?: boolean
+  mint_state_length?: number
+  continue_state_length?: number
+  route_changed?: boolean
 }
 
 export interface CodexGatewayBorrowUsage {
   account_id: number; model: string; transport: string; origin: string
   applied: boolean; reason: string; started_at: string; finished_at?: string
   outcome: string; request_id?: string; reported_model?: string; count: number; applied_count: number
+  dispatched?: boolean; failure_stage?: string; client_request_id?: string; gateway_request_id?: string
+  attempt_count?: number; blocked_count?: number
 }
 export interface CodexBorrowDiagnosticResult {
+  scenario?: string; failure_stage?: string; failure_reason?: string; verification?: BorrowVerification
+  tool_round_trip?: boolean; state_length?: number
   dispatched?: boolean
   read_error?: string
   mode: string; turn: number; applied: boolean; completed: boolean; response_id?: string
@@ -47,7 +58,7 @@ export interface CodexBorrowDiagnosticEvent {
   type: 'phase' | 'request' | 'result' | 'done' | 'error'; mode?: string; requests: number; limit: number
   result?: CodexBorrowDiagnosticResult; error?: string
 }
-export interface CodexBorrowDiagnosticRequest { account_id: number; model: string; transport: 'http' | 'ws'; request_limit?: number }
+export interface CodexBorrowDiagnosticRequest { account_id: number; model: string; transport: 'http' | 'ws'; request_limit?: number; scenario?: 'codex_session'; mode?: 'ordinary' | 'borrowed'; service_tier?: string }
 
 export interface CodexGatewayBorrowStatus {
   setup?: { state: string; phase: string; account_id: number; model: string; completed: number; total: number; failed: number; started_at: string; finished_at?: string; error?: string }
@@ -82,6 +93,13 @@ export interface BorrowVerification {
   reported_model?: string
   checked_at: string
   expires_at?: string
+  request_shape?: string
+  service_tier?: string
+  mint_completed?: boolean
+  continue_completed?: boolean
+  mint_state_length?: number
+  continue_state_length?: number
+  route_changed?: boolean
 }
 
 export type BorrowTestResultStatus = 'pending' | 'running' | 'complete' | 'failed' | 'incomplete' | 'cancelled' | 'skipped'

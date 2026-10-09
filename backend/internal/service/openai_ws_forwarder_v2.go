@@ -454,7 +454,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		capture.mu.Unlock()
 	}
-	usageTracker := s.gatewayBorrow.beginUsage(ctx, account.ID, mappedModel, "ws", borrowTurn.borrowed())
+	usageContext := ctx
+	if borrowTurn != nil && borrowTurn.usage != nil {
+		usageContext = context.WithValue(ctx, codexBorrowUsageContextKey{}, borrowTurn.usage)
+	}
+	usageTracker := s.gatewayBorrow.beginUsage(usageContext, account.ID, mappedModel, "ws", borrowTurn.borrowed())
 	defer func() { usageTracker.finish(borrowErr) }()
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()

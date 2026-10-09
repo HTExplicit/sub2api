@@ -100,6 +100,13 @@ and has a 90-second budget. Each target/model is validated with two completed
 HTTP 200 streams, at most 45 seconds each: the first must return STATE, and
 the second may omit STATE or return the same value. Qualification includes
 the target identity, actual model, exit, client headers, STATE and TLS profile.
+Target probes preserve the template's native session/thread/window headers and
+generate only a fresh legacy `session_id` for each shot, matching ranxi's full
+probe contract. The effective service tier in the gateway-owned routing hint is
+also included in the probe body. Proofs include native identity and routing
+headers; per-request tracing IDs do not invalidate them. The pinned upstream's
+HTTP borrowing is Astra-only: Sol is a downstream extension, independently
+validated against Sol rather than certified by an Astra pass.
 Source and target probes use separate HTTP/TLS pools. Business WS connections
 stay in the ordinary account pool, with fixed one-hour continuation anchors.
 
@@ -125,6 +132,13 @@ cancellation; that detail remains available as `read_error`. Captures are snapsh
 under a lock, and the usage index preserves the first terminal event.
 Diagnostic and business requests are distinguished. This index contains no request
 payloads or credential/cookie values; the existing administrator error records remain.
+Attempts now start before preparation: `attempt_count` and `blocked_count` are
+separate from existing `count` (dispatches) and `applied_count`. `dispatched`,
+`failure_stage`, client and gateway request IDs distinguish a local rejection
+from an inference failure. Original target reasons survive failure cooldowns;
+Ops classifies local borrowing rejection as gateway/routing with upstream status
+zero, retaining the compatible client 503 code. Business evidence is displayed
+ahead of diagnostics. Candidate expiry never implies a failed check is usable.
 
 `POST /admin/codex-gateway-borrow/diagnose` streams an explicit fixed-account
 comparison with `account_id`, `model`, `transport` (`http` or `ws`), and optional
@@ -138,6 +152,15 @@ completion, actual borrow application and reported model. Cancellation releases
 owned work and sockets. The UI retains the current run and can download JSON;
 there is no new table or migration. These observations do not prove intelligence
 or physical model identity. Normal token refresh remains permitted.
+Optional `scenario: codex_session` checks HTTP native client metadata, a fixed
+side-effect-free echo tool call, returned STATE and complete-history continuation.
+It defaults to the borrowed path to fit preparation and two business turns within
+the same eight-request bound. Optional `mode` selects `ordinary` or `borrowed`;
+omitting it for the original short scenario retains both-path comparison.
+Optional `service_tier` exercises the effective routing tier. Results include the
+specific verification (shape, actual model/tier, both completions, STATE lengths
+and route replacement), failure stage and tool-round-trip result. HTTP diagnostic
+history and STATE live only within that invocation, never in client sessions.
 
 Ranxi reference: v2.10.2 (`d3e43f2de33af9e987cffa511d76dfabbcd749da`). Its five
 fingerprint, gateway-cookie, target-probe and automatic-setup core files are

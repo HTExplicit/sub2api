@@ -46,13 +46,27 @@ var (
 // A local route qualification failure is distinct from an actual business
 // request failing upstream. Callers must surface it before ordinary account
 // failover, stream-timeout or health hooks. Unwrap preserves the specific cause.
-type CodexGatewayBorrowFailure struct{ Cause error }
+type CodexGatewayBorrowFailure struct {
+	Cause        error
+	Stage        string
+	Reason       string
+	Detail       string
+	RetryAfter   *time.Time
+	Verification *CodexGatewayBorrowVerification
+}
 
 func (e *CodexGatewayBorrowFailure) Error() string {
 	if e == nil || e.Cause == nil {
 		return "Codex gateway borrow qualification failed"
 	}
-	return "Codex gateway borrow qualification failed: " + e.Cause.Error()
+	detail := e.Cause.Error()
+	if e.Detail != "" {
+		detail += ": " + e.Detail
+	}
+	if e.Reason != "" {
+		detail = e.Stage + "/" + e.Reason + ": " + detail
+	}
+	return "Codex gateway borrow qualification failed: " + detail
 }
 func (e *CodexGatewayBorrowFailure) Unwrap() error {
 	if e == nil {
@@ -63,6 +77,33 @@ func (e *CodexGatewayBorrowFailure) Unwrap() error {
 func IsCodexGatewayBorrowFailure(err error) bool {
 	var failure *CodexGatewayBorrowFailure
 	return errors.As(err, &failure)
+}
+
+func borrowVerificationFailure(check codexGatewayBorrowTargetCheck) error {
+	result := check.result
+	failure := &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "target_validation", Reason: result.Reason, Detail: result.Error, Verification: &result}
+	if !check.retryAfter.IsZero() {
+		retry := check.retryAfter
+		failure.RetryAfter = &retry
+	}
+	return failure
+}
+
+func codexBorrowFailureStage(err error) (string, string) {
+	var failure *CodexGatewayBorrowFailure
+	if errors.As(err, &failure) && failure.Reason != "" {
+		return failure.Stage, failure.Reason
+	}
+	if errors.Is(err, ErrCodexGatewayBorrowChanged) {
+		return "qualification", "configuration_changed"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "preparation", "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "preparation", "deadline_exceeded"
+	}
+	return "preparation", "borrow_unavailable"
 }
 
 // CodexGatewayBorrowProbeUpstream is deliberately a distinct injection type.
@@ -155,18 +196,25 @@ type CodexGatewayBorrowSourceStatus struct {
 }
 
 type CodexGatewayBorrowVerification struct {
-	AccountID      int64      `json:"account_id"`
-	Model          string     `json:"model"`
-	Success        bool       `json:"success"`
-	Reason         string     `json:"reason"`
-	Error          string     `json:"error,omitempty"`
-	MintStatus     int        `json:"mint_status"`
-	ContinueStatus int        `json:"continue_status"`
-	Minted         bool       `json:"minted"`
-	NewTicket      bool       `json:"new_ticket"`
-	ReportedModel  string     `json:"reported_model,omitempty"`
-	CheckedAt      time.Time  `json:"checked_at"`
-	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	RequestShape        string     `json:"request_shape,omitempty"`
+	ServiceTier         string     `json:"service_tier,omitempty"`
+	MintCompleted       bool       `json:"mint_completed"`
+	ContinueCompleted   bool       `json:"continue_completed"`
+	MintStateLength     int        `json:"mint_state_length"`
+	ContinueStateLength int        `json:"continue_state_length"`
+	RouteChanged        bool       `json:"route_changed"`
+	AccountID           int64      `json:"account_id"`
+	Model               string     `json:"model"`
+	Success             bool       `json:"success"`
+	Reason              string     `json:"reason"`
+	Error               string     `json:"error,omitempty"`
+	MintStatus          int        `json:"mint_status"`
+	ContinueStatus      int        `json:"continue_status"`
+	Minted              bool       `json:"minted"`
+	NewTicket           bool       `json:"new_ticket"`
+	ReportedModel       string     `json:"reported_model,omitempty"`
+	CheckedAt           time.Time  `json:"checked_at"`
+	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
 }
 
 type CodexGatewayBorrowTargetStatus struct {
@@ -195,6 +243,7 @@ type CodexGatewayBorrowStatus struct {
 // Application contains only opaque identities. The selected cookie itself is
 // available solely in the cloned outbound request's Cookie header.
 type CodexGatewayBorrowApplication struct {
+	Verification      CodexGatewayBorrowVerification
 	Applied           bool
 	SourceAccountID   int64
 	ExpiresAt         time.Time
@@ -708,7 +757,14 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 
 func borrowRequestFingerprint(req *http.Request, model, proxy string, profile *tlsfingerprint.Profile, cookie string) string {
 	tlsJSON, _ := json.Marshal(profile)
-	identity, _ := json.Marshal([]string{cookie, model, proxy, req.URL.EscapedPath(), req.Header.Get("Authorization"), req.Header.Get("ChatGPT-Account-ID"), req.Header.Get("User-Agent"), req.Header.Get("Originator"), req.Header.Get("Version"), req.Header.Get("X-Codex-Turn-State"), string(tlsJSON)})
+	values := []string{cookie, model, proxy, req.URL.EscapedPath(), req.Header.Get("Authorization"), req.Header.Get("ChatGPT-Account-ID"), req.Header.Get("User-Agent"), req.Header.Get("Originator"), req.Header.Get("Version"), req.Header.Get("X-Codex-Turn-State"), string(tlsJSON)}
+	// Include the native identity and routing policy preserved by the probe.
+	// Per-request tracing IDs and the probe's random legacy session_id are not
+	// qualification identities and must not defeat reuse or failure cooldowns.
+	for _, name := range []string{"session-id", "thread-id", "x-codex-window-id", "x-codex-installation-id", "x-codex-beta-features", openAICodexRoutingHintHeader} {
+		values = append(values, req.Header.Get(name))
+	}
+	identity, _ := json.Marshal(values)
 	return borrowHash(string(identity))
 }
 
@@ -723,6 +779,17 @@ func (s *CodexGatewayBorrowService) Apply(req *http.Request, account *Account, m
 	wire, application, err := s.apply(req, account, model, proxy, profile, cachedOnly, false)
 	if err != nil && !IsCodexGatewayBorrowFailure(err) {
 		err = &CodexGatewayBorrowFailure{Cause: err}
+	}
+	if d := borrowDiagnosticFromContext(req.Context()); d != nil {
+		if application != nil {
+			result := application.Verification
+			d.verification.Store(&result)
+		} else {
+			var failure *CodexGatewayBorrowFailure
+			if errors.As(err, &failure) {
+				d.verification.Store(failure.Verification)
+			}
+		}
 	}
 	return wire, application, err
 }
@@ -750,7 +817,7 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 			return req, nil, ErrCodexGatewayBorrowUnavailable
 		}
 		if err := s.prepareSource(req.Context(), rev, revisionCtx); err != nil {
-			return req, nil, err
+			return req, nil, &CodexGatewayBorrowFailure{Cause: err, Stage: "source_preparation", Reason: "source_prepare_failed"}
 		}
 		s.mu.Lock()
 		candidate = s.candidate
@@ -768,7 +835,7 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 			if err != nil {
 				return req, nil, err
 			}
-			return borrowApplyCookie(req, candidate, check), borrowApplication(candidate, key, check.expires), nil
+			return borrowApplyCookie(req, candidate, check), borrowApplication(candidate, key, check.expires, check.result), nil
 		}
 	}
 	if cachedOnly {
@@ -843,7 +910,7 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 		s.qualifications[qualificationKey] = check
 		s.mu.Unlock()
 		if !result.Success {
-			return nil, ErrCodexGatewayBorrowUnavailable
+			return nil, borrowVerificationFailure(check)
 		}
 		return check, nil
 	})
@@ -854,7 +921,7 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 	if !ok {
 		return req, nil, ErrCodexGatewayBorrowUnavailable
 	}
-	return borrowApplyCookie(req, candidate, check), borrowApplication(candidate, key, check.expires), nil
+	return borrowApplyCookie(req, candidate, check), borrowApplication(candidate, key, check.expires, check.result), nil
 }
 
 func (s *CodexGatewayBorrowService) candidateCurrentLocked(rev uint64, candidate *codexGatewayBorrowCandidate) bool {
@@ -882,13 +949,17 @@ func (s *CodexGatewayBorrowService) cachedTarget(rev uint64, key codexGatewayBor
 		return old, true, nil
 	}
 	if !old.result.Success && now.Before(old.retryAfter) {
-		return old, false, ErrCodexGatewayBorrowUnavailable
+		return old, false, borrowVerificationFailure(old)
 	}
 	return old, false, nil
 }
 
-func borrowApplication(candidate *codexGatewayBorrowCandidate, fingerprint string, expires time.Time) *CodexGatewayBorrowApplication {
-	return &CodexGatewayBorrowApplication{Applied: true, SourceAccountID: candidate.sourceID, ExpiresAt: expires, Fingerprint: fingerprint, CookieFingerprint: borrowHash(candidate.cookie.Value)}
+func borrowApplication(candidate *codexGatewayBorrowCandidate, fingerprint string, expires time.Time, verification ...CodexGatewayBorrowVerification) *CodexGatewayBorrowApplication {
+	app := &CodexGatewayBorrowApplication{Applied: true, SourceAccountID: candidate.sourceID, ExpiresAt: expires, Fingerprint: fingerprint, CookieFingerprint: borrowHash(candidate.cookie.Value)}
+	if len(verification) > 0 {
+		app.Verification = verification[0]
+	}
+	return app
 }
 
 func borrowApplyCookie(req *http.Request, candidate *codexGatewayBorrowCandidate, check codexGatewayBorrowTargetCheck) *http.Request {

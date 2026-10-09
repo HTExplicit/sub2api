@@ -169,7 +169,7 @@ func borrowCandidateFromCookies(cookies []*http.Cookie, path string, now time.Ti
 
 func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *http.Request, account *Account, model, proxy string, profile *tlsfingerprint.Profile, candidate *codexGatewayBorrowCandidate) CodexGatewayBorrowVerification {
 	expires := candidate.expires
-	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed"}
+	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: "ranxi_full", ServiceTier: borrowProbeServiceTier(template.Header)}
 	cookies := []*http.Cookie{{Name: "__oailb", Value: candidate.cookie.Value}}
 	fire := func(state string, cookies []*http.Cookie) (codexGatewayBorrowObservation, error) {
 		shotCtx, cancel := context.WithTimeout(ctx, codexGatewayBorrowShotTimeout)
@@ -178,11 +178,13 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	}
 	mint, err := fire("", cookies)
 	result.MintStatus, result.ReportedModel = mint.status, mint.model
+	result.MintCompleted, result.MintStateLength = mint.complete, len(mint.state)
 	if err != nil || !borrowShotUsable(mint) {
 		result.Error = borrowObservationError(mint, err)
 		return result
 	}
 	if borrowTargetRouteChanged(mint.cookies, candidate, time.Now()) {
+		result.RouteChanged = true
 		result.Reason, result.Error = "target_route_changed", "target response changed or deleted the fixed __oailb route"
 		return result
 	}
@@ -201,6 +203,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	}
 	continued, err := fire(mint.state, cookies)
 	result.ContinueStatus = continued.status
+	result.ContinueCompleted, result.ContinueStateLength = continued.complete, len(continued.state)
 	if continued.model != "" {
 		result.ReportedModel = continued.model
 	}
@@ -209,6 +212,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 		return result
 	}
 	if borrowTargetRouteChanged(continued.cookies, candidate, time.Now()) {
+		result.RouteChanged = true
 		result.Reason, result.Error = "target_route_changed", "target response changed or deleted the fixed __oailb route"
 		return result
 	}
@@ -250,20 +254,38 @@ func borrowTargetRouteChanged(cookies []*http.Cookie, candidate *codexGatewayBor
 	return false
 }
 
-func borrowObservationPayload(model, prompt, effort string) []byte {
+func borrowObservationPayload(model, prompt, effort string, serviceTier ...string) []byte {
 	body := map[string]any{"model": model, "instructions": prompt,
 		"input":  []map[string]any{{"type": "message", "role": "user", "content": []map[string]any{{"type": "input_text", "text": prompt}}}},
 		"stream": true, "store": false, "parallel_tool_calls": true, "include": []string{"reasoning.encrypted_content"}}
 	if effort != "" {
 		body["reasoning"] = map[string]string{"effort": effort}
 	}
+	if len(serviceTier) > 0 && serviceTier[0] != "" {
+		body["service_tier"] = serviceTier[0]
+	}
 	raw, _ := json.Marshal(body)
 	return raw
 }
 
+// The native sender owns this hint and derives it from the finalized body.
+// Reading its tier avoids consuming/rebuilding the potentially large business
+// body and keeps the short probe's body consistent with its routing headers.
+func borrowProbeServiceTier(headers http.Header) string {
+	for _, part := range strings.Split(headers.Get(openAICodexRoutingHintHeader), ";") {
+		if key, value, ok := strings.Cut(part, "="); ok && strings.TrimSpace(key) == "tier" {
+			switch value = strings.TrimSpace(value); value {
+			case OpenAIFastTierPriority, OpenAIFastTierFlex, OpenAIFastTierUltrafast:
+				return value
+			}
+		}
+	}
+	return ""
+}
+
 func borrowObservationRequest(ctx context.Context, headers http.Header, model, prompt, effort, state string, cookies []*http.Cookie, purpose HTTPUpstreamProfile) (*http.Request, error) {
 	ctx = WithCodexGatewayBorrowObservation(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, purpose)))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatgptCodexURL, bytes.NewReader(borrowObservationPayload(model, prompt, effort)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatgptCodexURL, bytes.NewReader(borrowObservationPayload(model, prompt, effort, borrowProbeServiceTier(headers))))
 	if err != nil {
 		return nil, err
 	}
@@ -271,13 +293,15 @@ func borrowObservationRequest(ctx context.Context, headers http.Header, model, p
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
-	for _, name := range []string{"Cookie", "Content-Length", "Content-Encoding", "Content-MD5", "X-Codex-Turn-State", "X-Codex-Turn-Metadata", "X-OpenAI-Internal-Codex-Responses-Lite", "conversation_id", "session_id", "session-id", "thread-id", "x-client-request-id", "x-codex-window-id"} {
+	for _, name := range []string{"Cookie", "Content-Length", "Content-Encoding", "Content-MD5", "X-Codex-Turn-State", "X-Codex-Turn-Metadata", "X-OpenAI-Internal-Codex-Responses-Lite", "conversation_id"} {
 		req.Header.Del(name)
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	ensureCodexSessionIdentityHeaders(req.Header, uuid.NewString())
+	// Pinned ranxi d3e43f2: each shot gets a fresh legacy session_id, while
+	// native session/thread/window headers in the template remain unchanged.
+	req.Header.Set("session_id", uuid.NewString())
 	if state != "" {
 		req.Header.Set("X-Codex-Turn-State", state)
 	}

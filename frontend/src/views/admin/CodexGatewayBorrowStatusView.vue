@@ -108,8 +108,9 @@
               </div>
               <dl class="min-w-0 space-y-2 text-xs">
                 <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(target.checked_at) }}</dd></div>
-                <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.expiresAt') }}</dt><dd class="mt-1">{{ formatTime(target.expires_at) }}</dd></div>
-                <div v-if="target.expires_at"><dt class="sr-only">{{ t('admin.codexGatewayBorrow.expiresAt') }}</dt><dd data-test="borrow-line-remaining">{{ t('admin.codexGatewayBorrow.remainingSeconds', { seconds: remainingSeconds(target.expires_at) }) }}</dd></div>
+                <div><dt class="text-muted">{{ text('候选线路到期时间', 'Candidate route expiry') }}</dt><dd class="mt-1">{{ formatTime(target.expires_at) }}</dd></div>
+                <div v-if="target.expires_at"><dt class="sr-only">{{ text('候选线路剩余时间', 'Candidate time remaining') }}</dt><dd data-test="borrow-line-remaining">{{ t('admin.codexGatewayBorrow.remainingSeconds', { seconds: remainingSeconds(target.expires_at) }) }}</dd></div>
+                <p v-if="!target.cache_valid && target.expires_at" class="text-muted">{{ text('候选尚未到期也不代表验证通过。', 'An unexpired candidate does not mean validation passed.') }}</p>
                 <div v-if="target.retry_after"><dt class="text-muted">{{ t('admin.codexGatewayBorrow.retryAfter') }}</dt><dd class="mt-1">{{ formatTime(target.retry_after) }}</dd></div>
               </dl>
               <div>
@@ -126,6 +127,11 @@
                   <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.stateMinted') }}</dt><dd class="mt-1">{{ target.minted ? t('common.yes') : t('common.no') }}</dd></div>
                   <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.newTicket') }}</dt><dd class="mt-1">{{ target.new_ticket ? t('common.yes') : t('common.no') }}</dd></div>
                   <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.reportedModel') }}</dt><dd class="mt-1 break-words">{{ target.reported_model || '—' }}</dd></div>
+                  <div v-if="target.request_shape"><dt class="text-muted">{{ text('验证请求形态 / 实际模型', 'Validation shape / actual model') }}</dt><dd class="mt-1 break-words">{{ target.request_shape }} / {{ target.model }}</dd></div>
+                  <div v-if="target.request_shape"><dt class="text-muted">{{ text('验证服务档位', 'Validation service tier') }}</dt><dd class="mt-1">{{ target.service_tier || 'default' }}</dd></div>
+                  <div v-if="target.request_shape"><dt class="text-muted">{{ text('两轮上游完成', 'Both upstream completions') }}</dt><dd class="mt-1">{{ target.mint_completed ? t('common.yes') : t('common.no') }} / {{ target.continue_completed ? t('common.yes') : t('common.no') }}</dd></div>
+                  <div v-if="target.request_shape"><dt class="text-muted">{{ text('两轮 STATE 长度', 'STATE lengths') }}</dt><dd class="mt-1">{{ target.mint_state_length ?? '—' }} / {{ target.continue_state_length ?? '—' }}</dd></div>
+                  <div v-if="target.request_shape"><dt class="text-muted">{{ text('上游替换借用路由', 'Upstream replaced borrowed route') }}</dt><dd class="mt-1">{{ target.route_changed ? t('common.yes') : t('common.no') }}</dd></div>
                 </dl>
                 <p class="mt-3 text-xs text-muted">{{ t('admin.codexGatewayBorrow.stateUnavailable') }}</p>
                 <div v-if="target.error" class="mt-3 space-y-1"><p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.fullError') }}</p><pre class="borrow-error" data-test="borrow-target-error">{{ target.error }}</pre></div>

@@ -18,12 +18,17 @@ type codexBorrowUsageFrameConn struct {
 	applied   bool
 	mu        sync.Mutex
 	current   *codexBorrowUsageTracker
+	prepared  *codexBorrowUsageTracker
 }
 
 func (c *codexBorrowUsageFrameConn) WriteFrame(ctx context.Context, kind coderws.MessageType, payload []byte) error {
 	c.mu.Lock()
 	if gjson.GetBytes(payload, "type").String() == "response.create" {
 		c.current.finish(nil)
+		if c.prepared != nil {
+			ctx = context.WithValue(ctx, codexBorrowUsageContextKey{}, c.prepared)
+			c.prepared = nil
+		}
 		c.current = c.service.beginUsage(ctx, c.accountID, gjson.GetBytes(payload, "model").String(), "ws", c.applied)
 	}
 	tracker := c.current
