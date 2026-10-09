@@ -33,6 +33,15 @@ no additional step-up. Legacy settings APIs use the same keys.
 setup-token accounts. GET computes effective identity through the forwarding
 selector, including credential shadows. PUT accepts only `mode`; bulk changes
 use ordinary account jobs with explicit frozen IDs and only that extra key.
+GET and the PUT response also include read-only `device_identity`,
+`effective_device` and `identifier_policy`. Saved/seed-derived device fields
+are separate from fields parsed from the selected UA; unparseable UA fields
+remain null, and disabled simulation has no effective client device. Identifier
+rules distinguish fixed values, request-derived handling and passthrough;
+request-dependent threads, parent references and window indexes are not
+invented from an empty request. Reads never persist identities or timestamps.
+The page loads full identities automatically, limits detail reads to three,
+rejects obsolete page/policy/mode responses, and retains unsaved mode drafts.
 General account edits preserve the latest stored mode when it is omitted.
 Existing seeds and persisted TUI identities are retained, and new accounts still
 default to `device`.

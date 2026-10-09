@@ -248,22 +248,6 @@ func (s *SettingService) UpdateCodexFingerprintSettings(ctx context.Context, con
 	return view, nil
 }
 
-// CodexFingerprintAccountView uses the same identity selector as forwarding.
-type CodexFingerprintAccountView struct {
-	Mode              string                `json:"mode"`
-	Identity          codexIdentitySnapshot `json:"identity"`
-	SimulationEnabled bool                  `json:"simulation_enabled"`
-}
-
-func DescribeCodexFingerprintAccount(routed, source *Account) CodexFingerprintAccountView {
-	policy := currentCodexFingerprintPolicy()
-	return CodexFingerprintAccountView{
-		Mode:              string(routed.GetCodexFingerprintMode()),
-		Identity:          resolveCodexIdentitySnapshot(routed, source, codexAccountIdentityOverrideUA(source), policy),
-		SimulationEnabled: policy.enabled,
-	}
-}
-
 func DecodeCodexFingerprintMode(raw []byte) (string, error) {
 	var config struct {
 		Mode string `json:"mode"`

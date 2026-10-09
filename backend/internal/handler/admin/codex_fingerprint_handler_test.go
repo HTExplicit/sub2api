@@ -51,12 +51,17 @@ func TestCodexFingerprintAccountHandlerOnlyChangesModeAndUsesParentIdentity(t *t
 	read := call(http.MethodGet, "")
 	require.Equal(t, http.StatusOK, read.Code)
 	require.Equal(t, int64(1), gjson.Get(read.Body.String(), "data.identity.identity_account_id").Int())
+	require.NotEmpty(t, gjson.Get(read.Body.String(), "data.device_identity.os_type").String())
+	require.False(t, gjson.Get(read.Body.String(), "data.identity.identity_persisted").Bool())
+	require.Empty(t, gjson.Get(read.Body.String(), "data.device_identity.generated_at").String())
+	require.True(t, gjson.Get(read.Body.String(), "data.identifier_policy").Exists())
+	require.Nil(t, admin.updates, "GET must not write derived identities")
 	saved := call(http.MethodPut, `{"mode":"off"}`)
 	require.Equal(t, http.StatusOK, saved.Code)
 	require.Equal(t, map[string]any{"codex_fingerprint_mode": "off"}, admin.updates)
 	require.Equal(t, "value", shadow.Extra["preserved"])
 	require.Equal(t, "device", parent.Extra["codex_fingerprint_mode"])
-	for _, body := range []string{`{"mode":"invalid"}`, `{"mode":"full","codex_fingerprint_seed":"injected"}`, `{"mode":null}`} {
+	for _, body := range []string{`{"mode":"invalid"}`, `{"mode":"full","codex_fingerprint_seed":"injected"}`, `{"mode":"full","device_identity":{"os_type":"Windows"}}`, `{"mode":null}`} {
 		rejected := call(http.MethodPut, body)
 		require.Equal(t, http.StatusBadRequest, rejected.Code)
 		require.Equal(t, "off", shadow.Extra["codex_fingerprint_mode"])

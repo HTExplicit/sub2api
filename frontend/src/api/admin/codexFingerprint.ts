@@ -24,9 +24,32 @@ export interface CodexFingerprintAccountView {
     version: string
     identity_source: string
     identity_account_id: number
+    identity_persisted: boolean
+    fingerprint_mode_configured: string
     fingerprint_mode_effective: CodexFingerprintMode
     fingerprint_reason: string
   }
+  device_identity: {
+    v: number
+    os_type: string
+    os_version: string
+    arch: string
+    terminal: string
+    sandbox: string
+    generated_at?: string
+  } | null
+  effective_device: {
+    os_type: string | null
+    os_version: string | null
+    arch: string | null
+    terminal: string | null
+    platform_sandbox: string | null
+  } | null
+  identifier_policy: Record<'installation_id' | 'session_id' | 'thread_id' | 'parent_thread_id' | 'window_id', {
+    behavior: 'fixed' | 'request_derived' | 'passthrough'
+    rule: string
+    value: string | null
+  }>
 }
 
 export const codexFingerprintAPI = {
@@ -40,8 +63,8 @@ export const codexFingerprintAPI = {
     const { data } = await apiClient.put<CodexFingerprintSettingsView>('/admin/settings/codex-fingerprint', config)
     return data
   },
-  async getAccount(id: number): Promise<CodexFingerprintAccountView> {
-    const { data } = await apiClient.get<CodexFingerprintAccountView>(`/admin/accounts/${id}/codex-fingerprint`)
+  async getAccount(id: number, options?: { signal?: AbortSignal }): Promise<CodexFingerprintAccountView> {
+    const { data } = await apiClient.get<CodexFingerprintAccountView>(`/admin/accounts/${id}/codex-fingerprint`, options)
     return data
   },
   async saveAccount(id: number, mode: CodexFingerprintMode): Promise<CodexFingerprintAccountView> {
