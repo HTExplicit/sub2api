@@ -83,6 +83,11 @@ func (s *CodexGatewayBorrowService) accountTemplate(ctx context.Context, id int6
 	req.Header.Set("Authorization", "Bearer "+token)
 	setOpenAIChatGPTAccountHeaders(req.Header, credential)
 	applyOpenAICodexProbeHeaders(req.Header)
+	// Manual preparation and cached-only generation rebuild this template.
+	// Give that synthetic window a stable identity, without changing any real
+	// client's window or the per-shot legacy session_id. A random window here
+	// would make a freshly validated proof unusable by its own next caller.
+	req.Header.Set("X-Codex-Window-ID", uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("codex-borrow-template:%d:%s", id, model))).String())
 	enforceCodexIdentityHeadersForAccount(req.Header, credential, s.gateway.codexIdentityOverrideUA(a))
 	setOpenAICodexRoutingHint(req.Header, a, model, "")
 	req = req.WithContext(WithCodexGatewayBorrowModel(req.Context(), actual))

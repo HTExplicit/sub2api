@@ -104,7 +104,9 @@ Target probes preserve the template's native session/thread/window headers and
 generate only a fresh legacy `session_id` for each shot, matching ranxi's full
 probe contract. The effective service tier in the gateway-owned routing hint is
 also included in the probe body. Proofs include native identity and routing
-headers; per-request tracing IDs do not invalidate them. The pinned upstream's
+headers; per-request tracing IDs do not invalidate them. Manual templates use a
+stable synthetic window per account/model so cached-only generation can reuse
+their proof without changing actual client windows. The pinned upstream's
 HTTP borrowing is Astra-only: Sol is a downstream extension, independently
 validated against Sol rather than certified by an Astra pass.
 Source and target probes use separate HTTP/TLS pools. Business WS connections
