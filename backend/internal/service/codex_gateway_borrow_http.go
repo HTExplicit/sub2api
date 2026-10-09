@@ -47,14 +47,15 @@ func RecordCodexGatewayBorrowPreparationFailure(c *gin.Context, account *Account
 		return
 	}
 	detail := err.Error()
-	setOpsUpstreamError(c, http.StatusServiceUnavailable, detail, detail)
+	stage, reason := codexBorrowFailureStage(err)
+	setOpsUpstreamError(c, 0, detail, detail)
 	event := OpsUpstreamErrorEvent{
-		UpstreamStatusCode: http.StatusServiceUnavailable,
-		Kind:               string(CodexGatewayBorrowPreparationFailureReason),
-		Scope:              string(GatewayFailureScopeRequest),
-		Reason:             string(CodexGatewayBorrowPreparationFailureReason),
-		Message:            detail,
-		Detail:             detail,
+		Kind:    string(CodexGatewayBorrowPreparationFailureReason),
+		Scope:   string(GatewayFailureScopeRequest),
+		Stage:   stage,
+		Reason:  reason,
+		Message: detail,
+		Detail:  detail,
 	}
 	if account != nil {
 		event.ProxyID, event.ProxyName = opsUpstreamProxyID(account), opsUpstreamProxyName(account)
@@ -98,16 +99,21 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context
 		return req, 0, nil
 	}
 	started := time.Now()
+	tracker := s.gatewayBorrow.beginAttempt(ctx, account.ID, model, "http")
+	req = req.WithContext(context.WithValue(req.Context(), codexBorrowUsageContextKey{}, tracker))
 	prepared := codexGatewayBorrowHTTPPreparation{service: s.gatewayBorrow, accountID: account.ID, model: model, proxy: proxy}
 	prepared.service.mu.Lock()
 	prepared.revision = prepared.service.revision
 	prepared.service.mu.Unlock()
 	borrowed, application, err := prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
 	if err != nil {
+		tracker.blocked(err)
 		return nil, 0, err
 	}
 	if application == nil || !application.Applied {
-		return nil, 0, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowChanged}
+		failure := &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowChanged}
+		tracker.blocked(failure)
+		return nil, 0, failure
 	}
 	prepared.application = application
 	req = borrowed.WithContext(context.WithValue(req.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, prepared))
@@ -117,11 +123,22 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context
 // Forward already performed its one preparation before starting the business
 // clock. At dispatch only matching cached evidence may be used. Expiry, a save
 // or an identity change must not start another probe underneath that clock.
-func (s *OpenAIGatewayService) applyCodexGatewayBorrowHTTP(req *http.Request, account *Account, model, proxy string) (*http.Request, error) {
+func (s *OpenAIGatewayService) applyCodexGatewayBorrowHTTP(req *http.Request, account *Account, model, proxy string) (wire *http.Request, failure error) {
+	defer func() {
+		if failure != nil {
+			codexBorrowUsageFromContext(req.Context()).blocked(failure)
+		}
+	}()
 	prepared, ok := req.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation)
 	if !ok {
 		if s.gatewayBorrow == nil {
 			return req, nil
+		}
+		if CodexGatewayBorrowRequestEligible(req) && s.codexGatewayBorrowHTTPConfigured(account, model) && codexBorrowUsageFromContext(req.Context()) == nil {
+			if d := borrowDiagnosticFromContext(req.Context()); d == nil || d.borrow {
+				tracker := s.gatewayBorrow.beginAttempt(req.Context(), account.ID, model, "http")
+				req = req.WithContext(context.WithValue(req.Context(), codexBorrowUsageContextKey{}, tracker))
+			}
 		}
 		borrowed, _, err := s.gatewayBorrow.Apply(req, account, model, proxy, nil, false)
 		return borrowed, err

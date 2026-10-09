@@ -161,7 +161,7 @@ export default {
       target_probe_failed: '此账号与模型的线路验证失败，请查看技术详情',
       target_route_changed: '验证时线路发生变化，请重新验证',
       target_state_missing: '首轮响应缺少会话状态，无法验证续接',
-      target_state_changed: '两轮响应的会话状态不一致，请重新验证',
+      target_state_changed: '两轮上游均已完成，但续接返回了不同的 STATE，当前线路未通过借用验证。请查看本次验证依据。',
       validating: '正在验证此账号与模型的借用线路',
       candidate_ready: '来源线路已采集',
       validated: '此账号与模型的借用线路已验证通过',

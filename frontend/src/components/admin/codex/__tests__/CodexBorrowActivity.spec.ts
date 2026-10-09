@@ -19,6 +19,24 @@ function open(locale = 'zh') {
 beforeEach(() => { diagnose.mockReset() })
 
 describe('Codex actual-request diagnostics', () => {
+  it('keeps blocked business attempts visible ahead of successful diagnostics', () => {
+    const wrapper = open('en')
+    const diagnostic = { account_id: 2, model: 'gpt-6-astra', transport: 'http', origin: 'diagnostic', applied: true, dispatched: true, reason: 'borrow_applied', started_at: new Date().toISOString(), outcome: 'completed', count: 2, applied_count: 1 }
+    void wrapper.setProps({ status: { ...status, recent_usage: [diagnostic, { ...diagnostic, origin: 'business', applied: false, dispatched: false, reason: 'target_state_changed', failure_stage: 'target_validation', outcome: 'blocked', count: 0, applied_count: 0, attempt_count: 24, blocked_count: 24, gateway_request_id: 'local-failed-request' }] } })
+    return flushPromises().then(() => {
+      const tables = wrapper.findAll('table')
+      expect(tables[0].attributes('data-test')).toBe('borrow-usage-business')
+      expect(tables[0].text()).toContain('not dispatched')
+      expect(tables[0].text()).toContain('Attempts 24')
+      expect(tables[0].text()).toContain('Blocked 24')
+      expect(tables[0].text()).toContain('Sent 0')
+      expect(tables[0].text()).toContain('target_state_changed')
+      expect(tables[0].text()).toContain('local-failed-request')
+      expect(tables[1].text()).toContain('Completed')
+      expect(diagnose).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+  })
   it('reads existing evidence without automatically issuing requests', () => {
     const wrapper = open()
     expect(diagnose).not.toHaveBeenCalled()

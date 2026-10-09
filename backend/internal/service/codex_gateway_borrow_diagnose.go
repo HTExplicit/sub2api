@@ -23,13 +23,18 @@ type codexBorrowDiagnosticContextKey struct{}
 type codexBorrowAppliedContextKey struct{}
 
 type codexBorrowDiagnostic struct {
-	limit     int32
-	onRequest func(int32)
-	requests  *atomic.Int32
-	borrow    bool
-	transport string
-	session   string
-	anchors   codexGatewayBorrowWSAnchorStore
+	scenario     string
+	serviceTier  string
+	history      []any
+	turnState    string
+	verification atomic.Pointer[CodexGatewayBorrowVerification]
+	limit        int32
+	onRequest    func(int32)
+	requests     *atomic.Int32
+	borrow       bool
+	transport    string
+	session      string
+	anchors      codexGatewayBorrowWSAnchorStore
 }
 
 func borrowDiagnosticFromContext(ctx context.Context) *codexBorrowDiagnostic {
@@ -67,6 +72,9 @@ func consumeBorrowDiagnosticRequest(ctx context.Context) error {
 }
 
 type CodexBorrowDiagnosticRequest struct {
+	Scenario     string `json:"scenario,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	ServiceTier  string `json:"service_tier,omitempty"`
 	RequestLimit int    `json:"request_limit,omitempty"`
 	AccountID    int64  `json:"account_id"`
 	Model        string `json:"model"`
@@ -74,18 +82,24 @@ type CodexBorrowDiagnosticRequest struct {
 }
 
 type CodexBorrowDiagnosticResult struct {
-	ReadError     string `json:"read_error,omitempty"`
-	Dispatched    bool   `json:"dispatched"`
-	Mode          string `json:"mode"`
-	Turn          int    `json:"turn"`
-	Applied       bool   `json:"applied"`
-	Completed     bool   `json:"completed"`
-	ResponseID    string `json:"response_id,omitempty"`
-	ReportedModel string `json:"reported_model,omitempty"`
-	Answer        string `json:"answer"`
-	RawResponse   string `json:"raw_response"`
-	Error         string `json:"error,omitempty"`
-	DurationMS    int64  `json:"duration_ms"`
+	Scenario      string                          `json:"scenario,omitempty"`
+	FailureStage  string                          `json:"failure_stage,omitempty"`
+	FailureReason string                          `json:"failure_reason,omitempty"`
+	Verification  *CodexGatewayBorrowVerification `json:"verification,omitempty"`
+	ToolRoundTrip bool                            `json:"tool_round_trip,omitempty"`
+	StateLength   int                             `json:"state_length,omitempty"`
+	ReadError     string                          `json:"read_error,omitempty"`
+	Dispatched    bool                            `json:"dispatched"`
+	Mode          string                          `json:"mode"`
+	Turn          int                             `json:"turn"`
+	Applied       bool                            `json:"applied"`
+	Completed     bool                            `json:"completed"`
+	ResponseID    string                          `json:"response_id,omitempty"`
+	ReportedModel string                          `json:"reported_model,omitempty"`
+	Answer        string                          `json:"answer"`
+	RawResponse   string                          `json:"raw_response"`
+	Error         string                          `json:"error,omitempty"`
+	DurationMS    int64                           `json:"duration_ms"`
 }
 
 type CodexBorrowDiagnosticEvent struct {
@@ -100,6 +114,18 @@ type CodexBorrowDiagnosticEvent struct {
 // Diagnose runs fixed short questions through the normal account sender. The
 // internal observation purpose isolates health/billing; it is never user input.
 func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexBorrowDiagnosticRequest, emit func(CodexBorrowDiagnosticEvent)) error {
+	if request.Scenario != "" && request.Scenario != "codex_session" {
+		return errors.New("scenario must be empty or codex_session")
+	}
+	if request.Mode != "" && request.Mode != "ordinary" && request.Mode != "borrowed" {
+		return errors.New("mode must be empty, ordinary or borrowed")
+	}
+	if request.Scenario == "codex_session" && request.Transport != "http" {
+		return errors.New("codex_session uses HTTP; existing WS diagnostics already cover continuation")
+	}
+	if request.ServiceTier != "" && request.ServiceTier != "default" && request.ServiceTier != OpenAIFastTierPriority && request.ServiceTier != OpenAIFastTierFlex && request.ServiceTier != OpenAIFastTierUltrafast {
+		return errors.New("unsupported service_tier")
+	}
 	if request.AccountID <= 0 || (request.Transport != "http" && request.Transport != "ws") {
 		return errors.New("account_id and transport (http or ws) are required")
 	}
@@ -130,7 +156,13 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 	ctx, cancel := borrowRevisionContext(WithAccountObservation(ctx), revisionCtx, 10*time.Minute)
 	defer cancel()
 	var requests atomic.Int32
-	for _, borrowed := range []bool{false, true} {
+	modes := []bool{false, true}
+	if request.Mode == "borrowed" || (request.Scenario == "codex_session" && request.Mode == "") {
+		modes = []bool{true}
+	} else if request.Mode == "ordinary" {
+		modes = []bool{false}
+	}
+	for _, borrowed := range modes {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -140,12 +172,12 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 		}
 		d := &codexBorrowDiagnostic{limit: int32(limit), onRequest: func(count int32) {
 			emit(CodexBorrowDiagnosticEvent{Type: "request", Mode: mode, Requests: count, Limit: limit})
-		}, requests: &requests, borrow: borrowed, transport: request.Transport, session: uuid.NewString()}
+		}, requests: &requests, borrow: borrowed, transport: request.Transport, session: uuid.NewString(), scenario: request.Scenario, serviceTier: request.ServiceTier}
 		operation := context.WithValue(ctx, codexBorrowDiagnosticContextKey{}, d)
 		emit(CodexBorrowDiagnosticEvent{Type: "phase", Mode: mode, Requests: requests.Load(), Limit: limit})
 		previous := ""
 		turns := 1
-		if request.Transport == "ws" {
+		if request.Transport == "ws" || request.Scenario == "codex_session" {
 			turns = 2
 		}
 		for turn := 1; turn <= turns; turn++ {
@@ -189,6 +221,7 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 	capture.ginContext = c
 	c.Request = httptest.NewRequest(http.MethodPost, "/internal/admin/codex-diagnostic", nil).WithContext(ctx)
 	d := borrowDiagnosticFromContext(ctx)
+	d.verification.Store(nil)
 	c.Request.Header.Set("session_id", d.session)
 	if d.transport == "ws" {
 		SetOpenAIClientTransport(c, OpenAIClientTransportWS)
@@ -202,8 +235,23 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 	if levels, _ := AccountTestReasoningOptions(account, model); slices.Contains(levels, "low") {
 		payload["reasoning"] = map[string]string{"effort": "low"}
 	}
+	if d.serviceTier != "" {
+		payload["service_tier"] = d.serviceTier
+	}
+	if d.scenario == "codex_session" {
+		d.prepareHTTPSessionTurn(c.Request.Header, payload)
+	}
 	body, _ := json.Marshal(payload)
 	forward, sendErr := s.gateway.Forward(ctx, c, account, body)
+	result.Scenario, result.Verification = d.scenario, d.verification.Load()
+	if sendErr != nil {
+		result.FailureStage, result.FailureReason = codexBorrowFailureStage(sendErr)
+		if result.Verification != nil && !result.Verification.Success {
+			result.FailureStage, result.FailureReason = "target_validation", result.Verification.Reason
+		} else if !IsCodexGatewayBorrowRequestFailure(sendErr) {
+			result.FailureStage, result.FailureReason = "upstream", "request_failed"
+		}
+	}
 	result.DurationMS = time.Since(start).Milliseconds()
 	if forward != nil {
 		result.ResponseID = firstNonEmpty(forward.ResponseID, forward.RequestID)
@@ -224,6 +272,15 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 		result.ReadError = last.err.Error()
 	}
 	result.RawResponse = last.raw.String()
+	if d.scenario == "codex_session" && last.dispatched {
+		state.mu.Lock()
+		result.Applied = state.invocation.BorrowApplied
+		state.mu.Unlock()
+		result.StateLength = len(extractOpenAICodexTurnState(w.Header()))
+		d.turnState = extractOpenAICodexTurnState(w.Header())
+		d.completeHTTPSessionTurn(&result, sendErr, last.status)
+		return result
+	}
 	if last.wsFrames && last.raw.Len() == 0 && sendErr != nil {
 		var eventErr *openAIWSUpstreamEventError
 		if errors.As(sendErr, &eventErr) && len(eventErr.payload) > 0 {

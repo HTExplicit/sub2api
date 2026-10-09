@@ -161,7 +161,7 @@ export default {
       target_probe_failed: 'Route validation failed for this account and model; see technical details',
       target_route_changed: 'The route changed during validation; validate it again',
       target_state_missing: 'The first response had no session state to validate continuation',
-      target_state_changed: 'The session state differed between the two responses; validate again',
+      target_state_changed: 'Both upstream requests completed, but continuation returned a different STATE. The route did not qualify for borrowing; inspect the verification details.',
       validating: 'Validating the borrow route for this account and model',
       candidate_ready: 'The source route has been collected',
       validated: 'The borrow route passed validation for this account and model',

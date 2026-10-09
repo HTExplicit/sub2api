@@ -39,6 +39,7 @@ type codexGatewayBorrowWSAnchorStore struct {
 }
 
 type codexGatewayBorrowWSTurn struct {
+	usage                            *codexBorrowUsageTracker
 	store                            *codexGatewayBorrowWSAnchorStore
 	key                              codexGatewayBorrowWSAnchorKey
 	previousID, connID, scope, model string
@@ -221,7 +222,7 @@ func (store *codexGatewayBorrowWSAnchorStore) knowsContinuation(key codexGateway
 }
 
 func (s *OpenAIGatewayService) prepareCodexGatewayBorrowWSTurn(ctx context.Context, c *gin.Context, account *Account,
-	wsURL string, headers http.Header, rawClientBody []byte, model, previousID, proxyURL string, executionScope ...string) (*codexGatewayBorrowWSTurn, error) {
+	wsURL string, headers http.Header, rawClientBody []byte, model, previousID, proxyURL string, executionScope ...string) (preparedTurn *codexGatewayBorrowWSTurn, preparationErr error) {
 	if s == nil || s.gatewayBorrow == nil || account == nil {
 		return nil, nil
 	}
@@ -229,10 +230,23 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowWSTurn(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	if d := borrowDiagnosticFromContext(ctx); d != nil {
-		return d.prepareWS(ctx, s.gatewayBorrow, req, account, model, previousID, proxyURL)
-	}
 	selected := s.codexGatewayBorrowWSSelected(account, model, req)
+	diagnostic := borrowDiagnosticFromContext(ctx)
+	if selected && (diagnostic == nil || diagnostic.borrow) {
+		tracker := s.gatewayBorrow.beginAttempt(ctx, account.ID, model, "ws")
+		ctx = context.WithValue(ctx, codexBorrowUsageContextKey{}, tracker)
+		req = req.WithContext(ctx)
+		defer func() {
+			if preparationErr != nil {
+				tracker.blocked(preparationErr)
+			} else if preparedTurn != nil {
+				preparedTurn.usage = tracker
+			}
+		}()
+	}
+	if diagnostic != nil {
+		return diagnostic.prepareWS(ctx, s.gatewayBorrow, req, account, model, previousID, proxyURL)
+	}
 	if IsPelicanGeneration(ctx) {
 		if !selected {
 			return nil, nil
@@ -357,6 +371,9 @@ func (turn *codexGatewayBorrowWSTurn) observe(message []byte) {
 func (turn *codexGatewayBorrowWSTurn) finish(pool *openAIWSConnPool, result *OpenAIForwardResult, resultErr error) {
 	if turn == nil {
 		return
+	}
+	if resultErr != nil {
+		turn.usage.blocked(resultErr)
 	}
 	if turn.pelicanOneShot {
 		turn.finished.Do(func() {

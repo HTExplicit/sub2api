@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // A real HTTP stream can deliver its final bytes together with cancellation
@@ -170,4 +172,72 @@ func testCodexBorrowDiagnoseWS(t *testing.T, prewarm bool) {
 func TestCodexBorrowDiagnoseWSContinuesOwnSockets(t *testing.T) { testCodexBorrowDiagnoseWS(t, false) }
 func TestCodexBorrowDiagnoseWSCountsConfiguredPrewarm(t *testing.T) {
 	testCodexBorrowDiagnoseWS(t, true)
+}
+
+func TestCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T) {
+	account := borrowCoreAccount(2)
+	generator, repo := newPelicanGeneratorForTest(account, &pelicanGeneratorUpstream{})
+	gateway := generator.openaiGatewayService
+	var business, probes int
+	gateway.httpUpstream = borrowCoreProbe(func(req *http.Request, _ string, id int64, n int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		business++
+		body := borrowCoreBody(t, req)
+		assert.Equal(t, "gpt-6.1-sol", gjson.GetBytes(body, "model").String())
+		assert.Equal(t, "priority", gjson.GetBytes(body, "service_tier").String())
+		assert.NotEmpty(t, req.Header.Get("session-id"))
+		assert.Contains(t, req.Header.Get("Cookie"), "__oailb=synthetic-borrowed-cookie")
+		var output []any
+		if business == 1 {
+			assert.Empty(t, req.Header.Get("X-Codex-Turn-State"))
+			output = []any{map[string]any{"type": "function_call", "name": codexBorrowEchoTool, "call_id": "echo-call", "arguments": `{"value":"borrow-continuation-check"}`}}
+		} else {
+			assert.Equal(t, "business-turn-state", req.Header.Get("X-Codex-Turn-State"))
+			assert.Equal(t, "none", gjson.GetBytes(body, "tool_choice").String())
+			assert.False(t, gjson.GetBytes(body, "previous_response_id").Exists())
+			assert.Equal(t, "function_call_output", gjson.GetBytes(body, "input.2.type").String())
+			assert.NotEmpty(t, gjson.GetBytes(body, "input.1.call_id").String())
+			assert.Equal(t, gjson.GetBytes(body, "input.1.call_id").String(), gjson.GetBytes(body, "input.2.call_id").String())
+			output = []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]string{"type": "output_text", "text": codexBorrowEchoValue}}}}
+		}
+		raw, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{"id": "response-test", "model": "gpt-6.1-sol", "status": "completed", "output": output, "usage": map[string]int{"input_tokens": 5, "output_tokens": 3}}})
+		_, finish, err := PreparePelicanHTTPRequest(req, id, n, "http")
+		if err != nil {
+			return nil, err
+		}
+		headers := http.Header{"Content-Type": {"text/event-stream"}}
+		headers.Set("X-Codex-Turn-State", "business-turn-state")
+		return finish(&http.Response{StatusCode: 200, Header: headers, Body: io.NopCloser(strings.NewReader("data: " + string(raw) + "\n\n"))}, nil)
+	})
+	s := NewCodexGatewayBorrowService(nil, repo, gateway, borrowCoreProbe(func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		probes++
+		assert.Equal(t, "priority", gjson.GetBytes(borrowCoreBody(t, req), "service_tier").String())
+		return borrowCoreResponse("gpt-6.1-sol", "OK", "probe-state"), nil
+	}), nil)
+	s.publishConfig(CodexGatewayBorrowConfig{Enabled: true, SourceAccountIDs: []int64{1}, TargetAccountIDs: []int64{2}, Models: []string{"gpt-6.1-sol"}}, false)
+	defer s.Stop()
+	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
+	var results []CodexBorrowDiagnosticResult
+	var count int32
+	err := s.Diagnose(context.Background(), CodexBorrowDiagnosticRequest{AccountID: 2, Model: "gpt-6.1-sol", Transport: "http", Scenario: "codex_session", ServiceTier: "priority"}, func(e CodexBorrowDiagnosticEvent) {
+		if e.Result != nil {
+			results = append(results, *e.Result)
+		}
+		count = e.Requests
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	for _, r := range results {
+		require.True(t, r.Completed, r.Error)
+		require.True(t, r.Applied)
+		require.True(t, r.Dispatched)
+		require.NotNil(t, r.Verification)
+	}
+	require.True(t, results[1].ToolRoundTrip)
+	require.Equal(t, 2, business)
+	require.EqualValues(t, business+probes, count)
+	require.LessOrEqual(t, count, int32(8))
+	usage := s.Status().RecentUsage[0]
+	require.EqualValues(t, 2, usage.AttemptCount)
+	require.EqualValues(t, 2, usage.Count)
+	require.Zero(t, usage.BlockedCount)
 }
