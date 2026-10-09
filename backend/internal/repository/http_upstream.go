@@ -1466,16 +1466,23 @@ func isOpenAIUpstreamProtocolMode(mode string) bool {
 // Go 默认惰性配置 http2 且 ReadIdleTimeout=0（不发健康 PING），无法检测被代理/NAT
 // 静默掐断的死连接。此处主动设置 ReadIdleTimeout/PingTimeout，让死连接被提前 PING
 // 出并关闭，请求得以重建连接而非挂到 TCP 重传超时。返回底层 *http2.Transport 便于测试。
+//
+//lint:ignore SA1019 Retain the configured x/net transport handle to preserve existing pool and proxy behavior.
 func enableHTTP2KeepAlive(transport *http.Transport, protocolMode string) (*http2.Transport, error) {
+	//lint:ignore SA1019 Keep the existing transport registration; this release only patches its security dependencies.
 	h2, err := http2.ConfigureTransports(transport)
 	if err != nil {
 		return nil, err
 	}
 	if h2 != nil {
+		//lint:ignore SA1019 Preserve the existing long-stream health-check configuration on the compatibility handle.
 		h2.ReadIdleTimeout = longStreamHTTP2ReadIdleTimeout
+		//lint:ignore SA1019 Preserve the separate long-stream PING response deadline.
 		h2.PingTimeout = longStreamHTTP2PingTimeout
 		if protocolMode == upstreamProtocolModeOpenAIH2 {
+			//lint:ignore SA1019 Preserve the existing OpenAI health-check configuration on the compatibility handle.
 			h2.ReadIdleTimeout = openAIHTTP2ReadIdleTimeout
+			//lint:ignore SA1019 Preserve the separate OpenAI PING response deadline.
 			h2.PingTimeout = openAIHTTP2PingTimeout
 		}
 	}

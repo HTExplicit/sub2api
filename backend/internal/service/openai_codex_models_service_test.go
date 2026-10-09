@@ -1796,7 +1796,8 @@ func TestIsRetryableCodexModelsManifestTransportError(t *testing.T) {
 			retryable: true,
 		},
 		{
-			name:      "typed HTTP2 GOAWAY",
+			name: "typed HTTP2 GOAWAY",
+			//lint:ignore SA1019 Keep regression coverage for GOAWAY errors from existing x/net-based clients.
 			err:       http2.GoAwayError{ErrCode: http2.ErrCodeNo},
 			retryable: true,
 		},
