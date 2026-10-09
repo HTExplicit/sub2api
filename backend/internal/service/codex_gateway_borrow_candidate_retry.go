@@ -13,6 +13,24 @@ func (s *CodexGatewayBorrowService) candidateRejectedLocked() bool {
 	return s.candidate != nil && s.rejectedCookie != "" && borrowHash(s.candidate.cookie.Value) == s.rejectedCookie
 }
 
+func (s *CodexGatewayBorrowService) trackCandidateValidationLocked(revision uint64, cookie string) func() {
+	if s.validatingRoutes == nil {
+		s.validatingRoutes = make(map[string]int)
+	}
+	s.validatingRoutes[cookie]++
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.revision != revision {
+			return
+		}
+		s.validatingRoutes[cookie]--
+		if s.validatingRoutes[cookie] == 0 {
+			delete(s.validatingRoutes, cookie)
+		}
+	}
+}
+
 // Source completion produces a candidate, not proof that a target can use it.
 // Retire a definitively rejected candidate only when it has no live successful
 // proof and no other validation in flight. Other targets' usable routes survive.
@@ -44,10 +62,10 @@ func (s *CodexGatewayBorrowService) rejectCandidateForRetry(err error, cooling b
 			return false
 		}
 	}
-	for _, check := range s.targets {
-		if check.cookieKey == failure.CookieFingerprint && check.validating {
-			return false
-		}
+	// The presentation index holds only the latest check per account/model;
+	// another request identity can still be validating the same candidate.
+	if s.validatingRoutes[failure.CookieFingerprint] > 0 {
+		return false
 	}
 	if s.rejectedRoutes == nil {
 		s.rejectedRoutes = make(map[string]time.Time)

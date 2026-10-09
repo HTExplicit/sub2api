@@ -279,6 +279,7 @@ type CodexGatewayBorrowService struct {
 	rejectedCookie     string
 	rejectedCause      error
 	rejectedRoutes     map[string]time.Time
+	validatingRoutes   map[string]int
 	validationSequence uint64
 	sourceSequence     uint64
 	qualifications     map[string]codexGatewayBorrowTargetCheck
@@ -417,6 +418,7 @@ func (s *CodexGatewayBorrowService) publishConfig(cfg CodexGatewayBorrowConfig, 
 	s.candidate = nil
 	s.rejectedCookie, s.rejectedCause = "", nil
 	s.rejectedRoutes = nil
+	s.validatingRoutes = nil
 	s.setup = CodexGatewayBorrowSetup{}
 	if saved && cfg.Enabled {
 		s.setup = CodexGatewayBorrowSetup{State: "queued", Total: len(cfg.TargetAccountIDs) * len(cfg.Models), StartedAt: time.Now()}
@@ -695,6 +697,10 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 			s.mu.Unlock()
 			return nil, nil
 		}
+		if s.accounts == nil || s.gateway == nil {
+			s.mu.Unlock()
+			return nil, ErrCodexGatewayBorrowUnavailable
+		}
 		if time.Now().Before(s.prepareFailedUntil) {
 			detail := s.prepareFailure
 			cause := s.rejectedCause
@@ -708,6 +714,9 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 			return nil, ErrCodexGatewayBorrowUnavailable
 		}
 		ids := append([]int64{}, s.config.SourceAccountIDs...)
+		if s.sources == nil {
+			s.sources = make(map[int64]CodexGatewayBorrowSourceStatus)
+		}
 		s.preparing = true
 		s.sourceSequence++
 		sequence := s.sourceSequence
@@ -903,9 +912,11 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 		}
 		s.validationSequence++
 		validationID := s.validationSequence
+		validationDone := s.trackCandidateValidationLocked(rev, borrowHash(candidate.cookie.Value))
 		s.targets[targetKey] = codexGatewayBorrowTargetCheck{validationID: validationID, policyRevision: policyRevision, key: key, cookieKey: borrowHash(candidate.cookie.Value), validating: true,
 			result: CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, Reason: "validating", CheckedAt: time.Now()}}
 		s.mu.Unlock()
+		defer validationDone()
 		probeCtx, cancel := borrowRevisionContext(operation, revisionCtx, codexGatewayBorrowTimeout)
 		defer cancel()
 		credential, credentialErr := resolveCredentialAccount(probeCtx, s.accounts, account)

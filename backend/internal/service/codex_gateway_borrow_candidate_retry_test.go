@@ -82,12 +82,50 @@ func TestCodexBorrowCandidateReplacementPreservesOtherProofsAndWaiters(t *testin
 				s.qualifications["other"] = check
 			} else {
 				s.targets[codexGatewayBorrowTargetKey{3, "gpt-6-astra"}] = check
+				s.validatingRoutes = map[string]int{key: 1}
 			}
 			err := &CodexGatewayBorrowFailure{Revision: s.revision, Cause: ErrCodexGatewayBorrowUnavailable, Reason: "target_state_changed", CookieFingerprint: key}
 			require.False(t, s.rejectCandidateForRetry(err, false))
 			require.Empty(t, s.rejectedCookie)
 		})
 	}
+}
+
+func TestCodexBorrowReplacementWaitsForHiddenRequestIdentity(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	var first atomic.Bool
+	a := borrowCoreAccount(2)
+	s := newBorrowCoreTest(t, func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		if first.CompareAndSwap(false, true) {
+			close(started)
+			select {
+			case <-release:
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			}
+		}
+		return borrowCoreResponse("gpt-6.1-sol", "OK", "stable"), nil
+	}, a)
+	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
+	_, req, _, err := s.accountTemplate(context.Background(), 2, "gpt-6.1-sol")
+	require.NoError(t, err)
+	done := make(chan error, 1)
+	go func() { _, _, runErr := s.Apply(req, a, "gpt-6.1-sol", "", nil, false); done <- runErr }()
+	<-started
+	s.mu.Lock()
+	key := borrowHash(s.candidate.cookie.Value)
+	failure := &CodexGatewayBorrowFailure{Revision: s.revision, Cause: ErrCodexGatewayBorrowUnavailable, Reason: "target_state_changed", CookieFingerprint: key}
+	// Another identity completed later and owns the presentation row, while
+	// the first identity's real validation is still using this candidate.
+	s.targets[codexGatewayBorrowTargetKey{2, "gpt-6.1-sol"}] = codexGatewayBorrowTargetCheck{cookieKey: key, validationID: 999}
+	s.mu.Unlock()
+	retired := s.rejectCandidateForRetry(failure, false)
+	close(release)
+	require.False(t, retired)
+	require.NoError(t, <-done)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	require.Empty(t, s.validatingRoutes)
 }
 
 func TestCodexBorrowReplacementCannotRetireNewConfiguration(t *testing.T) {
