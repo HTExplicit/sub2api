@@ -131,6 +131,7 @@ type pelicanExecutionSnapshot struct {
 }
 
 type pelicanExecutionState struct {
+	admission       context.Context
 	mu              sync.Mutex
 	coordinator     *pelicanExecutionCoordinator
 	parent          context.Context
@@ -153,7 +154,7 @@ type pelicanExecutionState struct {
 
 func newPelicanExecutionState(parent context.Context, coordinator *pelicanExecutionCoordinator, budget time.Duration, now func() time.Time) *pelicanExecutionState {
 	operationCtx, operationCancel := context.WithCancelCause(parent)
-	return &pelicanExecutionState{parent: operationCtx, operationCancel: operationCancel, coordinator: coordinator, budget: budget, now: now,
+	return &pelicanExecutionState{admission: parent, parent: operationCtx, operationCancel: operationCancel, coordinator: coordinator, budget: budget, now: now,
 		withTimeout: context.WithTimeout}
 }
 
@@ -188,6 +189,11 @@ func AcquirePelicanExecution(ctx context.Context, accountID int64) (context.Cont
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, err
 	}
+	if state.admission != nil {
+		if err := state.admission.Err(); err != nil {
+			return ctx, nil, err
+		}
+	}
 	if lease, _ := ctx.Value(pelicanExecutionLeaseContextKey{}).(*pelicanExecutionLease); lease != nil && lease.active.Load() {
 		if lease.accountID == accountID {
 			return ctx, func() {}, nil
@@ -203,6 +209,16 @@ func AcquirePelicanExecution(ctx context.Context, accountID int64) (context.Cont
 	if err != nil {
 		return ctx, nil, err
 	}
+	// A task cancellation marks its parent before walking the per-target
+	// children. A released slot can wake a sibling during that walk, while the
+	// sibling's own Err is still nil. Do not admit that cancelled task.
+	if state.admission != nil {
+		if err := state.admission.Err(); err != nil {
+			release()
+			return ctx, nil, err
+		}
+	}
+
 	lease := &pelicanExecutionLease{accountID: accountID}
 	lease.active.Store(true)
 	return context.WithValue(ctx, pelicanExecutionLeaseContextKey{}, lease), func() {

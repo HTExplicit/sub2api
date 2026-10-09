@@ -195,3 +195,18 @@ func TestCodexBorrowHTTPAppliedChecksFinalCookie(t *testing.T) {
 	req.Header.Set("Cookie", "__oailb=qualified-cookie")
 	require.True(t, codexBorrowHTTPApplied(req))
 }
+
+func TestCodexBorrowCancelledParentCannotAdmitWaitingChild(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	coordinator := newPelicanExecutionCoordinator(1)
+	state := newPelicanExecutionState(parent, coordinator, time.Minute, time.Now)
+	defer state.finish()
+	// Represent the cancellation propagation gap: the parent is cancelled,
+	// but this child's cancellation signal is not visible to its waiter yet.
+	ctx := context.WithValue(context.WithoutCancel(state.parent), pelicanExecutionContextKey{}, state)
+	cancel()
+	_, release, err := AcquirePelicanExecution(ctx, 2)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, release)
+	require.Zero(t, coordinator.active)
+}
