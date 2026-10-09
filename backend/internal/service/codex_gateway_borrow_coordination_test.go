@@ -161,3 +161,52 @@ func TestCodexBorrowDistinctRequestProofsRemainReusable(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, applied.Applied, "another request's validation must not replace this proof")
 }
+
+func TestCodexBorrowUsageKeepsFirstTerminal(t *testing.T) {
+	completed := []byte(`{"type":"response.completed","response":{"status":"completed"}}`)
+	failed := []byte(`{"type":"error","error":{"code":"synthetic_failure"}}`)
+	for _, firstError := range []bool{false, true} {
+		s := newBorrowCoreTest(t, nil)
+		tracker := s.beginUsage(context.Background(), 2, "gpt-6-astra", "http", true)
+		if firstError {
+			tracker.observe(failed)
+			tracker.observe(completed)
+		} else {
+			tracker.observe(completed)
+			tracker.observe(failed)
+		}
+		tracker.finish(context.Canceled)
+		want := "completed"
+		if firstError {
+			want = "upstream_error"
+		}
+		require.Equal(t, want, s.Status().RecentUsage[0].Outcome)
+	}
+}
+
+func TestCodexBorrowHTTPAppliedChecksFinalCookie(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, chatgptCodexURL, nil)
+	require.NoError(t, err)
+	proof := codexGatewayBorrowHTTPPreparation{application: &CodexGatewayBorrowApplication{Applied: true, CookieFingerprint: borrowHash("qualified-cookie")}}
+	req = req.WithContext(context.WithValue(req.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, proof))
+	require.False(t, codexBorrowHTTPApplied(req))
+	req.Header.Set("Cookie", "__oailb=changed-cookie")
+	require.False(t, codexBorrowHTTPApplied(req))
+	req.Header.Set("Cookie", "__oailb=qualified-cookie")
+	require.True(t, codexBorrowHTTPApplied(req))
+}
+
+func TestCodexBorrowCancelledParentCannotAdmitWaitingChild(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	coordinator := newPelicanExecutionCoordinator(1)
+	state := newPelicanExecutionState(parent, coordinator, time.Minute, time.Now)
+	defer state.finish()
+	// Represent the cancellation propagation gap: the parent is cancelled,
+	// but this child's cancellation signal is not visible to its waiter yet.
+	ctx := context.WithValue(context.WithoutCancel(state.parent), pelicanExecutionContextKey{}, state)
+	cancel()
+	_, release, err := AcquirePelicanExecution(ctx, 2)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, release)
+	require.Zero(t, coordinator.active)
+}

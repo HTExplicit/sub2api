@@ -157,7 +157,7 @@ func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account 
 	if err != nil {
 		return nil, err
 	}
-	applied := wire.Context().Value(codexBorrowAppliedContextKey{}) == true
+	applied := codexBorrowHTTPApplied(wire)
 	if err := consumeBorrowDiagnosticRequest(wire.Context()); err != nil {
 		return nil, err
 	}

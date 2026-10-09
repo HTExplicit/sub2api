@@ -66,6 +66,9 @@ func (s *CodexGatewayBorrowService) beginUsage(ctx context.Context, accountID in
 }
 
 type codexBorrowUsageTracker struct {
+	mu       sync.Mutex
+	terminal bool
+	finished bool
 	revision uint64
 	service  *CodexGatewayBorrowService
 	key      codexBorrowUsageKey
@@ -77,6 +80,11 @@ func (t *codexBorrowUsageTracker) observe(message []byte) {
 	if t == nil {
 		return
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.finished || t.terminal {
+		return
+	}
 	typeName := gjson.GetBytes(message, "type").String()
 	if id := gjson.GetBytes(message, "response.id").String(); id != "" {
 		t.row.RequestID = id
@@ -86,6 +94,7 @@ func (t *codexBorrowUsageTracker) observe(message []byte) {
 	}
 	switch typeName {
 	case "response.completed", "response.done":
+		t.terminal = true
 		if gjson.GetBytes(message, "response.status").String() == "completed" && !gjson.GetBytes(message, "response.error").IsObject() {
 			t.row.Outcome = "completed"
 		} else if gjson.GetBytes(message, "response.status").String() != "" || gjson.GetBytes(message, "response.error").IsObject() {
@@ -94,6 +103,7 @@ func (t *codexBorrowUsageTracker) observe(message []byte) {
 			t.row.Outcome = "unobserved"
 		}
 	case "error", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+		t.terminal = true
 		t.row.Outcome = "upstream_error"
 	}
 }
@@ -103,23 +113,29 @@ func (t *codexBorrowUsageTracker) finish(err error) {
 		return
 	}
 	t.once.Do(func() {
-		if err != nil && t.row.Outcome != "completed" {
-			t.row.Outcome = "transport_error"
-		} else if t.row.Outcome == "sent" {
-			t.row.Outcome = "incomplete"
+		t.mu.Lock()
+		if !t.terminal {
+			if err != nil {
+				t.row.Outcome = "transport_error"
+			} else {
+				t.row.Outcome = "incomplete"
+			}
 		}
 		now := time.Now()
 		t.row.FinishedAt = &now
+		t.finished = true
+		row := t.row
+		t.mu.Unlock()
 		t.service.mu.Lock()
 		defer t.service.mu.Unlock()
-		// An older completion must not overwrite a newer attempt or cleared config.
-		if current, ok := t.service.usage[t.key]; ok && t.service.revision == t.revision && current.Count == t.row.Count {
-			t.service.usage[t.key] = t.row
+		if current, ok := t.service.usage[t.key]; ok && t.service.revision == t.revision && current.Count == row.Count {
+			t.service.usage[t.key] = row
 		}
 	})
 }
 
 type codexBorrowUsageBody struct {
+	mu sync.Mutex
 	io.ReadCloser
 	tracker *codexBorrowUsageTracker
 	line    []byte
@@ -128,6 +144,8 @@ type codexBorrowUsageBody struct {
 
 func (b *codexBorrowUsageBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	for _, ch := range p[:n] {
 		if ch == '\n' {
 			if strings.HasPrefix(string(b.line), "data:") {
@@ -153,6 +171,8 @@ func (b *codexBorrowUsageBody) Read(p []byte) (int, error) {
 
 func (b *codexBorrowUsageBody) Close() error {
 	err := b.ReadCloser.Close()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if b.err == nil {
 		b.err = err
 	}
@@ -168,14 +188,26 @@ func (s *CodexGatewayBorrowService) trackHTTPResponse(t *codexBorrowUsageTracker
 		t.finish(err)
 		return resp, err
 	}
+	t.mu.Lock()
 	t.row.RequestID = resp.Header.Get("X-Request-ID")
 	if resp.StatusCode >= 400 {
 		t.row.Outcome = "upstream_error"
+		t.terminal = true
 	}
+	t.mu.Unlock()
 	if err != nil || resp.Body == nil {
 		t.finish(err)
 	} else {
 		resp.Body = &codexBorrowUsageBody{ReadCloser: resp.Body, tracker: t}
 	}
 	return resp, err
+}
+
+func (t *codexBorrowUsageTracker) terminalObserved() bool {
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.terminal
 }

@@ -35,7 +35,7 @@
         <p>{{ result.dispatched === false ? text('准备阶段结束，未发出对照请求', 'Stopped before dispatching this comparison') : result.applied ? text('实际已使用借用', 'Borrow was applied') : text('未使用借用', 'Borrow was not applied') }} · {{ result.reported_model || '—' }} · {{ result.duration_ms }} ms</p>
         <p class="whitespace-pre-wrap break-words">{{ result.answer || '—' }}</p>
         <pre v-if="result.error" class="whitespace-pre-wrap break-words text-red-700 dark:text-red-300">{{ result.error }}</pre>
-        <details><summary class="cursor-pointer text-muted">{{ text('完整响应', 'Complete response') }}</summary><pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{{ result.raw_response }}</pre></details>
+        <details><summary class="cursor-pointer text-muted">{{ text('完整响应', 'Complete response') }}</summary><p v-if="result.read_error" class="mt-2 text-xs text-muted">{{ text('流读取结束信息（完成终态优先）', 'Read cleanup detail (a completed terminal takes precedence)') }}: {{ result.read_error }}</p><pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{{ result.raw_response }}</pre></details>
       </article>
       <p class="text-xs text-muted">{{ text('这些结果用于确认链路和本次回答，不证明模型的真实身份或智力水平。WS 仅在账号已经启用时可用。', 'These results establish transport behaviour and this answer, not physical model identity or intelligence. WS requires an already enabled account.') }}</p>
     </div>

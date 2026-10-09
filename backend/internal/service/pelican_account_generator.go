@@ -89,6 +89,7 @@ type pelicanGenerationCapture struct {
 }
 
 type pelicanHTTPAttempt struct {
+	mu          sync.Mutex
 	dispatched  bool
 	protocol    string
 	contentType string
@@ -189,10 +190,7 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	firstOutputPolicy, _ := ctx.Value(pelicanFirstOutputPolicyContextKey{}).(*pelicanFirstOutputPolicy)
 	ctx = firstOutputPolicy.arm(ctx)
 	req = req.WithContext(ctx)
-	borrowApplied := ctx.Value(codexBorrowAppliedContextKey{}) == true
-	if prepared, ok := ctx.Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation); ok {
-		borrowApplied = prepared.application != nil && prepared.application.Applied
-	}
+	borrowApplied := codexBorrowHTTPApplied(req)
 	invocation := PelicanInvocation{Platform: capture.account.Platform, Model: model, Effort: effort,
 		Endpoint: req.URL.Scheme + "://" + req.URL.Host + req.URL.EscapedPath(), Protocol: protocol, Transport: transport, BorrowApplied: borrowApplied}
 	RecordPelicanInvocation(ctx, invocation)
@@ -201,6 +199,8 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	capture.attempts = append(capture.attempts, attempt)
 	capture.mu.Unlock()
 	finish = func(resp *http.Response, sendErr error) (*http.Response, error) {
+		attempt.mu.Lock()
+		defer attempt.mu.Unlock()
 		firstOutputPolicy.stopHeaderWait()
 		attempt.err = sendErr
 		if resp == nil || resp.Body == nil {
@@ -285,6 +285,8 @@ func preparePelicanWSSend(ctx context.Context, account *Account, endpoint string
 	capture.attempts = append(capture.attempts, attempt)
 	capture.mu.Unlock()
 	observe = func(message []byte) error {
+		attempt.mu.Lock()
+		defer attempt.mu.Unlock()
 		if attempt.raw.Len()+len(message)+1 > int(codexGatewayBorrowPelicanMaxBody) {
 			attempt.err = errors.New("upstream response exceeds the pelican record size limit")
 			return attempt.err
@@ -305,6 +307,8 @@ type pelicanCapturingBody struct {
 
 func (b *pelicanCapturingBody) Read(data []byte) (int, error) {
 	n, err := b.ReadCloser.Read(data)
+	b.attempt.mu.Lock()
+	defer b.attempt.mu.Unlock()
 	if n > 0 {
 		if b.attempt.raw.Len()+n > int(codexGatewayBorrowPelicanMaxBody) {
 			b.attempt.err = errors.New("upstream response exceeds the pelican record size limit")
@@ -443,12 +447,7 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	// This represents the server's internal generation operation. No client
 	// UA, protocol handshake, API-key subject or group policy is synthesized.
 	sendErr := s.sendPelicanWithAccount(ctx, c, account, model, option.UpstreamModel, effort)
-	capture.mu.Lock()
-	var last *pelicanHTTPAttempt
-	if len(capture.attempts) > 0 {
-		last = capture.attempts[len(capture.attempts)-1]
-	}
-	capture.mu.Unlock()
+	last := snapshotPelicanAttempt(capture)
 	if last == nil {
 		result.RawResponse = w.Body.String()
 		if sendErr == nil {
@@ -667,4 +666,24 @@ func parsePelicanWSFrames(raw string) (answer string, limited bool, model string
 		}
 	}
 	return text.String(), p.limited, p.upstreamModel, p.incomplete()
+}
+
+// Forward can commit a terminal event while its read-ahead goroutine is being
+// cancelled. Snapshot under the attempt lock; later read cleanup cannot race
+// diagnostic parsing or change the bytes that were already observed.
+func snapshotPelicanAttempt(capture *pelicanGenerationCapture) *pelicanHTTPAttempt {
+	capture.mu.Lock()
+	var last *pelicanHTTPAttempt
+	if len(capture.attempts) > 0 {
+		last = capture.attempts[len(capture.attempts)-1]
+	}
+	capture.mu.Unlock()
+	if last == nil {
+		return nil
+	}
+	last.mu.Lock()
+	defer last.mu.Unlock()
+	snapshot := &pelicanHTTPAttempt{protocol: last.protocol, contentType: last.contentType, status: last.status, model: last.model, effort: last.effort, err: last.err, wsFrames: last.wsFrames, dispatched: last.dispatched}
+	_, _ = snapshot.raw.Write(last.raw.Bytes())
+	return snapshot
 }

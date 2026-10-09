@@ -74,6 +74,7 @@ type CodexBorrowDiagnosticRequest struct {
 }
 
 type CodexBorrowDiagnosticResult struct {
+	ReadError     string `json:"read_error,omitempty"`
 	Dispatched    bool   `json:"dispatched"`
 	Mode          string `json:"mode"`
 	Turn          int    `json:"turn"`
@@ -208,12 +209,7 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 		result.ResponseID = firstNonEmpty(forward.ResponseID, forward.RequestID)
 		result.ReportedModel = forward.UpstreamResponseModel
 	}
-	capture.mu.Lock()
-	var last *pelicanHTTPAttempt
-	if len(capture.attempts) > 0 {
-		last = capture.attempts[len(capture.attempts)-1]
-	}
-	capture.mu.Unlock()
+	last := snapshotPelicanAttempt(capture)
 	if last == nil {
 		result.RawResponse = w.Body.String()
 		if sendErr != nil {
@@ -224,6 +220,9 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 		return result
 	}
 	result.Dispatched = last.dispatched
+	if last.err != nil {
+		result.ReadError = last.err.Error()
+	}
 	result.RawResponse = last.raw.String()
 	if last.wsFrames && last.raw.Len() == 0 && sendErr != nil {
 		var eventErr *openAIWSUpstreamEventError
@@ -246,7 +245,9 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 	state.mu.Lock()
 	result.Applied = state.invocation.BorrowApplied
 	state.mu.Unlock()
-	result.Completed = sendErr == nil && parseErr == nil && !limited && last.err == nil && last.status < 400 && strings.TrimSpace(result.Answer) != ""
+	// A valid completed terminal with text is authoritative. Read-ahead cleanup
+	// (often context cancellation after that terminal) cannot turn it into failure.
+	result.Completed = sendErr == nil && parseErr == nil && !limited && last.status >= 200 && last.status < 300 && strings.TrimSpace(result.Answer) != ""
 	if sendErr != nil {
 		result.Error = sendErr.Error()
 	} else if parseErr != nil {

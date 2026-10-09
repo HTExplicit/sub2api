@@ -43,7 +43,7 @@ func (c *codexBorrowUsageFrameConn) ReadFrame(ctx context.Context) (coderws.Mess
 	c.current.observe(payload)
 	if err != nil {
 		c.current.finish(err)
-	} else if c.current != nil && c.current.row.Outcome != "sent" {
+	} else if c.current.terminalObserved() {
 		c.current.finish(nil)
 	}
 	c.mu.Unlock()
