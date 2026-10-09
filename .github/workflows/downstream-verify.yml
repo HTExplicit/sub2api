@@ -45,6 +45,7 @@ jobs:
       - name: Native gateway borrowing contracts
         working-directory: backend
         run: |
+          python3 ../.github/scripts/prepare_test_images.py
           go test -p=1 -tags unit ./internal/service ./internal/repository ./internal/handler ./internal/handler/admin -run '^Test(CodexGatewayBorrow|Pelican|AccountObservation|ObservedAccountLease)' -count=1
           go test -p=1 -tags integration ./internal/repository -run '^TestCodexGatewayBorrowTestRepositoryIntegrationLifecycle$' -count=1
       - name: Codex preparation coordination race tests
