@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 const codexBorrowEchoTool = "codex_borrow_echo"
@@ -45,15 +47,46 @@ func (d *codexBorrowDiagnostic) prepareHTTPSessionTurn(headers http.Header, payl
 }
 
 func codexBorrowSessionTerminal(raw string) (gjson.Result, error) {
+	// Native Codex streams may omit output from the final envelope. Preserve
+	// completed output items (including encrypted reasoning) by their stream
+	// index; deltas alone never prove a complete item or a completed response.
+	items := make(map[int]json.RawMessage)
 	for _, line := range strings.Split(raw, "\n") {
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
 		event := gjson.Parse(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
 		switch event.Get("type").String() {
+		case "response.output_item.done":
+			index := int(event.Get("output_index").Int())
+			item := event.Get("item")
+			if index < 0 || index >= 128 || !item.IsObject() {
+				return gjson.Result{}, errors.New("invalid diagnostic output item")
+			}
+			items[index] = json.RawMessage(item.Raw)
 		case "response.completed", "response.done":
 			response := event.Get("response")
 			if response.Get("status").String() == "completed" && !response.Get("error").IsObject() {
+				if len(response.Get("output").Array()) == 0 && len(items) > 0 {
+					indexes := make([]int, 0, len(items))
+					for index := range items {
+						indexes = append(indexes, index)
+					}
+					sort.Ints(indexes)
+					output := make([]json.RawMessage, 0, len(items))
+					for _, index := range indexes {
+						output = append(output, items[index])
+					}
+					encoded, err := json.Marshal(output)
+					if err != nil {
+						return gjson.Result{}, err
+					}
+					materialized, err := sjson.SetRaw(response.Raw, "output", string(encoded))
+					if err != nil {
+						return gjson.Result{}, err
+					}
+					response = gjson.Parse(materialized)
+				}
 				return response, nil
 			}
 			return response, errors.New("upstream terminal was not completed")
@@ -66,6 +99,7 @@ func codexBorrowSessionTerminal(raw string) (gjson.Result, error) {
 
 func (d *codexBorrowDiagnostic) completeHTTPSessionTurn(result *CodexBorrowDiagnosticResult, sendErr error, status int) {
 	response, err := codexBorrowSessionTerminal(result.RawResponse)
+	result.Completed = err == nil && status >= 200 && status < 300
 	if sendErr != nil {
 		result.Error = sendErr.Error()
 		return
@@ -104,9 +138,8 @@ func (d *codexBorrowDiagnostic) completeHTTPSessionTurn(result *CodexBorrowDiagn
 		}
 	}
 	result.Answer = strings.TrimSpace(answer.String())
-	result.Completed = result.Answer == codexBorrowEchoValue
-	result.ToolRoundTrip = result.Completed
-	if !result.Completed {
+	result.ToolRoundTrip = result.Answer == codexBorrowEchoValue
+	if !result.ToolRoundTrip {
 		result.Error = "continuation did not return the fixed tool result"
 	}
 }

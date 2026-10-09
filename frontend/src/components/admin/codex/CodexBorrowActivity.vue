@@ -33,10 +33,11 @@
       <p v-if="running" role="status" class="text-sm">{{ phase === 'ordinary' ? text('正在检查普通路径…', 'Checking ordinary path…') : text('正在准备并检查借用路径…', 'Preparing and checking borrowed path…') }} {{ text('已发送', 'Requests sent') }} {{ requests }} / 8</p>
       <pre v-if="error" role="alert" class="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm text-red-700 dark:text-red-300">{{ error }}</pre>
       <article v-for="(result, index) in results" :key="index" class="space-y-2 rounded-lg border border-line p-3 text-sm" data-test="diagnose-result">
-        <p class="font-medium">{{ result.mode === 'ordinary' ? text('普通路径', 'Ordinary path') : text('借用路径', 'Borrowed path') }} · {{ text('第', 'Turn') }} {{ result.turn }} {{ result.completed ? text('轮：已完成', ': completed') : text('轮：未完成', ': not completed') }}</p>
+        <p class="font-medium">{{ result.mode === 'ordinary' ? text('普通路径', 'Ordinary path') : text('借用路径', 'Borrowed path') }} · {{ text('第', 'Turn') }} {{ result.turn }} {{ result.completed ? text('轮：上游已完成', ': upstream completed') : text('轮：未确认完成', ': not completed') }}</p>
         <p>{{ result.dispatched === false ? text('准备阶段结束，未发出对照请求', 'Stopped before dispatching this comparison') : result.applied ? text('实际已使用借用', 'Borrow was applied') : text('未使用借用', 'Borrow was not applied') }} · {{ result.reported_model || '—' }} · {{ result.duration_ms }} ms</p>
         <p class="whitespace-pre-wrap break-words">{{ result.answer || '—' }}</p>
         <p v-if="result.scenario === 'codex_session'">{{ result.tool_round_trip ? text('工具结果与续接已核对', 'Tool result and continuation verified') : text('Codex 工具调用与完整历史续接检查', 'Checking Codex tool call and full-history continuation') }}</p>
+        <p v-if="result.completed && result.error">{{ text('上游已完成，但本轮检查未通过。', 'The upstream completed, but this diagnostic check did not pass.') }}</p>
         <p v-if="result.failure_stage">{{ result.failure_stage }} · {{ result.failure_reason }}</p>
         <details v-if="result.verification"><summary class="cursor-pointer text-muted">{{ text('本次借用验证依据', 'Borrow verification for this request') }}</summary><pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{{ JSON.stringify(result.verification, null, 2) }}</pre></details>
         <pre v-if="result.error" class="whitespace-pre-wrap break-words text-red-700 dark:text-red-300">{{ result.error }}</pre>

@@ -153,6 +153,8 @@ export default {
       not_configured: 'This account and model are absent from the saved configuration',
       disabled: 'Borrowing is currently disabled',
       route_expired: 'The borrow route has expired; prepare or validate it again',
+      source_passed_target_failed: 'The source returned a candidate but target validation failed. Replacement is bounded and demand-driven, with an acquisition cooldown.',
+      source_returned_rejected_route: 'The source returned the same rejected route. Its lease was not extended; acquisition can resume after cooldown.',
       source_qualified: 'The source account can provide a borrow route',
       source_probe_failed: 'Source route collection failed; see technical details',
       source_response_not_qualified: 'The source response did not meet the borrowing conditions',
