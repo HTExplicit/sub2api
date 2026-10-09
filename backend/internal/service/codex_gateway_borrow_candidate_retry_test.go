@@ -109,7 +109,8 @@ func TestCodexBorrowReplacementBudgetDoesNotCoolOtherCallers(t *testing.T) {
 			return borrowCoreResponse("gpt-6-astra", "OK", "source", "__oailb=replacement-cookie; Secure; Path=/; Max-Age=230"), nil
 		}
 		state := "first"
-		cookie, _ := req.Cookie("__oailb")
+		cookie, cookieErr := req.Cookie("__oailb")
+		assert.NoError(t, cookieErr)
 		if req.Header.Get("X-Codex-Turn-State") != "" && cookie != nil && cookie.Value != "replacement-cookie" {
 			state = "changed"
 		}

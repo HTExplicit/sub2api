@@ -18,7 +18,9 @@ func TestCodexBorrowSessionRebuildsCompletedStreamItems(t *testing.T) {
 	diagnostic.completeHTTPSessionTurn(&result, nil, 200)
 	require.True(t, result.Completed, result.Error)
 	require.Len(t, diagnostic.history, 4, "preserve reasoning, tool call and its linked output")
-	require.Contains(t, string(diagnostic.history[1].(json.RawMessage)), "synthetic-encrypted-item")
+	reasoning, ok := diagnostic.history[1].(json.RawMessage)
+	require.True(t, ok)
+	require.Contains(t, string(reasoning), "synthetic-encrypted-item")
 	second := "data: " + `{"type":"response.output_item.done","output_index":0,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"borrow-continuation-check"}]}}` + "\n\n" +
 		"data: " + `{"type":"response.completed","response":{"id":"synthetic-2","model":"gpt-6.1-sol","status":"completed","output":[]}}` + "\n\n"
 	result = CodexBorrowDiagnosticResult{RawResponse: second}
