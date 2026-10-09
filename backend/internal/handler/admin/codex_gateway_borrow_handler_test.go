@@ -19,6 +19,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCodexGatewayBorrowDiagnosePreflightNeverDispatches(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name, body string
+		status     int
+	}{
+		{"disabled", `{"account_id":1,"model":"gpt-6-astra","transport":"http"}`, http.StatusOK},
+		{"unsupported transport", `{"account_id":1,"model":"gpt-6-astra","transport":"invalid"}`, http.StatusOK},
+		{"malformed", `{`, http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := gin.New()
+			handler := NewCodexGatewayBorrowHandler(nil, nil, nil)
+			router.POST("/diagnose", handler.Diagnose)
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/diagnose", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(response, request)
+			require.Equal(t, test.status, response.Code)
+			require.Equal(t, "private, no-store", response.Header().Get("Cache-Control"))
+			if test.status == http.StatusOK {
+				require.Contains(t, response.Header().Get("Content-Type"), "text/event-stream")
+				require.Contains(t, response.Body.String(), `"type":"error"`)
+				require.Contains(t, response.Body.String(), `"requests":0`)
+				require.NotContains(t, response.Body.String(), `"type":"request"`)
+			}
+		})
+	}
+}
+
 type codexGatewayBorrowHandlerTestRepo struct {
 	task    *service.CodexGatewayBorrowTestTask
 	result  *service.CodexGatewayBorrowTestResult
