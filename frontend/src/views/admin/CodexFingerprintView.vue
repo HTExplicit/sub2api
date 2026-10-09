@@ -2,8 +2,8 @@
   <AppLayout>
     <section class="space-y-6" data-ui="codex-fingerprint">
       <div>
-        <h1 class="text-xl font-semibold text-ink">{{ text('Codex 指纹', 'Codex fingerprint') }}</h1>
-        <p class="mt-2 text-sm text-muted">{{ text('统一管理 OpenAI OAuth 和 Setup Token 账号的 Codex TUI 身份及设备、会话标识。', 'Manage the Codex TUI identity and device/session identifiers of OpenAI OAuth and setup-token accounts.') }}</p>
+        <h1 class="text-xl font-semibold text-ink">{{ text('Codex 指纹模拟', 'Codex fingerprint simulation') }}</h1>
+        <p class="mt-2 text-sm text-muted">{{ text('统一管理指纹模拟并查看完整固定设备身份与当前策略。账号列表仅包含 OpenAI OAuth 和 Setup Token 账号；设备身份由后台自动生成并保留。', 'Manage fingerprint simulation and inspect complete fixed device identities and current policies. The list includes only OpenAI OAuth and setup-token accounts; device identities are generated and preserved by the backend.') }}</p>
       </div>
       <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
       <p v-if="message" role="status" class="text-sm text-ink">{{ message }}</p>
@@ -68,14 +68,13 @@
                   <td class="p-3"><input type="checkbox" :checked="selectedIDs.includes(account.id)" :aria-label="text('选择账号 ', 'Select account ') + account.name" @change="selectAccount(account.id, ($event.target as HTMLInputElement).checked)" /></td>
                   <td class="p-3"><span class="block font-medium">{{ account.name }}</span><span class="text-xs text-muted">#{{ account.id }} · {{ account.type }}{{ account.parent_account_id ? text(' · 影子账号', ' · shadow account') : '' }}</span></td>
                   <td class="p-3"><select v-model="draftModes[account.id]" :data-test="`fingerprint-mode-${account.id}`" :aria-label="text('账号模式 ', 'Account mode ') + account.name" class="input w-auto" :disabled="rowBusy[account.id]"><option v-for="mode in modes" :key="mode.value" :value="mode.value">{{ mode.label }}</option></select></td>
-                  <td class="p-3"><div class="flex flex-wrap gap-2"><button type="button" class="btn btn-secondary btn-sm" :data-test="`fingerprint-account-save-${account.id}`" :disabled="rowBusy[account.id] || draftModes[account.id] === savedMode(account)" @click="saveAccount(account)">{{ text('保存', 'Save') }}</button><button type="button" class="btn btn-secondary btn-sm" :disabled="rowBusy[account.id]" @click="showIdentity(account.id)">{{ text('查看生效身份', 'View effective identity') }}</button></div></td>
+                  <td class="p-3"><div class="flex flex-wrap gap-2"><button type="button" class="btn btn-secondary btn-sm" :data-test="`fingerprint-account-save-${account.id}`" :disabled="rowBusy[account.id] || settingsBusy || rowsLoading || draftModes[account.id] === savedMode(account)" @click="saveAccount(account)">{{ text('保存', 'Save') }}</button><button type="button" class="btn btn-secondary btn-sm" :data-test="'fingerprint-account-refresh-' + account.id" :aria-label="text('刷新账号身份 ', 'Refresh account identity ') + account.name" :disabled="rowBusy[account.id] || detailLoading[account.id] || settingsBusy || rowsLoading" @click="requestIdentity(account.id)">{{ text('刷新身份', 'Refresh identity') }}</button></div></td>
                 </tr>
-                <tr v-if="accountViews[account.id]"><td colspan="4" class="bg-surface p-4"><dl class="grid gap-3 text-sm sm:grid-cols-2">
-                  <div class="sm:col-span-2"><dt class="text-muted">User-Agent</dt><dd class="break-words font-mono">{{ accountViews[account.id]!.identity.user_agent }}</dd></div>
-                  <div><dt class="text-muted">{{ text('身份来源', 'Identity source') }}</dt><dd>{{ identitySource(accountViews[account.id]!.identity.identity_source) }} · #{{ accountViews[account.id]!.identity.identity_account_id }}</dd></div>
-                  <div><dt class="text-muted">Originator / Version</dt><dd class="font-mono">{{ accountViews[account.id]!.identity.originator }} / {{ accountViews[account.id]!.identity.version }}</dd></div>
-                  <div><dt class="text-muted">{{ text('当前收敛状态', 'Effective convergence') }}</dt><dd>{{ effectiveMode(accountViews[account.id]!) }}</dd></div>
-                </dl></td></tr>
+                <tr><td colspan="4" class="bg-surface p-4" :aria-busy="detailLoading[account.id] || settingsBusy">
+                  <div v-if="detailErrors[account.id]" class="flex flex-wrap items-center gap-3"><p role="alert" class="text-sm text-red-600 dark:text-red-400">{{ detailErrors[account.id] }}</p><button type="button" class="btn btn-secondary btn-sm" :data-test="'fingerprint-account-retry-' + account.id" :aria-label="text('重试读取账号身份 ', 'Retry account identity ') + account.name" :disabled="detailLoading[account.id] || rowBusy[account.id] || settingsBusy || rowsLoading" @click="requestIdentity(account.id)">{{ text('重试读取身份', 'Retry identity') }}</button></div>
+                  <CodexFingerprintIdentity v-if="accountViews[account.id]" :view="accountViews[account.id]!" :account-id="account.id" />
+                  <p v-else-if="!detailErrors[account.id]" role="status" class="text-sm text-muted">{{ settingsBusy ? text('正在保存策略，保存结束后重新读取身份', 'Saving policy; identities will reload when the save finishes') : text('正在读取完整身份…', 'Loading complete identity…') }}</p>
+                </td></tr>
               </template>
               <tr v-if="!rows.length"><td colspan="4" class="p-6 text-center text-muted">{{ rowsLoading ? t('common.loading') : text('没有符合条件的账号', 'No matching accounts') }}</td></tr>
             </tbody>
@@ -91,6 +90,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import CodexFingerprintIdentity from '@/components/admin/CodexFingerprintIdentity.vue'
 import accountsAPI from '@/api/admin/accounts'
 import { codexFingerprintAPI, type CodexFingerprintSettings, type CodexFingerprintSettingsView, type CodexFingerprintMode, type CodexFingerprintAccountView } from '@/api/admin/codexFingerprint'
 import { useAccountJobsStore, isTerminalAccountJob } from '@/stores/accountJobs'
@@ -108,11 +108,18 @@ const rows = ref<AccountListItem[]>([]), selectedIDs = ref<number[]>([])
 const draftModes = reactive<Record<number, CodexFingerprintMode>>({})
 const rowBusy = reactive<Record<number, boolean>>({})
 const accountViews = reactive<Record<number, CodexFingerprintAccountView>>({})
+const storedModes = reactive<Record<number, CodexFingerprintMode>>({})
+const detailLoading = reactive<Record<number, boolean>>({})
+const detailErrors = reactive<Record<number, string>>({})
 const page = ref(1), total = ref(0), search = ref(''), activeSearch = ref(''), bulkMode = ref<CodexFingerprintMode>('device')
 const pageSize = 20
 let generation = 0, listSerial = 0
 const ownedJobID = ref(0)
 let listController: AbortController | null = null
+let detailController = new AbortController(), detailEpoch = 0, detailSerial = 0, activeDetails = 0
+const detailVersions: Record<number, number> = {}
+type DetailTask = { id: number; epoch: number; serial: number; list: number; generation: number; signal: AbortSignal }
+const detailQueue: DetailTask[] = []
 const modes = computed(() => [
   { value: 'off' as const, label: text('保留设备／会话标识', 'Preserve device/session identifiers') },
   { value: 'device' as const, label: text('仅设备', 'Device only') },
@@ -124,21 +131,61 @@ const allPageSelected = computed(() => rows.value.length > 0 && rows.value.every
 const somePageSelected = computed(() => rows.value.some(row => selectedIDs.value.includes(row.id)))
 
 function savedMode(account: AccountListItem): CodexFingerprintMode {
-  const value = accountViews[account.id]?.mode || account.extra?.codex_fingerprint_mode
+  const value = storedModes[account.id] ?? account.extra?.codex_fingerprint_mode
   return modes.value.some(mode => mode.value === value) ? value as CodexFingerprintMode : 'device'
 }
 function selectAccount(id: number, selected: boolean) {
   selectedIDs.value = selected ? [...new Set([...selectedIDs.value, id])] : selectedIDs.value.filter(value => value !== id)
 }
 function selectPage(selected: boolean) { for (const row of rows.value) selectAccount(row.id, selected) }
-function identitySource(source: string): string {
-  const labels: Record<string, string> = { account: text('账号固定 TUI', 'Fixed account TUI'), override_ua: text('账号自定义 UA', 'Account UA override'), canonical: text('全局默认', 'Global default'), protocol_fallback: text('协议兜底；实际请求保留客户端身份', 'Protocol fallback; actual requests retain the client identity') }
-  return labels[source] || source
+function invalidateIdentity(id: number) {
+  detailVersions[id] = ++detailSerial
+  delete accountViews[id]; delete detailErrors[id]; delete detailLoading[id]
 }
-function effectiveMode(view: CodexFingerprintAccountView): string {
-  if (!view.simulation_enabled) return text('总开关已关闭', 'Master switch is off')
-  if (view.identity.fingerprint_reason === 'seed_missing') return text('身份种子缺失，未收敛', 'Missing identity seed; no convergence')
-  return modes.value.find(mode => mode.value === view.identity.fingerprint_mode_effective)?.label || view.identity.fingerprint_reason
+function invalidateDetails() {
+  detailEpoch++; detailController.abort(); detailController = new AbortController()
+  detailQueue.splice(0)
+  for (const record of [accountViews, detailErrors, detailLoading]) for (const id of Object.keys(record)) delete record[Number(id)]
+}
+function taskIsCurrent(task: DetailTask): boolean {
+  return task.generation === generation && task.epoch === detailEpoch && task.list === listSerial &&
+    task.serial === detailVersions[task.id] && rows.value.some(row => row.id === task.id)
+}
+function applyAccountView(account: AccountListItem, view: CodexFingerprintAccountView) {
+  const dirty = draftModes[account.id] !== savedMode(account)
+  storedModes[account.id] = view.mode
+  account.extra = { ...account.extra, codex_fingerprint_mode: view.mode }
+  accountViews[account.id] = view
+  if (!dirty) draftModes[account.id] = view.mode
+}
+function pumpDetails() {
+  while (activeDetails < 3 && detailQueue.length) {
+    const task = detailQueue.shift()!
+    if (!taskIsCurrent(task)) continue
+    activeDetails++
+    void readIdentity(task).finally(() => { activeDetails--; pumpDetails() })
+  }
+}
+async function readIdentity(task: DetailTask) {
+  try {
+    const view = await codexFingerprintAPI.getAccount(task.id, { signal: task.signal })
+    if (!taskIsCurrent(task)) return
+    const account = rows.value.find(row => row.id === task.id)!
+    applyAccountView(account, view)
+  } catch (cause) {
+    if (taskIsCurrent(task) && !task.signal.aborted) detailErrors[task.id] = extractApiErrorMessage(cause, t('common.error'))
+  } finally { if (taskIsCurrent(task)) detailLoading[task.id] = false }
+}
+function requestIdentity(id: number) {
+  if (settingsBusy.value || rowsLoading.value || rowBusy[id] || detailLoading[id] || !rows.value.some(row => row.id === id)) return
+  delete detailErrors[id]
+  const serial = ++detailSerial
+  detailVersions[id] = serial; detailLoading[id] = true
+  detailQueue.push({ id, epoch: detailEpoch, serial, list: listSerial, generation, signal: detailController.signal })
+  pumpDetails()
+}
+function loadIdentities() {
+  for (const row of rows.value) requestIdentity(row.id)
 }
 async function loadSettings() {
   const current = generation
@@ -153,58 +200,52 @@ async function saveSettings() {
   const current = generation
   const sent: CodexFingerprintSettings = { enabled: draft.enabled, user_agent: draft.user_agent, client_version: draft.client_version, version_auto_sync_enabled: draft.version_auto_sync_enabled }
   settingsBusy.value = true; error.value = ''; message.value = ''
+  invalidateDetails()
   try {
     const value = await codexFingerprintAPI.saveSettings(sent)
     if (current !== generation) return
     settings.value = value; Object.assign(draft, value)
-    for (const id of Object.keys(accountViews)) delete accountViews[Number(id)]
     message.value = text('设置已保存，新请求立即生效', 'Settings saved; new requests use the new policy')
   } catch (cause) { if (current === generation) error.value = extractApiErrorMessage(cause, t('common.error')) }
-  finally { if (current === generation) settingsBusy.value = false }
+  finally { if (current === generation) { settingsBusy.value = false; loadIdentities() } }
 }
 async function loadRows() {
   const current = ++listSerial
-  listController?.abort(); listController = new AbortController(); rowsLoading.value = true
+  listController?.abort(); listController = new AbortController(); rowsLoading.value = true; invalidateDetails()
+  rows.value = []
+  const controller = listController
   try {
-    const result = await accountsAPI.list(page.value, pageSize, { platform: 'openai', types: 'oauth,setup-token', search: activeSearch.value, lite: '0' }, { signal: listController.signal })
+    const result = await accountsAPI.list(page.value, pageSize, { platform: 'openai', types: 'oauth,setup-token', search: activeSearch.value, lite: '0' }, { signal: controller.signal })
     if (current !== listSerial) return
     rows.value = result.items; total.value = result.total
-    for (const row of rows.value) { delete accountViews[row.id]; draftModes[row.id] = savedMode(row) }
-  } catch (cause) { if (current === listSerial && !listController.signal.aborted) error.value = extractApiErrorMessage(cause, t('common.error')) }
-  finally { if (current === listSerial) rowsLoading.value = false }
+    for (const row of rows.value) {
+      const dirty = draftModes[row.id] !== undefined && draftModes[row.id] !== savedMode(row)
+      const value = row.extra?.codex_fingerprint_mode
+      storedModes[row.id] = modes.value.some(mode => mode.value === value) ? value as CodexFingerprintMode : 'device'
+      if (!dirty) draftModes[row.id] = storedModes[row.id]!
+    }
+  } catch (cause) { if (current === listSerial && !controller.signal.aborted) error.value = extractApiErrorMessage(cause, t('common.error')) }
+  finally { if (current === listSerial) { rowsLoading.value = false; loadIdentities() } }
 }
 function searchAccounts() { page.value = 1; activeSearch.value = search.value.trim(); void loadRows() }
 function changePage(delta: number) { page.value += delta; void loadRows() }
-async function showIdentity(id: number) {
-  if (accountViews[id]) { delete accountViews[id]; return }
-  const current = generation
-  const account = rows.value.find(row => row.id === id)
-  const dirty = account && draftModes[id] !== savedMode(account)
-  rowBusy[id] = true
-  try {
-    const view = await codexFingerprintAPI.getAccount(id)
-    if (current === generation) {
-      if (account) account.extra = { ...account.extra, codex_fingerprint_mode: view.mode }
-      accountViews[id] = view
-      if (!dirty) draftModes[id] = view.mode
-    }
-  }
-  catch (cause) { if (current === generation) error.value = extractApiErrorMessage(cause, t('common.error')) }
-  finally { if (current === generation) rowBusy[id] = false }
-}
 async function saveAccount(account: AccountListItem) {
   const current = generation, mode = draftModes[account.id]
   if (!mode || rowBusy[account.id]) return
   rowBusy[account.id] = true; error.value = ''; message.value = ''
+  invalidateIdentity(account.id)
+  const epoch = detailEpoch, list = listSerial
   try {
     const view = await codexFingerprintAPI.saveAccount(account.id, mode)
     if (current !== generation) return
-    accountViews[account.id] = view
-    account.extra = { ...account.extra, codex_fingerprint_mode: view.mode }
-    draftModes[account.id] = view.mode
+    storedModes[account.id] = view.mode
+    if (epoch === detailEpoch && list === listSerial) {
+      applyAccountView(account, view)
+      if (draftModes[account.id] === mode) draftModes[account.id] = view.mode
+    }
     message.value = text('账号模式已保存', 'Account mode saved')
   } catch (cause) { if (current === generation) error.value = extractApiErrorMessage(cause, t('common.error')) }
-  finally { if (current === generation) rowBusy[account.id] = false }
+  finally { if (current === generation) { rowBusy[account.id] = false; if (!accountViews[account.id]) requestIdentity(account.id) } }
 }
 async function saveBulk() {
   if (!selectedIDs.value.length || bulkBusy.value) return
@@ -224,5 +265,5 @@ watch(() => jobs.visibleJobs.find(job => job.id === ownedJobID.value)?.status, (
   if (job && isTerminalAccountJob(job)) { ownedJobID.value = 0; void loadRows() }
 })
 onMounted(() => { void loadSettings(); void loadRows() })
-onBeforeUnmount(() => { generation++; listSerial++; listController?.abort() })
+onBeforeUnmount(() => { generation++; listSerial++; listController?.abort(); detailController.abort(); detailQueue.splice(0) })
 </script>

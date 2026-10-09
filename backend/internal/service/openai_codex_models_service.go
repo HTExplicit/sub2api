@@ -1573,6 +1573,7 @@ func isRetryableCodexModelsManifestTransportError(err error) bool {
 	if errors.As(err, &dnsErr) {
 		return true
 	}
+	//lint:ignore SA1019 Compatibility with GOAWAY errors returned by existing x/net-based clients is still required.
 	var goAwayErr http2.GoAwayError
 	if errors.As(err, &goAwayErr) {
 		return true
