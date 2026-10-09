@@ -96,7 +96,11 @@ groups, quota or scheduling state. Normal credential refresh remains available.
 Source acquisition shares one process-local `__oailb` candidate. Its maximum
 lease is 230 seconds, capped by an earlier upstream expiry; receiving the same
 value during a live lease does not extend it. Source preparation is sequential
-and has a 90-second budget. Each target/model is validated with two completed
+and uses the ordinary OAuth account-test payload (default instructions, fixed
+short user prompt, medium effort), with its own configured normal connection
+policy. It does not inherit target-probe session/window headers, routing hints,
+encrypted-output options or connection-close behavior.
+It has a 90-second budget. Each target/model is validated with two completed
 HTTP 200 streams, at most 45 seconds each: the first must return STATE, and
 the second may omit STATE or return the same value. Qualification includes
 the target identity, actual model, exit, client headers, STATE and TLS profile.

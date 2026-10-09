@@ -45,7 +45,9 @@ jobs:
         run: make test-unit
       - name: Integration tests
         working-directory: backend
-        run: make test-integration
+        run: |
+          python3 ../.github/scripts/prepare_test_images.py
+          make test-integration
 
   frontend:
     runs-on: ubuntu-latest
