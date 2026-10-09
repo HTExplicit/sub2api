@@ -223,8 +223,19 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 		}
 		return result
 	}
-	result.Dispatched = true
+	result.Dispatched = last.dispatched
 	result.RawResponse = last.raw.String()
+	if last.wsFrames && last.raw.Len() == 0 && sendErr != nil {
+		var eventErr *openAIWSUpstreamEventError
+		if errors.As(sendErr, &eventErr) && len(eventErr.payload) > 0 {
+			result.RawResponse = string(eventErr.payload)
+			result.Error = string(eventErr.payload)
+		} else {
+			result.Error = sendErr.Error()
+		}
+		return result
+	}
+
 	var parseErr error
 	var limited bool
 	if last.wsFrames {

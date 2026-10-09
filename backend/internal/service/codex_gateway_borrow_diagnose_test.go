@@ -49,9 +49,10 @@ func TestCodexBorrowDiagnoseHTTPUsesRealSenderAndIsolatesModes(t *testing.T) {
 	require.Equal(t, "diagnostic", s.Status().RecentUsage[0].Origin)
 }
 
-func TestCodexBorrowDiagnoseWSContinuesOwnSockets(t *testing.T) {
+func testCodexBorrowDiagnoseWS(t *testing.T, prewarm bool) {
 	gateway, account, borrow, probes := borrowWSFixture(t, 2)
 	gateway.cfg.Gateway.MaxLineSize = defaultMaxLineSize
+	gateway.cfg.Gateway.OpenAIWS.PrewarmGenerateEnabled = prewarm
 	repo := &borrowCoreAccounts{rows: map[int64]*Account{account.ID: account}}
 	gateway.accountRepo = repo
 	borrow.accounts = repo
@@ -64,10 +65,16 @@ func TestCodexBorrowDiagnoseWSContinuesOwnSockets(t *testing.T) {
 	}
 	ordinary := &openAIWSCaptureConn{events: [][]byte{completed("ordinary-1"), completed("ordinary-2")}}
 	borrowed := &openAIWSCaptureConn{events: [][]byte{completed("borrowed-1"), completed("borrowed-2")}}
+	if prewarm {
+		ordinary.events = append([][]byte{completed("ordinary-prewarm")}, ordinary.events...)
+		borrowed.events = append([][]byte{completed("borrowed-prewarm")}, borrowed.events...)
+	}
 	dialer := &borrowWSDialer{conns: []openAIWSClientConn{ordinary, borrowed}}
 	gateway.openaiWSPool.setClientDialerForTest(dialer)
+	var requests int32
 	var results []CodexBorrowDiagnosticResult
 	err := borrow.Diagnose(context.Background(), CodexBorrowDiagnosticRequest{AccountID: account.ID, Model: "gpt-6-astra", Transport: "ws"}, func(event CodexBorrowDiagnosticEvent) {
+		requests = event.Requests
 		if event.Result != nil {
 			results = append(results, *event.Result)
 		}
@@ -80,10 +87,20 @@ func TestCodexBorrowDiagnoseWSContinuesOwnSockets(t *testing.T) {
 	require.False(t, results[0].Applied)
 	require.True(t, results[2].Applied)
 	require.Len(t, dialer.headers, 2)
-	require.Len(t, ordinary.writes, 2)
-	require.Len(t, borrowed.writes, 2)
-	require.Equal(t, "ordinary-1", ordinary.writes[1]["previous_response_id"])
-	require.Equal(t, "borrowed-1", borrowed.writes[1]["previous_response_id"])
+	expected := 2
+	if prewarm {
+		expected = 3
+		require.EqualValues(t, 8, requests)
+	}
+	require.Len(t, ordinary.writes, expected)
+	require.Len(t, borrowed.writes, expected)
+	require.Equal(t, "ordinary-1", ordinary.writes[len(ordinary.writes)-1]["previous_response_id"])
+	require.Equal(t, "borrowed-1", borrowed.writes[len(borrowed.writes)-1]["previous_response_id"])
 	require.Empty(t, probes.requests)
 	require.Empty(t, borrow.wsAnchors.entries, "diagnostics cannot create client anchors")
+}
+
+func TestCodexBorrowDiagnoseWSContinuesOwnSockets(t *testing.T) { testCodexBorrowDiagnoseWS(t, false) }
+func TestCodexBorrowDiagnoseWSCountsConfiguredPrewarm(t *testing.T) {
+	testCodexBorrowDiagnoseWS(t, true)
 }

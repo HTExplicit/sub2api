@@ -31,9 +31,6 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	stateStore OpenAIWSStateStore,
 	groupID int64,
 ) error {
-	if borrowDiagnosticFromContext(ctx) != nil {
-		return nil
-	}
 	if s == nil {
 		return nil
 	}
@@ -81,6 +78,9 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	prewarmPayload["generate"] = false
 	prewarmPayloadJSON := payloadAsJSONBytes(prewarmPayload)
 
+	if err := consumeBorrowDiagnosticRequest(ctx); err != nil {
+		return err
+	}
 	if err := lease.WriteJSONWithContextTimeout(ctx, prewarmPayload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()
 		logOpenAIWSModeInfo(

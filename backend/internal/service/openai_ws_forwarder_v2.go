@@ -444,6 +444,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if err := consumeBorrowDiagnosticRequest(ctx); err != nil {
 		return nil, err
 	}
+	if capture := pelicanCaptureFromContext(ctx); capture != nil {
+		capture.mu.Lock()
+		if len(capture.attempts) > 0 {
+			capture.attempts[len(capture.attempts)-1].dispatched = true
+		}
+		capture.mu.Unlock()
+	}
 	usageTracker := s.gatewayBorrow.beginUsage(ctx, account.ID, mappedModel, "ws", borrowTurn.borrowed())
 	defer func() { usageTracker.finish(borrowErr) }()
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {

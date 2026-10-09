@@ -282,9 +282,16 @@ func (h *CodexGatewayBorrowHandler) Diagnose(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
 	var emission sync.Mutex
+	var observedRequests int32
 	emit := func(event service.CodexBorrowDiagnosticEvent) {
 		emission.Lock()
 		defer emission.Unlock()
+		if event.Requests > observedRequests {
+			observedRequests = event.Requests
+		}
+		if event.Type == "error" {
+			event.Requests = observedRequests
+		}
 		if c.Request.Context().Err() != nil {
 			return
 		}
