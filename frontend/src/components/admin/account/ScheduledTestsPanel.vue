@@ -463,7 +463,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -497,6 +497,13 @@ const loadingResults = ref(false)
 const plans = ref<ScheduledTestPlan[]>([])
 const results = ref<ScheduledTestResult[]>([])
 const expandedPlanId = ref<number | null>(null)
+let resultsRequestId = 0
+watch(expandedPlanId, () => {
+  resultsRequestId++
+  results.value = []
+  loadingResults.value = false
+}, { flush: 'sync' })
+onBeforeUnmount(() => { resultsRequestId++ })
 const expandedResultIds = reactive(new Set<number>())
 const showAddForm = ref(false)
 const showDeleteConfirm = ref(false)
@@ -549,8 +556,8 @@ watch(
 )
 
 const loadPlans = async () => {
-  if (!props.accountId) return
   const version = requestVersion
+  if (!props.accountId) return
   loading.value = true
   try {
     const result = await adminAPI.scheduledTests.listByAccount(props.accountId)
@@ -671,17 +678,18 @@ const toggleExpand = async (planId: number) => {
 
   expandedPlanId.value = planId
   expandedResultIds.clear()
-  const version = requestVersion
   loadingResults.value = true
+  const requestId = resultsRequestId
   try {
-    const result = await adminAPI.scheduledTests.listResults(planId, 20)
-    if (version === requestVersion && expandedPlanId.value === planId) results.value = result
+    const data = await adminAPI.scheduledTests.listResults(planId, 20)
+    if (requestId !== resultsRequestId) return
+    results.value = data
   } catch (error: any) {
-    if (version !== requestVersion || expandedPlanId.value !== planId) return
+    if (requestId !== resultsRequestId) return
     appStore.showError(error?.message || 'Failed to load results')
     results.value = []
   } finally {
-    if (version === requestVersion && expandedPlanId.value === planId) loadingResults.value = false
+    if (requestId === resultsRequestId) loadingResults.value = false
   }
 }
 

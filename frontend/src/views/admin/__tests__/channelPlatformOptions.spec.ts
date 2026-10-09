@@ -1,15 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { listPlatformIds } from '@/constants/platformCatalog'
 
 describe('Composite channel platform options', () => {
   it('includes every concrete provider for pricing and model mapping', () => {
     const source = readFileSync(resolve('src/views/admin/ChannelsView.vue'), 'utf8')
-    const declaration = source.match(/const compositePlatforms:[^=]+=[^\n]+/)?.[0]
-    const order = source.match(/const platformOrder:[^=]+=[^\n]+/)?.[0]
-    const expectedPlatforms = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go', 'typesafe']
+    // 平台列表来自平台清单（后端 domain/platforms.go），组合分组覆盖全部具体平台。
+    expect(source).toMatch(/const platformOrder = computed<GroupPlatform\[\]>\(\(\) => listPlatformIds\(\)\)/)
+    expect(source).toContain('const compositePlatforms = platformOrder')
 
-    expect(declaration?.match(/'([^']+)'/g)?.map(value => value.slice(1, -1))).toEqual(expectedPlatforms)
-    expect(order?.match(/'([^']+)'/g)?.map(value => value.slice(1, -1))).toEqual(expectedPlatforms)
+    expect(listPlatformIds()).toEqual(
+      expect.arrayContaining(['kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go'])
+    )
   })
 })

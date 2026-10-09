@@ -5,7 +5,7 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 ## Source baseline
 
 - Integrated official baseline: the release recorded in `.downstream/upstream-base`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.14.md).
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.15.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
 ## Settings and account operations
@@ -159,15 +159,36 @@ identity and verified-replay checks remain in force.
   and manual routing stay within their existing configuration.
 - Container/public health confirms availability, not actual model functionality.
 
+## OpenAI encrypted-content recovery
+
+HTTP and WebSocket encrypted-content recovery follows official v0.2.15,
+including the official session lineage memory. The former downstream targeted
+stripping, persistent rejection memory, SSE repair, missing-item-id repair and
+special account failovers are retired. The global recovery page and its
+`GET/PUT /api/v1/admin/reasoning-recovery` interface are removed. Stored settings,
+historical SQL and diagnostic records remain intact; ordinary Claude thinking
+signature recovery is independent and remains available.
+
+Cline and Command Code share the existing system-prompt insertion points.
+Connection-test reasoning options require declared model support and a wire
+path that retains the chosen effort; unsupported and `ultra` options remain
+unavailable. The compact account filters retain multi-selection, tags, proxy,
+plan and count controls; hiding additional filters never resets their values.
+
+Official migration 242 removes platform CHECK constraints. Immutable downstream
+251, 260 and 265 restore the quota constraint during a fresh installation, so
+277 repeats the final removal after them. No historical checksum or existing
+quota/route row is changed by 242 or 277.
+
 ## Upstream updates
 
 Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
 
-`.downstream/upstream-risk.json` records the v0.2.13-to-v0.2.14 integration against
-downstream commit `7132011d7a4275e7d6407c92db4ec205a1c14ad1`. The risk gate
-recomputes those exact inputs. `initial_conflict_files` lists the three dependency
+`.downstream/upstream-risk.json` records the v0.2.14-to-v0.2.15 integration against
+downstream commit `d469422e94b0655b22dd9d0a826decda61ffb91e`. The risk gate
+recomputes those exact inputs. `initial_conflict_files` lists the 40
 conflicts resolved during this merge; `merge_conflicts: []` records that none
 remain. A `review_required` candidate needs a real completed review and the
 `upstream-reviewed` label before promotion.

@@ -236,7 +236,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 	if account != nil && account.IsOpenAI() {
 		responsesLite := isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) || isOpenAIResponsesLiteWebSocketPayload(body)
-		normalizedBody, normalized, normalizeErr := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, account, responsesLite)
+		normalizedBody, normalized, normalizeErr := normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{
+			ResponsesLite: responsesLite,
+			Compact:       isOpenAIResponsesCompactPath(c),
+		})
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("normalize passthrough Responses compatibility: %w", normalizeErr)
 		}
@@ -374,9 +377,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		c.Set("openai_passthrough", true)
 	}
 
-	reasoningRecovery := s.newOpenAIReasoningRecoveryState(ctx, c, account, token)
-	defer reasoningRecovery.Close()
-	defer func() { forwardErr = reasoningRecovery.StopError(forwardErr) }()
 	agentTaskRecoveryTried := false
 	compactModelFallbackRetried := false
 	var reasoningEffort *string
@@ -400,7 +400,7 @@ retryUpstream:
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		upstreamReq, body, wireBody, buildErr = prepareReasoningRecoveryRequest(reasoningRecovery, upstreamReq, body, proxyURL)
+		wireBody, buildErr = finalWireRequestBody(upstreamReq, body)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -412,17 +412,14 @@ retryUpstream:
 		if integrityErr := s.checkStagedRequestIntegrity(c, account, "http_passthrough", wireBody, integrityOpts); integrityErr != nil {
 			return nil, integrityErr
 		}
-		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 
 		upstreamStart := time.Now()
-		reasoningRecovery.MarkAttemptDispatched()
+
 		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, actualModel)
-		reasoningRecovery.ObserveResponse(resp)
+
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
-			if reasoningRecovery.RecoveryAttempt() {
-				return nil, err
-			}
+
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account.
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -436,37 +433,7 @@ retryUpstream:
 		probeBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(probeBody))
-		if repaired, repair := reasoningRecovery.TryRepairUnfoundItemIDs(resp.StatusCode, resp.Header, probeBody); repair {
-			body, err = projectReasoningRecoveryEdits(body, wireBody, repaired)
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if retryBody, retry := reasoningRecovery.TryRecover(resp.StatusCode, resp.Header, probeBody, false); retry {
-			body, err = projectReasoningRecoveryEdits(body, wireBody, retryBody)
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if reasoningRecovery.RecoveryAttempt() {
-			failure := reasoningRecovery.FailureForResponse(resp.StatusCode, resp.Header, probeBody)
-			// Only an answer that a first send would move to another account is
-			// the account's failure. Any other ends the request here, unless
-			// StopError hands it on as a ciphertext mismatch.
-			if !shouldFailoverOpenAIPassthroughResponse(account, resp.StatusCode, probeBody) {
-				failure.NextAccountAction = NextAccountStop
-			} else if failure.ShouldRetryNextAccount() {
-				retryMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(probeBody)))
-				failure = s.openAIRecoveryRetryHTTPFailure(account, resp.StatusCode, resp.Header, probeBody, retryMsg,
-					account != nil && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode))
-			}
-			return nil, failure
-		}
-		if _, rejected := parseOpenAIReasoningRejection(probeBody); rejected {
-			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, probeBody)
-		}
+
 		if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
 			ctx, c, account, resp.StatusCode, resp.Header, probeBody,
 		); ok {
@@ -543,17 +510,7 @@ retryUpstream:
 		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
-			if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
-				_ = resp.Body.Close()
-				body, err = projectReasoningRecoveryEdits(body, wireBody, retryBody)
-				if err != nil {
-					return nil, err
-				}
-				goto retryUpstream
-			}
-			if reasoningRecovery.RecoveryAttempt() {
-				return nil, err
-			}
+
 			if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 				c, account, reqModel, body, err, compactModelFallbackRetried, resp,
 			); retry {
@@ -580,17 +537,7 @@ retryUpstream:
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
-			if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
-				_ = resp.Body.Close()
-				body, err = projectReasoningRecoveryEdits(body, wireBody, retryBody)
-				if err != nil {
-					return nil, err
-				}
-				goto retryUpstream
-			}
-			if reasoningRecovery.RecoveryAttempt() {
-				return nil, err
-			}
+
 			if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 				c, account, reqModel, body, err, compactModelFallbackRetried, resp,
 			); retry {
@@ -2099,7 +2046,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	terminalFramePending := false
 	terminalEventType := ""
 	var terminalResponseErr error
-	var pendingReasoningRecoveryErr error
+
 	pendingSSEEventType := ""
 	sawFailedEvent := false
 	sawBareError := false
@@ -2211,7 +2158,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		flushPending = true
 		flushPendingOutput()
 		if !clientDisconnected {
-			markOpenAIReasoningFailureTerminalForwarded(c)
+
 		}
 	}
 
@@ -2262,7 +2209,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			rawDataBytes := []byte(data)
-			observeOpenAIReasoningAttemptUsage(c, rawDataBytes)
+
 			if strings.TrimSpace(data) == "[DONE]" {
 				// Transport markers cannot supply a missing Responses terminal.
 				continue
@@ -2271,16 +2218,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			s.parseSSEUsageBytesWithType(rawDataBytes, upstreamEventType, usage)
 			if upstreamEventType == "response.failed" || upstreamEventType == "error" || (upstreamEventType == "response.done" && gjson.GetBytes(rawDataBytes, "response.status").String() == "failed") {
 				if upstreamEventType != "error" {
-					pendingReasoningRecoveryErr = nil
+
 				}
-				if recoveryErr := openAIHTTPReasoningRejectionBeforeOutput(c, rawDataBytes, openAIStreamClientOutputStarted(c, clientOutputStarted)); recoveryErr != nil {
-					if upstreamEventType != "error" {
-						return resultWithUsage(), recoveryErr
-					}
-					pendingReasoningRecoveryErr = recoveryErr
-					pendingErrorEventHeader = false
-					continue
-				}
+
 				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, c, account, resp.StatusCode, resp.Header, rawDataBytes); ok {
 					// Classification must happen on the untouched event, before error
 					// rules, namespace restoration or the client stream see it. The
@@ -2330,7 +2270,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 			eventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
 			if eventType == "response.completed" || eventType == "response.done" {
-				pendingReasoningRecoveryErr = nil
+
 				// A response terminal supersedes a non-authoritative bare error.
 				sawBareError = false
 				bareErrorPayload = nil
@@ -2411,11 +2351,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						return resultWithUsage(), compactErr
 					}
 				}
-				if _, rejectedReasoning := parseOpenAIReasoningRejection(dataBytes); !rejectedReasoning {
-					if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, dataBytes); continuationErr != nil {
-						return resultWithUsage(), continuationErr
-					}
-				}
+
 				if !cyberPolicyHit && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 					if openAIStreamFailedEventShouldFailoverForAccount(account, dataBytes, failedMessage) {
 						return resultWithUsage(),
@@ -2487,7 +2423,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						clientDisconnected = true
 					} else {
 						flusher.Flush()
-						markOpenAIReasoningFailureTerminalForwarded(c)
+
 					}
 				}
 				return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
@@ -2592,7 +2528,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				if line == "" {
 					flushPendingOutput()
 					if terminalFramePending && sawFailedEvent && !clientDisconnected {
-						markOpenAIReasoningFailureTerminalForwarded(c)
+
 					}
 				}
 			}
@@ -2604,9 +2540,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 		}
 	}
-	if pendingReasoningRecoveryErr != nil && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-		return resultWithUsage(), pendingReasoningRecoveryErr
-	}
+
 	ensureResponseFailedTerminal()
 	if err := documentScanner.Err(); err != nil {
 		if sawFailedEvent {
@@ -2685,9 +2619,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, err
 	}
-	if recoveryErr := openAIHTTPReasoningRejectionBeforeOutput(c, body, openAIStreamClientOutputStarted(c, false)); recoveryErr != nil {
-		return nil, recoveryErr
-	}
+
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -2804,12 +2736,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // preserving passthrough payloads, except compact-only model remapping may
 // rewrite model fields back to the original requested model.
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
-	rawTerminalType, rawTerminalPayload, rawTerminalOK := extractOpenAISSETerminalEvent(string(body))
-	if rawTerminalOK && (rawTerminalType == "error" || rawTerminalType == "response.failed" || rawTerminalType == "response.done") {
-		if recoveryErr := openAIHTTPReasoningRejectionBeforeOutput(c, rawTerminalPayload, openAIStreamClientOutputStarted(c, false)); recoveryErr != nil {
-			return nil, recoveryErr
-		}
-	}
 	body = restoreSystemPromptEchoSSE(c, body)
 	bodyText := string(body)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)

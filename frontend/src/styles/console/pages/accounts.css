@@ -1487,3 +1487,8 @@ html.flat-theme [data-ui~="upstream-picker-copy"] svg {
     flex-shrink: 0;
   }
 }
+
+/* Keep the official compact primary controls with the console's extra facets. */
+html.flat-theme [data-ui="accounts-toolbar"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-3, 12px); }
+html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-primary-filters"] { flex: 1 1 600px; min-width: 0; }
+html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-filters"] { flex: 1 1 100%; min-width: 0; }

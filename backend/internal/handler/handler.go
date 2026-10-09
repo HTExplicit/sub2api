@@ -45,7 +45,6 @@ type AdminHandlers struct {
 	Compliance             *admin.ComplianceHandler
 	AuditLog               *admin.AuditLogHandler
 	SystemPrompt           *admin.SystemPromptHandler
-	ReasoningRecovery      *admin.ReasoningRecoveryHandler
 	CodexGatewayBorrow     *admin.CodexGatewayBorrowHandler
 	PelicanTest            *admin.PelicanTestHandler
 }

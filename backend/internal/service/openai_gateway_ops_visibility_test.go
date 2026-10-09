@@ -16,7 +16,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func opsVisibilityTestContext() *gin.Context {
@@ -253,19 +252,6 @@ func TestOpenAIImagesModelTextKeepsFullTextForAdministrators(t *testing.T) {
 
 // OPS-10: the reasoning-recovery detail is bounded by its encoded size, so the
 // Ops queue never shrinks it to an object without its fields.
-func TestOpenAIReasoningRecoveryDetailFitsOpsBudget(t *testing.T) {
-	payload := []byte(`{"type":"error","error":{"code":"invalid_encrypted_content","message":"` + strings.Repeat("<bad>", 2000) + `"}}`)
-	detail := map[string]any{"action": "retry_without_encrypted_content", "items": 3, "usage_status": "unavailable", "payload_sha256": openAIReasoningDigest(payload)}
-
-	encoded := encodeOpenAIReasoningRecoveryDetail(detail, extractOpenAISSEErrorMessage(payload), payload)
-
-	require.LessOrEqual(t, len(encoded), openAIReasoningRecoveryDetailEncodedLimit)
-	stored, _ := sanitizeErrorBodyForStorage(string(encoded), OpsErrorLogQueueBodyMaxBytes)
-	for _, key := range []string{"action", "items", "usage_status", "payload_sha256", "upstream_message", "payload"} {
-		require.True(t, gjson.Get(stored, key).Exists(), key)
-	}
-	require.True(t, gjson.Get(stored, "payload_truncated").Bool())
-}
 
 // OPS-4: a delivered cyber-policy block keeps only its dedicated row; other
 // delivered failures are marked as client-visible.

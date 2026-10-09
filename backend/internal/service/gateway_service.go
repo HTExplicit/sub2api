@@ -745,8 +745,6 @@ type UpstreamFailoverError struct {
 	ClientErrorParam             string
 	ClientMessage                string
 	SuppressAccountHealthPenalty bool
-	CiphertextAccountMismatch    bool // 本账号无法校验请求里的密文且无法就地修复；原样请求可能被签发该密文的组织下的其他账号接受
-	RecoveryRetrySpent           bool // 本账号的剥离重发已发出并因账号自身的原因失败；换下一个账号，不得在本账号再试
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -1599,6 +1597,21 @@ func explicitModelMappingClaims(account Account, model string) bool {
 	}
 	mapped, ok := stringMappingFromRaw(account.Credentials["model_mapping"])[model]
 	return ok && strings.TrimSpace(mapped) != ""
+}
+
+// GetCompositeRouteModels returns public IDs from enabled exact composite routes.
+func (s *GatewayService) GetCompositeRouteModels(ctx context.Context, groupID *int64, endpoint string, includeSystemOne bool) ([]string, error) {
+	if s == nil || s.compositeResolver == nil || groupID == nil {
+		return nil, nil
+	}
+	return s.compositeResolver.ListExactPublicModels(ctx, *groupID, endpoint, includeSystemOne)
+}
+
+func (s *GatewayService) FilterCompositeCodexModels(ctx context.Context, groupID int64, models []string) ([]string, error) {
+	if s == nil || s.compositeResolver == nil {
+		return models, nil
+	}
+	return s.compositeResolver.FilterCodexModels(ctx, groupID, models)
 }
 
 // GetSchedulablePlatforms returns the concrete platforms that currently have

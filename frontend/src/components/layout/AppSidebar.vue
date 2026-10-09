@@ -692,20 +692,6 @@ const ShieldIcon = {
     )
 }
 
-const RecoveryIcon = {
-  render: () =>
-    h(
-      'svg',
-      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
-      [
-        h('path', {
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          d: 'M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3'
-        })
-      ]
-    )
-}
 
 const PriceTagIcon = {
   render: () =>
@@ -751,7 +737,6 @@ const consoleThemeIcons: Array<[typeof DashboardIcon, InstanceType<typeof Icon>[
   [BellIcon, 'bell'], [TicketIcon, 'ticket'], [CogIcon, 'cog'], [DocumentIcon, 'document'], [SunIcon, 'sun'],
   [MoonIcon, 'moon'], [ChevronDoubleLeftIcon, 'chevronDoubleLeft'], [ChevronDoubleRightIcon, 'chevronDoubleRight'],
   [OrderIcon, 'clipboardList'], [OrderListIcon, 'receipt'], [SignalIcon, 'signal'], [ShieldIcon, 'shield'],
-  [RecoveryIcon, 'undo'], [PriceTagIcon, 'tag'], [ChevronDownIcon, 'chevronDown']
 ]
 for (const [icon, name] of consoleThemeIcons) {
   const upstream = icon.render
@@ -836,7 +821,6 @@ const adminExtensionNavItems = computed((): NavItem[] => [
   { path: '/admin/codex-fingerprint', label: t('nav.codexFingerprint'), icon: ShieldIcon },
   { path: '/admin/codex-gateway-borrow', label: t('nav.codexGatewayBorrow'), icon: GatewayBorrowIcon },
   { path: '/admin/pelican-tests', label: t('nav.pelicanTests'), icon: GatewayBorrowIcon },
-  { path: '/admin/reasoning-recovery', label: t('nav.reasoningRecovery'), icon: RecoveryIcon },
 ])
 
 // Custom menu items filtered by visibility

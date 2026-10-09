@@ -75,7 +75,6 @@ func ProvideOpenAIGatewayService(
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	systemPrompts *SystemPromptService,
-	reasoningRecovery *ReasoningRecoveryService,
 ) *OpenAIGatewayService {
 	svc := NewOpenAIGatewayService(
 		accountRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo,
@@ -85,7 +84,6 @@ func ProvideOpenAIGatewayService(
 		channelService, balanceNotifyService, settingService, userPlatformQuotaRepo,
 	)
 	svc.SetSystemPromptService(systemPrompts)
-	svc.SetReasoningRecoveryService(reasoningRecovery)
 	return svc
 }
 
@@ -1019,7 +1017,6 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	ProvideGatewayService,
 	ProvideSystemPromptService,
-	ProvideReasoningRecoveryService,
 	ProvideCodexGatewayBorrowService,
 	ProvidePelicanTestRunner,
 	NewCodexGatewayBorrowPreviewService,

@@ -127,17 +127,7 @@ func buildOpenAIContinuationDiagnostic(c *gin.Context, incomingBody []byte, upst
 	if upstreamReq != nil {
 		wireHeaders = upstreamReq.Header
 	}
-	recovery := openAIReasoningRecoveryStateFromContext(c)
-	var wireBody []byte
-	var wireSource string
-	var limited bool
-	if recovery != nil && recovery.diagnosticRequest == upstreamReq && recovery.wire != nil {
-		// PrepareRequest clears GetBody to prohibit transparent POST replay.
-		// Its immutable send-boundary snapshot is exact, not a prepared fallback.
-		wireBody, wireSource, limited = recovery.wire, "frozen_request", len(recovery.wire) > openAIContinuationDiagnosticBodyLimit
-	} else {
-		wireBody, wireSource, limited = continuationDiagnosticWireBody(upstreamReq, preparedBody)
-	}
+	wireBody, wireSource, limited := continuationDiagnosticWireBody(upstreamReq, preparedBody)
 	diagnostic := &OpenAIContinuationDiagnostic{
 		Version: 1, Classification: continuationDiagnosticClassification(classification),
 		UpstreamError: continuationDiagnosticError(upstreamError),
@@ -145,9 +135,6 @@ func buildOpenAIContinuationDiagnostic(c *gin.Context, incomingBody []byte, upst
 		// earlier handler/protocol normalization has never run.
 		Incoming: continuationDiagnosticRequest(incomingBody, incomingHeaders, "forwarding_entry"),
 		Wire:     continuationDiagnosticRequest(wireBody, wireHeaders, wireSource),
-	}
-	if recovery != nil {
-		diagnostic.Recovery = recovery.continuationDiagnosticRecovery(upstreamError)
 	}
 	diagnostic.Wire.InspectionLimited = diagnostic.Wire.InspectionLimited || limited
 	if limited && upstreamReq != nil && upstreamReq.ContentLength > int64(diagnostic.Wire.BodyBytes) {

@@ -34,8 +34,6 @@ jobs:
           python3 .github/scripts/test_release_preflight.py
       - name: Agent protocol contracts
         run: bash .github/scripts/test_agent_protocol.sh
-      - name: Reasoning recovery contracts
-        run: bash .github/scripts/test_reasoning_recovery.sh
       - name: Model context capacity contracts
         run: bash .github/scripts/test_model_context_capacity.sh
       - name: Service tests
@@ -142,7 +140,6 @@ jobs:
             src/components/account/__tests__/CreateAccountModal.spec.ts \
             src/components/payment/__tests__/StripePaymentInline.contrast.spec.ts \
             src/views/user/__tests__/StripePaymentView.spec.ts \
-            src/views/admin/__tests__/ReasoningRecoveryView.spec.ts \
             src/views/admin/ops/components/__tests__/OpsErrorDetailModal.spec.ts \
             src/api/admin/__tests__/codexGatewayBorrow.spec.ts \
             src/components/admin/codex/__tests__/BorrowPelicanPreview.spec.ts \

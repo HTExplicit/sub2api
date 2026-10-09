@@ -22,7 +22,7 @@ func (s *AccountTestService) testOpenCodeGoConnection(c *gin.Context, account *A
 		testModelID = DefaultOpenCodeGoTestModel
 	}
 	testModelID = account.GetMappedModel(testModelID)
-	protocol := openCodeGoNativeProtocol(account, testModelID)
+	protocol := account.resolveModelRoutedProtocol(testModelID)
 	baseURL := account.GetCNProtocolBaseURL(protocol)
 	if strings.TrimSpace(baseURL) == "" {
 		return s.sendErrorAndEnd(c, "No OpenCode Go base URL configured")

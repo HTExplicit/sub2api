@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -403,7 +402,7 @@ func classifyOpenAIContinuationStateError(upstreamMsg string, upstreamBody []byt
 	// This new code is accepted only from a structured rejection envelope, never
 	// from a body substring. An unusable signature is request state even when
 	// recovery is disabled or cannot identify a safe, exact removal range.
-	if rejection, ok := parseOpenAIReasoningRejection(upstreamBody); ok && rejection.code == "thinking_signature_invalid" {
+	if gjson.GetBytes(upstreamBody, "error.code").String() == "thinking_signature_invalid" || gjson.GetBytes(upstreamBody, "response.error.code").String() == "thinking_signature_invalid" {
 		return openAIContinuationStateErrorThinkingSignatureInvalid
 	}
 	const (
@@ -658,25 +657,9 @@ func (e *UpstreamFailoverError) IsOpenAIContinuationStateUnavailable() bool {
 // may still be accepted by another account. The caller tries the next account;
 // when none accepts, the failure renders with its own classification, exactly
 // as it would have without the mark.
-func openAICiphertextAccountMismatch(failure *UpstreamFailoverError) *UpstreamFailoverError {
-	marked := *failure
-	marked.ResponseHeaders = failure.ResponseHeaders.Clone()
-	marked.CiphertextAccountMismatch = true
-	marked.NextAccountAction = NextAccountRetry
-	marked.Scope = GatewayFailureScopeRequest
-	marked.SuppressAccountHealthPenalty = true
-	marked.RetryableOnSameAccount = false
-	marked.SameAccountRetryDelay = 0
-	marked.SameAccountRetryDeadline = time.Time{}
-	marked.SameAccountRetryMax = 0
-	return &marked
-}
 
 // IsOpenAICiphertextAccountMismatch reports a failure that another account
 // may not have for the same request.
-func (e *UpstreamFailoverError) IsOpenAICiphertextAccountMismatch() bool {
-	return e != nil && e.CiphertextAccountMismatch
-}
 
 // openAIRecoveryRetryAccountFailure marks the failure of a stripped retry that
 // is the account's own, such as exhausted credit or a provider error. The
@@ -684,12 +667,6 @@ func (e *UpstreamFailoverError) IsOpenAICiphertextAccountMismatch() bool {
 // changes nothing else: classification, body and the fields account health
 // reads stay as the attempt built them. The mark alone tells the handler that
 // this account, whose one stripped retry is spent, is not asked again.
-func openAIRecoveryRetryAccountFailure(failure *UpstreamFailoverError) *UpstreamFailoverError {
-	marked := *failure
-	marked.ResponseHeaders = failure.ResponseHeaders.Clone()
-	marked.RecoveryRetrySpent = true
-	return &marked
-}
 
 // openAIRecoveryRetryHTTPFailure classifies an HTTP answer to the stripped
 // retry that a first send would move to another account, as that first send
@@ -700,47 +677,15 @@ func openAIRecoveryRetryAccountFailure(failure *UpstreamFailoverError) *Upstream
 // It writes no account state and opens no same-account retry window. Whether
 // a first send would also have disabled the account, which makes it count a
 // pool-retryable status against the account, is not known here.
-func (s *OpenAIGatewayService) openAIRecoveryRetryHTTPFailure(
-	account *Account,
-	statusCode int,
-	headers http.Header,
-	body []byte,
-	upstreamMsg string,
-	poolRetryable bool,
-) *UpstreamFailoverError {
-	body = bytes.Clone(body)
-	switch {
-	case account != nil && account.IsOpenAICompatible() && isOpenAIBudgetExceededResponse(statusCode, body):
-		failure := newOpenAIUpstreamFailoverError(statusCode, headers, body, openAIBudgetExceededMessage(body), false)
-		failure.Scope = GatewayFailureScopeAccount
-		failure.NextAccountAction = NextAccountRetry
-		return failure
-	case isOpenAIRequestBudgetRejection(account, statusCode, body),
-		account != nil && account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(statusCode, upstreamMsg, body):
-		return s.newOpenAIAccountFailoverError(account, statusCode, headers, body, upstreamMsg, false, false)
-	}
-	return newOpenAIUpstreamFailoverError(statusCode, headers, body, upstreamMsg, poolRetryable)
-}
 
 // IsOpenAIRecoveryRetrySpent reports an account failure that ended an attempt
 // whose stripped retry was already sent.
-func (e *UpstreamFailoverError) IsOpenAIRecoveryRetrySpent() bool {
-	return e != nil && e.RecoveryRetrySpent
-}
 
 // openAIUpstreamReportsUndecryptableCiphertext reads an upstream failure for a
 // statement that ciphertext in the request could not be decrypted or verified.
 // Besides the continuation-state classification it accepts the wording used
 // for inter-agent message bodies and encrypted tool arguments, which arrives
 // without a stable code.
-func openAIUpstreamReportsUndecryptableCiphertext(payload []byte) bool {
-	message := extractOpenAISSEErrorMessage(payload)
-	switch classifyOpenAIContinuationStateError(message, payload) {
-	case openAIContinuationStateErrorInvalidEncryptedContent, openAIContinuationStateErrorThinkingSignatureInvalid:
-		return true
-	}
-	return strings.Contains(strings.ToLower(message), "could not be decrypted")
-}
 
 // openAIRequestHoldsServerContext reports a request whose history lives with
 // the upstream account that created it.

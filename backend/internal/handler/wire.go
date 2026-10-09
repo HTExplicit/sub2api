@@ -49,7 +49,6 @@ func ProvideAdminHandlers(
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
 	systemPromptHandler *admin.SystemPromptHandler,
-	reasoningRecoveryHandler *admin.ReasoningRecoveryHandler,
 	codexGatewayBorrowHandler *admin.CodexGatewayBorrowHandler,
 	pelicanTestHandler *admin.PelicanTestHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
@@ -100,7 +99,6 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
 		SystemPrompt:           systemPromptHandler,
-		ReasoningRecovery:      reasoningRecoveryHandler,
 		CodexGatewayBorrow:     codexGatewayBorrowHandler,
 		PelicanTest:            pelicanTestHandler,
 	}
@@ -302,7 +300,6 @@ var ProviderSet = wire.NewSet(
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
 	admin.NewSystemPromptHandler,
-	admin.NewReasoningRecoveryHandler,
 	admin.NewCodexGatewayBorrowHandler,
 	admin.NewPelicanTestHandler,
 	ProvideAccountJobRuntime,

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -191,37 +190,6 @@ func TestOpenAIHTTPTerminalMissingOrMalformedNeverSucceeds(t *testing.T) {
 	}
 }
 
-func TestOpenAIHTTPTerminalRecoverySignalBeforeOutputOnly(t *testing.T) {
-	for _, mode := range []string{"native", "passthrough", "buffered", "passthrough_buffered"} {
-		for _, prefix := range []string{"", "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"visible reasoning\"}\n\n"} {
-			t.Run(mode+map[bool]string{true: "/preoutput", false: "/postoutput"}[prefix == ""], func(t *testing.T) {
-				rec := httptest.NewRecorder()
-				c, _ := gin.CreateTestContext(rec)
-				c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-				state := &openAIReasoningRecoveryState{ctx: context.Background(), enabled: true, wire: []byte(`{"input":[{"type":"reasoning","summary":[],"encrypted_content":"cipher_fixture"}]}`)}
-				c.Set(openAIReasoningRecoveryContextKey, state)
-				bare := `{"type":"error","error":{"code":"invalid_encrypted_content","param":"input[0].encrypted_content"}}`
-				failed := `{"type":"response.failed","response":{"status":"failed","error":{"code":"invalid_encrypted_content","param":"input[0].encrypted_content"},"usage":{"input_tokens":9,"output_tokens":3}}}`
-				body := prefix + "data: " + bare + "\n\ndata: " + failed + "\n\n"
-				usage, err := runOpenAIHTTPTerminalHandler(mode, c, io.NopCloser(strings.NewReader(body)), "text/event-stream")
-				require.Error(t, err)
-				var signal *openAIReasoningRecoverySignalError
-				wantSignal := prefix == "" || strings.Contains(mode, "buffered")
-				require.Equal(t, wantSignal, errors.As(err, &signal))
-				if wantSignal {
-					require.Equal(t, "response.failed", gjson.GetBytes(signal.payload, "type").String())
-					require.Equal(t, int64(9), gjson.GetBytes(signal.payload, "response.usage.input_tokens").Int())
-					require.Empty(t, rec.Body.String())
-				} else {
-					require.Equal(t, 9, usage.InputTokens)
-					require.Contains(t, rec.Body.String(), "visible reasoning")
-				}
-				require.False(t, state.retryUsed, "parsing a candidate must not consume the retry")
-			})
-		}
-	}
-}
-
 func TestOpenAIHTTPTerminalBufferedBodyLimitAndCancellation(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{UpstreamResponseReadMaxBytes: 32}}}
 	resp := &http.Response{Body: io.NopCloser(strings.NewReader(strings.Repeat("x", 33)))}
@@ -230,55 +198,6 @@ func TestOpenAIHTTPTerminalBufferedBodyLimitAndCancellation(t *testing.T) {
 	resp.Body = &openAIResponseFlushReadError{err: context.Canceled, sent: true}
 	_, err = svc.readOpenAIResponsesHTTPBody(context.Background(), resp, nil)
 	require.ErrorIs(t, err, context.Canceled)
-}
-
-func TestOpenAIHTTPTerminalPreambleAndKeepaliveDoNotCommitRecovery(t *testing.T) {
-	for _, mode := range []string{"native", "native_async", "passthrough"} {
-		for _, platform := range []string{PlatformOpenAI} {
-			t.Run(mode+"/"+platform, func(t *testing.T) {
-				rec := httptest.NewRecorder()
-				c, _ := gin.CreateTestContext(rec)
-				c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-				// Only the neutral comment has actually been sent. Old response IDs
-				// and attempt-specific headers must remain private when recovering.
-				n, err := c.Writer.Write([]byte(":\n\n"))
-				require.NoError(t, err)
-				recordOpenAIStreamKeepaliveBytes(c, n)
-				state := &openAIReasoningRecoveryState{ctx: context.Background(), enabled: true, wire: []byte(`{"input":[{"type":"reasoning","summary":[],"encrypted_content":"cipher_fixture"}]}`)}
-				c.Set(openAIReasoningRecoveryContextKey, state)
-				body := "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"old_attempt\"}}\n\n" +
-					"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"thinking_signature_invalid\",\"param\":\"input[0].encrypted_content\"}}}\n\n"
-				_, err = runOpenAIHTTPTerminalHandler(mode, c, io.NopCloser(strings.NewReader(body)), "text/event-stream", &Account{ID: 1, Platform: platform, Type: AccountTypeAPIKey})
-				var signal *openAIReasoningRecoverySignalError
-				require.ErrorAs(t, err, &signal)
-				require.Equal(t, ":\n\n", rec.Body.String())
-				require.False(t, state.retryUsed)
-			})
-		}
-	}
-}
-
-func TestOpenAIHTTPTerminalRecoveryDisabledOrCanceledDoesNotRotate(t *testing.T) {
-	for _, disabled := range []bool{true, false} {
-		rec := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(rec)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		if !disabled {
-			cancel()
-		}
-		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-		c.Set(openAIReasoningRecoveryContextKey, &openAIReasoningRecoveryState{ctx: ctx, enabled: !disabled, wire: []byte(`{"input":[{"type":"reasoning","summary":[],"encrypted_content":"cipher_fixture"}]}`)})
-		payload := []byte(`{"type":"response.failed","response":{"status":"failed","error":{"code":"thinking_signature_invalid","param":"input[0].encrypted_content"}}}`)
-		err := openAIHTTPReasoningRejectionBeforeOutput(c, payload, false)
-		var signal *openAIReasoningRecoverySignalError
-		require.False(t, errors.As(err, &signal))
-		var terminal *UpstreamFailoverError
-		require.ErrorAs(t, err, &terminal)
-		require.False(t, terminal.ShouldRetryNextAccount())
-		require.False(t, terminal.ShouldReportAccountScheduleFailure())
-		require.Empty(t, terminal.ResponseBody)
-	}
 }
 
 func TestOpenAIHTTPTerminalReadErrorCannotDispatchUnfinishedFrame(t *testing.T) {

@@ -7,7 +7,7 @@ export const systemPromptBindingLimit = 1000
 // (backend/internal/service/system_prompt.go), the platforms forwarded as Messages, Chat Completions, Responses or
 // Gemini. TypeSafe is not one of them: System One has no system or instructions field.
 const systemPromptPlatforms: ReadonlySet<string> = new Set([
-  'anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go'
+  'anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go', 'command_code', 'cline'
 ])
 
 /**
