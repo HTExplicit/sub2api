@@ -1,0 +1,4 @@
+# Google-operated cache of public Docker Hub images. BuildKit keeps the original
+# image references and validates their content digests; no credentials change.
+[registry."docker.io"]
+  mirrors = ["mirror.gcr.io"]
