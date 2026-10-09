@@ -66,7 +66,7 @@ describe('AppSidebar header styles', () => {
 describe('AppSidebar extensions section', () => {
   it('keeps downstream tools in a dedicated section', () => {
     expect(componentSource).toContain("{{ t('nav.extensions') }}")
-    expect(componentSource).toContain("{ path: '/admin/codex-runtime'")
+    expect(componentSource).toContain("{ path: '/admin/codex'")
   })
 
 })

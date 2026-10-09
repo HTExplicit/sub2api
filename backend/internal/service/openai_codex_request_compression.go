@@ -157,5 +157,11 @@ func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account 
 	if err != nil {
 		return nil, err
 	}
-	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	applied := wire.Context().Value(codexBorrowAppliedContextKey{}) == true
+	if err := consumeBorrowDiagnosticRequest(wire.Context()); err != nil {
+		return nil, err
+	}
+	tracker := s.gatewayBorrow.beginUsage(wire.Context(), account.ID, model, "http", applied)
+	resp, sendErr := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	return s.gatewayBorrow.trackHTTPResponse(tracker, resp, sendErr)
 }

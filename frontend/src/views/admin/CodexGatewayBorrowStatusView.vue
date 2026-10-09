@@ -1,7 +1,7 @@
 <template>
-  <AppLayout>
+  <component :is="embedded ? 'div' : AppLayout">
     <div class="mx-auto max-w-[1664px] space-y-6 px-1" data-ui="codex-gateway-borrow-status">
-      <header class="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
+      <header v-if="!embedded" class="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
         <div class="min-w-0 space-y-1">
           <h1 class="text-xl font-semibold">{{ t('admin.codexGatewayBorrow.statusTitle') }}</h1>
           <p class="max-w-4xl text-sm text-muted">{{ t('admin.codexGatewayBorrow.statusDescription') }}</p>
@@ -10,7 +10,7 @@
           <Icon name="refresh" size="sm" aria-hidden="true" />{{ t('admin.codexGatewayBorrow.refreshStatus') }}
         </button>
       </header>
-      <CodexBorrowNav />
+      <CodexBorrowNav v-if="!embedded" />
       <pre v-if="statusError" role="alert" class="borrow-error" data-test="borrow-status-error">{{ statusError }}</pre>
       <pre v-if="inventoryError" role="alert" class="borrow-error">{{ inventoryError }}</pre>
       <p v-if="loading" class="py-8 text-center text-sm text-muted">{{ t('common.loading') }}</p>
@@ -32,7 +32,7 @@
               <dd class="mt-1 font-medium" data-test="borrow-enabled-status">{{ status.enabled ? t('admin.codexGatewayBorrow.on') : t('admin.codexGatewayBorrow.off') }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.preparationState') }}</dt>
+              <dt class="text-xs text-muted">{{ text('线路就绪情况', 'Route readiness') }}</dt>
               <dd class="mt-1 font-medium" data-test="borrow-preparation-status">{{ preparationLabel }}</dd>
             </div>
             <div>
@@ -50,9 +50,13 @@
               <dd v-else class="mt-1 text-muted">{{ t('admin.codexGatewayBorrow.noCandidate') }}</dd>
             </div>
           </dl>
+          <div v-if="status.setup?.total" class="rounded-lg border border-line p-3 text-sm" role="status" data-test="borrow-setup-progress">
+            <p>{{ text('准备进度', 'Preparation progress') }}: {{ status.setup.completed }} / {{ status.setup.total }} · {{ text('失败', 'Failed') }} {{ status.setup.failed }}</p>
+            <p v-if="status.preparing">{{ status.setup.phase === 'source' ? text('正在获取来源路由', 'Acquiring a source route') : `${accountName(status.setup.account_id)} · ${status.setup.model}` }}</p>
+            <pre v-if="status.setup.error" class="borrow-error">{{ status.setup.error }}</pre>
+          </div>
           <p class="text-sm">{{ t('admin.codexGatewayBorrow.validationMeaning') }}</p>
-          <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.prepareRoutesHint') }}</p>
-          <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.pollingHint') }}</p>
+
           <div v-if="actionFailure" role="alert" class="space-y-2" data-test="borrow-action-failure">
             <p class="text-sm text-red-700 dark:text-red-300">{{ actionFailure.message }}</p>
             <details class="rounded-lg border border-line p-3">
@@ -69,6 +73,8 @@
           </details>
           <details v-if="status.sources.length" class="rounded-lg border border-line p-3" data-test="borrow-source-details">
             <summary class="cursor-pointer text-sm font-medium">{{ t('admin.codexGatewayBorrow.sourceStates') }} ({{ status.sources.length }})</summary>
+          <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.prepareRoutesHint') }}</p>
+          <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.pollingHint') }}</p>
             <div v-for="source in status.sources" :key="source.account_id" class="min-w-0 space-y-2 border-t border-line py-3 first:mt-3 last:pb-0">
               <p class="break-words text-sm font-medium">{{ accountName(source.account_id) }} #{{ source.account_id }}</p>
               <p class="break-words text-xs">{{ borrowReasonLabel(source.expires_at && remainingSeconds(source.expires_at) === 0 && source.state === 'ready' ? 'route_expired' : source.reason, t) }}</p>
@@ -134,9 +140,10 @@
           </ul>
           <p v-else class="rounded-lg border border-dashed border-line p-4 text-sm text-muted" data-test="borrow-no-targets">{{ t('admin.codexGatewayBorrow.noConfiguredTargets') }}</p>
         </section>
+        <CodexBorrowActivity :status="status" :account-name="accountName" @refresh="refreshStatus" />
       </template>
     </div>
-  </AppLayout>
+  </component>
 </template>
 
 <script setup lang="ts">
@@ -144,12 +151,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import CodexBorrowActivity from '@/components/admin/codex/CodexBorrowActivity.vue'
 import CodexBorrowNav from '@/components/admin/CodexBorrowNav.vue'
 import { BORROW_MODELS, codexGatewayBorrowAPI, type BorrowTargetStatus, type CodexGatewayBorrowStatus } from '@/api/admin/codexGatewayBorrow'
 import { borrowReasonLabel, borrowTargetState, useCodexBorrowClock, useCodexBorrowInventory } from '@/composables/useCodexBorrowUI'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
-const { t } = useI18n()
+defineProps<{ embedded?: boolean }>()
+const { t, locale } = useI18n()
+const text = (zh: string, en: string) => locale.value.startsWith('en') ? en : zh
 const lifecycle = new AbortController()
 const { loadAccounts, accountById, accountName, accountStateLabel, proxyLabel, wsLabel, modelMappingLabel } = useCodexBorrowInventory(lifecycle.signal)
 const { now, receiveServerTime, cacheUsable, remainingSeconds } = useCodexBorrowClock()
@@ -181,7 +191,12 @@ const canAct = computed(() => !!status.value?.enabled && !loading.value && !acti
 const shouldPoll = computed(() => !!status.value?.preparing || !!actionBusy.value || serverValidating.value)
 const preparationLabel = computed(() => {
   if (status.value?.preparing || actionBusy.value === 'prepare') return t('admin.codexGatewayBorrow.preparationPending')
-  return actionBusy.value || serverValidating.value ? t('admin.codexGatewayBorrow.validating') : t('admin.codexGatewayBorrow.idle')
+  if (actionBusy.value || serverValidating.value) return t('admin.codexGatewayBorrow.validating')
+  if (!status.value?.enabled || !targets.value.length) return text('未配置或未启用', 'Not configured or disabled')
+  if (readyCount.value === targets.value.length) return text('线路可用', 'Routes ready')
+  if (readyCount.value > 0) return text('部分线路可用', 'Some routes ready')
+  if (targets.value.some(target => targetState(target) === 'expired')) return text('线路已过期，需要时重新准备', 'Expired; prepare when needed')
+  return text('尚无可用线路，查看下方原因', 'No ready route; see reasons below')
 })
 
 function pairKey(id: number, model: string) { return `${id}:${model}` }
@@ -290,6 +305,7 @@ onMounted(async () => {
   loading.value = false
 })
 onBeforeUnmount(() => { lifecycle.abort(); clearPollTimer() })
+defineExpose({ refreshStatus })
 </script>
 
 <style scoped>

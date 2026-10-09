@@ -188,7 +188,7 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	firstOutputPolicy, _ := ctx.Value(pelicanFirstOutputPolicyContextKey{}).(*pelicanFirstOutputPolicy)
 	ctx = firstOutputPolicy.arm(ctx)
 	req = req.WithContext(ctx)
-	borrowApplied := false
+	borrowApplied := ctx.Value(codexBorrowAppliedContextKey{}) == true
 	if prepared, ok := ctx.Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation); ok {
 		borrowApplied = prepared.application != nil && prepared.application.Applied
 	}

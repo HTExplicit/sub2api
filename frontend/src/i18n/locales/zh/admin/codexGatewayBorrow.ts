@@ -142,6 +142,12 @@ export default {
     rawResponse: '上游响应原文',
     downloadAnswer: '下载回答原文',
     reasons: {
+      account_unavailable: '账号或凭据来源不可用，请检查账号设置',
+      account_inactive: '账号未启用，请先在账号页处理状态',
+      model_not_allowed: '账号未允许此模型，请检查模型列表',
+      model_mapping_mismatch: '账号把此模型映射到其他模型，不能复用验证',
+      identity_changed: '身份或出口配置已改变，请重新验证',
+
       not_prepared: '尚未准备借用线路',
       not_verified: '此账号与模型尚未完成线路验证',
       not_configured: '此账号与模型未包含在已保存配置中',

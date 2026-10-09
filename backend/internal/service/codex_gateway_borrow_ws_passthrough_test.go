@@ -64,8 +64,6 @@ func TestCodexGatewayBorrowWS_PassthroughFinalModelAndContinuationUseOneDirectDi
 	borrow.candidate.expires = time.Now().Add(-time.Second)
 	borrow.targets = nil
 	borrow.mu.Unlock()
-	require.True(t, borrow.targetProbeMu.TryLock())
-	defer borrow.targetProbeMu.Unlock()
 	require.NoError(t, client.Write(ctx, coderws.MessageText, []byte(`{"type":"response.create","model":"public-sol-alias","previous_response_id":"resp_direct_1","input":"next","store":false}`)))
 	secondWire := requirePassthroughUpstreamWrite(t, upstream, time.Second)
 	require.Equal(t, "resp_direct_1", gjson.GetBytes(secondWire, "previous_response_id").String())

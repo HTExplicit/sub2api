@@ -1010,8 +1010,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if !ok {
 		return errors.New("openai ws passthrough upstream connection does not support frame relay")
 	}
+	usageConn := &codexBorrowUsageFrameConn{FrameConn: upstreamFrameConn, service: s.gatewayBorrow, accountID: account.ID, applied: borrowTurn.borrowed()}
+	defer usageConn.finish()
 	relayUpstreamFrameConn := &openAIWSPassthroughFirstOutputFrameConn{
-		inner:             upstreamFrameConn,
+		inner:             usageConn,
 		activeReadTimeout: s.openAIWSPassthroughIdleTimeout(),
 		deadlineChanged:   make(chan struct{}, 1),
 		resolveDeadline: func(payload []byte) openAIWSPassthroughFirstOutputDeadline {

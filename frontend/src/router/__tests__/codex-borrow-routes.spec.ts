@@ -56,8 +56,9 @@ vi.mock('@/composables/useRoutePrefetch', () => ({
 vi.mock('@/router/title', () => ({ resolveRouteDocumentTitle: () => 'Sub2API' }))
 
 const borrowRoutes = [
-  { path: '/admin/codex-gateway-borrow', name: 'AdminCodexGatewayBorrow' },
-  { path: '/admin/codex-gateway-borrow/status', name: 'AdminCodexGatewayBorrowStatus' },
+  { path: '/admin/codex', name: 'AdminCodex' },
+  { path: '/admin/codex/identity', name: 'AdminCodexIdentity' },
+  { path: '/admin/codex/advanced', name: 'AdminCodexAdvanced' },
   { path: '/admin/pelican-tests', name: 'AdminPelicanTests' },
 ]
 
@@ -75,6 +76,12 @@ describe('Codex borrow page routes', () => {
     authStore.isAuthenticated = true
     authStore.isAdmin = true
     authStore.isSimpleMode = false
+  })
+
+  it.each([['/admin/codex-runtime', '/admin/codex/advanced'], ['/admin/codex-fingerprint', '/admin/codex/identity'], ['/admin/codex-gateway-borrow', '/admin/codex'], ['/admin/codex-gateway-borrow/status', '/admin/codex#status']])('redirects %s to the unified console', (path, destination) => {
+    const record = harness.routes.find(route => route.path === path)
+    expect(record?.redirect).toBe(destination)
+    expect(record?.meta).toMatchObject({ requiresAuth: true, requiresAdmin: true })
   })
 
   it('redirects the bookmarked comparison address to the independent Pelican page', () => {

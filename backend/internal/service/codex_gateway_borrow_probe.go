@@ -301,6 +301,16 @@ func (s *CodexGatewayBorrowService) fireObservation(ctx context.Context, headers
 
 func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *Account, proxy string, profile *tlsfingerprint.Profile, expectedModel string, maxBody int64) (codexGatewayBorrowObservation, error) {
 	var shot codexGatewayBorrowObservation
+	if err := consumeBorrowDiagnosticRequest(req.Context()); err != nil {
+		return shot, err
+	}
+	if pelicanExecutionFromContext(req.Context()) == nil {
+		release, err := sharedPelicanExecution.acquire(req.Context(), account.ID)
+		if err != nil {
+			return shot, err
+		}
+		defer release()
+	}
 	leasedCtx, release, acquireErr := AcquirePelicanExecution(req.Context(), account.ID)
 	if acquireErr != nil {
 		shot.errorText = acquireErr.Error()

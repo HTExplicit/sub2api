@@ -393,12 +393,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	var observePelicanFrame func([]byte) error
 	var releasePelican func()
 	pelicanPreparationCtx := ctx
-	ctx, observePelicanFrame, releasePelican, err = preparePelicanWSSend(ctx, account, wsURL, payload, borrowTurn != nil)
+	ctx, observePelicanFrame, releasePelican, err = preparePelicanWSSend(ctx, account, wsURL, payload, borrowTurn.borrowed())
 	if err != nil {
 		return nil, err
 	}
 	defer releasePelican()
-	if IsPelicanGeneration(ctx) && borrowTurn != nil && !time.Now().Before(borrowTurn.expires) {
+	if IsPelicanGeneration(ctx) && borrowTurn != nil && !borrowTurn.diagnostic && !time.Now().Before(borrowTurn.expires) {
 		// No prompt has been written. Release the expired route and all execution
 		// resources, then perform the ordinary preparation on this same account.
 		releasePelican()
@@ -408,7 +408,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		return s.forwardOpenAIWSV2(pelicanPreparationCtx, c, account, reqBody, clientPromptCacheKey, executionScope, token, decision,
 			isCodexCLI, reqStream, originalModel, mappedModel, startTime, attempt, lastFailureReason, agentTaskRecoveryTried)
 	}
-	if IsPelicanGeneration(ctx) && borrowTurn != nil {
+	if IsPelicanGeneration(ctx) && borrowTurn != nil && !borrowTurn.diagnostic {
 		prepared, prepareErr := codexGatewayBorrowWSRequest(ctx, wsURL, wsHeaders)
 		if prepareErr != nil {
 			return nil, codexGatewayBorrowWSPreparationError(c, account, prepareErr)
@@ -441,6 +441,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 
+	if err := consumeBorrowDiagnosticRequest(ctx); err != nil {
+		return nil, err
+	}
+	usageTracker := s.gatewayBorrow.beginUsage(ctx, account.ID, mappedModel, "ws", borrowTurn.borrowed())
+	defer func() { usageTracker.finish(borrowErr) }()
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()
 		logOpenAIWSModeInfo(
@@ -666,6 +671,7 @@ readLoop:
 			}
 			message, readErr = lease.ReadMessageWithContextTimeout(upstreamReadCtx, currentReadTimeout)
 			if readErr == nil {
+				usageTracker.observe(message)
 				if observeErr := observePelicanFrame(message); observeErr != nil {
 					lease.MarkBroken()
 					return nil, observeErr

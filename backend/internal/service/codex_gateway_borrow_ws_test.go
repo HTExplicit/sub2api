@@ -88,8 +88,8 @@ func seedBorrowWSTarget(t *testing.T, svc *OpenAIGatewayService, borrow *CodexGa
 	req, err := codexGatewayBorrowWSRequest(context.Background(), wsURL, headers)
 	require.NoError(t, err)
 	candidate := borrow.candidate
-	key := borrowRequestFingerprint(req, model, account.Proxy.URL(), nil, candidate.cookie.Value)
-	borrow.targets[codexGatewayBorrowTargetKey{account.ID, model}] = codexGatewayBorrowTargetCheck{key: key,
+	key := borrowTargetFingerprint(req, account, model, account.Proxy.URL(), nil, candidate.cookie.Value)
+	borrow.targets[codexGatewayBorrowTargetKey{account.ID, model}] = codexGatewayBorrowTargetCheck{policyRevision: currentCodexFingerprintPolicyForAccount(account).revision, key: key,
 		cookieKey: borrowHash(candidate.cookie.Value), expires: candidate.expires, result: CodexGatewayBorrowVerification{Success: true}}
 }
 
@@ -144,8 +144,6 @@ func TestCodexGatewayBorrowWS_TwoModelsContinueOriginalConnectionsAfterCookieExp
 	borrow.config.Enabled = false
 	borrow.targets = nil
 	borrow.mu.Unlock()
-	require.True(t, borrow.targetProbeMu.TryLock())
-	defer borrow.targetProbeMu.Unlock()
 	_, err = runBorrowWSV2(t, svc, account, "gpt-6.1-sol", "resp_astra_1")
 	require.Error(t, err, "disabling borrowing must not let a different model take over an existing response")
 	continued, err := runBorrowWSV2(t, svc, account, "gpt-6-astra", "resp_astra_1")

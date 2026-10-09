@@ -1,10 +1,7 @@
 <template>
-  <AppLayout>
-    <CodexRuntimeSettings />
-  </AppLayout>
+  <CodexFingerprintView advanced />
 </template>
 
 <script setup lang="ts">
-import AppLayout from '@/components/layout/AppLayout.vue'
-import CodexRuntimeSettings from '@/components/admin/codex/CodexRuntimeSettings.vue'
+import CodexFingerprintView from './CodexFingerprintView.vue'
 </script>

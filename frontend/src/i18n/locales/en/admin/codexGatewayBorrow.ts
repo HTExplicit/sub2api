@@ -142,6 +142,12 @@ export default {
     rawResponse: 'Raw upstream response',
     downloadAnswer: 'Download raw answer',
     reasons: {
+      account_unavailable: 'Account or credential source unavailable; check account settings',
+      account_inactive: 'Account is inactive; resolve its status on the account page',
+      model_not_allowed: 'This model is not allowed by the account',
+      model_mapping_mismatch: 'This model maps to another model; validation cannot be reused',
+      identity_changed: 'Identity or exit settings changed; validate again',
+
       not_prepared: 'Borrow routes have not been prepared yet',
       not_verified: 'This account and model have not completed route validation',
       not_configured: 'This account and model are absent from the saved configuration',

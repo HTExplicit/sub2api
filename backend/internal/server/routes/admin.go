@@ -150,6 +150,7 @@ func registerCodexGatewayBorrowRoutes(admin *gin.RouterGroup, h *handler.Handler
 	borrow.GET("/status", h.Admin.CodexGatewayBorrow.Status)
 	borrow.POST("/prepare", h.Admin.CodexGatewayBorrow.Prepare)
 	borrow.POST("/verify", h.Admin.CodexGatewayBorrow.Verify)
+	borrow.POST("/diagnose", h.Admin.CodexGatewayBorrow.Diagnose)
 	borrow.POST("/tests", h.Admin.CodexGatewayBorrow.StartTests)
 	borrow.GET("/tests", h.Admin.CodexGatewayBorrow.ListTests)
 	borrow.GET("/tests/:id", h.Admin.CodexGatewayBorrow.GetTest)

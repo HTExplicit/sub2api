@@ -31,6 +31,9 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	stateStore OpenAIWSStateStore,
 	groupID int64,
 ) error {
+	if borrowDiagnosticFromContext(ctx) != nil {
+		return nil
+	}
 	if s == nil {
 		return nil
 	}

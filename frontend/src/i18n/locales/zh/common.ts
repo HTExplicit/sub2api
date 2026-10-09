@@ -188,6 +188,7 @@ export default {
     subscriptions: '订阅管理',
     accounts: '账号管理',
     plugins: '插件管理',
+    codex: 'Codex',
     codexRuntime: 'Codex 运行设置',
     codexFingerprint: 'Codex 指纹',
     proxies: 'IP管理',
