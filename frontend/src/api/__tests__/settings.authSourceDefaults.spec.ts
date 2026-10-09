@@ -313,12 +313,12 @@ describe("sanitizePlatformQuotasMap", () => {
 describe("MiniMax scheduling threshold compatibility", () => {
   it("initializes and saves the MiniMax threshold", () => {
     expect(SCHEDULING_THRESHOLD_PLATFORMS).toEqual([
-      "openai", "anthropic", "grok", "kimi", "zhipu", "minimax", "opencode_go",
+      "openai", "anthropic", "grok", "kimi", "zhipu", "minimax", "opencode_go", "command_code",
     ]);
     expect(normalizeAccountSchedulingThresholdsMap().minimax).toBe(100);
     const thresholds = normalizeAccountSchedulingThresholdsMap({ openai: 92, minimax: 73 });
     expect(sanitizeAccountSchedulingThresholdsMap(thresholds)).toEqual({
-      openai: 92, anthropic: 100, grok: 100, kimi: 100, zhipu: 100, minimax: 73, opencode_go: 100,
+      openai: 92, anthropic: 100, grok: 100, kimi: 100, zhipu: 100, minimax: 73, opencode_go: 100, command_code: 100,
     });
   });
 });

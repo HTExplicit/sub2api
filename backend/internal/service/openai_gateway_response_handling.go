@@ -782,6 +782,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						refusalAction = openAIRefusalStreamPass
 					}
 				}
+				if classifyOpenAIContinuationStateError(failedMessage, dataBytes) == openAIContinuationStateErrorPreviousResponseNotFound {
+					sawFailedEvent = true
+					streamEarlyErr = NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, resp.Header, dataBytes)
+					s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "continuation_state", dataBytes, failedMessage)
+					return
+				}
 				outputStarted := openAIStreamClientOutputStarted(c, clientOutputStarted)
 				if !outputStarted && !cyberPolicyHit {
 					if compactErr := newOpenAICompactFallbackSignal(c, dataBytes, failedMessage); compactErr != nil {

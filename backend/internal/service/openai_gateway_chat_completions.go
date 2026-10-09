@@ -782,9 +782,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	}
 
 	processDataLine := func(payload string) bool {
-		rawPayloadBytes := []byte(payload)
-
-		rawEventType := strings.TrimSpace(gjson.GetBytes(rawPayloadBytes, "type").String())
 
 		if firstChunk {
 			firstChunk = false
