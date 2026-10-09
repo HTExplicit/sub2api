@@ -43,6 +43,27 @@ func TestAccountTestReasoningFinalPayload(t *testing.T) {
 	require.NotContains(t, defaultPayload, "reasoning")
 }
 
+func TestAccountTestReasoningNewPlatformsUseDeclaredWireCapabilities(t *testing.T) {
+	for _, platform := range []string{PlatformCommandCode, PlatformCline} {
+		t.Run(platform, func(t *testing.T) {
+			account := &Account{Platform: platform, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_protocol": APIProtocolAnthropic, "model_mapping": map[string]any{"friendly": "claude-sonnet-5-5"}}}
+			levels, _ := AccountTestReasoningOptions(account, "friendly")
+			require.Contains(t, levels, "high")
+			require.NotContains(t, levels, "ultra")
+			require.NoError(t, ValidateAccountTestReasoning(account, "friendly", "default", "high"))
+			context, _ := gin.CreateTestContext(httptest.NewRecorder())
+			context.Set(accountTestReasoningContextKey, "high")
+			payload, err := createTestPayload("claude-sonnet-5-5", "fixture")
+			require.NoError(t, err)
+			body, err := accountTestClaudeBody(context, payload, "claude-sonnet-5-5")
+			require.NoError(t, err)
+			require.Equal(t, "high", gjson.GetBytes(body, "output_config.effort").String())
+			levels, _ = AccountTestReasoningOptions(account, "unknown-model")
+			require.Empty(t, levels)
+		})
+	}
+}
+
 func TestAccountTestReasoningDoesNotAdvertiseUnsupportedProtocol(t *testing.T) {
 	// Anthropic accounts transmit output_config.effort; see the Claude tests below.
 	for _, platform := range []string{PlatformGemini, PlatformDeepseek} {

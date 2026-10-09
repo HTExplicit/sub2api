@@ -69,19 +69,6 @@ describe('AppSidebar extensions section', () => {
     expect(componentSource).toContain("{ path: '/admin/codex-runtime'")
   })
 
-  it('gives 推理恢复 an icon no other entry uses, in both themes', () => {
-    const recoveryItem = componentSource.match(/\{ path: '\/admin\/reasoning-recovery'[^\n]+\}/)?.[0]
-
-    expect(recoveryItem).toContain('icon: RecoveryIcon')
-    expect(componentSource.match(/icon: RecoveryIcon\b/g)).toHaveLength(1)
-    // no other inline icon draws the same path
-    const recoveryPath = componentSource.match(/const RecoveryIcon = \{[\s\S]*?d: '([^']+)'/)?.[1]
-    expect(recoveryPath).toBeDefined()
-    expect(componentSource.split(`d: '${recoveryPath}'`)).toHaveLength(2)
-    // the console theme draws it through Icon.vue: no other inline icon maps to that name
-    expect(componentSource).toContain("[RecoveryIcon, 'undo']")
-    expect(componentSource.match(/'undo'/g)).toHaveLength(1)
-  })
 })
 
 describe('AppSidebar subscription feature flag', () => {

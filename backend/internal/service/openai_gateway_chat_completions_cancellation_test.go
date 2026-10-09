@@ -16,8 +16,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 type contextBoundBlockingReadCloser struct {
@@ -152,75 +150,4 @@ func (u *contextBoundChatRecoveryUpstream) Do(req *http.Request, proxyURL string
 
 func (u *contextBoundChatRecoveryUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
-}
-
-func TestForwardAsChatCompletions_StreamCancellationIsPerReasoningAttempt(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, outcome := range []string{"completed", "client_canceled"} {
-		t.Run(outcome, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-			defer cancel()
-			body := []byte(strings.Replace(reasoningRecoveryFixture, `"store":false`, `"stream":true,"store":false`, 1))
-			c, recorder := reasoningRecoveryChatContext(t, body)
-			c.Request = c.Request.WithContext(ctx)
-			failed := newContextBoundBlockingReadCloser([]byte(`data: {"type":"response.failed","response":{"id":"resp_rejected","status":"failed","error":{"code":"invalid_encrypted_content","param":"input[1].encrypted_content"}}}` + "\n\n"))
-			completed := newContextBoundBlockingReadCloser([]byte("data: " + reasoningRecoveryChatCompleted + "\n\n"))
-			t.Cleanup(failed.forceUnblock)
-			t.Cleanup(completed.forceUnblock)
-			upstream := &contextBoundChatRecoveryUpstream{httpUpstreamRecorder: httpUpstreamRecorder{responses: []*http.Response{
-				{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: failed},
-				{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: completed},
-			}}}
-			if outcome == "client_canceled" {
-				upstream.cancelRecovery = cancel
-			}
-			cfg := rawChatCompletionsTestConfig()
-			cfg.Gateway.StreamKeepaliveInterval = 1
-			svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
-			type forwardResult struct {
-				result *OpenAIForwardResult
-				err    error
-			}
-			resultCh := make(chan forwardResult, 1)
-			go func() {
-				result, err := svc.ForwardAsChatCompletions(ctx, c, newOpenAIRejectedFieldTestAccount(), body, "", "")
-				resultCh <- forwardResult{result: result, err: err}
-			}()
-
-			var got forwardResult
-			select {
-			case got = <-resultCh:
-			case <-time.After(2 * time.Second):
-				t.Fatal("stream attempt did not cancel before closing or canceled its reasoning recovery")
-			}
-			require.Len(t, upstream.requests, 2, "the rejected attempt permits exactly one same-source recovery")
-			require.ErrorIs(t, upstream.requests[0].Context().Err(), context.Canceled)
-			require.ErrorIs(t, upstream.requests[1].Context().Err(), context.Canceled)
-			deadline, ok := upstream.requests[1].Context().Deadline()
-			require.True(t, ok, "the recovery must retain the original client deadline")
-			clientDeadline, _ := ctx.Deadline()
-			require.Equal(t, clientDeadline, deadline)
-			for _, request := range upstream.requests {
-				require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(request.Context()))
-			}
-			require.Equal(t, upstream.requests[0].URL, upstream.requests[1].URL)
-			require.Equal(t, upstream.requests[0].Header, upstream.requests[1].Header)
-			require.True(t, gjson.GetBytes(upstream.bodies[0], "input.1.encrypted_content").Exists())
-			expected, err := sjson.DeleteBytes(upstream.bodies[0], "input.1.encrypted_content")
-			require.NoError(t, err)
-			require.JSONEq(t, string(expected), string(upstream.bodies[1]))
-			require.NotContains(t, recorder.Body.String(), "resp_rejected")
-			if outcome == "completed" {
-				require.NoError(t, got.err)
-				require.NotNil(t, got.result)
-				require.Equal(t, 4, got.result.Usage.InputTokens)
-				require.Equal(t, 6, got.result.Usage.OutputTokens)
-			} else {
-				require.Error(t, got.err)
-				require.True(t, upstream.recoveryCancellationObserved, "the recovery must observe client cancellation before transport cleanup")
-				var failover *UpstreamFailoverError
-				require.False(t, errors.As(got.err, &failover), "a canceled recovery must not reenter the account pool")
-			}
-		})
-	}
 }

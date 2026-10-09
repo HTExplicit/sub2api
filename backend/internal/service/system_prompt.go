@@ -74,6 +74,7 @@ var systemPromptIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$
 var SystemPromptPlatforms = []string{
 	PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
 	PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo,
+	PlatformCommandCode, PlatformCline,
 }
 
 // AccountTakesSystemPrompt reports whether the account's platform has an

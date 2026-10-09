@@ -2,7 +2,6 @@ package service
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -174,26 +173,9 @@ func normalizeSystemPromptRejectedFieldRetryBody(c *gin.Context, status int, cle
 	return normalizeOpenAIResponsesRejectedFieldRetryBody(status, clean, out)
 }
 
-var errReasoningWireProjection = errors.New("reasoning recovery edit cannot be applied to the clean request")
-
 // prepareReasoningRecoveryRequest lets reasoning recovery inspect the exact
 // wire body produced by the builder, then repeats its edits on the clean body
 // that later retries rebuild from.
-func prepareReasoningRecoveryRequest(recovery *openAIReasoningRecoveryState, req *http.Request, clean []byte, proxyURL string) (*http.Request, []byte, []byte, error) {
-	wire, err := finalWireRequestBody(req, clean)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	prepared, final, err := recovery.PrepareRequest(req, wire, proxyURL)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	clean, err = projectReasoningRecoveryEdits(clean, wire, final)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return prepared, clean, final, nil
-}
 
 // finalWireRequestBody reads the body a builder attached to req.
 func finalWireRequestBody(req *http.Request, fallback []byte) ([]byte, error) {
@@ -227,71 +209,6 @@ func finalWirePromptCacheKey(wire []byte, seed string) string {
 // relative order the system prompt never changes, and the id of an item it
 // has stripped: with the ciphertext, or afterwards from the item left behind.
 // Any other difference is rejected instead of becoming the next retry's source.
-func projectReasoningRecoveryEdits(clean, before, after []byte) ([]byte, error) {
-	if bytes.Equal(before, after) {
-		return clean, nil
-	}
-	wireItems, cleanItems := openAIReasoningCipherItems(before), openAIReasoningCipherItems(clean)
-	if len(wireItems) != len(cleanItems) {
-		return nil, errReasoningWireProjection
-	}
-	var afterItems []gjson.Result
-	if input := gjson.GetBytes(after, "input"); input.IsArray() {
-		afterItems = input.Array()
-	}
-	lost := func(index int, field string) bool {
-		return index >= len(afterItems) || !afterItems[index].Get(field).Exists()
-	}
-	var wireEdit, cleanEdit openAIReasoningRecoveryEdit
-	for index, item := range wireItems {
-		if item.hash != cleanItems[index].hash {
-			return nil, errReasoningWireProjection
-		}
-		if !lost(item.index, "encrypted_content") {
-			continue
-		}
-		wireEdit.cipher = append(wireEdit.cipher, item.index)
-		cleanEdit.cipher = append(cleanEdit.cipher, cleanItems[index].index)
-		if item.id != "" && lost(item.index, "id") {
-			wireEdit.ids = append(wireEdit.ids, item.index)
-			cleanEdit.ids = append(cleanEdit.ids, cleanItems[index].index)
-		}
-	}
-	// An item left behind without ciphertext has no hash to pair it by. It is
-	// the same item in both bodies when it is the same occurrence of its id.
-	wireBare, cleanBare := openAIReasoningBareItemsByID(before), openAIReasoningBareItemsByID(clean)
-	for id, indices := range wireBare {
-		for occurrence, index := range indices {
-			if !lost(index, "id") {
-				continue
-			}
-			if occurrence >= len(cleanBare[id]) {
-				return nil, errReasoningWireProjection
-			}
-			wireEdit.ids = append(wireEdit.ids, index)
-			cleanEdit.ids = append(cleanEdit.ids, cleanBare[id][occurrence])
-		}
-	}
-	expected, err := applyOpenAIReasoningRecoveryEdit(before, wireEdit)
-	if err != nil || !bytes.Equal(expected, after) {
-		return nil, errReasoningWireProjection
-	}
-	return applyOpenAIReasoningRecoveryEdit(clean, cleanEdit)
-}
 
 // openAIReasoningBareItemsByID lists, for each id, the input positions of the
 // reasoning items that carry it and have no ciphertext.
-func openAIReasoningBareItemsByID(body []byte) map[string][]int {
-	out := map[string][]int{}
-	input := gjson.GetBytes(body, "input")
-	if !input.IsArray() {
-		return out
-	}
-	for index, item := range input.Array() {
-		id := item.Get("id")
-		if item.Get("type").String() == "reasoning" && !openAIReasoningItemHasCipher(item) && id.Type == gjson.String && id.String() != "" {
-			out[id.String()] = append(out[id.String()], index)
-		}
-	}
-	return out
-}

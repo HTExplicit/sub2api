@@ -2295,7 +2295,7 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(html).toContain("typesafe");
   });
 
-  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 11 平台）", async () => {
+  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 13 平台）", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openUsersTab(wrapper);
@@ -2311,7 +2311,7 @@ describe("admin SettingsView platform quota matrix", () => {
     // 应携带嵌套对象，而非扁平字段
     expect(payload).toHaveProperty("default_platform_quotas");
     const quotas = payload["default_platform_quotas"] as Record<string, unknown>;
-    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "minimax", "opencode_go", "typesafe"];
+    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "minimax", "opencode_go", "typesafe", "command_code", "cline"];
     expect(Object.keys(quotas)).toEqual(platforms);
     for (const p of platforms) {
       expect(quotas).toHaveProperty(p);
@@ -2326,7 +2326,7 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(payload).not.toHaveProperty("default_platform_quota_openai_weekly");
   });
 
-  it("加载后 form.default_platform_quotas 含全 11 平台并保留 MiniMax 数值", async () => {
+  it("加载后 form.default_platform_quotas 含全 13 平台并保留 MiniMax 数值", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       default_platform_quotas: {
@@ -2349,7 +2349,7 @@ describe("admin SettingsView platform quota matrix", () => {
 
     expect(quotas["anthropic"]?.["daily"]).toBe(5);
     expect(quotas["openai"]?.["weekly"]).toBe(12.5);
-    expect(Object.keys(quotas)).toHaveLength(11);
+    expect(Object.keys(quotas)).toHaveLength(13);
     expect(quotas["minimax"]).toEqual({ daily: 0, weekly: 20, monthly: 80 });
     // 缺失平台应补全为 null
     expect(quotas["gemini"]).toEqual({ daily: null, weekly: null, monthly: null });

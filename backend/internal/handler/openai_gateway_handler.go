@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -218,13 +219,6 @@ type grokMediaEligibilityProber interface {
 
 const maxOpenAIFirstOutputTimeoutSwitches = 1
 
-// maxOpenAICiphertextAccountSwitches bounds how often one request is handed
-// to another account because an account could not read its ciphertext, within
-// the ordinary switch budget. Every rejection costs an upload of the whole
-// history, and when the account that issued the ciphertext is gone no account
-// accepts.
-const maxOpenAICiphertextAccountSwitches = 3
-
 func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bool {
 	return result.SucceededForScheduling()
 }
@@ -378,8 +372,9 @@ func allowOpenAICompatibleMessagesDispatch(c *gin.Context, apiKey *service.APIKe
 
 func openAICompatibleTextTargetAllowed(c *gin.Context, apiKey *service.APIKey, model string) bool {
 	return compositeTargetPlatformAllowed(c, apiKey, model,
-		service.PlatformOpenAI, service.PlatformGrok,
-		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax)
+		domain.PlatformIDsWhere(func(spec domain.PlatformSpec) bool {
+			return spec.Gateway == domain.PlatformGatewayOpenAI
+		})...)
 }
 
 // isResponsesWebSocketCompositePlatform 限定 composite 分组在 Responses WebSocket
@@ -724,37 +719,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var passthroughFailoverState openAIPassthroughFailoverState
 	var accountTypePreference service.OpenAIAccountTypePreference
 	var sameAccountRetrySelection *service.AccountSelectionResult
-	// An account that cannot read the ciphertext in the request hands it to
-	// the next account. When the accounts or the switch budget run out, the
-	// client receives the first such failure, as it did before accounts were
-	// switched for it; an account that ends the request with an answer of its
-	// own is still the answer.
-	var ciphertextFailoverErr *service.UpstreamFailoverError
-	ciphertextFirstAccountID, ciphertextSessionHash := int64(0), ""
-	ciphertextLaterAccounts := make(map[int64]struct{})
-	ciphertextSwitchCount := 0
-	ciphertextAccepted := false
-	exhaustedFailoverErr := func(current *service.UpstreamFailoverError) *service.UpstreamFailoverError {
-		if ciphertextFailoverErr != nil {
-			return ciphertextFailoverErr
-		}
-		return current
-	}
-	// Selecting one of the later accounts may have moved the session to it.
-	// When none of them answered, they are no better home for the conversation
-	// than the account that first rejected it, so a binding this request moved
-	// goes back there. A binding the scheduler kept elsewhere is not touched.
-	defer func() {
-		if ciphertextFailoverErr == nil || ciphertextAccepted {
-			return
-		}
-		restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 2*time.Second)
-		defer cancel()
-		if err := h.gatewayService.MoveStickySessionIfBoundTo(restoreCtx, apiKey.GroupID, ciphertextSessionHash, ciphertextFirstAccountID, ciphertextLaterAccounts); err != nil {
-			reqLog.Warn("openai.ciphertext_mismatch_session_restore_failed", zap.Int64("account_id", ciphertextFirstAccountID), zap.Error(err))
-		}
-	}()
-
 	// 分组利润控制：请求级装配定价上下文——pricingAt 固定本请求的
 	// D 与计费高峰因子，选号、槽位终检与全部 failover 重入共用同一门与阈值。
 	// 生图意图只影响能力路由与图片计费，不关门：混合 /v1/responses 请求的
@@ -813,7 +777,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if retryingSameAccount && lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, exhaustedFailoverErr(lastFailoverErr), streamStarted)
+				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 				return
 			}
 			if len(failedAccountIDs) == 0 {
@@ -830,16 +794,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, exhaustedFailoverErr(lastFailoverErr), streamStarted)
+				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 			} else {
 				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 			}
 			return
 		}
-		if (selection == nil || selection.Account == nil) && ciphertextFailoverErr != nil {
-			h.handleFailoverExhausted(c, ciphertextFailoverErr, streamStarted)
-			return
-		}
+
 		if selection == nil || selection.Account == nil {
 			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, routingModel, reqModel, requestPlatform)
 			if !cls.ModelNotFound {
@@ -866,9 +827,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
-		if ciphertextFailoverErr != nil && account.ID != ciphertextFirstAccountID {
-			ciphertextLaterAccounts[account.ID] = struct{}{}
-		}
 
 		var accountReleaseFunc func()
 		var slotResult openAISlotAcquireResult
@@ -891,7 +849,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				c, account, account.GetMappedModel(routingModel), lastFailoverErr, failedAccountIDs,
 				&switchCount, maxAccountSwitches, &oauth429FailoverState,
 				"responses", reqLog, true,
-				func() { h.handleFailoverExhausted(c, exhaustedFailoverErr(lastFailoverErr), streamStarted) },
+				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
 			) {
 				continue
 			}
@@ -958,11 +916,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			})
 		}
 		if err != nil {
-			if ciphertextFailoverErr != nil && service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
-				// This account read the ciphertext and was answering when the
-				// attempt failed: the conversation stays with it.
-				ciphertextAccepted = true
-			}
+
 			if result != nil && result.ClientDisconnect {
 				reqLog.Info("openai.client_disconnected",
 					zap.Int64("account_id", account.ID),
@@ -986,9 +940,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Error(err),
 				)
 			} else {
-				if h.handleReasoningRecoveryTerminal(c, err, selection, account, account.GetMappedModel(routingModel), streamStarted, h.gatewayService) {
-					return
-				}
+
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if failoverClientGone(c) {
@@ -1038,31 +990,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					retryAction := openAIFailoverRetrySwitchAccount
-					switch {
-					case failoverErr.IsOpenAICiphertextAccountMismatch():
-						// A mismatch says nothing against the account: no
-						// same-account retry and no cooldown, the next account is tried.
-					case failoverErr.IsOpenAIRecoveryRetrySpent():
-						// The account failed on its stripped retry and is not asked
-						// again for this request. The retry-exhausted cooldown runs as
-						// for used-up same-account attempts; it does nothing for an
-						// OpenAI API-key account, whose penalties the forwarding
-						// layer writes on a first send.
-						h.gatewayService.CooldownOpenAIRetryExhausted(c.Request.Context(), account, account.GetMappedModel(routingModel), failoverErr)
-					default:
-						retryAction = retryState.HandleHTTP(
-							c.Request.Context(),
-							h.gatewayService,
-							account,
-							account.GetMappedModel(routingModel),
-							failoverErr,
-							true,
-							sameAccountRetryDelay,
-							"responses",
-						)
-					}
-					h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
+					retryAction := retryState.HandleHTTP(
+						c.Request.Context(),
+						h.gatewayService,
+						account,
+						account.GetMappedModel(routingModel),
+						failoverErr,
+						true,
+						sameAccountRetryDelay,
+						"responses",
+					)
+
 					switch retryAction {
 					case openAIFailoverRetryReselect:
 						continue
@@ -1088,28 +1026,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							AllowCompatibleFallback: true,
 						}
 					}
-					if failoverErr.IsOpenAICiphertextAccountMismatch() {
-						if ciphertextFailoverErr == nil {
-							ciphertextFailoverErr = failoverErr
-							ciphertextFirstAccountID, ciphertextSessionHash = account.ID, sessionHash
-						}
-						if ciphertextSwitchCount >= maxOpenAICiphertextAccountSwitches {
-							h.handleFailoverExhausted(c, ciphertextFailoverErr, streamStarted)
-							return
-						}
-						ciphertextSwitchCount++
-						service.ResetOpenAIReasoningRecoveryAttempt(c)
-					}
-					if failoverErr.IsOpenAIRecoveryRetrySpent() {
-						service.ResetOpenAIReasoningRecoveryAttempt(c)
-					}
+
 					if switchCount >= maxAccountSwitches {
-						h.handleFailoverExhausted(c, exhaustedFailoverErr(failoverErr), streamStarted)
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
 					switchCount++
 					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
-						h.handleFailoverExhausted(c, exhaustedFailoverErr(failoverErr), streamStarted)
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
@@ -1118,7 +1042,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						zap.Int("upstream_status", failoverErr.StatusCode),
 						zap.Int("switch_count", switchCount),
 						zap.Int("max_switches", maxAccountSwitches),
-						zap.Bool("ciphertext_account_mismatch", failoverErr.IsOpenAICiphertextAccountMismatch()),
 					}
 					if account.Proxy != nil {
 						failoverSwitchFields = append(failoverSwitchFields,
@@ -1171,15 +1094,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if shouldSubmitOpenAIUsage(err, result) {
 			submitResponsesUsage(result)
 		}
-		ciphertextAccepted = true
-		if ciphertextFailoverErr != nil {
-			// Selection usually bound the session to this account already. Where
-			// it leaves a binding in place, move one that still points at the
-			// account that could not read the conversation.
-			if bindErr := h.gatewayService.MoveStickySessionIfBoundTo(c.Request.Context(), apiKey.GroupID, sessionHash, account.ID, map[int64]struct{}{ciphertextFirstAccountID: {}}); bindErr != nil {
-				reqLog.Warn("openai.ciphertext_mismatch_session_bind_failed", zap.Int64("account_id", account.ID), zap.Error(bindErr))
-			}
-		}
+
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -2399,6 +2314,101 @@ func (p *openAIWSTurnPricing) currentOr(fallback time.Time) time.Time {
 	return fallback
 }
 
+// openAIWSTurnAPIKeyLookup 是后续 turn 重取 API Key 认证快照的入口
+// （APIKeyService.GetByKey：经 L1/L2 认证缓存，未命中才回源）。
+type openAIWSTurnAPIKeyLookup interface {
+	GetByKey(ctx context.Context, key string) (*service.APIKey, error)
+}
+
+// openAIWSTurnBillingAPIKeys 按 turn 号保存每个 turn 计费用的 API Key 快照。
+//
+// API Key 认证快照只在建连时取一次。若连接内所有 turn 共用它，分组定价（倍率、
+// 高峰、图片定价、利润门参数）会停留在建连时刻：管理员调价后，已打开的长连接
+// 在客户端重连前一直按旧价计费、按旧售价过利润门，而 HTTP 请求每次都经认证缓存
+// 取快照，缓存失效后即生效。
+//
+// 因此后续 turn 在 BeforeTurn（与 HTTP 请求进入认证中间件同位）经同一认证缓存
+// 重取快照，只采用其中的分组，作为该 turn 利润门准入与用量计费共同的分组；用户、
+// Key 限额、订阅仍沿用建连快照。只在同一把 Key、同一分组且平台与订阅类型未变时
+// 采用：Key 换组或分组改平台/订阅类型不是调价，该连接按建连分组调度，继续按建连
+// 快照计费；重取失败同样保留建连快照，不断连。
+//
+// 首轮沿用刚经认证中间件取得的建连快照；没有经过 BeforeTurn 的 turn 回退建连
+// 快照。只保留当前与上一个 turn：下一 turn 的 BeforeTurn 先于上一 turn 的
+// AfterTurn 执行时，上一 turn 仍取到自己的快照。
+type openAIWSTurnBillingAPIKeys struct {
+	mu   sync.Mutex
+	keys map[int]*service.APIKey
+}
+
+// begin 在 BeforeTurn 重装利润门前调用：后续 turn 重取计费分组并按 turn 记下，
+// 返回换入该分组的上下文供本 turn 的利润门使用。
+func (k *openAIWSTurnBillingAPIKeys) begin(ctx context.Context, apiKeyService *service.APIKeyService, turn int, conn *service.APIKey) context.Context {
+	turnKey := conn
+	if turn > 1 && apiKeyService != nil {
+		turnKey = refreshOpenAIWSTurnBillingAPIKey(ctx, apiKeyService, conn)
+	}
+	k.set(turn, turnKey)
+	return withOpenAIWSTurnBillingGroup(ctx, turnKey)
+}
+
+func (k *openAIWSTurnBillingAPIKeys) set(turn int, key *service.APIKey) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.keys == nil {
+		k.keys = make(map[int]*service.APIKey, 2)
+	}
+	for t := range k.keys {
+		if t < turn-1 {
+			delete(k.keys, t)
+		}
+	}
+	k.keys[turn] = key
+}
+
+func (k *openAIWSTurnBillingAPIKeys) forTurn(turn int, conn *service.APIKey) *service.APIKey {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if key := k.keys[turn]; key != nil {
+		return key
+	}
+	return conn
+}
+
+// refreshOpenAIWSTurnBillingAPIKey 返回本 turn 计费用的 API Key：分组取当前认证
+// 快照，其余字段与建连快照共享。不满足采用条件时原样返回建连快照。
+func refreshOpenAIWSTurnBillingAPIKey(ctx context.Context, lookup openAIWSTurnAPIKeyLookup, conn *service.APIKey) *service.APIKey {
+	if lookup == nil || conn == nil || conn.Key == "" || conn.GroupID == nil || conn.Group == nil {
+		return conn
+	}
+	latest, err := lookup.GetByKey(ctx, conn.Key)
+	if err != nil || latest == nil || latest.ID != conn.ID || latest.GroupID == nil || *latest.GroupID != *conn.GroupID {
+		return conn
+	}
+	group := latest.Group
+	if group == nil || group.ID != conn.Group.ID ||
+		group.Platform != conn.Group.Platform ||
+		group.SubscriptionType != conn.Group.SubscriptionType {
+		return conn
+	}
+	turnKey := *conn
+	turnKey.Group = group
+	return &turnKey
+}
+
+// withOpenAIWSTurnBillingGroup 把本 turn 的计费分组换进认证分组上下文，使利润门
+// 的售价与本 turn 计费同源。上下文里没有同 ID 的认证分组时不改动。
+func withOpenAIWSTurnBillingGroup(ctx context.Context, turnKey *service.APIKey) context.Context {
+	if turnKey == nil || turnKey.Group == nil {
+		return ctx
+	}
+	current, ok := ctx.Value(ctxkey.Group).(*service.Group)
+	if !ok || current == nil || current == turnKey.Group || current.ID != turnKey.Group.ID {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxkey.Group, turnKey.Group)
+}
+
 // recordOpenAIProfitVeto 记录 OpenAI 侧选号循环的一次利润门终检否决：把账号
 // 加入本请求排除集并递增否决计数。返回 false 表示否决次数已达
 // maxProfitVetoAttempts，调用方必须停止重选并按「无可用账号」终止。
@@ -3193,6 +3203,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// turn 级定价：首轮回退到 TurnStarted 的所属 turn 时刻；后续 turn 由
 		// BeforeTurn 重新冻结 pricingAt 并按最新门复核当前账号。
 		var turnPricing openAIWSTurnPricing
+		// 后续 turn 的计费分组同样在 BeforeTurn 经认证缓存重取，使分组调价对
+		// 已打开的连接生效。
+		var turnBillingAPIKeys openAIWSTurnBillingAPIKeys
 		// Passthrough ingress does not invoke BeforeTurn for the first frame.
 		if err := checkSimpleModeTurnBilling(); err != nil {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
@@ -3280,7 +3293,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// 长连接跨峰谷/倍率刷新防护：每个 turn 按当前时刻重装门并复核
 				// 当前账号，越线即要求客户端重连重选（连接绑定单一上游账号，
 				// 无法中途换号）。本 turn 的准入与计费共用同一 pricingAt。
-				turnCtx, turnAt := h.gatewayService.WithOpenAITurnPricingContext(ctx, apiKey.GroupID)
+				turnBillingCtx := turnBillingAPIKeys.begin(ctx, h.apiKeyService, turn, apiKey)
+				turnCtx, turnAt := h.gatewayService.WithOpenAITurnPricingContext(turnBillingCtx, apiKey.GroupID)
 				if _, vetoed, reason := h.gatewayService.ProfitControlVetoLatest(turnCtx, account); vetoed {
 					reqLog.Info("openai.websocket_turn_profit_vetoed",
 						zap.Int("turn", turn),
@@ -3413,8 +3427,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
+				turnBillingAPIKey := turnBillingAPIKeys.forTurn(turn, apiKey)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-				turnUsageSnapshot := snapshotOpenAIUsageMetadataWithHash(c, apiKey, account, subscription, turnMapping, turnRequestedModel, result, requestPayloadHash)
+				turnUsageSnapshot := snapshotOpenAIUsageMetadataWithHash(c, turnBillingAPIKey, account, subscription, turnMapping, turnRequestedModel, result, requestPayloadHash)
 				turnUsageSnapshot.channelFields = turnUsageFields
 				turnUsageSnapshot.cyberBlocked = cyberBlocked
 				turnUsageInput := turnUsageSnapshot.Input(result, h.apiKeyService, turnRecordPricingAt)
@@ -4043,30 +4058,6 @@ func (h *OpenAIGatewayHandler) handleOpenAINoAccountError(c *gin.Context, classi
 		code = "no_eligible_account"
 	}
 	h.handleStreamingAwareErrorWithCode(c, classification.Status, classification.ErrType, code, classification.Message, streamStarted, false)
-}
-
-// A recovery terminal ends the request: it is an attempt that spent its
-// stripped retry, or one whose ciphertext rejection arrived after output was
-// committed, and that was not handed on. Preserve its classification without
-// allowing refusal, account, or transport retries to re-enter the loop. An
-// account mismatch and an account failure of the stripped retry, both
-// possible only before anything reached the client, are returned as failovers
-// instead and never reach this function.
-func (h *OpenAIGatewayHandler) handleReasoningRecoveryTerminal(c *gin.Context, err error, selection *service.AccountSelectionResult, account *service.Account, model string, streamStarted bool, reporter openAIFailoverSelectionReporter) bool {
-	var terminal *service.OpenAIReasoningRecoveryTerminalError
-	if !errors.As(err, &terminal) {
-		return false
-	}
-	if failoverClientGone(c) {
-		reporter.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-		return true
-	}
-	finalizeOpenAIFailoverSelection(reporter, selection, account, model, terminal.Failure, openAIFailoverRetryStop)
-	if terminal.FailureTerminalForwarded {
-		return true
-	}
-	h.handleFailoverExhausted(c, terminal.Failure, streamStarted || c.Writer.Written())
-	return true
 }
 
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {

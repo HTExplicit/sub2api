@@ -11,21 +11,18 @@ import {
   type UpdateSettingsRequest,
   type DefaultPlatformQuotasMap,
 } from "@/api/admin/settings";
+import { listPlatformIds } from "@/constants/platformCatalog";
 
-/** 全 null 的全部 concrete 平台 map，用于断言归一化默认值 */
-const allNullQuotas: DefaultPlatformQuotasMap = {
-  anthropic: { daily: null, weekly: null, monthly: null },
-  openai:    { daily: null, weekly: null, monthly: null },
-  gemini:    { daily: null, weekly: null, monthly: null },
-  antigravity: { daily: null, weekly: null, monthly: null },
-  grok: { daily: null, weekly: null, monthly: null },
-  kimi: { daily: null, weekly: null, monthly: null },
-  zhipu: { daily: null, weekly: null, monthly: null },
-  deepseek: { daily: null, weekly: null, monthly: null },
-  minimax: { daily: null, weekly: null, monthly: null },
-  opencode_go: { daily: null, weekly: null, monthly: null },
-  typesafe: { daily: null, weekly: null, monthly: null },
-}
+/** 与后端 AllowedQuotaPlatforms 一致的全部具体平台（平台清单）。 */
+const quotaPlatforms = [
+  "anthropic", "openai", "gemini", "antigravity", "grok",
+  "kimi", "zhipu", "deepseek", "minimax", "opencode_go", "typesafe", "command_code", "cline",
+];
+
+/** 全部平台全 null 的 map，用于断言归一化默认值 */
+const allNullQuotas: DefaultPlatformQuotasMap = Object.fromEntries(
+  quotaPlatforms.map((platform) => [platform, { daily: null, weekly: null, monthly: null }]),
+)
 
 describe("admin settings auth source defaults helpers", () => {
   it("builds auth source defaults state from flat settings fields", () => {
@@ -251,12 +248,14 @@ describe("normalizePlatformQuotasMap", () => {
     expect(result.gemini).toEqual({ daily: null, weekly: null, monthly: null });
     expect(result.antigravity).toEqual({ daily: null, weekly: null, monthly: null });
     expect(result.grok).toEqual({ daily: null, weekly: null, monthly: null });
+    expect(result.kimi).toEqual({ daily: null, weekly: null, monthly: null });
+    expect(result.opencode_go).toEqual({ daily: null, weekly: null, monthly: null });
   });
 
-  it("无参数时返回全部 concrete 平台全 null", () => {
+  it("无参数时返回平台清单中的全部平台全 null", () => {
     const result = normalizePlatformQuotasMap();
-    expect(Object.keys(result)).toHaveLength(11);
-    expect(result).toEqual(allNullQuotas);
+    expect(listPlatformIds()).toEqual(quotaPlatforms);
+    expect(Object.keys(result)).toEqual(quotaPlatforms);
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
     }
@@ -304,8 +303,7 @@ describe("sanitizePlatformQuotasMap", () => {
 
   it("缺失平台填充为全 null", () => {
     const result = sanitizePlatformQuotasMap({});
-    expect(Object.keys(result)).toHaveLength(11);
-    expect(result).toEqual(allNullQuotas);
+    expect(Object.keys(result)).toEqual(quotaPlatforms);
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
     }
@@ -315,12 +313,12 @@ describe("sanitizePlatformQuotasMap", () => {
 describe("MiniMax scheduling threshold compatibility", () => {
   it("initializes and saves the MiniMax threshold", () => {
     expect(SCHEDULING_THRESHOLD_PLATFORMS).toEqual([
-      "openai", "anthropic", "grok", "kimi", "zhipu", "minimax", "opencode_go",
+      "openai", "anthropic", "grok", "kimi", "zhipu", "minimax", "opencode_go", "command_code",
     ]);
     expect(normalizeAccountSchedulingThresholdsMap().minimax).toBe(100);
     const thresholds = normalizeAccountSchedulingThresholdsMap({ openai: 92, minimax: 73 });
     expect(sanitizeAccountSchedulingThresholdsMap(thresholds)).toEqual({
-      openai: 92, anthropic: 100, grok: 100, kimi: 100, zhipu: 100, minimax: 73, opencode_go: 100,
+      openai: 92, anthropic: 100, grok: 100, kimi: 100, zhipu: 100, minimax: 73, opencode_go: 100, command_code: 100,
     });
   });
 });

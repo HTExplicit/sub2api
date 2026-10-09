@@ -573,12 +573,7 @@ const routes: RouteRecordRaw[] = [
     redirect: '/admin/pelican-tests',
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Pelican Tests', titleKey: 'nav.pelicanTests' }
   },
-  {
-    path: '/admin/reasoning-recovery',
-    name: 'AdminReasoningRecovery',
-    component: () => import('@/views/admin/ReasoningRecoveryView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Reasoning Recovery', titleKey: 'nav.reasoningRecovery' }
-  },
+
   {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',

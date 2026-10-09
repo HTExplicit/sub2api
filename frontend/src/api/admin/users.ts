@@ -4,8 +4,8 @@
  */
 
 import { apiClient } from '../client'
+import { listPlatformIds } from '@/constants/platformCatalog'
 import type { AccountPlatform, AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey } from '@/types'
-import { CONCRETE_PLATFORM_VALUES } from '@/constants/platforms'
 
 export interface AdminBindAuthIdentityChannelRequest {
   channel: string
@@ -331,10 +331,11 @@ export async function bindUserAuthIdentity(
 /**
  * Platform quota types
  */
+// 与后端 AllowedQuotaPlatforms 同源：平台清单中的全部具体平台。
+export function platformQuotaPlatforms(): PlatformQuotaPlatform[] {
+  return listPlatformIds()
+}
 export type PlatformQuotaPlatform = AccountPlatform
-
-// Downstream: every concrete account platform supports platform quotas.
-export const PLATFORM_QUOTA_PLATFORMS = [...CONCRETE_PLATFORM_VALUES] as PlatformQuotaPlatform[]
 export type PlatformQuotaWindow = 'daily' | 'weekly' | 'monthly'
 
 export interface PlatformQuotaItem {

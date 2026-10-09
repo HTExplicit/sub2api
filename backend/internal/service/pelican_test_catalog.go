@@ -325,7 +325,7 @@ func pelicanTestUsesClaudeEffort(account *Account, model string) bool {
 		return true
 	}
 	if account.IsOpenCodeGo() {
-		return openCodeGoNativeProtocol(account, model) == APIProtocolAnthropic
+		return account.resolveModelRoutedProtocol(model) == APIProtocolAnthropic
 	}
 	return account.IsCNProvider() && account.GetAPIProtocol() == APIProtocolAnthropic
 }
@@ -338,7 +338,7 @@ func pelicanTestSupportsReasoningWire(account *Account, model string) bool {
 	case account.IsOpenAI():
 		return true
 	case account.IsOpenCodeGo():
-		protocol := openCodeGoNativeProtocol(account, model)
+		protocol := account.resolveModelRoutedProtocol(model)
 		return protocol == APIProtocolChatCompletions || protocol == APIProtocolResponses
 	case account.IsCNProvider():
 		// A Pelican task sends one native request. Adaptive accounts do not have

@@ -177,32 +177,6 @@ func TestCompatHostObservations_ShadowSuccessNotifiesParent(t *testing.T) {
 	}
 }
 
-func TestCompatHostObservations_RecoveryLogsOnlyFinalSuccess(t *testing.T) {
-	store := &reasoningRecoveryMemoryStore{GatewayCache: &stubGatewayCache{}}
-	completed, err := sjson.Delete(reasoningRecoveryChatCompleted, "response.usage")
-	require.NoError(t, err)
-	failed := "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"invalid_encrypted_content\",\"param\":\"input[1].encrypted_content\"}}}\n\n"
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		reasoningRecoverySSEResponse(failed, http.StatusOK),
-		reasoningRecoverySSEResponse("data: "+completed+"\n\n", http.StatusOK),
-	}}
-	svc := newOpenAIRejectedFieldTestService(upstream)
-	svc.cache = store
-	account := newOpenAIRejectedFieldTestAccount()
-	body := reasoningRecoveryChatBody(t, false)
-	c, _ := reasoningRecoveryChatContext(t, body)
-	core, logs := observer.New(zap.WarnLevel)
-	c.Request = c.Request.WithContext(logger.IntoContext(c.Request.Context(), zap.New(core)))
-	before := observeCompatMissingUsage(t)
-	result, err := svc.ForwardAsChatCompletions(c.Request.Context(), c, account, body, "", "")
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.requests, 2, "only the rejected attempt and its bounded recovery may send")
-	require.Len(t, store.values, 1)
-	require.Equal(t, uint64(1), openAIMissingUsageSampler.total.Load()-before)
-	require.Len(t, logs.FilterMessage("openai_usage.success_missing_usage").All(), 1)
-}
-
 func TestCompatHostObservations_FailedAttemptsEmitNoSuccessSignals(t *testing.T) {
 	for _, protocol := range []string{"chat", "messages"} {
 		for _, stream := range []bool{false, true} {
@@ -231,7 +205,7 @@ func TestCompatHostObservations_IncompleteDoesNotCountAsCompleted(t *testing.T) 
 				before := observeCompatMissingUsage(t)
 				c, body, logs := compatObservationContext(t, protocol, stream)
 				payload := "data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_incomplete\",\"model\":\"gpt-5.4\",\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"},\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"partial fixture\"}]}]}}\n\n"
-				upstream := &httpUpstreamRecorder{resp: reasoningRecoverySSEResponse(payload, http.StatusOK)}
+				upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(payload))}}
 				svc := newOpenAIRejectedFieldTestService(upstream)
 				result, err := forwardCompatObservation(svc, protocol, c, newOpenAIRejectedFieldTestAccount(), body)
 				require.NoError(t, err, "the existing bounded-output response contract must remain unchanged")

@@ -33,6 +33,19 @@ func TestSystemPromptSetBindingsSkipsAccountsWithoutInsertionPoint(t *testing.T)
 	require.Empty(t, repo.bulkUpdateIDs)
 }
 
+func TestSystemPromptNewPlatformsUseInsertionPoints(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{getByIDsAccounts: []*Account{
+		{ID: 11, Platform: PlatformCommandCode, Type: AccountTypeAPIKey},
+		{ID: 12, Platform: PlatformCline, Type: AccountTypeAPIKey},
+		{ID: 13, Platform: PlatformTypeSafe, Type: AccountTypeAPIKey},
+	}}
+	service := NewSystemPromptService(nil, repo, nil)
+	updated, err := service.SetBindings(context.Background(), []int64{11, 12, 13}, SystemPromptBinding{Mode: SystemPromptModeOff})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), updated)
+	require.Equal(t, []int64{11, 12}, repo.bulkUpdateIDs)
+}
+
 // Besides the binding endpoint only account creation stores a binding, and only
 // for an account that can take a prompt: data import and duplicate create from
 // a stored extra. The key-level writers of extra store none on any platform.

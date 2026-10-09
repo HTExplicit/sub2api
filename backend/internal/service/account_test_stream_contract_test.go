@@ -166,5 +166,5 @@ func TestAccountConnectionBackgroundResultKeepsUpstreamError(t *testing.T) {
 		Body: io.NopCloser(strings.NewReader(`{"error":{"message":"This request requires more credits"}}`))})
 	result, err := svc.RunTestBackgroundDetailed(context.Background(), account.ID, "deepseek-v4-flash")
 	require.NoError(t, err)
-	require.Equal(t, `OpenCode Go API returned 402: {"error":{"message":"This request requires more credits"}}`, result.ErrorMessage)
+	require.Equal(t, `Chat Completions API (/v1/chat/completions) returned 402: {"error":{"message":"This request requires more credits"}}`, result.ErrorMessage)
 }

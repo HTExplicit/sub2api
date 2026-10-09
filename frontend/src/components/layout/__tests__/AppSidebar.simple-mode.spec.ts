@@ -114,7 +114,6 @@ describe('AppSidebar simple mode extensions', () => {
       '/admin/codex-fingerprint',
       '/admin/codex-gateway-borrow',
       '/admin/pelican-tests',
-      '/admin/reasoning-recovery',
     ])
     if (simple) expect(wrapper.text()).not.toContain('nav.myAccount')
 

@@ -5,6 +5,8 @@
       <template #filters>
         <div :class="flatThemeActive ? undefined : 'flex flex-wrap-reverse items-start justify-between gap-3'" :data-ui="flatThemeActive ? 'accounts-toolbar' : undefined">
           <AccountConsoleFilters
+            v-model:expanded="accountMoreFiltersOpen"
+            panel-id="accounts-secondary-filters"
             v-if="!flatThemeActive"
             v-model="consoleFilters"
             :facets="facets"
@@ -12,7 +14,7 @@
             @change="handleConsoleFiltersChanged"
           />
           <template v-else>
-            <AccountConsoleFilters v-model="consoleFilters" part="search" :facets="facets" :groups="groups" @change="handleConsoleFiltersChanged" />
+            <AccountConsoleFilters v-model="consoleFilters" v-model:expanded="accountMoreFiltersOpen" panel-id="accounts-secondary-filters" part="search" :facets="facets" :groups="groups" @change="handleConsoleFiltersChanged" />
             <AccountViewModeSwitcher v-model="viewMode" />
           </template>
           <AccountTableActions
@@ -189,7 +191,7 @@
               />
             </template>
           </AccountTableActions>
-          <AccountConsoleFilters v-if="flatThemeActive" v-model="consoleFilters" part="filters" :facets="facets" :groups="groups" @change="handleConsoleFiltersChanged">
+          <AccountConsoleFilters v-if="flatThemeActive" v-model="consoleFilters" v-model:expanded="accountMoreFiltersOpen" panel-id="accounts-secondary-filters" part="filters" :facets="facets" :groups="groups" @change="handleConsoleFiltersChanged">
             <template #leading>
               <AccountFolderBar
                 variant="menu"
@@ -859,6 +861,7 @@ let taxonomyRequestSequence = 0
 const activeFolder = ref(queryString('folder'))
 const showTaxonomyManager = ref(false)
 const detailsAccount = ref<Account | null>(null)
+const accountMoreFiltersOpen = ref(false)
 const consoleFilters = ref<AccountConsoleFilterState>({
   search: initialSensitiveConsoleState.search,
   platforms: queryList('platforms'),

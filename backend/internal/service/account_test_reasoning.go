@@ -36,7 +36,8 @@ func AccountTestReasoningOptions(account *Account, model string) (efforts []stri
 		return nil, ""
 	}
 	metadata, known := account.GetUpstreamModelMetadata(model)
-	if account.Platform == PlatformAnthropic {
+	newMultiProtocol := account.Type == AccountTypeAPIKey && (account.Platform == PlatformCommandCode || account.Platform == PlatformCline)
+	if account.Platform == PlatformAnthropic || (newMultiProtocol && account.routesByModel() && account.resolveModelRoutedProtocol(model) == APIProtocolAnthropic) || (newMultiProtocol && account.RoutesProtocolByInbound() && account.GetAPIProtocol() == APIProtocolAnthropic) {
 		// Claude effort levels are a property of the model; the account's
 		// upstream metadata can only rule the model out.
 		if known && metadata.Reasoning != nil && !*metadata.Reasoning {
@@ -87,16 +88,17 @@ func accountTestGrokUpstreamModel(model string) string {
 }
 
 func accountTestSupportsReasoningWire(account *Account, model string) bool {
+	newMultiProtocol := account.Type == AccountTypeAPIKey && (account.Platform == PlatformCommandCode || account.Platform == PlatformCline)
 	switch {
-	case account.IsOpenCodeGo():
-		protocol := openCodeGoNativeProtocol(account, model)
-		return protocol == APIProtocolResponses || protocol == APIProtocolChatCompletions
-	case account.IsCNProvider():
+	case account.routesByModel():
+		protocol := account.resolveModelRoutedProtocol(model)
+		return protocol == APIProtocolResponses || protocol == APIProtocolChatCompletions || (newMultiProtocol && protocol == APIProtocolAnthropic)
+	case account.RoutesProtocolByInbound():
 		protocol := account.GetAPIProtocol()
 		// The adaptive test verifies all native endpoints, including Messages,
 		// whose effort contract differs. Never silently omit a chosen effort on
 		// one leg of that test.
-		return protocol == APIProtocolResponses || protocol == APIProtocolChatCompletions
+		return protocol == APIProtocolResponses || protocol == APIProtocolChatCompletions || (newMultiProtocol && protocol == APIProtocolAnthropic)
 	case account.IsOpenAI():
 		return true
 	case account.Platform == PlatformGrok:

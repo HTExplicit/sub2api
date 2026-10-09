@@ -4,7 +4,9 @@ import postcss, { type Root } from 'postcss'
 import tailwindcss from 'tailwindcss'
 import loadConfig from 'tailwindcss/loadConfig'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
+enableAutoUnmount(afterEach)
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
 
 const routeState = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
@@ -162,9 +164,6 @@ describe('StripePaymentView', () => {
     vi.unstubAllGlobals()
     document.documentElement.classList.toggle('dark', initiallyDark)
     expect(unexpectedNetwork).not.toHaveBeenCalled()
-    expect(stripeInstance.confirmPayment).not.toHaveBeenCalled()
-    expect(stripeInstance.confirmAlipayPayment).not.toHaveBeenCalled()
-    expect(stripeInstance.confirmWechatPayPayment).not.toHaveBeenCalled()
   })
 
   it('keeps the standalone light-theme amount on an opaque branded background', async () => {
@@ -192,9 +191,69 @@ describe('StripePaymentView', () => {
     expect(styles['background-image']).toContain('var(--theme-background-gradient-to-br,')
     expect(styles['background-color']).toBe('rgb(99 91 255 / var(--tw-bg-opacity, 1))')
     expect(styles['--tw-bg-opacity']).toBe('1')
+    expect(stripeInstance.confirmPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmAlipayPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmWechatPayPayment).not.toHaveBeenCalled()
     expect(stripeInstance.elements).toHaveBeenCalledWith(expect.objectContaining({
       appearance: expect.objectContaining({ theme: 'night' }),
     }))
+  })
+
+  it.each(['alipay', 'wechat_pay', ''])('does not start %s payment after leaving during SDK loading', async (method) => {
+    routeState.query.method = method
+    let resolveSDK!: (value: typeof stripeInstance) => void
+    loadStripe.mockReturnValueOnce(new Promise((resolve) => { resolveSDK = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    expect(loadStripe).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    resolveSDK(stripeInstance)
+    await flushPromises()
+    await flushPromises()
+    expect(stripeInstance.confirmAlipayPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmWechatPayPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.elements).not.toHaveBeenCalled()
+  })
+
+  it('does not restart polling when a WeChat QR result arrives after leaving', async () => {
+    vi.useFakeTimers()
+    routeState.query.method = 'wechat_pay'
+    let resolvePayment!: (value: unknown) => void
+    stripeInstance.confirmWechatPayPayment.mockReturnValueOnce(new Promise((resolve) => { resolvePayment = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    expect(stripeInstance.confirmWechatPayPayment).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    resolvePayment({ paymentIntent: { status: 'requires_action', next_action: {
+      wechat_pay_display_qr_code: { image_data_url: 'data:image/png;base64,test' }
+    } } })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(paymentStore.pollOrderStatus).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each([false, true])('handles a completed poll with page unmounted=%s', async (unmounted) => {
+    vi.useFakeTimers()
+    routeState.query.method = 'wechat_pay'
+    stripeInstance.confirmWechatPayPayment.mockResolvedValueOnce({ paymentIntent: {
+      status: 'requires_action', next_action: { wechat_pay_display_qr_code: { image_data_url: 'data:image/png;base64,test' } }
+    } })
+    let resolvePoll!: (value: PaymentOrder) => void
+    paymentStore.pollOrderStatus.mockReturnValueOnce(new Promise((resolve) => { resolvePoll = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(paymentStore.pollOrderStatus).toHaveBeenCalledTimes(1)
+    if (unmounted) wrapper.unmount()
+    resolvePoll(orderFactory({ status: 'PAID' }))
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(routerPush).toHaveBeenCalledTimes(unmounted ? 0 : 1)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('本地恢复快照缺失时使用订单接口返回的 Stripe 币种展示金额', async () => {

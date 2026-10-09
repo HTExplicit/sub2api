@@ -655,6 +655,12 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			}
 			continue
 		}
+		if resp.StatusCode == http.StatusBadRequest &&
+			extractUpstreamErrorCode(respBody) == openAIWSFallbackReasonInvalidEncryptedContent {
+			s.markOpenAIWSInvalidEncryptedContentLineageFromPayload(
+				c, body, "ingress_ws_http_bridge_invalid_encrypted_lineage_mark", account.ID, turn,
+			)
+		}
 		upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
 		if upstreamMsg == "" {
 			upstreamMsg = http.StatusText(resp.StatusCode)
@@ -908,6 +914,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			shouldFailover := openAIStreamFailedEventShouldFailoverForAccount(account, upstreamMessage, errMessage)
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, _ := parseOpenAIWSErrorEventFields(upstreamMessage)
+				if reason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMessage); reason == openAIWSFallbackReasonInvalidEncryptedContent {
+					s.markOpenAIWSInvalidEncryptedContentLineageFromPayload(c, body, "ingress_ws_http_bridge_invalid_encrypted_lineage_mark", account.ID, turn)
+				}
 				statusCode = openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 				shouldFailover = s.shouldFailoverOpenAIUpstreamResponse(account, statusCode, errMessage, upstreamMessage)
 				// A model_not_supported event is an account/model capability

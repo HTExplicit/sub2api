@@ -69,3 +69,26 @@ describe('AccountConsoleFilters', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ account_ids: [] })
   })
 })
+
+
+it('keeps advanced selections when their panel is collapsed', async () => {
+  const filters = { ...state(), types: ['apikey'], group_id: '12' }
+  const wrapper = mount(AccountConsoleFilters, {
+    attachTo: document.body,
+    props: { modelValue: filters, facets, groups: [] },
+    global: { stubs: { SearchInput: true, Icon: true } }
+  })
+  const toggle = wrapper.get('[data-test="account-more-filters"]')
+  expect(toggle.attributes('aria-expanded')).toBe('false')
+  expect(wrapper.get('[data-test="account-more-filters-count"]').text()).toBe('3')
+  expect(wrapper.get('[data-test="account-filter-types"]').isVisible()).toBe(false)
+  await toggle.trigger('click')
+  expect(toggle.attributes('aria-expanded')).toBe('true')
+  expect(wrapper.get('[data-test="account-filter-types"]').isVisible()).toBe(true)
+  await toggle.trigger('click')
+  expect(wrapper.get('[data-test="account-filter-types"]').isVisible()).toBe(false)
+  expect(wrapper.props('modelValue')).toEqual(filters)
+  expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  expect(wrapper.get('[data-test^="account-filter-chip-types"]').isVisible()).toBe(true)
+  wrapper.unmount()
+})
