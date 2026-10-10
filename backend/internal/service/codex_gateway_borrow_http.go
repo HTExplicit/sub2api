@@ -105,6 +105,9 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context
 	prepared.service.mu.Lock()
 	prepared.revision = prepared.service.revision
 	prepared.service.mu.Unlock()
+	if tier, ok := req.Context().Value(codexBorrowServiceTierContextKey{}).(string); ok {
+		ctx = withCodexBorrowServiceTier(ctx, tier)
+	}
 	borrowed, application, err := prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
 	if err != nil {
 		tracker.blocked(err)

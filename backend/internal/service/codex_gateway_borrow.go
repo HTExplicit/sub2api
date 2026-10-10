@@ -802,6 +802,7 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 func borrowRequestFingerprint(req *http.Request, model, proxy string, profile *tlsfingerprint.Profile, cookie string) string {
 	tlsJSON, _ := json.Marshal(profile)
 	values := []string{cookie, model, proxy, req.URL.EscapedPath(), req.Header.Get("Authorization"), req.Header.Get("ChatGPT-Account-ID"), req.Header.Get("User-Agent"), req.Header.Get("Originator"), req.Header.Get("Version"), req.Header.Get("X-Codex-Turn-State"), string(tlsJSON)}
+	values = append(values, codexBorrowRequestServiceTier(req))
 	// Include the native identity and routing policy preserved by the probe.
 	// Per-request tracing IDs and the probe's random legacy session_id are not
 	// qualification identities and must not defeat reuse or failure cooldowns.

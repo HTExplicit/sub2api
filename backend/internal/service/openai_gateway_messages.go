@@ -386,6 +386,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		// 清除身份头。真正发送前恢复完整 Codex 身份，避免 ChatGPT Codex 上游因缺失
 		// originator/OpenAI-Beta 返回 404（issue #3901）。
 		ensureCodexIdentityHeaders(upstreamReq.Header)
+		upstreamReq = upstreamReq.WithContext(withCodexBorrowServiceTier(upstreamReq.Context(), gjson.GetBytes(responsesBody, "service_tier").String()))
 		if err := s.finalizeCodexOutboundHeaders(upstreamReq.Context(), c, account, upstreamReq.Header, upstreamModel, gjson.GetBytes(responsesBody, "service_tier").String()); err != nil {
 			return nil, err
 		}

@@ -207,7 +207,8 @@ func borrowCandidateFromCookies(cookies []*http.Cookie, path string, now time.Ti
 
 func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *http.Request, account *Account, model, proxy string, profile *tlsfingerprint.Profile, candidate *codexGatewayBorrowCandidate) CodexGatewayBorrowVerification {
 	expires := candidate.expires
-	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: "ranxi_full", ServiceTier: borrowProbeServiceTier(template.Header)}
+	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: "ranxi_full", ServiceTier: codexBorrowRequestServiceTier(template)}
+	ctx = withCodexBorrowServiceTier(ctx, result.ServiceTier)
 	// A two-shot STATE verdict is one observation. Releasing account capacity
 	// after mint would let another model/window mint a ticket before continuation.
 	// Keep the shared account lease across both shots; source preparation already
@@ -333,7 +334,8 @@ func borrowProbeServiceTier(headers http.Header) string {
 
 func borrowObservationRequest(ctx context.Context, headers http.Header, model, prompt, effort, state string, cookies []*http.Cookie, purpose HTTPUpstreamProfile) (*http.Request, error) {
 	ctx = WithCodexGatewayBorrowObservation(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, purpose)))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatgptCodexURL, bytes.NewReader(borrowObservationPayload(model, prompt, effort, borrowProbeServiceTier(headers))))
+	tier := codexBorrowRequestServiceTier((&http.Request{Header: headers}).WithContext(ctx))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatgptCodexURL, bytes.NewReader(borrowObservationPayload(model, prompt, effort, tier)))
 	if err != nil {
 		return nil, err
 	}

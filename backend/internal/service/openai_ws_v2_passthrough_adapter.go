@@ -888,6 +888,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
+	ctx = withCodexBorrowServiceTier(ctx, gjson.GetBytes(firstClientMessage, "service_tier").String())
 	headers, _, buildHdrErr := s.buildOpenAIWSHeaders(
 		ctx,
 		c,

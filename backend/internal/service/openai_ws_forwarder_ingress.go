@@ -1804,6 +1804,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return fmt.Errorf("prepare websocket request: %w", prepareErr)
 		}
 		wireFields := gjson.GetManyBytes(wirePayload, "prompt_cache_key", "model", "service_tier")
+		ctx = withCodexBorrowServiceTier(ctx, wireFields[2].String())
 		finalHeaders, _, headerErr := s.buildOpenAIWSHeaders(ctx, c, account, token, wsDecision, isCodexCLI, turnState,
 			strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), wireFields[0].String(), wireFields[1].String(), wireFields[2].String())
 		if headerErr != nil {
