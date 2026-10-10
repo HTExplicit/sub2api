@@ -447,6 +447,14 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	// This represents the server's internal generation operation. No client
 	// UA, protocol handshake, API-key subject or group policy is synthesized.
 	sendErr := s.sendPelicanWithAccount(ctx, c, account, model, option.UpstreamModel, effort)
+	// The gateway keeps client-facing failover text generic, but records the
+	// complete local borrow cause on this invocation's Gin context. Preserve it
+	// in administrator task history even when no generation request was sent.
+	if sendErr != nil && IsCodexGatewayBorrowRequestFailure(sendErr) {
+		if detail := c.GetString(OpsUpstreamErrorDetailKey); detail != "" && !strings.Contains(sendErr.Error(), detail) {
+			sendErr = fmt.Errorf("%w\n%s", sendErr, detail)
+		}
+	}
 	last := snapshotPelicanAttempt(capture)
 	if last == nil {
 		result.RawResponse = w.Body.String()
@@ -491,7 +499,11 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	if responseModel != "" {
 		result.ModelID = responseModel
 	}
-	if last.err != nil {
+	// The native sender cancels its read-ahead goroutine after committing a
+	// semantic terminal event. That cleanup can be captured before this snapshot;
+	// it must not replace a successfully parsed, successfully forwarded result.
+	// Without both completion signals the same cancellation remains incomplete.
+	if last.err != nil && (parseErr != nil || sendErr != nil || !errors.Is(last.err, context.Canceled)) {
 		parseErr = fmt.Errorf("%w: %v", ErrAccountTestIncomplete, last.err)
 	}
 	if limited {

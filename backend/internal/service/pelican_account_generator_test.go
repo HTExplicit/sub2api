@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -43,6 +44,7 @@ type pelicanGeneratorUpstream struct {
 	proxies     []string
 	profiles    []*tlsfingerprint.Profile
 	beforeSend  func(*http.Request)
+	readErr     error
 }
 
 func (s *pelicanGeneratorUpstream) Do(req *http.Request, proxy string, id int64, concurrency int) (*http.Response, error) {
@@ -75,7 +77,26 @@ func (s *pelicanGeneratorUpstream) DoWithTLS(req *http.Request, proxy string, id
 	if contentType == "" {
 		contentType = "text/event-stream"
 	}
-	return finish(&http.Response{StatusCode: status, Proto: "HTTP/1.1", Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(s.body))}, nil)
+	var reader io.Reader = strings.NewReader(s.body)
+	if s.readErr != nil {
+		reader = &pelicanTerminalReadError{Reader: strings.NewReader(s.body), err: s.readErr}
+	}
+	return finish(&http.Response{StatusCode: status, Proto: "HTTP/1.1", Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(reader)}, nil)
+}
+
+// Return the final bytes and cleanup error together so the capture always sees
+// the error before the native sender has a chance to consume the terminal event.
+type pelicanTerminalReadError struct {
+	*strings.Reader
+	err error
+}
+
+func (r *pelicanTerminalReadError) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if r.Len() == 0 {
+		err = r.err
+	}
+	return n, err
 }
 
 func TestPelicanAccountGeneratorQueuePreservesSharedFirstOutputPolicy(t *testing.T) {
@@ -158,6 +179,32 @@ func TestPelicanAccountGeneratorSharedOpenAISettings(t *testing.T) {
 	}
 }
 
+func TestPelicanAccountGeneratorKeepsBorrowPreparationCause(t *testing.T) {
+	account := borrowCoreAccount(2)
+	upstream := &pelicanGeneratorUpstream{}
+	svc, _ := newPelicanGeneratorForTest(account, upstream)
+	shots := 0
+	borrow := newBorrowCoreTest(t, func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		shots++
+		state := "first"
+		if req.Header.Get("X-Codex-Turn-State") != "" {
+			state = "changed"
+		}
+		return borrowCoreResponse("gpt-6-astra", "OK", state), nil
+	}, account)
+	borrowCoreCandidate(borrow, time.Now().Add(codexGatewayBorrowTTL))
+	svc.openaiGatewayService.SetCodexGatewayBorrowService(borrow)
+	result, err := svc.GeneratePelican(context.Background(), account.ID, "gpt-6-astra", "low")
+	require.Error(t, err)
+	require.True(t, IsCodexGatewayBorrowRequestFailure(err))
+	require.Contains(t, result.Error, "target_validation/target_state_changed")
+	require.Contains(t, result.Error, "CODEX_GATEWAY_BORROW_UNAVAILABLE")
+	require.Equal(t, "failed", result.Status)
+	require.Empty(t, result.RawAnswer)
+	require.Empty(t, upstream.requests, "a rejected qualification never reaches generation")
+	require.Equal(t, 2, shots)
+}
+
 func TestPelicanAccountGeneratorHTTPFailureKeepsSelectedAccountAndRawBody(t *testing.T) {
 	raw := `{"error":{"type":"rate_limit_error","message":"` + strings.Repeat("complete original detail ", 2000) + `"}}`
 	account := &Account{ID: 28, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "local-key", "base_url": "http://fake.example"}}
@@ -182,6 +229,33 @@ func TestPelicanAccountGeneratorTruncatedWorkIsIncomplete(t *testing.T) {
 	require.Equal(t, upstream.body, result.RawResponse)
 	require.Contains(t, result.Error, "output limit reached")
 	require.Len(t, upstream.requests, 1)
+}
+
+func TestPelicanAccountGeneratorTerminalBeforeReadCancellation(t *testing.T) {
+	for _, completed := range []bool{true, false} {
+		t.Run(fmt.Sprintf("completed=%t", completed), func(t *testing.T) {
+			account := &Account{ID: 32, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "local-key", "base_url": "http://fake.example"}}
+			raw := pelicanResponsesSSE("gpt-6-astra", "completed", "</html>")
+			if !completed {
+				raw, _, _ = strings.Cut(raw, "\n\ndata: ")
+				raw += "\n\n"
+			}
+			upstream := &pelicanGeneratorUpstream{body: raw, readErr: context.Canceled}
+			svc, _ := newPelicanGeneratorForTest(account, upstream)
+			result, err := svc.GeneratePelican(context.Background(), account.ID, "gpt-6-astra", "low")
+			require.Equal(t, raw, result.RawResponse)
+			require.Equal(t, "<html><svg></svg></html>", result.RawAnswer)
+			require.Len(t, upstream.requests, 1, "cleanup never triggers a generation replay")
+			if completed {
+				require.NoError(t, err)
+				require.Equal(t, "complete", result.Status, result.Error)
+				require.Empty(t, result.Error)
+			} else {
+				require.Equal(t, "incomplete", result.Status)
+				require.Contains(t, result.Error, "context canceled")
+			}
+		})
+	}
 }
 
 func TestPelicanAccountGeneratorNativeTextDispatch(t *testing.T) {
