@@ -11,7 +11,8 @@ func TestCodexBorrowPinnedTransportPolicy(t *testing.T) {
 	cfg := &config.Config{Gateway: config.GatewayConfig{OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: true}}}
 	upstream := NewHTTPUpstream(cfg)
 	require.Same(t, upstream, NewCodexGatewayBorrowProbeUpstream(upstream))
-	manager := upstream.(*httpUpstreamService)
+	manager, ok := upstream.(*httpUpstreamService)
+	require.True(t, ok)
 	require.Equal(t, upstreamProtocolModeOpenAIH2, manager.resolveProtocolMode(service.HTTPUpstreamProfileCodexBorrowSource, "", nil))
 	mode := manager.resolveProtocolMode(service.HTTPUpstreamProfileCodexBorrowTarget, "", nil)
 	require.Equal(t, upstreamProtocolModeOpenAIH1NoReuse, mode)
