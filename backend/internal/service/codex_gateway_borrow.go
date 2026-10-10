@@ -765,6 +765,14 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 				}
 			}
 			s.sources[id] = row
+			// Original non-rotation preparation may still have a usable primary or
+			// backup after a failed refresh. Preserve it without extending its lease.
+			if current := s.currentCandidateLocked(); current != nil && time.Now().Before(current.expires) {
+				s.acquisition.Phase, s.acquisition.Error = "candidate_retained", lastErr.Error()
+				s.prepareFailedUntil, s.prepareFailure = time.Time{}, ""
+				s.mu.Unlock()
+				return nil, nil
+			}
 			s.mu.Unlock()
 		}
 		s.mu.Lock()

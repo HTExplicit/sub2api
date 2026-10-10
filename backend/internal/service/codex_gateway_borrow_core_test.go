@@ -141,23 +141,23 @@ func TestCodexGatewayBorrowConfigDefaultsAndLoadNeverProbe(t *testing.T) {
 
 func TestCodexGatewayBorrowCookieScopeAndExpiry(t *testing.T) {
 	now := time.Now()
-	valid := http.Cookie{Name: "__oailb", Value: "route", Secure: true, Path: "/backend-api/codex"}
+	valid := http.Cookie{Name: "__oailb", Value: "route", Secure: true, Path: "/backend-api/codex", MaxAge: 230}
 	for _, tc := range []struct {
 		name   string
 		change func(*http.Cookie)
 		ttl    time.Duration
 		valid  bool
 	}{
-		{"session", func(*http.Cookie) {}, 230 * time.Second, true},
+		{"session without expiry", func(c *http.Cookie) { c.MaxAge = 0 }, 0, false},
 		{"actual max age", func(c *http.Cookie) { c.MaxAge = 30 }, 30 * time.Second, true},
 		{"local cap", func(c *http.Cookie) { c.MaxAge = 1000000 }, 230 * time.Second, true},
-		{"actual expires", func(c *http.Cookie) { c.Expires = now.Add(20 * time.Second) }, 20 * time.Second, true},
+		{"actual expires", func(c *http.Cookie) { c.MaxAge = 0; c.Expires = now.Add(20 * time.Second) }, 20 * time.Second, true},
 		{"default path", func(c *http.Cookie) { c.Path = "" }, 230 * time.Second, true},
 		{"foreign domain", func(c *http.Cookie) { c.Domain = "example.invalid" }, 0, false},
 		{"wrong path", func(c *http.Cookie) { c.Path = "/backend-api/codex/responses-other" }, 0, false},
 		{"not secure", func(c *http.Cookie) { c.Secure = false }, 0, false},
 		{"deleted", func(c *http.Cookie) { c.MaxAge = -1 }, 0, false},
-		{"expired", func(c *http.Cookie) { c.Expires = now.Add(-time.Second) }, 0, false},
+		{"expired", func(c *http.Cookie) { c.MaxAge = 0; c.Expires = now.Add(-time.Second) }, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cookie := valid

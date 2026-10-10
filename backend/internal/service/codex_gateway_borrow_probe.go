@@ -25,7 +25,11 @@ import (
 const codexGatewayBorrowProbeMaxBody = 1 << 20
 const codexGatewayBorrowPelicanMaxBody = 32 << 20
 
+type codexBorrowProbePinnedRouteKey struct{}
+type codexBorrowSourceObservationKey struct{}
+
 type codexGatewayBorrowObservation struct {
+	routeChanged      bool
 	requestEncoding   string
 	status            int
 	state             string
@@ -140,6 +144,7 @@ func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64)
 func borrowSourceObservationRequest(ctx context.Context, headers http.Header) (*http.Request, error) {
 	ctx = WithCodexGatewayBorrowObservation(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, HTTPUpstreamProfileCodexBorrowSource)))
 	ctx = context.WithValue(ctx, codexBorrowProbeConfiguredEncodingKey{}, false)
+	ctx = context.WithValue(ctx, codexBorrowSourceObservationKey{}, true)
 	payload := createOpenAITestPayload(codexGatewayBorrowSourceModel, true, "Reply with OK only.")
 	payload["reasoning"] = map[string]string{"effort": "medium"}
 	body, err := json.Marshal(payload)
@@ -164,7 +169,7 @@ func borrowSourceObservationRequest(ctx context.Context, headers http.Header) (*
 }
 
 func borrowCookieScoped(cookie *http.Cookie, path string) bool {
-	if cookie == nil || (cookie.Domain != "" && !strings.EqualFold(strings.TrimPrefix(cookie.Domain, "."), "chatgpt.com")) {
+	if cookie == nil || (cookie.Domain != "" && strings.TrimPrefix(cookie.Domain, ".") != "chatgpt.com") {
 		return false
 	}
 	scope := cookie.Path
@@ -194,7 +199,12 @@ func borrowCandidateFromCookies(cookies []*http.Cookie, path string, now time.Ti
 				expires = now.Add(time.Duration(cookie.MaxAge) * time.Second)
 			}
 		} else {
-			if !cookie.Expires.IsZero() && cookie.Expires.Before(expires) {
+			// Pinned upstream requires an explicit lifetime; a session cookie
+			// is not a transferable bounded route lease.
+			if cookie.Expires.IsZero() {
+				continue
+			}
+			if cookie.Expires.Before(expires) {
 				expires = cookie.Expires
 			}
 		}
@@ -241,19 +251,20 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	fire := func(state string, cookies []*http.Cookie) (codexGatewayBorrowObservation, error) {
 		shotCtx, cancel := context.WithTimeout(ctx, codexGatewayBorrowShotTimeout)
 		defer cancel()
+		shotCtx = context.WithValue(shotCtx, codexBorrowProbePinnedRouteKey{}, candidate.cookie.Value)
 		return s.fireObservation(shotCtx, template.Header, account, model, "Reply with OK.", "", proxy, profile, state, cookies, HTTPUpstreamProfileCodexBorrowTarget, codexGatewayBorrowProbeMaxBody)
 	}
 	mint, err := fire("", cookies)
 	result.MintStatus, result.ReportedModel = mint.status, mint.model
 	result.MintRequestEncoding = mint.requestEncoding
 	result.MintCompleted, result.MintStateLength = mint.complete, len(mint.state)
-	if err != nil || !borrowShotUsable(mint) {
-		result.Error = borrowObservationError(mint, err)
-		return result
-	}
-	if borrowTargetRouteChanged(mint.cookies, candidate, time.Now()) {
+	if mint.routeChanged {
 		result.RouteChanged = true
 		result.Reason, result.Error = "target_route_changed", "target response changed or deleted the fixed __oailb route"
+		return result
+	}
+	if err != nil || !borrowShotUsable(mint) {
+		result.Error = borrowObservationError(mint, err)
 		return result
 	}
 	if mint.state == "" {
@@ -264,7 +275,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	// Only the target's newly returned __cflb travels into the second shot.
 	// __oailb remains the exact borrowed candidate, never a target replacement.
 	for _, cookie := range mint.cookies {
-		if cookie.Name == "__cflb" && borrowCookieScoped(cookie, "/backend-api/codex/responses") && !borrowCookieDeleted(cookie, time.Now()) {
+		if cookie.Name == "__cflb" && cookie.Value != "" && cookie.MaxAge >= 0 {
 			// The original replacement helper retains the target's __cflb first,
 			// then appends the pinned __oailb. No business cookie header is changed.
 			cookies = append([]*http.Cookie{{Name: cookie.Name, Value: cookie.Value}}, cookies...)
@@ -278,13 +289,13 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	if continued.model != "" {
 		result.ReportedModel = continued.model
 	}
-	if err != nil || !borrowShotUsable(continued) {
-		result.Error = borrowObservationError(continued, err)
-		return result
-	}
-	if borrowTargetRouteChanged(continued.cookies, candidate, time.Now()) {
+	if continued.routeChanged {
 		result.RouteChanged = true
 		result.Reason, result.Error = "target_route_changed", "target response changed or deleted the fixed __oailb route"
+		return result
+	}
+	if err != nil || !borrowShotUsable(continued) {
+		result.Error = borrowObservationError(continued, err)
 		return result
 	}
 	result.NewTicket = continued.state != "" && continued.state != mint.state
@@ -318,7 +329,7 @@ func borrowObservationError(shot codexGatewayBorrowObservation, err error) strin
 
 func borrowTargetRouteChanged(cookies []*http.Cookie, candidate *codexGatewayBorrowCandidate, now time.Time) bool {
 	for _, cookie := range cookies {
-		if cookie.Name == "__oailb" && borrowCookieScoped(cookie, "/backend-api/codex/responses") && (cookie.Value != candidate.cookie.Value || borrowCookieDeleted(cookie, now)) {
+		if cookie.Name == "__oailb" && (cookie.Value != candidate.cookie.Value || cookie.MaxAge < 0 || (!cookie.Expires.IsZero() && !now.Before(cookie.Expires))) {
 			return true
 		}
 	}
@@ -449,6 +460,15 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 		return shot, errors.New("nil upstream observation response")
 	}
 	shot.status, shot.state, shot.cookies, shot.cookiesObservedAt = resp.StatusCode, strings.TrimSpace(extractOpenAICodexTurnState(resp.Header)), resp.Cookies(), time.Now()
+	// Match the original target wrapper: a changed route ends the probe at
+	// headers, even when the body would stall, fail or report a completed stream.
+	if pinned, _ := req.Context().Value(codexBorrowProbePinnedRouteKey{}).(string); pinned != "" && borrowTargetRouteChanged(shot.cookies, &codexGatewayBorrowCandidate{cookie: http.Cookie{Value: pinned}}, shot.cookiesObservedAt) {
+		shot.routeChanged, shot.errorText = true, "target_route_changed"
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		return shot, errors.New("target_route_changed")
+	}
 	if resp.Body == nil {
 		shot.errorText = "upstream observation response has no body"
 		return shot, nil
@@ -456,15 +476,39 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 	defer func() { _ = resp.Body.Close() }()
 	var data []byte
 	var readErr error
-	if shot.status == http.StatusOK {
-		data, readErr = readCodexGatewayBorrowSSE(resp.Body, maxBody)
+	pinnedProbe, _ := req.Context().Value(codexBorrowProbePinnedRouteKey{}).(string)
+	sourceProbe := req.Context().Value(codexBorrowSourceObservationKey{}) == true
+	if shot.status == http.StatusOK && pinnedProbe == "" {
+		data, readErr = readCodexGatewayBorrowSSE(resp.Body, maxBody, sourceProbe)
 	} else {
 		data, readErr = io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	}
 	shot.raw = string(data)
+	if sourceProbe && shot.status == http.StatusOK {
+		contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+		if contentType != "" && !strings.HasPrefix(contentType, "text/event-stream") {
+			shot.errorText = "source response content type is not an SSE stream: " + shot.raw
+			return shot, nil
+		}
+	}
 	if shot.status == http.StatusOK {
 		stream := parseCodexGatewayBorrowSSE(data, expectedModel, maxBody)
 		shot.model, shot.answer, shot.complete, shot.modelMismatch, shot.errorText, shot.incomplete = stream.model, stream.answer, stream.complete, stream.modelMismatch, stream.errorText, stream.incomplete
+		if pinnedProbe != "" {
+			// Original target probes read the bounded body to EOF and require a valid
+			// completion with a terminated SSE event. Do not substitute the ordinary
+			// business sender's early-terminal optimization for this criterion.
+			validationErr := validateCodexGatewayBorrowPinnedProbeResponse(data)
+			shot.complete = validationErr == nil
+			if validationErr == nil {
+				shot.errorText = ""
+			} else if shot.errorText == "" {
+				shot.errorText = validationErr.Error()
+			}
+		}
+		if sourceProbe && shot.complete && !bytes.HasSuffix(data, []byte("\n\n")) && !bytes.HasSuffix(data, []byte("\r\n\r\n")) {
+			shot.complete, shot.errorText = false, "unterminated source probe event"
+		}
 	}
 	if readErr != nil {
 		shot.complete, shot.incomplete = false, true
@@ -518,7 +562,8 @@ func acquireCodexBorrowObservation(ctx context.Context, accountID int64) (contex
 // remains open. Collect the original bytes, without waiting for EOF or reading
 // beyond that terminal payload; sendObservation closes the body immediately.
 // The existing pure parser still decides completion, text, models and errors.
-func readCodexGatewayBorrowSSE(body io.Reader, maxBody int64) ([]byte, error) {
+func readCodexGatewayBorrowSSE(body io.Reader, maxBody int64, requireDelimiter ...bool) ([]byte, error) {
+	strict := len(requireDelimiter) > 0 && requireDelimiter[0]
 	reader := bufio.NewReader(io.LimitReader(body, maxBody+1))
 	var raw bytes.Buffer
 	var lines []string
@@ -542,10 +587,13 @@ func readCodexGatewayBorrowSSE(body io.Reader, maxBody int64) ([]byte, error) {
 		}
 		text := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
 		if text == "" {
+			if strict && terminal() {
+				return raw.Bytes(), nil
+			}
 			lines = nil
 		} else if strings.HasPrefix(text, "data:") {
 			lines = append(lines, strings.TrimPrefix(strings.TrimPrefix(text, "data:"), " "))
-			if terminal() {
+			if !strict && terminal() {
 				// Preserve an already-received blank event delimiter byte for
 				// byte. Never block waiting for a delimiter or subsequent EOF.
 				if buffered := reader.Buffered(); buffered > 0 {

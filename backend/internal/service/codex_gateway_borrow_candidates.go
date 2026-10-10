@@ -35,7 +35,10 @@ func (s *CodexGatewayBorrowService) storeCandidateLocked(candidate *codexGateway
 		clamp(old)
 	}
 	s.candidates[candidate.sourceID] = candidate
-	s.candidate = candidate
+	// A backup does not displace a live primary from a different source.
+	if s.candidate == nil || !now.Before(s.candidate.expires) || s.candidate.sourceID == candidate.sourceID {
+		s.candidate = candidate
+	}
 	// Other source proofs remain usable. Cookie, model and identity are already
 	// in their keys, so no target can accidentally inherit another qualification.
 }
