@@ -39,6 +39,7 @@ func TestCodexBorrowProbePreservesNativeSessionAndTier(t *testing.T) {
 				body := borrowCoreBody(t, req)
 				assert.Equal(t, model, gjson.GetBytes(body, "model").String())
 				assert.Equal(t, "priority", gjson.GetBytes(body, "service_tier").String())
+				assert.Equal(t, string(borrowRanxiLiteralPayload(model, "priority")), string(body), "use the pinned probe byte template with the actual model and tier")
 				assert.Equal(t, "model="+model+";tier=priority", req.Header.Get(openAICodexRoutingHintHeader))
 				assert.Empty(t, req.Header.Get("Content-Encoding"))
 				assert.Empty(t, req.Header.Get("X-Codex-Turn-Metadata"))
@@ -49,6 +50,7 @@ func TestCodexBorrowProbePreservesNativeSessionAndTier(t *testing.T) {
 					assert.NotEqual(t, shots[0].Header.Get("session_id"), req.Header.Get("session_id"))
 					assert.Equal(t, "stable-probe-state", req.Header.Get("X-Codex-Turn-State"))
 					assert.Contains(t, req.Header.Get("Cookie"), "__cflb=target-route")
+					assert.Equal(t, "__cflb=target-route; __oailb=synthetic-borrowed-cookie", req.Header.Get("Cookie"))
 					if shots[0].Header.Get("session-id") != req.Header.Get("session-id") || shots[0].Header.Get("thread-id") != req.Header.Get("thread-id") {
 						state = "different-session-state"
 					}

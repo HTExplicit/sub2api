@@ -214,6 +214,10 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: "ranxi_full", ServiceTier: codexBorrowRequestServiceTier(template)}
 	if shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string); shape != "" {
 		result.RequestShape = shape
+	} else {
+		// The pinned verdict was measured with this fixed byte template, not a
+		// generic map serializer. Keep the selected model and final tier exact.
+		ctx = context.WithValue(ctx, codexBorrowProbeShapeContextKey{}, codexBorrowProbeRanxiTier)
 	}
 	ctx = withCodexBorrowServiceTier(ctx, result.ServiceTier)
 	// A two-shot STATE verdict is one observation. Releasing account capacity
@@ -254,7 +258,9 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	// __oailb remains the exact borrowed candidate, never a target replacement.
 	for _, cookie := range mint.cookies {
 		if cookie.Name == "__cflb" && borrowCookieScoped(cookie, "/backend-api/codex/responses") && !borrowCookieDeleted(cookie, time.Now()) {
-			cookies = append(cookies, &http.Cookie{Name: cookie.Name, Value: cookie.Value})
+			// The original replacement helper retains the target's __cflb first,
+			// then appends the pinned __oailb. No business cookie header is changed.
+			cookies = append([]*http.Cookie{{Name: cookie.Name, Value: cookie.Value}}, cookies...)
 			break
 		}
 	}
@@ -345,7 +351,7 @@ func borrowObservationRequest(ctx context.Context, headers http.Header, model, p
 	ctx = WithCodexGatewayBorrowObservation(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, purpose)))
 	tier := codexBorrowRequestServiceTier((&http.Request{Header: headers}).WithContext(ctx))
 	body := borrowObservationPayload(model, prompt, effort, tier)
-	if shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string); shape == codexBorrowProbeRanxiLiteral || shape == codexBorrowProbeRanxiTier {
+	if shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string); shape != "" && shape != codexBorrowProbeLegacySorted {
 		body = borrowRanxiLiteralPayload(model, tier)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatgptCodexURL, bytes.NewReader(body))

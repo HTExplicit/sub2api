@@ -105,6 +105,10 @@ plaintext-JSON wire protocol. They do not enter the business zstd encoder after
 clearing old body headers. This leaves the saved compression setting and normal
 generation unchanged. Candidate status records `source_request_encoding`, and
 verification records the actual encoding of each shot.
+Target probes use the pinned byte template with the actual selected model and
+effective tier. Continuation keeps the target's `__cflb` before the fixed borrowed
+`__oailb`, as the pinned replacement helper does. Ordinary business bodies and
+cookie ordering are unchanged.
 It has a 90-second budget. Each target/model is validated with two completed
 HTTP 200 streams, at most 45 seconds each: the first must return STATE, and
 the second may omit STATE or return the same value. Qualification includes
@@ -194,9 +198,11 @@ is still required. This matches native streaming continuation instead of assumin
 all output is repeated inside `response.completed`.
 
 The HTTP-only `scenario: probe_contract` compares a fixed candidate under three
-request bodies: pinned ranxi field order without a tier, that same body with the
-effective tier, and the current body with the same tier. With no requested tier,
-the redundant middle pair is skipped. Native identity, routing hint, model,
+request bodies: the prior sorted-map body, the current pinned template with the
+same effective tier, and the pinned template without a tier. With no effective
+tier, the redundant final pair is skipped. The older serializer runs first to
+avoid always confounding its position with later upstream failures.
+Native identity, routing hint, model,
 proxy and cookie stay fixed; each shot still gets its own legacy `session_id`.
 The original probe selects Astra; the result explicitly marks Sol as a downstream
 model extension. `probe_only: true` results carry per-shot completion and STATE
