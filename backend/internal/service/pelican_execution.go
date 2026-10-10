@@ -18,9 +18,10 @@ const (
 )
 
 // Every manual Pelican runner in this process shares the same outbound capacity.
-// Preparation and generation acquire it only while an actual model request is
-// in flight. A waiting preparation therefore cannot retain a target's permit
-// while it waits for a source account or the remaining global permits.
+// Preparation and generation acquire it while sending model requests. A target
+// STATE probe retains one lease across its two sequential shots, after source
+// preparation. No preparation retains a target permit while waiting for a source
+// account or the remaining global permits.
 var sharedPelicanExecution = newPelicanExecutionCoordinator(PelicanExecutionConcurrency)
 
 type pelicanExecutionContextKey struct{}

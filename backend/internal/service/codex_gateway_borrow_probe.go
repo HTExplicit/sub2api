@@ -208,6 +208,16 @@ func borrowCandidateFromCookies(cookies []*http.Cookie, path string, now time.Ti
 func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *http.Request, account *Account, model, proxy string, profile *tlsfingerprint.Profile, candidate *codexGatewayBorrowCandidate) CodexGatewayBorrowVerification {
 	expires := candidate.expires
 	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: "ranxi_full", ServiceTier: borrowProbeServiceTier(template.Header)}
+	// A two-shot STATE verdict is one observation. Releasing account capacity
+	// after mint would let another model/window mint a ticket before continuation.
+	// Keep the shared account lease across both shots; source preparation already
+	// finished, so this cannot hold a target permit while waiting for a source.
+	ctx, release, err := acquireCodexBorrowObservation(ctx, account.ID)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	defer release()
 	cookies := []*http.Cookie{{Name: "__oailb", Value: candidate.cookie.Value}}
 	fire := func(state string, cookies []*http.Cookie) (codexGatewayBorrowObservation, error) {
 		shotCtx, cancel := context.WithTimeout(ctx, codexGatewayBorrowShotTimeout)
@@ -366,14 +376,7 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 	if err := consumeBorrowDiagnosticRequest(req.Context()); err != nil {
 		return shot, err
 	}
-	if pelicanExecutionFromContext(req.Context()) == nil {
-		release, err := sharedPelicanExecution.acquire(req.Context(), account.ID)
-		if err != nil {
-			return shot, err
-		}
-		defer release()
-	}
-	leasedCtx, release, acquireErr := AcquirePelicanExecution(req.Context(), account.ID)
+	leasedCtx, release, acquireErr := acquireCodexBorrowObservation(req.Context(), account.ID)
 	if acquireErr != nil {
 		shot.errorText = acquireErr.Error()
 		return shot, acquireErr
@@ -444,6 +447,35 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 		return shot, nil
 	}
 	return shot, nil
+}
+
+// Both public-request preparation and manual diagnostics use the same account
+// and global permits. A sequential target pair lends its active lease to each
+// shot; a standalone source observation acquires and releases its own permit.
+func acquireCodexBorrowObservation(ctx context.Context, accountID int64) (context.Context, func(), error) {
+	if pelicanExecutionFromContext(ctx) != nil {
+		return AcquirePelicanExecution(ctx, accountID)
+	}
+	if err := ctx.Err(); err != nil {
+		return ctx, nil, err
+	}
+	if lease, _ := ctx.Value(pelicanExecutionLeaseContextKey{}).(*pelicanExecutionLease); lease != nil && lease.active.Load() {
+		if lease.accountID != accountID {
+			return ctx, nil, errors.New("borrow observation cannot acquire another account while holding a probe lease")
+		}
+		return ctx, func() {}, nil
+	}
+	release, err := sharedPelicanExecution.acquire(ctx, accountID)
+	if err != nil {
+		return ctx, nil, err
+	}
+	lease := &pelicanExecutionLease{accountID: accountID}
+	lease.active.Store(true)
+	return context.WithValue(ctx, pelicanExecutionLeaseContextKey{}, lease), func() {
+		if lease.active.Swap(false) {
+			release()
+		}
+	}, nil
 }
 
 // A Responses terminal event is authoritative even when the HTTP connection

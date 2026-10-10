@@ -129,7 +129,11 @@ timer. `/prepare` and `/verify` retain their interfaces. Same-revision, same-wir
 qualifications share work; cancelling one caller does not cancel other waiters,
 and the final departing waiter cancels abandoned work. Distinct targets no longer
 fail because another target is validating. Outbound observations share the existing
-ten execution slots and serialize by account. Preparation has a ten-minute bound,
+ten execution slots and serialize by account. The two target shots retain one
+account lease from mint through continuation, so a different model or client
+window cannot interleave another probe. Source preparation finishes before that
+lease is acquired; nested shots reuse it without taking a second permit.
+Preparation has a ten-minute bound,
 continues after a target failure, and reports partial readiness after rechecking
 expiry. Policy, credential/model-map and exit changes invalidate displayed evidence;
 actual dispatch still verifies the finalized request fingerprint.
