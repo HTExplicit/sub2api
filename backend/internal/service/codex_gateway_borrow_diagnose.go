@@ -82,6 +82,8 @@ type CodexBorrowDiagnosticRequest struct {
 }
 
 type CodexBorrowDiagnosticResult struct {
+	ProbeOnly     bool                            `json:"probe_only,omitempty"`
+	ProbeContext  *CodexBorrowProbeContext        `json:"probe_context,omitempty"`
 	Scenario      string                          `json:"scenario,omitempty"`
 	FailureStage  string                          `json:"failure_stage,omitempty"`
 	FailureReason string                          `json:"failure_reason,omitempty"`
@@ -114,14 +116,17 @@ type CodexBorrowDiagnosticEvent struct {
 // Diagnose runs fixed short questions through the normal account sender. The
 // internal observation purpose isolates health/billing; it is never user input.
 func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexBorrowDiagnosticRequest, emit func(CodexBorrowDiagnosticEvent)) error {
-	if request.Scenario != "" && request.Scenario != "codex_session" {
-		return errors.New("scenario must be empty or codex_session")
+	if request.Scenario != "" && request.Scenario != "codex_session" && request.Scenario != "probe_contract" {
+		return errors.New("scenario must be empty, codex_session or probe_contract")
 	}
 	if request.Mode != "" && request.Mode != "ordinary" && request.Mode != "borrowed" {
 		return errors.New("mode must be empty, ordinary or borrowed")
 	}
 	if request.Scenario == "codex_session" && request.Transport != "http" {
 		return errors.New("codex_session uses HTTP; existing WS diagnostics already cover continuation")
+	}
+	if request.Scenario == "probe_contract" && (request.Transport != "http" || request.Mode == "ordinary") {
+		return errors.New("probe_contract requires borrowed HTTP observations")
 	}
 	if request.ServiceTier != "" && request.ServiceTier != "default" && request.ServiceTier != OpenAIFastTierPriority && request.ServiceTier != OpenAIFastTierFlex && request.ServiceTier != OpenAIFastTierUltrafast {
 		return errors.New("unsupported service_tier")
@@ -152,9 +157,13 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 	}
 	s.mu.Lock()
 	revisionCtx := s.revisionCtx
+	revision := s.revision
 	s.mu.Unlock()
 	ctx, cancel := borrowRevisionContext(WithAccountObservation(ctx), revisionCtx, 10*time.Minute)
 	defer cancel()
+	if request.Scenario == "probe_contract" {
+		return s.diagnoseProbeContract(ctx, revision, revisionCtx, request, limit, emit)
+	}
 	var requests atomic.Int32
 	modes := []bool{false, true}
 	if request.Mode == "borrowed" || (request.Scenario == "codex_session" && request.Mode == "") {
