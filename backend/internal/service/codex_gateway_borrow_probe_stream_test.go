@@ -68,6 +68,10 @@ func TestCodexGatewayBorrowObservationStopsAtTerminal(t *testing.T) {
 				bodies, sent = append(bodies, body), append(sent, stream)
 				go func() {
 					_, _ = io.WriteString(writer, stream)
+					if action == "target" {
+						_ = writer.Close()
+						return
+					}
 					if action == "disconnected" {
 						_ = writer.CloseWithError(io.ErrUnexpectedEOF)
 						return
@@ -81,7 +85,7 @@ func TestCodexGatewayBorrowObservationStopsAtTerminal(t *testing.T) {
 				}()
 				headers := make(http.Header)
 				if accountID == 1 {
-					headers.Set("Set-Cookie", "__oailb=synthetic-borrowed-cookie; Secure; Path=/")
+					headers.Set("Set-Cookie", "__oailb=synthetic-borrowed-cookie; Secure; Path=/; Max-Age=230")
 				}
 				if action == "target" && calls == 1 {
 					headers.Set("X-Codex-Turn-State", "minted-state")

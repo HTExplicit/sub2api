@@ -64,6 +64,10 @@ func (g *codexBorrowFlights) do(ctx, revision context.Context, key string, timeo
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-f.done:
+		// A concurrently completed flight cannot outlive this waiter's deadline.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return f.value, f.err
 	}
 }
