@@ -193,15 +193,15 @@ func TestGuardOpenAICodexTurnStateEcho(t *testing.T) {
 		require.Empty(t, h.Get("x-codex-turn-state"))
 	})
 
-	t.Run("no_provenance_strips_echo", func(t *testing.T) {
+	t.Run("no_provenance_preserves_echo", func(t *testing.T) {
 		svc := &OpenAIGatewayService{}
 		c, _ := newTurnStateTestContext(t, 7, "sess-g3")
 		h := newOutbound("blob-unknown")
 		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
-		require.Empty(t, h.Get("x-codex-turn-state"))
+		require.Equal(t, "blob-unknown", h.Get("x-codex-turn-state"))
 	})
 
-	t.Run("expired_provenance_strips_echo_and_prunes", func(t *testing.T) {
+	t.Run("expired_provenance_preserves_echo_and_prunes", func(t *testing.T) {
 		svc := &OpenAIGatewayService{}
 		c, _ := newTurnStateTestContext(t, 7, "sess-g4")
 		svc.openaiCodexTurnStateOrigins.Store("7\x00sess-g4", openAICodexTurnStateOrigin{
@@ -210,17 +210,17 @@ func TestGuardOpenAICodexTurnStateEcho(t *testing.T) {
 		})
 		h := newOutbound("blob-A")
 		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
-		require.Empty(t, h.Get("x-codex-turn-state"))
 		_, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-g4")
+		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
 		require.False(t, ok)
 	})
 
-	t.Run("no_session_seed_strips_echo", func(t *testing.T) {
+	t.Run("no_session_seed_preserves_echo", func(t *testing.T) {
 		svc := &OpenAIGatewayService{}
 		c, _ := newTurnStateTestContext(t, 7, "")
 		h := newOutbound("blob-A")
 		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
-		require.Empty(t, h.Get("x-codex-turn-state"))
+		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
 	})
 
 	t.Run("missing_account_strips_echo", func(t *testing.T) {

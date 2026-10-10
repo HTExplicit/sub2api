@@ -23,6 +23,7 @@ type codexBorrowDiagnosticContextKey struct{}
 type codexBorrowAppliedContextKey struct{}
 
 type codexBorrowDiagnostic struct {
+	replay       *CodexBorrowReplay
 	scenario     string
 	serviceTier  string
 	history      []any
@@ -72,17 +73,19 @@ func consumeBorrowDiagnosticRequest(ctx context.Context) error {
 }
 
 type CodexBorrowDiagnosticRequest struct {
-	Comparison   string `json:"comparison,omitempty"`
-	Scenario     string `json:"scenario,omitempty"`
-	Mode         string `json:"mode,omitempty"`
-	ServiceTier  string `json:"service_tier,omitempty"`
-	RequestLimit int    `json:"request_limit,omitempty"`
-	AccountID    int64  `json:"account_id"`
-	Model        string `json:"model"`
-	Transport    string `json:"transport"`
+	Replay       *CodexBorrowReplay `json:"replay,omitempty"`
+	Comparison   string             `json:"comparison,omitempty"`
+	Scenario     string             `json:"scenario,omitempty"`
+	Mode         string             `json:"mode,omitempty"`
+	ServiceTier  string             `json:"service_tier,omitempty"`
+	RequestLimit int                `json:"request_limit,omitempty"`
+	AccountID    int64              `json:"account_id"`
+	Model        string             `json:"model"`
+	Transport    string             `json:"transport"`
 }
 
 type CodexBorrowDiagnosticResult struct {
+	TurnState     string                          `json:"turn_state,omitempty"`
 	ProbeOnly     bool                            `json:"probe_only,omitempty"`
 	ProbeContext  *CodexBorrowProbeContext        `json:"probe_context,omitempty"`
 	Scenario      string                          `json:"scenario,omitempty"`
@@ -117,8 +120,11 @@ type CodexBorrowDiagnosticEvent struct {
 // Diagnose runs fixed short questions through the normal account sender. The
 // internal observation purpose isolates health/billing; it is never user input.
 func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexBorrowDiagnosticRequest, emit func(CodexBorrowDiagnosticEvent)) error {
-	if request.Scenario != "" && request.Scenario != "codex_session" && request.Scenario != "probe_contract" {
-		return errors.New("scenario must be empty, codex_session or probe_contract")
+	if request.Scenario != "" && request.Scenario != "codex_session" && request.Scenario != "probe_contract" && request.Scenario != "codex_replay" {
+		return errors.New("scenario must be empty, codex_session, probe_contract or codex_replay")
+	}
+	if err := validateCodexBorrowReplay(request); err != nil {
+		return err
 	}
 	if request.Mode != "" && request.Mode != "ordinary" && request.Mode != "borrowed" {
 		return errors.New("mode must be empty, ordinary or borrowed")
@@ -146,11 +152,12 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 		return errors.New("request_limit must be between 1 and 8")
 	}
 	cfg := s.ConfigSnapshot()
+	sourceReplay := request.Scenario == "codex_replay" && request.Mode == "ordinary" && slices.Contains(cfg.SourceAccountIDs, request.AccountID) && slices.Contains(cfg.Models, request.Model)
 	sourceProbe := request.Scenario == "probe_contract" && request.Model == codexGatewayBorrowSourceModel && slices.Contains(cfg.SourceAccountIDs, request.AccountID)
 	if sourceProbe && (request.ServiceTier != "" || request.Comparison == "encoding") {
 		return errors.New("source self-check uses the current plaintext Astra template without a service tier")
 	}
-	if !cfg.Enabled || (!sourceProbe && (!slices.Contains(cfg.TargetAccountIDs, request.AccountID) || !slices.Contains(cfg.Models, request.Model))) {
+	if !cfg.Enabled || (!sourceProbe && !sourceReplay && (!slices.Contains(cfg.TargetAccountIDs, request.AccountID) || !slices.Contains(cfg.Models, request.Model))) {
 		return errors.New("select a saved, enabled target and model")
 	}
 	account, err := s.accounts.GetByID(ctx, request.AccountID)
@@ -189,7 +196,7 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 		}
 		d := &codexBorrowDiagnostic{limit: int32(limit), onRequest: func(count int32) {
 			emit(CodexBorrowDiagnosticEvent{Type: "request", Mode: mode, Requests: count, Limit: limit})
-		}, requests: &requests, borrow: borrowed, transport: request.Transport, session: uuid.NewString(), scenario: request.Scenario, serviceTier: request.ServiceTier}
+		}, requests: &requests, borrow: borrowed, transport: request.Transport, session: uuid.NewString(), scenario: request.Scenario, serviceTier: request.ServiceTier, replay: request.Replay}
 		operation := context.WithValue(ctx, codexBorrowDiagnosticContextKey{}, d)
 		emit(CodexBorrowDiagnosticEvent{Type: "phase", Mode: mode, Requests: requests.Load(), Limit: limit})
 		previous := ""
@@ -227,7 +234,11 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *Account, model, previous string) CodexBorrowDiagnosticResult {
 	start := time.Now()
 	result := CodexBorrowDiagnosticResult{}
-	state := newPelicanExecutionState(ctx, sharedPelicanExecution, 90*time.Second, time.Now)
+	budget := 90 * time.Second
+	if diagnostic := borrowDiagnosticFromContext(ctx); diagnostic != nil && diagnostic.replay != nil {
+		budget = 5 * time.Minute
+	}
+	state := newPelicanExecutionState(ctx, sharedPelicanExecution, budget, time.Now)
 	ctx = context.WithValue(state.parent, pelicanExecutionContextKey{}, state)
 	defer state.finish()
 	BeginPelicanPreparation(ctx)
@@ -259,6 +270,11 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 		d.prepareHTTPSessionTurn(c.Request.Header, payload)
 	}
 	body, _ := json.Marshal(payload)
+	if d.replay != nil {
+		body = append([]byte(nil), d.replay.Body...)
+		c.Request.Header.Del("session_id")
+		d.replay.applyHeaders(c.Request.Header)
+	}
 	forward, sendErr := s.gateway.Forward(ctx, c, account, body)
 	result.Scenario, result.Verification = d.scenario, d.verification.Load()
 	if sendErr != nil {
@@ -289,6 +305,23 @@ func (s *CodexGatewayBorrowService) diagnoseTurn(ctx context.Context, account *A
 		result.ReadError = last.err.Error()
 	}
 	result.RawResponse = last.raw.String()
+	if d.scenario == "codex_replay" && last.dispatched {
+		state.mu.Lock()
+		result.Applied = state.invocation.BorrowApplied
+		state.mu.Unlock()
+		result.StateLength = len(extractOpenAICodexTurnState(w.Header()))
+		response, terminalErr := codexBorrowSessionTerminal(result.RawResponse)
+		result.Completed = sendErr == nil && terminalErr == nil && last.status >= 200 && last.status < 300
+		result.ResponseID, result.ReportedModel = response.Get("id").String(), response.Get("model").String()
+		if sendErr != nil {
+			result.Error = sendErr.Error()
+		} else if terminalErr != nil {
+			result.Error = terminalErr.Error()
+		}
+		// The replay controller needs the actual business state, never probe state.
+		result.TurnState = extractOpenAICodexTurnState(w.Header())
+		return result
+	}
 	if d.scenario == "codex_session" && last.dispatched {
 		state.mu.Lock()
 		result.Applied = state.invocation.BorrowApplied

@@ -51,6 +51,9 @@ jobs:
       - name: Codex preparation coordination race tests
         working-directory: backend
         run: go test -p=1 -race -tags unit ./internal/service -run '^TestCodexBorrow(Flight|DifferentTargets|CancelledParent|DiagnoseHTTPTerminalAndDispatchEvidence)|^TestCodexGatewayBorrowRunnerCancellationStopsQueuedAndInflightAndRetainsRawOutput$' -count=1
+      - name: Account test keepalive lifecycle race tests
+        working-directory: backend
+        run: go test -p=1 -race -tags unit ./internal/service -run '^TestAccountTestKeepalive' -count=1
       - name: Upstream automation classifier tests
         run: |
           python3 .github/scripts/test_upstream_risk.py
