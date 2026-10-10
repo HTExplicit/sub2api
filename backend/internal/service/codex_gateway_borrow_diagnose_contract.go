@@ -17,6 +17,8 @@ const (
 	codexBorrowProbeRanxiLiteral = "ranxi_literal_without_tier"
 	codexBorrowProbeRanxiTier    = "ranxi_literal_with_final_tier"
 	codexBorrowProbeCurrent      = "current_final_tier"
+	codexBorrowProbePlain        = "current_plaintext"
+	codexBorrowProbeConfigured   = "current_configured_encoding"
 )
 
 // These are observations of one fixed candidate, never qualifications usable
@@ -24,6 +26,7 @@ const (
 // a selected Sol model here is explicitly the downstream model extension.
 type CodexBorrowProbeContext struct {
 	SourceAccountID          int64     `json:"source_account_id"`
+	SourceRequestEncoding    string    `json:"source_request_encoding,omitempty"`
 	TargetProxyID            *int64    `json:"target_proxy_id"`
 	CookieFingerprint        string    `json:"cookie_fingerprint"`
 	CandidateExpiresAt       time.Time `json:"candidate_expires_at"`
@@ -97,6 +100,9 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 	if finalTier == "" {
 		shapes = []string{codexBorrowProbeRanxiLiteral, codexBorrowProbeCurrent}
 	}
+	if request.Comparison == "encoding" {
+		shapes = []string{codexBorrowProbePlain, codexBorrowProbeConfigured}
+	}
 	for _, shape := range shapes {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -109,17 +115,21 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 			tier = ""
 		}
 		operation := withCodexBorrowServiceTier(context.WithValue(ctx, codexBorrowProbeShapeContextKey{}, shape), tier)
+		if request.Comparison == "encoding" {
+			operation = context.WithValue(operation, codexBorrowProbeConfiguredEncodingKey{}, shape == codexBorrowProbeConfigured)
+		}
 		variant := template.WithContext(operation)
 		started := time.Now()
 		verification := s.probeTarget(operation, variant, account, request.Model, proxy, nil, candidate)
 		body := borrowRanxiLiteralPayload(request.Model, tier)
-		if shape == codexBorrowProbeCurrent {
+		if shape == codexBorrowProbeCurrent || request.Comparison == "encoding" {
 			body = borrowObservationPayload(request.Model, "Reply with OK.", "", tier)
 		}
 		result := CodexBorrowDiagnosticResult{Scenario: "probe_contract", Mode: "borrowed", ProbeOnly: true,
 			Verification: &verification, DurationMS: time.Since(started).Milliseconds(), ReportedModel: verification.ReportedModel,
 			ProbeContext: &CodexBorrowProbeContext{SourceAccountID: candidate.sourceID, TargetProxyID: account.ProxyID,
-				CookieFingerprint: borrowHash(candidate.cookie.Value), CandidateExpiresAt: candidate.expires,
+				SourceRequestEncoding: candidate.sourceRequestEncoding,
+				CookieFingerprint:     borrowHash(candidate.cookie.Value), CandidateExpiresAt: candidate.expires,
 				TemplateFingerprint: identity, RequestedTier: request.ServiceTier, FinalTier: finalTier, RoutingHint: template.Header.Get(openAICodexRoutingHintHeader),
 				PlaintextBodyFingerprint: borrowHash(string(body)), OriginalAstraModel: request.Model == codexGatewayBorrowSourceModel}}
 		if !verification.Success {

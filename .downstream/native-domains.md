@@ -100,6 +100,11 @@ and uses the ordinary OAuth account-test payload (default instructions, fixed
 short user prompt, medium effort), with its own configured normal connection
 policy. It does not inherit target-probe session/window headers, routing hints,
 encrypted-output options or connection-close behavior.
+Source acquisition and the target's two STATE shots preserve the pinned
+plaintext-JSON wire protocol. They do not enter the business zstd encoder after
+clearing old body headers. This leaves the saved compression setting and normal
+generation unchanged. Candidate status records `source_request_encoding`, and
+verification records the actual encoding of each shot.
 It has a 90-second budget. Each target/model is validated with two completed
 HTTP 200 streams, at most 45 seconds each: the first must return STATE, and
 the second may omit STATE or return the same value. Qualification includes
@@ -201,6 +206,10 @@ completion stay false. These comparisons never publish business qualifications
 or replace real usage observations. Source acquisition and all shots share the
 existing eight-request cap; the snapshot's expiry cancels remaining comparisons
 without silently selecting a different candidate. Page reads do not invoke it.
+Optional `comparison: encoding` keeps the same current body, tier, identity,
+cookie and exit, and compares plaintext probes with the configured business
+codec. It changes no global setting or business qualification; actual per-shot
+encoding distinguishes an enabled zstd comparison from two plaintext samples.
 
 Ranxi reference: v2.10.2 (`d3e43f2de33af9e987cffa511d76dfabbcd749da`). Its five
 fingerprint, gateway-cookie, target-probe and automatic-setup core files are

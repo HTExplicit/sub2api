@@ -277,7 +277,7 @@ func (h *CodexGatewayBorrowHandler) Diagnose(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	middleware.SetAuditExtra(c, map[string]any{"result": "codex_gateway_borrow_diagnostic", "account_id": request.AccountID, "model": request.Model, "transport": request.Transport, "scenario": request.Scenario, "mode": request.Mode, "service_tier": request.ServiceTier})
+	middleware.SetAuditExtra(c, map[string]any{"result": "codex_gateway_borrow_diagnostic", "account_id": request.AccountID, "model": request.Model, "transport": request.Transport, "scenario": request.Scenario, "comparison": request.Comparison, "mode": request.Mode, "service_tier": request.ServiceTier})
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)

@@ -181,10 +181,11 @@ func cloneCodexGatewayBorrowConfig(cfg CodexGatewayBorrowConfig) CodexGatewayBor
 }
 
 type CodexGatewayBorrowCandidateStatus struct {
-	SourceAccountID   int64     `json:"source_account_id"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	RemainingSeconds  int64     `json:"remaining_seconds"`
-	CookieFingerprint string    `json:"cookie_fingerprint"`
+	SourceRequestEncoding string    `json:"source_request_encoding,omitempty"`
+	SourceAccountID       int64     `json:"source_account_id"`
+	ExpiresAt             time.Time `json:"expires_at"`
+	RemainingSeconds      int64     `json:"remaining_seconds"`
+	CookieFingerprint     string    `json:"cookie_fingerprint"`
 }
 
 type CodexGatewayBorrowSourceStatus struct {
@@ -198,25 +199,27 @@ type CodexGatewayBorrowSourceStatus struct {
 }
 
 type CodexGatewayBorrowVerification struct {
-	RequestShape        string     `json:"request_shape,omitempty"`
-	ServiceTier         string     `json:"service_tier,omitempty"`
-	MintCompleted       bool       `json:"mint_completed"`
-	ContinueCompleted   bool       `json:"continue_completed"`
-	MintStateLength     int        `json:"mint_state_length"`
-	ContinueStateLength int        `json:"continue_state_length"`
-	RouteChanged        bool       `json:"route_changed"`
-	AccountID           int64      `json:"account_id"`
-	Model               string     `json:"model"`
-	Success             bool       `json:"success"`
-	Reason              string     `json:"reason"`
-	Error               string     `json:"error,omitempty"`
-	MintStatus          int        `json:"mint_status"`
-	ContinueStatus      int        `json:"continue_status"`
-	Minted              bool       `json:"minted"`
-	NewTicket           bool       `json:"new_ticket"`
-	ReportedModel       string     `json:"reported_model,omitempty"`
-	CheckedAt           time.Time  `json:"checked_at"`
-	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
+	MintRequestEncoding     string     `json:"mint_request_encoding,omitempty"`
+	ContinueRequestEncoding string     `json:"continue_request_encoding,omitempty"`
+	RequestShape            string     `json:"request_shape,omitempty"`
+	ServiceTier             string     `json:"service_tier,omitempty"`
+	MintCompleted           bool       `json:"mint_completed"`
+	ContinueCompleted       bool       `json:"continue_completed"`
+	MintStateLength         int        `json:"mint_state_length"`
+	ContinueStateLength     int        `json:"continue_state_length"`
+	RouteChanged            bool       `json:"route_changed"`
+	AccountID               int64      `json:"account_id"`
+	Model                   string     `json:"model"`
+	Success                 bool       `json:"success"`
+	Reason                  string     `json:"reason"`
+	Error                   string     `json:"error,omitempty"`
+	MintStatus              int        `json:"mint_status"`
+	ContinueStatus          int        `json:"continue_status"`
+	Minted                  bool       `json:"minted"`
+	NewTicket               bool       `json:"new_ticket"`
+	ReportedModel           string     `json:"reported_model,omitempty"`
+	CheckedAt               time.Time  `json:"checked_at"`
+	ExpiresAt               *time.Time `json:"expires_at,omitempty"`
 }
 
 type CodexGatewayBorrowTargetStatus struct {
@@ -254,9 +257,10 @@ type CodexGatewayBorrowApplication struct {
 }
 
 type codexGatewayBorrowCandidate struct {
-	cookie   http.Cookie
-	expires  time.Time
-	sourceID int64
+	sourceRequestEncoding string
+	cookie                http.Cookie
+	expires               time.Time
+	sourceID              int64
 }
 
 type codexGatewayBorrowTargetKey struct {
@@ -503,7 +507,7 @@ func (s *CodexGatewayBorrowService) Status() CodexGatewayBorrowStatus {
 	out := CodexGatewayBorrowStatus{Enabled: s.config.Enabled, Revision: s.revision, GeneratedAt: now, Preparing: s.preparing || s.prepareRuns > 0 || s.setup.State == "queued",
 		ObservedSince: s.observedSince, RecentUsage: []CodexGatewayBorrowUsage{}, Setup: s.setup, Config: cloneCodexGatewayBorrowConfig(s.config), Sources: []CodexGatewayBorrowSourceStatus{}, Targets: []CodexGatewayBorrowTargetStatus{}, ModelEfforts: codexGatewayBorrowModelEfforts()}
 	if c := s.candidate; c != nil {
-		out.Candidate = &CodexGatewayBorrowCandidateStatus{SourceAccountID: c.sourceID, ExpiresAt: c.expires, RemainingSeconds: borrowRemaining(c.expires, now), CookieFingerprint: borrowHash(c.cookie.Value)}
+		out.Candidate = &CodexGatewayBorrowCandidateStatus{SourceAccountID: c.sourceID, SourceRequestEncoding: c.sourceRequestEncoding, ExpiresAt: c.expires, RemainingSeconds: borrowRemaining(c.expires, now), CookieFingerprint: borrowHash(c.cookie.Value)}
 	}
 	for _, usage := range s.usage {
 		out.RecentUsage = append(out.RecentUsage, usage)

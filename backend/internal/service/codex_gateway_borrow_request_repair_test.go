@@ -26,6 +26,9 @@ func TestCodexBorrowNilRequestDoesNotCreateDiagnosticEvidence(t *testing.T) {
 // A synthetic upstream rotates STATE when those headers change, reproducing
 // the false rejection introduced by manufacturing a new native session per shot.
 func TestCodexBorrowProbePreservesNativeSessionAndTier(t *testing.T) {
+	oldCompression := codexRequestZstd.Load()
+	SetCodexRequestZstdEnabled(true)
+	defer SetCodexRequestZstdEnabled(oldCompression)
 	for _, model := range []string{"gpt-6-astra", "gpt-6.1-sol"} {
 		t.Run(model, func(t *testing.T) {
 			var shots []*http.Request
