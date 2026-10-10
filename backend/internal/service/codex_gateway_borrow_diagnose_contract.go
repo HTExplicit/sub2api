@@ -27,6 +27,7 @@ const (
 // a selected Sol model here is explicitly the downstream model extension.
 type CodexBorrowProbeContext struct {
 	SourceAccountID          int64     `json:"source_account_id"`
+	SubjectRole              string    `json:"subject_role"`
 	SourceRequestEncoding    string    `json:"source_request_encoding,omitempty"`
 	TargetProxyID            *int64    `json:"target_proxy_id"`
 	CookieFingerprint        string    `json:"cookie_fingerprint"`
@@ -52,7 +53,7 @@ func borrowRanxiLiteralPayload(model, tier string) []byte {
 	return []byte(body + `}`)
 }
 
-func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, revision uint64, revisionCtx context.Context, request CodexBorrowDiagnosticRequest, limit int, emit func(CodexBorrowDiagnosticEvent)) error {
+func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, revision uint64, revisionCtx context.Context, request CodexBorrowDiagnosticRequest, sourceProbe bool, limit int, emit func(CodexBorrowDiagnosticEvent)) error {
 	var requests atomic.Int32
 	d := &codexBorrowDiagnostic{limit: int32(limit), requests: &requests, borrow: true, session: uuid.NewString(), serviceTier: request.ServiceTier,
 		onRequest: func(count int32) {
@@ -69,10 +70,16 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 		return err // A blocked local tier must not consume a source or probe request.
 	}
 	finalTier := gjson.GetBytes(policyBody, "service_tier").String()
+	if sourceProbe && finalTier != "" {
+		return errors.New("local tier policy changes the source self-check template; no model request was sent")
+	}
 	s.mu.Lock()
 	candidate := s.candidate
 	current := s.candidateCurrentLocked(revision, candidate)
 	s.mu.Unlock()
+	if sourceProbe && (!current || candidate.sourceID != account.ID) {
+		return errors.New("source self-check requires its current live candidate; no different source is prepared or substituted")
+	}
 	if !current {
 		if err := s.prepareSource(ctx, revision, revisionCtx); err != nil {
 			return err
@@ -84,6 +91,10 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 	}
 	if !current {
 		return ErrCodexGatewayBorrowChanged
+	}
+	role := "target"
+	if sourceProbe {
+		role = "source"
 	}
 	// The snapshot cannot be silently replaced halfway through the comparison.
 	ctx, cancel := context.WithDeadline(ctx, candidate.expires)
@@ -105,6 +116,9 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 	}
 	if request.Comparison == "encoding" {
 		shapes = []string{codexBorrowProbePlain, codexBorrowProbeConfigured}
+	}
+	if sourceProbe {
+		shapes = []string{codexBorrowProbeCurrent}
 	}
 	for _, shape := range shapes {
 		if err := ctx.Err(); err != nil {
@@ -131,6 +145,7 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 		result := CodexBorrowDiagnosticResult{Scenario: "probe_contract", Mode: "borrowed", ProbeOnly: true,
 			Verification: &verification, DurationMS: time.Since(started).Milliseconds(), ReportedModel: verification.ReportedModel,
 			ProbeContext: &CodexBorrowProbeContext{SourceAccountID: candidate.sourceID, TargetProxyID: account.ProxyID,
+				SubjectRole:           role,
 				SourceRequestEncoding: candidate.sourceRequestEncoding,
 				CookieFingerprint:     borrowHash(candidate.cookie.Value), CandidateExpiresAt: candidate.expires,
 				TemplateFingerprint: identity, RequestedTier: request.ServiceTier, FinalTier: finalTier, RoutingHint: template.Header.Get(openAICodexRoutingHintHeader),
