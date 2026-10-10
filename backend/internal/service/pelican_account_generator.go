@@ -503,7 +503,7 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	// semantic terminal event. That cleanup can be captured before this snapshot;
 	// it must not replace a successfully parsed, successfully forwarded result.
 	// Without both completion signals the same cancellation remains incomplete.
-	if last.err != nil && !(parseErr == nil && sendErr == nil && errors.Is(last.err, context.Canceled)) {
+	if last.err != nil && (parseErr != nil || sendErr != nil || !errors.Is(last.err, context.Canceled)) {
 		parseErr = fmt.Errorf("%w: %v", ErrAccountTestIncomplete, last.err)
 	}
 	if limited {
