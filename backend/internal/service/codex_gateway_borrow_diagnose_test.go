@@ -175,6 +175,12 @@ func TestCodexBorrowDiagnoseWSCountsConfiguredPrewarm(t *testing.T) {
 }
 
 func TestCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T) {
+	for _, tier := range []string{"priority", "default", "flex", "ultrafast", ""} {
+		t.Run("tier_"+tier, func(t *testing.T) { testCodexBorrowDiagnoseHTTPToolContinuation(t, tier) })
+	}
+}
+
+func testCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T, tier string) {
 	account := borrowCoreAccount(2)
 	generator, repo := newPelicanGeneratorForTest(account, &pelicanGeneratorUpstream{})
 	gateway := generator.openaiGatewayService
@@ -183,7 +189,7 @@ func TestCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T) {
 		business++
 		body := borrowCoreBody(t, req)
 		assert.Equal(t, "gpt-6.1-sol", gjson.GetBytes(body, "model").String())
-		assert.Equal(t, "priority", gjson.GetBytes(body, "service_tier").String())
+		assert.Equal(t, tier, gjson.GetBytes(body, "service_tier").String())
 		assert.NotEmpty(t, req.Header.Get("session-id"))
 		assert.Contains(t, req.Header.Get("Cookie"), "__oailb=synthetic-borrowed-cookie")
 		var output []any
@@ -210,7 +216,7 @@ func TestCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T) {
 	})
 	s := NewCodexGatewayBorrowService(nil, repo, gateway, borrowCoreProbe(func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 		probes++
-		assert.Equal(t, "priority", gjson.GetBytes(borrowCoreBody(t, req), "service_tier").String())
+		assert.Equal(t, tier, gjson.GetBytes(borrowCoreBody(t, req), "service_tier").String())
 		return borrowCoreResponse("gpt-6.1-sol", "OK", "probe-state"), nil
 	}), nil)
 	s.publishConfig(CodexGatewayBorrowConfig{Enabled: true, SourceAccountIDs: []int64{1}, TargetAccountIDs: []int64{2}, Models: []string{"gpt-6.1-sol"}}, false)
@@ -218,7 +224,7 @@ func TestCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T) {
 	borrowCoreCandidate(s, time.Now().Add(codexGatewayBorrowTTL))
 	var results []CodexBorrowDiagnosticResult
 	var count int32
-	err := s.Diagnose(context.Background(), CodexBorrowDiagnosticRequest{AccountID: 2, Model: "gpt-6.1-sol", Transport: "http", Scenario: "codex_session", ServiceTier: "priority"}, func(e CodexBorrowDiagnosticEvent) {
+	err := s.Diagnose(context.Background(), CodexBorrowDiagnosticRequest{AccountID: 2, Model: "gpt-6.1-sol", Transport: "http", Scenario: "codex_session", ServiceTier: tier}, func(e CodexBorrowDiagnosticEvent) {
 		if e.Result != nil {
 			results = append(results, *e.Result)
 		}
