@@ -25,7 +25,7 @@ func TestCodexBorrowNilRequestDoesNotCreateDiagnosticEvidence(t *testing.T) {
 // session/thread headers belong to the template and must survive both shots.
 // A synthetic upstream rotates STATE when those headers change, reproducing
 // the false rejection introduced by manufacturing a new native session per shot.
-func TestCodexBorrowProbePreservesNativeSessionAndTier(t *testing.T) {
+func TestCodexBorrowProbePreservesPinnedSessionContract(t *testing.T) {
 	oldCompression := codexRequestZstd.Load()
 	SetCodexRequestZstdEnabled(true)
 	defer SetCodexRequestZstdEnabled(oldCompression)
@@ -38,8 +38,8 @@ func TestCodexBorrowProbePreservesNativeSessionAndTier(t *testing.T) {
 				assert.Equal(t, "target-exit", proxy)
 				body := borrowCoreBody(t, req)
 				assert.Equal(t, model, gjson.GetBytes(body, "model").String())
-				assert.Equal(t, "priority", gjson.GetBytes(body, "service_tier").String())
-				assert.Equal(t, string(borrowRanxiLiteralPayload(model, "priority")), string(body), "use the pinned probe byte template with the actual model and tier")
+				assert.False(t, gjson.GetBytes(body, "service_tier").Exists())
+				assert.Equal(t, `{"model":"`+model+`","instructions":"Reply with OK.","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Reply with OK."}]}],"stream":true,"store":false,"parallel_tool_calls":true,"include":["reasoning.encrypted_content"]}`, string(body), "use the fixed upstream byte template with only the actual model parameterized")
 				assert.Equal(t, "model="+model+";tier=priority", req.Header.Get(openAICodexRoutingHintHeader))
 				assert.Empty(t, req.Header.Get("Content-Encoding"))
 				assert.Empty(t, req.Header.Get("X-Codex-Turn-Metadata"))
@@ -123,7 +123,7 @@ func TestCodexBorrowPreparationFailureRetainsReasonAndCounts(t *testing.T) {
 	require.Equal(t, "target_state_changed", usage[0].Reason)
 }
 
-func TestCodexBorrowProofIncludesNativeSessionAndRoutingPolicy(t *testing.T) {
+func TestCodexBorrowProofUsesOriginalCacheFields(t *testing.T) {
 	a := borrowCoreAccount(2)
 	s := newBorrowCoreTest(t, func(*http.Request, string, int64, int, *tlsfingerprint.Profile) (*http.Response, error) {
 		return borrowCoreResponse("gpt-6.1-sol", "OK", "stable"), nil
@@ -137,7 +137,7 @@ func TestCodexBorrowProofIncludesNativeSessionAndRoutingPolicy(t *testing.T) {
 		changed := req.Clone(req.Context())
 		changed.Header.Set(header, "changed")
 		_, _, err = s.Apply(changed, a, "gpt-6.1-sol", "", nil, true)
-		require.Error(t, err, header)
+		require.NoError(t, err, header)
 	}
 	req.Header.Set("x-client-request-id", "another-trace")
 	_, application, err := s.Apply(req, a, "gpt-6.1-sol", "", nil, true)

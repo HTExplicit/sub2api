@@ -11,10 +11,11 @@ const (
 	HTTPUpstreamProfileOpenAI     HTTPUpstreamProfile = "openai"
 	HTTPUpstreamProfileGrok       HTTPUpstreamProfile = "grok"
 	HTTPUpstreamProfileLongStream HTTPUpstreamProfile = "long_stream"
-	// Borrow purposes route through the dedicated probe upstream, whose clients
-	// and fallback state are separate from normal gateway traffic.
-	HTTPUpstreamProfileCodexBorrowSource HTTPUpstreamProfile = "codex_borrow_source"
-	HTTPUpstreamProfileCodexBorrowTarget HTTPUpstreamProfile = "codex_borrow_target"
+	// The pinned upstream uses ordinary OpenAI for source acquisition and
+	// OpenAIHarvest for the two target probes. Keep aliases for local callers.
+	HTTPUpstreamProfileOpenAIHarvest     HTTPUpstreamProfile = "openai_harvest"
+	HTTPUpstreamProfileCodexBorrowSource                     = HTTPUpstreamProfileOpenAI
+	HTTPUpstreamProfileCodexBorrowTarget                     = HTTPUpstreamProfileOpenAIHarvest
 )
 
 type httpUpstreamProfileContextKey struct{}
@@ -43,7 +44,7 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 	}
 	switch profile {
 	case HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileGrok, HTTPUpstreamProfileLongStream,
-		HTTPUpstreamProfileCodexBorrowSource, HTTPUpstreamProfileCodexBorrowTarget:
+		HTTPUpstreamProfileOpenAIHarvest:
 		return profile
 	default:
 		return HTTPUpstreamProfileDefault

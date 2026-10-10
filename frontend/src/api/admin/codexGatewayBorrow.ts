@@ -21,7 +21,13 @@ export interface BorrowSourceStatus {
   error?: string
 }
 
+export interface BorrowAcquisition {
+ trigger?: string; phase?: string; started_at?: string; finished_at?: string
+ reason?: string; error?: string; retry_after?: string
+}
+
 export interface BorrowTargetStatus extends BorrowSourceStatus {
+  acquisition?: BorrowAcquisition
   model: string
   cache_valid: boolean
   retry_after?: string
@@ -61,6 +67,7 @@ export interface CodexBorrowDiagnosticEvent {
 export interface CodexBorrowDiagnosticRequest { account_id: number; model: string; transport: 'http' | 'ws'; request_limit?: number; scenario?: 'codex_session'; mode?: 'ordinary' | 'borrowed'; service_tier?: string }
 
 export interface CodexGatewayBorrowStatus {
+  acquisition?: BorrowAcquisition
   setup?: { state: string; phase: string; account_id: number; model: string; completed: number; total: number; failed: number; started_at: string; finished_at?: string; error?: string }
   recent_usage?: CodexGatewayBorrowUsage[]
   observed_since?: string

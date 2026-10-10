@@ -274,4 +274,20 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-verify-2-gpt-6.1-sol"]').element.disabled).toBe(true)
     expectNoUnrelatedCalls()
   })
+  it('reports acquisition failure and cooldown without starting any model request', async () => {
+    mocks.getStatus.mockResolvedValue(makeStatus({ acquisition: {
+      phase: 'failed', trigger: 'expired_route', started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(), retry_after: new Date(Date.now() + 15_000).toISOString(),
+      reason: 'source_prepare_failed', error: 'Complete acquisition failure'
+    } }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="borrow-acquisition"]').text()).toContain('获取失败')
+    expect(wrapper.get('[data-test="borrow-acquisition"]').text()).toContain('Complete acquisition failure')
+    expect(wrapper.get('[data-test="borrow-acquisition"]').text()).toContain('expired_route')
+    await wrapper.get('[data-test="borrow-refresh"]').trigger('click')
+    await flushPromises()
+    expect(mocks.prepare).not.toHaveBeenCalled()
+    expect(mocks.verify).not.toHaveBeenCalled()
+  })
+
 })

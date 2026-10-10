@@ -74,7 +74,7 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 		return errors.New("local tier policy changes the source self-check template; no model request was sent")
 	}
 	s.mu.Lock()
-	candidate := s.candidate
+	candidate := s.currentCandidateLocked()
 	current := s.candidateCurrentLocked(revision, candidate)
 	s.mu.Unlock()
 	if sourceProbe && (!current || candidate.sourceID != account.ID) {
@@ -85,7 +85,7 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 			return err
 		}
 		s.mu.Lock()
-		candidate = s.candidate
+		candidate = s.currentCandidateLocked()
 		current = s.candidateCurrentLocked(revision, candidate)
 		s.mu.Unlock()
 	}

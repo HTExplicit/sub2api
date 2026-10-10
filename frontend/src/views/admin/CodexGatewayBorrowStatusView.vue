@@ -55,7 +55,21 @@
             <p v-if="status.preparing">{{ status.setup.phase === 'source' ? text('正在获取来源路由', 'Acquiring a source route') : `${accountName(status.setup.account_id)} · ${status.setup.model}` }}</p>
             <pre v-if="status.setup.error" class="borrow-error">{{ status.setup.error }}</pre>
           </div>
+          <div class="space-y-2 text-sm" data-test="borrow-acquisition">
+            <p>{{ t('admin.codexGatewayBorrow.onDemandHint') }}</p>
+            <p v-if="status.acquisition?.phase" role="status">{{ acquisitionLabel }} · {{ formatTime(status.acquisition.started_at) }}</p>
+            <details v-if="status.acquisition?.phase" class="rounded-lg border border-line p-3">
+              <summary class="cursor-pointer">{{ t('admin.codexGatewayBorrow.technicalDetails') }}</summary>
+              <dl class="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                <div>{{ text('触发原因', 'Trigger') }}: {{ status.acquisition.trigger }}</div>
+                <div>{{ text('完成时间', 'Finished') }}: {{ formatTime(status.acquisition.finished_at) }}</div>
+                <div>{{ t('admin.codexGatewayBorrow.retryAfter') }}: {{ formatTime(status.acquisition.retry_after) }}</div>
+              </dl>
+              <pre v-if="status.acquisition.error" class="borrow-error mt-2">{{ status.acquisition.error }}</pre>
+            </details>
+          </div>
           <p class="text-sm">{{ t('admin.codexGatewayBorrow.validationMeaning') }}</p>
+          <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.modelScope') }}</p>
 
           <div v-if="actionFailure" role="alert" class="space-y-2" data-test="borrow-action-failure">
             <p class="text-sm text-red-700 dark:text-red-300">{{ actionFailure.message }}</p>
@@ -123,6 +137,7 @@
                 <dl class="mt-3 grid gap-3 text-xs sm:grid-cols-2">
                   <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.rawState') }}</dt><dd class="mt-1 break-words font-mono">{{ target.state }}</dd></div>
                   <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.rawReason') }}</dt><dd class="mt-1 break-words font-mono">{{ target.reason || '—' }}</dd></div>
+                  <div v-if="target.acquisition?.started_at"><dt class="text-muted">{{ text('验证开始 / 结束', 'Validation started / finished') }}</dt><dd>{{ formatTime(target.acquisition.started_at) }} / {{ formatTime(target.acquisition.finished_at) }}</dd></div>
                   <div><dt class="text-muted">HTTP</dt><dd class="mt-1">{{ t('admin.codexGatewayBorrow.httpStatuses', { mint: target.mint_status || '—', continuation: target.continue_status || '—' }) }}</dd></div>
                   <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.stateMinted') }}</dt><dd class="mt-1">{{ target.minted ? t('common.yes') : t('common.no') }}</dd></div>
                   <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.newTicket') }}</dt><dd class="mt-1">{{ target.new_ticket ? t('common.yes') : t('common.no') }}</dd></div>
@@ -201,8 +216,17 @@ const preparationLabel = computed(() => {
   if (!status.value?.enabled || !targets.value.length) return text('未配置或未启用', 'Not configured or disabled')
   if (readyCount.value === targets.value.length) return text('线路可用', 'Routes ready')
   if (readyCount.value > 0) return text('部分线路可用', 'Some routes ready')
-  if (targets.value.some(target => targetState(target) === 'expired')) return text('线路已过期，需要时重新准备', 'Expired; prepare when needed')
+  if (targets.value.some(target => targetState(target) === 'expired')) return t('admin.codexGatewayBorrow.onDemandExpired')
   return text('尚无可用线路，查看下方原因', 'No ready route; see reasons below')
+})
+
+const acquisitionLabel = computed(() => {
+  const phase = status.value?.acquisition?.phase
+  if (phase === 'acquiring') return text('正在获取来源候选', 'Acquiring a source candidate')
+  if (phase === 'failed') return text('获取失败；冷却结束后的下一次请求可重试', 'Acquisition failed; the next request after cooldown can retry')
+  if (phase === 'cancelled') return text('获取已取消', 'Acquisition cancelled')
+  if (candidateRemaining.value <= 0) return t('admin.codexGatewayBorrow.onDemandExpired')
+  return text('已取得来源候选；目标是否可用以下方验证为准', 'Source candidate acquired; target readiness depends on validation below')
 })
 
 function pairKey(id: number, model: string) { return `${id}:${model}` }
