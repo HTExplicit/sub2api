@@ -137,7 +137,7 @@ func pelicanTestAccountOptions(account *Account) PelicanTestAccountOption {
 		ProxyID: account.ProxyID, RateLimitedUntil: account.RateLimitResetAt, OverloadUntil: account.OverloadUntil,
 		TempUnschedulableUntil: account.TempUnschedulableUntil, TempUnschedulableReason: account.TempUnschedulableReason,
 		ErrorMessage: account.ErrorMessage, CapabilityReason: pelicanTestAccountCapabilityReason(account),
-		ManualModelAllowed: true, Models: []PelicanTestModelOption{},
+		ManualModelAllowed: pelicanTestAccountCapabilityReason(account) == "", Models: []PelicanTestModelOption{},
 	}
 	if account.Proxy != nil {
 		option.ProxyName = account.Proxy.Name
@@ -194,7 +194,7 @@ func pelicanTestLocalModelIDs(account *Account) []string {
 
 func pelicanTestPlatformModelIDs(account *Account) []string {
 	switch account.Platform {
-	case PlatformKimi, PlatformZhipu:
+	case PlatformKimi, PlatformZhipu, PlatformCline, PlatformCommandCode:
 		return nil // These platforms publish no local default catalog.
 	case PlatformDeepseek:
 		return []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash"}
@@ -223,7 +223,7 @@ func pelicanTestAccountCapabilityReason(account *Account) string {
 		return "TypeSafe System One provides a structured native response and does not support arbitrary HTML text generation"
 	}
 	switch account.Platform {
-	case PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo:
+	case PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformCline, PlatformCommandCode:
 	default:
 		return fmt.Sprintf("platform %q has no text generation sender", account.Platform)
 	}
@@ -239,7 +239,7 @@ func pelicanTestAccountCapabilityReason(account *Account) string {
 		supported = account.Type == AccountTypeAPIKey || account.Type == AccountTypeOAuth
 	case PlatformAntigravity:
 		supported = account.Type == AccountTypeOAuth || account.Type == AccountTypeUpstream
-	case PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo:
+	case PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformCline, PlatformCommandCode:
 		supported = account.Type == AccountTypeAPIKey
 	}
 	if !supported {
@@ -405,9 +405,6 @@ func PelicanTestModelOptions(account *Account, model string) PelicanTestModelOpt
 	}
 	if option.ReasoningEfforts == nil {
 		option.ReasoningEfforts = []string{}
-	}
-	if slices.Contains(option.ReasoningEfforts, "high") {
-		option.DefaultEffort = "high"
 	}
 	return option
 }

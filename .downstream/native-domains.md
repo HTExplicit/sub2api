@@ -213,9 +213,10 @@ candidate owner. `probe_context.subject_role` distinguishes source self-checks
 from target checks. Self-check results do not qualify business traffic or mutate
 the source's health/status.
 
-Ranxi reference: v2.10.2 (`d3e43f2de33af9e987cffa511d76dfabbcd749da`). Its five
+Ranxi reference: v2.10.3 (`fd1b5ee4eeb20961fbb783fa6f136a1704271e90`). Its
 fingerprint, gateway-cookie, target-probe and automatic-setup core files are
-unchanged from the retained v2.10.0 reference. OAuth search-history compatibility
+unchanged from v2.10.2. The scoped update and retained host adaptations are
+listed in [the review](upstream-review-ranxi-v2.10.3.md). OAuth search-history compatibility
 is supplied by the official v0.2.15 integration. Automatic group membership,
 Mihomo exit rotation and removal of harvesting attempt/concurrency bounds are
 not adopted; existing account mappings, network routes and protocol switches stay
@@ -227,15 +228,35 @@ the independent tests described below.
 
 ## Independent Pelican tests
 
-`/admin/pelican-tests` provides local account/model options, explicit generation
-with SSE progress, and stored history/detail. Candidates include all platforms,
-account types and account states, using local mappings, saved catalogs and
-platform defaults. Option reads never refresh credentials or request an upstream
-model directory. Each selected account/model receives the fixed Pelican prompt
-once. The server chooses its actual existing account sending path, model mapping,
-credentials, identity headers, proxy, TLS, protocol and borrowing configuration;
-it creates no API Key, group policy or client handshake, and never switches to a
-different account on failure. Unsupported text capabilities retain a skip reason.
+`/admin/pelican-tests` is a task/result workbench. The new-task composer loads
+accounts in pages of 50, retains selection across pages, and offers explicit
+current-page/all-matching scopes. Models use locally saved mappings and catalogs;
+valid backend defaults are respected and effort defaults to the model default.
+Known unsupported choices and duplicate account/model rows must be corrected or
+removed before submission; manual unverified models remain explicitly marked.
+Bulk configuration preserves incompatible rows. Text capability and generation
+use the same local resolver, including the already integrated Cline/Command Code
+senders. No new provider protocol is introduced.
+
+`POST /admin/pelican-tests/tasks` returns 202 and starts a server-owned job.
+The GET list, snapshot (`/:id`), paginated summaries (`/:id/results`), full single
+result (`/:id/results/:result_id`), and SSE (`/:id/events`) never start generation.
+Only `POST /:id/cancel` cancels a background job. Disconnecting observers or
+closing the page leaves it running. Repeated client UUIDs with identical normalized
+parameters return the existing snapshot; conflicting parameters fail. Restart and
+shutdown preserve completed works, mark unfinished work interrupted, and never
+replay uncertain model calls. No schema migration is added.
+
+The original `/tests` SSE endpoint retains request-bound cancellation and its
+request/response contract. Both APIs use the same runner, history and execution
+capacity. Summary SQL does not load raw responses, answers or HTML; details retain
+complete administrator evidence. The page supports 2–4 same/cross-task comparisons,
+filters, enlargement, downloads, parameter copying and failed-item retries into a
+new reviewed task. History, browsing, reconnecting and comparison are read-only.
+The fixed Pelican prompt is preserved. The actual sending path, credentials,
+identity, model mapping, proxy, TLS, protocol and configured borrowing remain
+owned by each account. No API Key, group policy, model score or fallback account
+is manufactured for a test.
 
 All batches share ten model execution slots, with one request per account.
 Nested borrowing probes participate in the same coordination and normal business

@@ -86,9 +86,9 @@ func TestPelicanTestCatalogUsesMappingAndSourceBoundLocalMetadataWithoutMutation
 	require.NotContains(t, byID, "gpt-6-*")
 	require.NotContains(t, byID, "not-mapped")
 	require.Equal(t, "gpt-6.1-sol", byID["sol-alias"].UpstreamModel)
-	require.Equal(t, "high", byID["sol-alias"].DefaultEffort)
+	require.Empty(t, byID["sol-alias"].DefaultEffort)
 	require.Equal(t, []string{"low", "high"}, byID["custom"].ReasoningEfforts)
-	require.Equal(t, "high", byID["custom"].DefaultEffort)
+	require.Empty(t, byID["custom"].DefaultEffort)
 	require.False(t, byID["media"].TextSupported)
 	require.Contains(t, byID["media"].CapabilityReason, "gpt-image-2")
 	afterCredentials, err := json.Marshal(account.Credentials)
@@ -123,6 +123,8 @@ func TestPelicanTestCatalogDefaultsNativeCapabilitiesAndSpecificUnsupportedReaso
 		{"deepseek", PlatformDeepseek, AccountTypeAPIKey, "deepseek-v4-pro", false},
 		{"minimax", PlatformMiniMax, AccountTypeAPIKey, "MiniMax-M3", false},
 		{"opencode", PlatformOpenCodeGo, AccountTypeAPIKey, DefaultOpenCodeGoTestModel, false},
+		{"cline", PlatformCline, AccountTypeAPIKey, "gpt-6.1-sol", false},
+		{"command code", PlatformCommandCode, AccountTypeAPIKey, "gpt-6.1-sol", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			account := &Account{Platform: test.platform, Type: test.kind}
@@ -130,7 +132,7 @@ func TestPelicanTestCatalogDefaultsNativeCapabilitiesAndSpecificUnsupportedReaso
 			require.True(t, option.TextSupported, option.CapabilityReason)
 			if test.high {
 				require.Contains(t, option.ReasoningEfforts, "high")
-				require.Equal(t, "high", option.DefaultEffort)
+				require.Empty(t, option.DefaultEffort)
 			} else {
 				require.Empty(t, option.DefaultEffort, "models without high keep their normal default")
 			}
@@ -155,7 +157,7 @@ func TestPelicanTestCatalogPassthroughAndDeclaredNoTextUseEffectiveModel(t *test
 	option := PelicanTestModelOptions(account, "gpt-6.1-sol")
 	require.Equal(t, "gpt-6.1-sol", option.UpstreamModel)
 	require.True(t, option.TextSupported)
-	require.Equal(t, "high", option.DefaultEffort)
+	require.Empty(t, option.DefaultEffort)
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
 		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
 			"gpt-6.1-sol": {ID: "gpt-6.1-sol", InputModalities: []string{"image"}},
@@ -174,7 +176,7 @@ func TestPelicanTestCatalogNativeUpstreamAndAdaptiveUseBusinessEffortCapabilitie
 	require.True(t, option.TextSupported, option.CapabilityReason)
 	require.Equal(t, "claude-opus-5-5", option.UpstreamModel, "native upstream forwarding preserves the request model")
 	require.Contains(t, option.ReasoningEfforts, "high")
-	require.Equal(t, "high", option.DefaultEffort)
+	require.Empty(t, option.DefaultEffort)
 
 	adaptive := &Account{Platform: PlatformKimi, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_protocol": APIProtocolAdaptive}}
 	reasoning := true
@@ -185,7 +187,7 @@ func TestPelicanTestCatalogNativeUpstreamAndAdaptiveUseBusinessEffortCapabilitie
 	})
 	option = PelicanTestModelOptions(adaptive, "kimi-k2.5")
 	require.Equal(t, []string{"medium", "high"}, option.ReasoningEfforts, "single native request can use the declared effort on adaptive accounts")
-	require.Equal(t, "high", option.DefaultEffort)
+	require.Empty(t, option.DefaultEffort)
 	adaptive.Credentials["api_protocol"] = APIProtocolAnthropic
 	option = PelicanTestModelOptions(adaptive, "claude-opus-5-5")
 	require.True(t, option.TextSupported)
