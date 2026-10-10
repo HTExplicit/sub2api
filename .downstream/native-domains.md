@@ -216,6 +216,12 @@ Optional `comparison: encoding` keeps the same current body, tier, identity,
 cookie and exit, and compares plaintext probes with the configured business
 codec. It changes no global setting or business qualification; actual per-shot
 encoding distinguishes an enabled zstd comparison from two plaintext samples.
+The same probe-only scenario can select a configured source for one plaintext,
+no-tier Astra pair against its own current live candidate. It cannot generate,
+test another source model, acquire a replacement or substitute a different
+candidate owner. `probe_context.subject_role` distinguishes source self-checks
+from target checks. Self-check results do not qualify business traffic or mutate
+the source's health/status.
 
 Ranxi reference: v2.10.2 (`d3e43f2de33af9e987cffa511d76dfabbcd749da`). Its five
 fingerprint, gateway-cookie, target-probe and automatic-setup core files are

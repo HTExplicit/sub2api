@@ -146,7 +146,11 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 		return errors.New("request_limit must be between 1 and 8")
 	}
 	cfg := s.ConfigSnapshot()
-	if !cfg.Enabled || !slices.Contains(cfg.TargetAccountIDs, request.AccountID) || !slices.Contains(cfg.Models, request.Model) {
+	sourceProbe := request.Scenario == "probe_contract" && request.Model == codexGatewayBorrowSourceModel && slices.Contains(cfg.SourceAccountIDs, request.AccountID)
+	if sourceProbe && (request.ServiceTier != "" || request.Comparison == "encoding") {
+		return errors.New("source self-check uses the current plaintext Astra template without a service tier")
+	}
+	if !cfg.Enabled || (!sourceProbe && (!slices.Contains(cfg.TargetAccountIDs, request.AccountID) || !slices.Contains(cfg.Models, request.Model))) {
 		return errors.New("select a saved, enabled target and model")
 	}
 	account, err := s.accounts.GetByID(ctx, request.AccountID)
@@ -166,7 +170,7 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 	ctx, cancel := borrowRevisionContext(WithAccountObservation(ctx), revisionCtx, 10*time.Minute)
 	defer cancel()
 	if request.Scenario == "probe_contract" {
-		return s.diagnoseProbeContract(ctx, revision, revisionCtx, request, limit, emit)
+		return s.diagnoseProbeContract(ctx, revision, revisionCtx, request, sourceProbe, limit, emit)
 	}
 	var requests atomic.Int32
 	modes := []bool{false, true}
