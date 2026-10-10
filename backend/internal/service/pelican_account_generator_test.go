@@ -158,6 +158,32 @@ func TestPelicanAccountGeneratorSharedOpenAISettings(t *testing.T) {
 	}
 }
 
+func TestPelicanAccountGeneratorKeepsBorrowPreparationCause(t *testing.T) {
+	account := borrowCoreAccount(2)
+	upstream := &pelicanGeneratorUpstream{}
+	svc, _ := newPelicanGeneratorForTest(account, upstream)
+	shots := 0
+	borrow := newBorrowCoreTest(t, func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+		shots++
+		state := "first"
+		if req.Header.Get("X-Codex-Turn-State") != "" {
+			state = "changed"
+		}
+		return borrowCoreResponse("gpt-6-astra", "OK", state), nil
+	}, account)
+	borrowCoreCandidate(borrow, time.Now().Add(codexGatewayBorrowTTL))
+	svc.openaiGatewayService.SetCodexGatewayBorrowService(borrow)
+	result, err := svc.GeneratePelican(context.Background(), account.ID, "gpt-6-astra", "low")
+	require.Error(t, err)
+	require.True(t, IsCodexGatewayBorrowRequestFailure(err))
+	require.Contains(t, result.Error, "target_validation/target_state_changed")
+	require.Contains(t, result.Error, "CODEX_GATEWAY_BORROW_UNAVAILABLE")
+	require.Equal(t, "failed", result.Status)
+	require.Empty(t, result.RawAnswer)
+	require.Empty(t, upstream.requests, "a rejected qualification never reaches generation")
+	require.Equal(t, 2, shots)
+}
+
 func TestPelicanAccountGeneratorHTTPFailureKeepsSelectedAccountAndRawBody(t *testing.T) {
 	raw := `{"error":{"type":"rate_limit_error","message":"` + strings.Repeat("complete original detail ", 2000) + `"}}`
 	account := &Account{ID: 28, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "local-key", "base_url": "http://fake.example"}}

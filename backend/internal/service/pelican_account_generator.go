@@ -447,6 +447,14 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	// This represents the server's internal generation operation. No client
 	// UA, protocol handshake, API-key subject or group policy is synthesized.
 	sendErr := s.sendPelicanWithAccount(ctx, c, account, model, option.UpstreamModel, effort)
+	// The gateway keeps client-facing failover text generic, but records the
+	// complete local borrow cause on this invocation's Gin context. Preserve it
+	// in administrator task history even when no generation request was sent.
+	if sendErr != nil && IsCodexGatewayBorrowRequestFailure(sendErr) {
+		if detail := c.GetString(OpsUpstreamErrorDetailKey); detail != "" && !strings.Contains(sendErr.Error(), detail) {
+			sendErr = fmt.Errorf("%w\n%s", sendErr, detail)
+		}
+	}
 	last := snapshotPelicanAttempt(capture)
 	if last == nil {
 		result.RawResponse = w.Body.String()
