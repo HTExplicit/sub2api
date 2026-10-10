@@ -438,7 +438,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	stopKeepalive := startAccountTestSSEKeepalive(c, 10*time.Second)
 	defer func() {
 		// A failed downstream write cancels the observation, never its owner.
-		if testErr == nil {
+		if testErr == nil && !c.GetBool("account_test_completion_committed") {
 			testErr = c.Request.Context().Err()
 		}
 		stopKeepalive()
@@ -3194,6 +3194,9 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", eventJSON); err != nil {
 		log.Printf("failed to write SSE event: %v", err)
 		return
+	}
+	if event.Type == "test_complete" && event.Success {
+		c.Set("account_test_completion_committed", true)
 	}
 	c.Writer.Flush()
 }

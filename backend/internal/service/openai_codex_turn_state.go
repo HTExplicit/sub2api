@@ -174,21 +174,37 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 		h.Del(openAICodexTurnStateHeader)
 		return
 	}
+	// Native HTTP clients own their opaque continuation state. WS and its HTTP
+	// bridge retain the existing stricter anchor/provenance contract.
+	preserveUnknown := GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP ||
+		(GetOpenAIClientTransport(c) == OpenAIClientTransportUnknown && c != nil && c.Request != nil && c.Request.Method == http.MethodPost)
 	seed := openAICodexTurnStateSeed(c)
 	if seed == "" {
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	raw, ok := s.openaiCodexTurnStateOrigins.Load(seed)
 	if !ok {
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	origin, ok := raw.(openAICodexTurnStateOrigin)
 	if !ok {
 		s.openaiCodexTurnStateOrigins.Delete(seed)
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	if !origin.expiresAt.IsZero() && time.Now().After(origin.expiresAt) {
 		s.openaiCodexTurnStateOrigins.Delete(seed)
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	if origin.accountID != account.ID {

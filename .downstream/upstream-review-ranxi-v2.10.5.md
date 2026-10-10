@@ -24,15 +24,17 @@ downstream extension; an Astra result never qualifies Sol.
 
 ## Changes
 
-- Restore original business STATE echo behavior: unknown or expired local
+- Restore original native HTTP business STATE echo behavior: unknown or expired local
   provenance is preserved; a live record identifying a different account still
-  strips it. Target two-shot qualification is unchanged.
+  strips it. Target two-shot qualification and WS provenance are unchanged.
 - Observe connect/TLS/write/header phases. Retry an observation once only when
   transport trace proves failure before any HTTP request headers were written.
   No trace, any response, cancellation, exhausted diagnostic budget, or written
   headers forbids replay. Every connection attempt counts against the budget.
 - Port account-test SSE keepalive from #350, preserving the host parser's error
-  wording and observation cancellation. A heartbeat is not model output.
+  wording, observation cancellation and already committed successful terminals.
+  Body-close cancellation after completion must not erase a completed test.
+  A heartbeat is not model output.
 - Extend the existing administrator diagnostic with an explicitly selected,
   bounded native replay for comparable fixture/tool sessions. Ordinary source
   controls are limited to saved source accounts. No credentials, routing cookies,

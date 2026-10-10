@@ -111,9 +111,10 @@ headers, and generate a new legacy `session_id` per shot. The second shot carrie
 only the first probe's STATE and target `__cflb` with the same borrowed `__oailb`.
 Nothing is written back to the business session. The business request keeps its
 own model, tier, cookies, STATE and history; borrowing replaces only `__oailb`.
-Business STATE echo follows the original provenance rule: unknown or expired
+Native HTTP business STATE echo follows the original provenance rule: unknown or expired
 process-local provenance preserves the caller's STATE; a live foreign-account
-record strips it. This does not relax two-shot target qualification.
+record strips it. This does not relax two-shot target qualification or the
+existing WS/WS-to-HTTP bridge provenance requirements.
 
 Observations report their connect/TLS/write/header phase and attempt count.
 They may retry once only with transport trace proving a connection failure before
