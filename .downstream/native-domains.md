@@ -112,7 +112,12 @@ cookie ordering are unchanged.
 It has a 90-second budget. Each target/model is validated with two completed
 HTTP 200 streams, at most 45 seconds each: the first must return STATE, and
 the second may omit STATE or return the same value. Qualification includes
-the target identity, actual model, exit, client headers, STATE and TLS profile.
+the target identity, actual model, exit, client headers and TLS profile.
+The probe clears the business STATE and validates its own two-shot STATE, so
+echoing the next business STATE does not invalidate an otherwise identical live
+proof. The sender keeps that exact business STATE and its existing continuation
+isolation. Native session/window identity, model, tier, exit and the original
+candidate expiry still constrain reuse; no credential gains a longer lease.
 Target probes preserve the template's native session/thread/window headers and
 generate only a fresh legacy `session_id` for each shot, matching ranxi's full
 probe contract. The effective service tier in the gateway-owned routing hint is

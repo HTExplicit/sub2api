@@ -805,8 +805,12 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 
 func borrowRequestFingerprint(req *http.Request, model, proxy string, profile *tlsfingerprint.Profile, cookie string) string {
 	tlsJSON, _ := json.Marshal(profile)
-	values := []string{cookie, model, proxy, req.URL.EscapedPath(), req.Header.Get("Authorization"), req.Header.Get("ChatGPT-Account-ID"), req.Header.Get("User-Agent"), req.Header.Get("Originator"), req.Header.Get("Version"), req.Header.Get("X-Codex-Turn-State"), string(tlsJSON)}
+	values := []string{cookie, model, proxy, req.URL.EscapedPath(), req.Header.Get("Authorization"), req.Header.Get("ChatGPT-Account-ID"), req.Header.Get("User-Agent"), req.Header.Get("Originator"), req.Header.Get("Version"), string(tlsJSON)}
 	values = append(values, codexBorrowRequestServiceTier(req))
+	// Probes clear business STATE and mint their own independent two-shot STATE.
+	// A client's next turn must not discard that live route proof merely because
+	// it echoes a new business STATE. Apply still preserves the client's exact
+	// STATE; the candidate lease and native session identity remain part of reuse.
 	// Include the native identity and routing policy preserved by the probe.
 	// Per-request tracing IDs and the probe's random legacy session_id are not
 	// qualification identities and must not defeat reuse or failure cooldowns.
@@ -951,7 +955,7 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 			s.qualifications = make(map[string]codexGatewayBorrowTargetCheck)
 		}
 		qualificationKey := fmt.Sprintf("%d:%s:%s", account.ID, model, key)
-		// Bound request-specific STATE/header variants; expired proofs are discarded.
+		// Bound request-identity variants; expired proofs are discarded.
 		if len(s.qualifications) >= 1024 {
 			oldestKey := ""
 			var oldest time.Time

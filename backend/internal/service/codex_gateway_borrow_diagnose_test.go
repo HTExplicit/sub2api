@@ -240,6 +240,7 @@ func testCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T, tier string) {
 	}
 	require.True(t, results[1].ToolRoundTrip)
 	require.Equal(t, 2, business)
+	require.Equal(t, 2, probes, "the returned business STATE must not revalidate the same live route")
 	require.EqualValues(t, business+probes, count)
 	require.LessOrEqual(t, count, int32(8))
 	usage := s.Status().RecentUsage[0]
