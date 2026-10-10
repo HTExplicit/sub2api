@@ -93,7 +93,7 @@ OAuth-like accounts can be selected; the source and target lists are disjoint.
 The extension never rewrites account model mappings, proxies, WS switches,
 groups, quota or scheduling state. Normal credential refresh remains available.
 
-The protocol reference is ranxi v2.10.3 (`fd1b5ee4`), non-rotating branch.
+The protocol reference is ranxi v2.10.5 (`d977e7a5`), non-rotating branch.
 Candidates are stored per source with an active-source preference. Their maximum
 lease is 230 seconds, capped by earlier upstream expiry; seeing a value again
 while its lease is live does not extend it. Source acquisition uses the normal
@@ -111,6 +111,16 @@ headers, and generate a new legacy `session_id` per shot. The second shot carrie
 only the first probe's STATE and target `__cflb` with the same borrowed `__oailb`.
 Nothing is written back to the business session. The business request keeps its
 own model, tier, cookies, STATE and history; borrowing replaces only `__oailb`.
+Native HTTP business STATE echo follows the original provenance rule: unknown or expired
+process-local provenance preserves the caller's STATE; a live foreign-account
+record strips it. This does not relax two-shot target qualification or the
+existing WS/WS-to-HTTP bridge provenance requirements.
+
+Observations report their connect/TLS/write/header phase and attempt count.
+They may retry once only with transport trace proving a connection failure before
+HTTP request headers were written. Unobserved errors, responses, written headers,
+cancellation or an exhausted diagnostic budget forbid retry. Ordinary business
+generations retain their existing retry policy.
 
 The original cache identity includes route cookie, proxy, Authorization,
 ChatGPT-Account-ID, UA, Originator, Version, business STATE and TLS profile.
@@ -213,10 +223,24 @@ candidate owner. `probe_context.subject_role` distinguishes source self-checks
 from target checks. Self-check results do not qualify business traffic or mutate
 the source's health/status.
 
-Ranxi reference: v2.10.3 (`fd1b5ee4eeb20961fbb783fa6f136a1704271e90`). Its
+Administrator `scenario: codex_replay` accepts explicit HTTP `mode: ordinary` or
+`borrowed` and `replay: {body, headers}` for controlled task/tool comparisons.
+The JSON body is limited to 1 MiB, must select the requested model, stream with
+`store: false`, use complete history without `previous_response_id`, and carry a
+`codex-acceptance-` session in both prompt-cache and native session/thread headers.
+Only native client identity/metadata/STATE headers are accepted; auth, cookies,
+URL overrides and duplicate fields are rejected. The ordinary source control
+must use a saved source and configured model; borrowing still requires a saved
+target. Each call retains the eight-physical-attempt cap and a five-minute
+generation budget. Results return actual business `turn_state` for the next
+isolated replay turn; probe STATE is never returned or copied. The controller
+executes synthetic tools locally and preserves full-history items, rather than
+inventing tool results or executing model code in the production service.
+
+Ranxi reference: v2.10.5 (`d977e7a5e24e5536db6ce8b8478743e0c4b11f77`). Its
 fingerprint, gateway-cookie, target-probe and automatic-setup core files are
 unchanged from v2.10.2. The scoped update and retained host adaptations are
-listed in [the review](upstream-review-ranxi-v2.10.3.md). OAuth search-history compatibility
+listed in [the review](upstream-review-ranxi-v2.10.5.md). OAuth search-history compatibility
 is supplied by the official v0.2.15 integration. Automatic group membership,
 Mihomo exit rotation and removal of harvesting attempt/concurrency bounds are
 not adopted; existing account mappings, network routes and protocol switches stay

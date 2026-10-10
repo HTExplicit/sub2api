@@ -29,6 +29,8 @@ type codexBorrowProbePinnedRouteKey struct{}
 type codexBorrowSourceObservationKey struct{}
 
 type codexGatewayBorrowObservation struct {
+	transportPhase    string
+	transportAttempts int
 	routeChanged      bool
 	requestEncoding   string
 	status            int
@@ -255,6 +257,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 		return s.fireObservation(shotCtx, template.Header, account, model, "Reply with OK.", "", proxy, profile, state, cookies, HTTPUpstreamProfileCodexBorrowTarget, codexGatewayBorrowProbeMaxBody)
 	}
 	mint, err := fire("", cookies)
+	result.MintTransportPhase, result.MintTransportAttempts = mint.transportPhase, mint.transportAttempts
 	result.MintStatus, result.ReportedModel = mint.status, mint.model
 	result.MintRequestEncoding = mint.requestEncoding
 	result.MintCompleted, result.MintStateLength = mint.complete, len(mint.state)
@@ -283,6 +286,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 		}
 	}
 	continued, err := fire(mint.state, cookies)
+	result.ContinueTransportPhase, result.ContinueTransportAttempts = continued.transportPhase, continued.transportAttempts
 	result.ContinueStatus = continued.status
 	result.ContinueRequestEncoding = continued.requestEncoding
 	result.ContinueCompleted, result.ContinueStateLength = continued.complete, len(continued.state)
@@ -448,7 +452,8 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 	if shot.requestEncoding == "" {
 		shot.requestEncoding = "identity"
 	}
-	resp, err := s.upstream.DoWithTLS(wire, proxy, account.ID, account.Concurrency, profile)
+	resp, phase, attempts, err := s.sendBorrowObservationHTTP(wire, proxy, account, profile)
+	shot.transportPhase, shot.transportAttempts = phase, attempts
 	if err != nil {
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()

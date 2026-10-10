@@ -157,9 +157,10 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 	s.noteOpenAICodexTurnStateProvenance(c, account)
 }
 
-// guardOpenAICodexTurnStateEcho 出站守卫：客户端回带的 turn-state 只有在
-// 能证明由当前账号铸造时才保留。来源未知、过期、缺少会话标识或来自其他
-// 账号的值均剥离。只剥离、不注入——
+// guardOpenAICodexTurnStateEcho matches ranxi v2.10.5: strip a client's state
+// only when a live provenance record identifies another account. Process-local
+// record loss after restart or expiry is not evidence of a foreign state.
+// 只剥离已知跨账号值、不注入——
 // /responses 路径的客户端是真实 Codex，会按自身回合语义自行回带；服务端
 // 注入是 Claude 兼容桥（无法回带的客户端）的专属行为。
 func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, account *Account, h http.Header) {
@@ -173,25 +174,37 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 		h.Del(openAICodexTurnStateHeader)
 		return
 	}
+	// Native HTTP clients own their opaque continuation state. WS and its HTTP
+	// bridge retain the existing stricter anchor/provenance contract.
+	preserveUnknown := GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP ||
+		(GetOpenAIClientTransport(c) == OpenAIClientTransportUnknown && c != nil && c.Request != nil && c.Request.Method == http.MethodPost)
 	seed := openAICodexTurnStateSeed(c)
 	if seed == "" {
-		h.Del(openAICodexTurnStateHeader)
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	raw, ok := s.openaiCodexTurnStateOrigins.Load(seed)
 	if !ok {
-		h.Del(openAICodexTurnStateHeader)
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	origin, ok := raw.(openAICodexTurnStateOrigin)
 	if !ok {
 		s.openaiCodexTurnStateOrigins.Delete(seed)
-		h.Del(openAICodexTurnStateHeader)
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	if !origin.expiresAt.IsZero() && time.Now().After(origin.expiresAt) {
 		s.openaiCodexTurnStateOrigins.Delete(seed)
-		h.Del(openAICodexTurnStateHeader)
+		if !preserveUnknown {
+			h.Del(openAICodexTurnStateHeader)
+		}
 		return
 	}
 	if origin.accountID != account.ID {

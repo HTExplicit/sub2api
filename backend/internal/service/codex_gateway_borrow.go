@@ -199,27 +199,31 @@ type CodexGatewayBorrowSourceStatus struct {
 }
 
 type CodexGatewayBorrowVerification struct {
-	MintRequestEncoding     string     `json:"mint_request_encoding,omitempty"`
-	ContinueRequestEncoding string     `json:"continue_request_encoding,omitempty"`
-	RequestShape            string     `json:"request_shape,omitempty"`
-	ServiceTier             string     `json:"service_tier,omitempty"`
-	MintCompleted           bool       `json:"mint_completed"`
-	ContinueCompleted       bool       `json:"continue_completed"`
-	MintStateLength         int        `json:"mint_state_length"`
-	ContinueStateLength     int        `json:"continue_state_length"`
-	RouteChanged            bool       `json:"route_changed"`
-	AccountID               int64      `json:"account_id"`
-	Model                   string     `json:"model"`
-	Success                 bool       `json:"success"`
-	Reason                  string     `json:"reason"`
-	Error                   string     `json:"error,omitempty"`
-	MintStatus              int        `json:"mint_status"`
-	ContinueStatus          int        `json:"continue_status"`
-	Minted                  bool       `json:"minted"`
-	NewTicket               bool       `json:"new_ticket"`
-	ReportedModel           string     `json:"reported_model,omitempty"`
-	CheckedAt               time.Time  `json:"checked_at"`
-	ExpiresAt               *time.Time `json:"expires_at,omitempty"`
+	MintTransportPhase        string     `json:"mint_transport_phase,omitempty"`
+	ContinueTransportPhase    string     `json:"continue_transport_phase,omitempty"`
+	MintTransportAttempts     int        `json:"mint_transport_attempts,omitempty"`
+	ContinueTransportAttempts int        `json:"continue_transport_attempts,omitempty"`
+	MintRequestEncoding       string     `json:"mint_request_encoding,omitempty"`
+	ContinueRequestEncoding   string     `json:"continue_request_encoding,omitempty"`
+	RequestShape              string     `json:"request_shape,omitempty"`
+	ServiceTier               string     `json:"service_tier,omitempty"`
+	MintCompleted             bool       `json:"mint_completed"`
+	ContinueCompleted         bool       `json:"continue_completed"`
+	MintStateLength           int        `json:"mint_state_length"`
+	ContinueStateLength       int        `json:"continue_state_length"`
+	RouteChanged              bool       `json:"route_changed"`
+	AccountID                 int64      `json:"account_id"`
+	Model                     string     `json:"model"`
+	Success                   bool       `json:"success"`
+	Reason                    string     `json:"reason"`
+	Error                     string     `json:"error,omitempty"`
+	MintStatus                int        `json:"mint_status"`
+	ContinueStatus            int        `json:"continue_status"`
+	Minted                    bool       `json:"minted"`
+	NewTicket                 bool       `json:"new_ticket"`
+	ReportedModel             string     `json:"reported_model,omitempty"`
+	CheckedAt                 time.Time  `json:"checked_at"`
+	ExpiresAt                 *time.Time `json:"expires_at,omitempty"`
 }
 
 type CodexGatewayBorrowTargetStatus struct {

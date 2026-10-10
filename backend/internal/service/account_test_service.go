@@ -429,12 +429,20 @@ func createTestPayload(modelID string, prompts ...string) (map[string]any, error
 // modelID is optional - if empty, defaults to claude.DefaultTestModel
 // mode is optional - "compact" routes OpenAI accounts to the /responses/compact probe path
 // opts is optional media (image/audio data URLs for real generation / STT).
-func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, mode string, opts ...AccountTestOptions) error {
+func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, mode string, opts ...AccountTestOptions) (testErr error) {
 	if err := ValidateAccountTextTestPrompt(prompt, modelID, mode); err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
 	c.Set(accountTestPromptContextKey, prompt)
 	initAccountTestLogger(c, accountID, modelID, mode)
+	stopKeepalive := startAccountTestSSEKeepalive(c, 10*time.Second)
+	defer func() {
+		// A failed downstream write cancels the observation, never its owner.
+		if testErr == nil && !c.GetBool("account_test_completion_committed") {
+			testErr = c.Request.Context().Err()
+		}
+		stopKeepalive()
+	}()
 	ctx := c.Request.Context()
 	testOpts := firstAccountTestOptions(opts)
 
@@ -3186,6 +3194,9 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", eventJSON); err != nil {
 		log.Printf("failed to write SSE event: %v", err)
 		return
+	}
+	if event.Type == "test_complete" && event.Success {
+		c.Set("account_test_completion_committed", true)
 	}
 	c.Writer.Flush()
 }
