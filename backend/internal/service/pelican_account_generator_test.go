@@ -149,7 +149,7 @@ func TestPelicanAccountGeneratorSharedOpenAISettings(t *testing.T) {
 			require.Equal(t, "socks5://127.0.0.1:19090", upstream.proxies[0])
 			require.Equal(t, []string{"saved-identity"}, upstream.requests[0].Header[resolveWireCasing("x-account-identity")])
 			require.Equal(t, target, gjson.GetBytes(upstream.bodies[0], "model").String())
-			require.Equal(t, "high", gjson.GetBytes(upstream.bodies[0], "reasoning.effort").String())
+			require.False(t, gjson.GetBytes(upstream.bodies[0], "reasoning.effort").Exists(), "omitted effort preserves the model default")
 			require.Contains(t, string(upstream.bodies[0]), CodexGatewayBorrowPelicanPrompt)
 			require.Contains(t, string(upstream.bodies[0]), "saved site instructions")
 			require.Greater(t, gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Int(), int64(1024))
