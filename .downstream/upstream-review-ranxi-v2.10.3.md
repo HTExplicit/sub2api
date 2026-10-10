@@ -29,6 +29,15 @@ Official Wei-Shaw v0.2.15 is already integrated; do not merge it again.
 - Extra cache keys and business-tier injection into the fixed target probe.
 - Target rejection forcing a fresh source candidate and retry in the non-rotation path.
 - Separate source/target HTTP manager configuration copies and custom TLS policy.
+- Displacing a live active source with a backup or failing refresh despite a
+  still-valid primary/backup. Original active-source preference is retained.
+- Stopping target probes at an early terminal instead of reading their bounded
+  body to EOF and applying the original completion/event-delimiter validator.
+  Ordinary business/Pelican streaming retains its own completion behavior.
+- Accepting a source session cookie without expiry, or a non-SSE source response.
+- Scope-filtering target route replacement and waiting for its body before rejection.
+  The target probe now uses the original header-time route check and first usable
+  `__cflb` rule; only sources enforce the original Secure/domain/path/expiry filter.
 
 Source alignment and offline regression do not prove successful live borrowing.
 Production and live acceptance are recorded separately in the deployment evidence.
