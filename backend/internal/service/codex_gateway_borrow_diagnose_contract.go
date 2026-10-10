@@ -19,6 +19,7 @@ const (
 	codexBorrowProbeCurrent      = "current_final_tier"
 	codexBorrowProbePlain        = "current_plaintext"
 	codexBorrowProbeConfigured   = "current_configured_encoding"
+	codexBorrowProbeLegacySorted = "legacy_sorted_final_tier"
 )
 
 // These are observations of one fixed candidate, never qualifications usable
@@ -96,9 +97,11 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 	setOpenAICodexRoutingHint(template.Header, account, request.Model, finalTier)
 	template = template.WithContext(withCodexBorrowServiceTier(ctx, finalTier))
 	identity := borrowRequestFingerprint(template, request.Model, proxy, nil, candidate.cookie.Value)
-	shapes := []string{codexBorrowProbeRanxiLiteral, codexBorrowProbeRanxiTier, codexBorrowProbeCurrent}
+	// Reverse the earlier comparison: the legacy serializer runs first, so a
+	// later transient failure cannot always be confused with its field order.
+	shapes := []string{codexBorrowProbeLegacySorted, codexBorrowProbeCurrent, codexBorrowProbeRanxiLiteral}
 	if finalTier == "" {
-		shapes = []string{codexBorrowProbeRanxiLiteral, codexBorrowProbeCurrent}
+		shapes = []string{codexBorrowProbeLegacySorted, codexBorrowProbeCurrent}
 	}
 	if request.Comparison == "encoding" {
 		shapes = []string{codexBorrowProbePlain, codexBorrowProbeConfigured}
@@ -122,7 +125,7 @@ func (s *CodexGatewayBorrowService) diagnoseProbeContract(ctx context.Context, r
 		started := time.Now()
 		verification := s.probeTarget(operation, variant, account, request.Model, proxy, nil, candidate)
 		body := borrowRanxiLiteralPayload(request.Model, tier)
-		if shape == codexBorrowProbeCurrent || request.Comparison == "encoding" {
+		if shape == codexBorrowProbeLegacySorted {
 			body = borrowObservationPayload(request.Model, "Reply with OK.", "", tier)
 		}
 		result := CodexBorrowDiagnosticResult{Scenario: "probe_contract", Mode: "borrowed", ProbeOnly: true,
