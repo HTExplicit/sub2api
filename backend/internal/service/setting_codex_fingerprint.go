@@ -50,6 +50,7 @@ var codexFingerprintAccountEpoch atomic.Uint64
 // Account mode edits invalidate only that account's subsequent WS handshakes.
 func notifyCodexFingerprintAccountChanged(accountID int64) {
 	codexFingerprintAccountEpochs.Store(accountID, codexFingerprintAccountEpoch.Add(1))
+	cancelBorrowPolicyObservers(accountID)
 }
 
 func currentCodexFingerprintPolicyForAccount(account *Account) *codexFingerprintPolicy {
@@ -193,10 +194,14 @@ func (s *SettingService) codexFingerprintSettingsFromValues(values map[string]st
 }
 
 func publishCodexFingerprintSettings(view CodexFingerprintSettingsView) {
+	previousPolicy := currentCodexFingerprintPolicy()
 	publishedCodexFingerprintPolicy.Store(&codexFingerprintPolicy{
 		enabled: view.Enabled, userAgent: view.EffectiveUserAgent,
 		revision: codexFingerprintPolicyRevision(view.Enabled, view.EffectiveUserAgent),
 	})
+	if currentCodexFingerprintPolicy().revision != previousPolicy.revision {
+		cancelBorrowPolicyObservers(0)
+	}
 }
 
 func (s *SettingService) GetCodexFingerprintSettings(ctx context.Context) (CodexFingerprintSettingsView, error) {

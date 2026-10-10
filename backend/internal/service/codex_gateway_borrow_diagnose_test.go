@@ -216,7 +216,7 @@ func testCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T, tier string) {
 	})
 	s := NewCodexGatewayBorrowService(nil, repo, gateway, borrowCoreProbe(func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 		probes++
-		assert.Equal(t, tier, gjson.GetBytes(borrowCoreBody(t, req), "service_tier").String())
+		assert.False(t, gjson.GetBytes(borrowCoreBody(t, req), "service_tier").Exists())
 		return borrowCoreResponse("gpt-6.1-sol", "OK", "probe-state"), nil
 	}), nil)
 	s.publishConfig(CodexGatewayBorrowConfig{Enabled: true, SourceAccountIDs: []int64{1}, TargetAccountIDs: []int64{2}, Models: []string{"gpt-6.1-sol"}}, false)
@@ -240,7 +240,7 @@ func testCodexBorrowDiagnoseHTTPToolContinuation(t *testing.T, tier string) {
 	}
 	require.True(t, results[1].ToolRoundTrip)
 	require.Equal(t, 2, business)
-	require.Equal(t, 2, probes, "the returned business STATE must not revalidate the same live route")
+	require.Equal(t, 4, probes, "original qualification identity includes the returned business STATE")
 	require.EqualValues(t, business+probes, count)
 	require.LessOrEqual(t, count, int32(8))
 	usage := s.Status().RecentUsage[0]

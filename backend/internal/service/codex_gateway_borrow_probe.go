@@ -1,7 +1,7 @@
 package service
 
 // Adapted from the scoped-cookie and STATE probe protocol in ranxi2001/sub2api,
-// commit 5ca3cca21eeaf4ca8a694a7f2f8f0ecd9575c549 (LGPL-3.0), specifically
+// commit fd1b5ee4eeb20961fbb783fa6f136a1704271e90 (LGPL-3.0), specifically
 // backend/internal/service/openai_codex_state_probe.go. These are observation
 // requests: no normal response handlers, quota writes, recovery or health hooks.
 
@@ -102,6 +102,8 @@ func (s *CodexGatewayBorrowService) accountTemplate(ctx context.Context, id int6
 }
 
 func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64) (*codexGatewayBorrowCandidate, string, error) {
+	ctx, policyCancel := borrowPolicyContext(ctx, id, currentCodexFingerprintPolicyForAccount(&Account{ID: id}).revision)
+	defer policyCancel()
 	a, template, proxy, err := s.accountTemplate(ctx, id, codexGatewayBorrowSourceModel)
 	if err != nil {
 		return nil, err.Error(), err
@@ -211,13 +213,18 @@ func borrowCandidateFromCookies(cookies []*http.Cookie, path string, now time.Ti
 func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *http.Request, account *Account, model, proxy string, profile *tlsfingerprint.Profile, candidate *codexGatewayBorrowCandidate) CodexGatewayBorrowVerification {
 	ctx = withCodexBorrowPlainProbe(ctx)
 	expires := candidate.expires
-	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: "ranxi_full", ServiceTier: codexBorrowRequestServiceTier(template)}
+	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: codexBorrowProbeRanxiLiteral}
 	if shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string); shape != "" {
 		result.RequestShape = shape
 	} else {
 		// The pinned verdict was measured with this fixed byte template, not a
-		// generic map serializer. Keep the selected model and final tier exact.
-		ctx = context.WithValue(ctx, codexBorrowProbeShapeContextKey{}, codexBorrowProbeRanxiTier)
+		// generic map serializer. Only the selected model is parameterized.
+		ctx = context.WithValue(ctx, codexBorrowProbeShapeContextKey{}, codexBorrowProbeRanxiLiteral)
+	}
+	// Business tier stays on the real request; the original probe has none.
+	shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string)
+	if shape != codexBorrowProbeRanxiLiteral {
+		result.ServiceTier = codexBorrowRequestServiceTier(template)
 	}
 	ctx = withCodexBorrowServiceTier(ctx, result.ServiceTier)
 	// A two-shot STATE verdict is one observation. Releasing account capacity

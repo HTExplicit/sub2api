@@ -12,7 +12,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestCodexBorrowQualificationSeparatesModelOnlyRoutingTiers(t *testing.T) {
+func TestCodexBorrowPinnedProbeKeepsBusinessTierOutOfQualification(t *testing.T) {
 	account := borrowCoreAccount(2)
 	var received []string
 	s := newBorrowCoreTest(t, func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
@@ -26,14 +26,12 @@ func TestCodexBorrowQualificationSeparatesModelOnlyRoutingTiers(t *testing.T) {
 	require.NoError(t, err)
 	for _, tier := range []string{"default", "auto", "scale", ""} {
 		wire := req.WithContext(withCodexBorrowServiceTier(req.Context(), tier))
-		_, _, err := s.Apply(wire, account, "gpt-6.1-sol", "", nil, true)
-		require.Error(t, err, "identical routing hints must not share another tier's proof")
 		_, applied, err := s.Apply(wire, account, "gpt-6.1-sol", "", nil, false)
 		require.NoError(t, err)
-		require.Equal(t, tier, applied.Verification.ServiceTier)
+		require.Empty(t, applied.Verification.ServiceTier)
 	}
-	require.Equal(t, []string{"default", "default", "auto", "auto", "scale", "scale", "", ""}, received)
+	require.Equal(t, []string{"", ""}, received)
 	_, _, err = s.Apply(req.WithContext(withCodexBorrowServiceTier(req.Context(), "default")), account, "gpt-6.1-sol", "", nil, true)
 	require.NoError(t, err, "the first tier's independent successful proof remains reusable")
-	require.Len(t, received, 8)
+	require.Len(t, received, 2)
 }

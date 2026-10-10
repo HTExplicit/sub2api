@@ -93,49 +93,34 @@ OAuth-like accounts can be selected; the source and target lists are disjoint.
 The extension never rewrites account model mappings, proxies, WS switches,
 groups, quota or scheduling state. Normal credential refresh remains available.
 
-Source acquisition shares one process-local `__oailb` candidate. Its maximum
-lease is 230 seconds, capped by an earlier upstream expiry; receiving the same
-value during a live lease does not extend it. Source preparation is sequential
-and uses the ordinary OAuth account-test payload (default instructions, fixed
-short user prompt, medium effort), with its own configured normal connection
-policy. It does not inherit target-probe session/window headers, routing hints,
-encrypted-output options or connection-close behavior.
-Source acquisition and the target's two STATE shots preserve the pinned
-plaintext-JSON wire protocol. They do not enter the business zstd encoder after
-clearing old body headers. This leaves the saved compression setting and normal
-generation unchanged. Candidate status records `source_request_encoding`, and
-verification records the actual encoding of each shot.
-Target probes use the pinned byte template with the actual selected model and
-effective tier. Continuation keeps the target's `__cflb` before the fixed borrowed
-`__oailb`, as the pinned replacement helper does. Ordinary business bodies and
-cookie ordering are unchanged.
-It has a 90-second budget. Each target/model is validated with two completed
-HTTP 200 streams, at most 45 seconds each: the first must return STATE, and
-the second may omit STATE or return the same value. Qualification includes
-the target identity, actual model, exit, client headers and TLS profile.
-The probe clears the business STATE and validates its own two-shot STATE, so
-echoing the next business STATE does not invalidate an otherwise identical live
-proof. The sender keeps that exact business STATE and its existing continuation
-isolation. Native session/window identity, model, tier, exit and the original
-candidate expiry still constrain reuse; no credential gains a longer lease.
-Target probes preserve the template's native session/thread/window headers and
-generate only a fresh legacy `session_id` for each shot, matching ranxi's full
-probe contract. The effective service tier in the gateway-owned routing hint is
-also included in the probe body. Proofs include native identity and routing
-headers; per-request tracing IDs do not invalidate them. Manual templates use a
-stable synthetic window per account/model so cached-only generation can reuse
-their proof without changing actual client windows. The pinned upstream's
-HTTP borrowing is Astra-only: Sol is a downstream extension, independently
-validated against Sol rather than certified by an Astra pass.
-When both completed target shots reject a candidate's STATE or the upstream
-replaces its route, a request may acquire and validate one replacement through
-the existing source/proxy configuration. Replacement is capped at 90 seconds and
-never retires a candidate with another live successful proof or validation in
-flight. Another rejection cools acquisition for 15 seconds. Receiving the same
-rejected cookie cannot renew or qualify it. This remains demand-driven, with no
-exit rotation, renewal timer, ordinary fallback or business replay.
-Source and target probes use separate HTTP/TLS pools. Business WS connections
-stay in the ordinary account pool, with fixed one-hour continuation anchors.
+The protocol reference is ranxi v2.10.3 (`fd1b5ee4`), non-rotating branch.
+Candidates are stored per source with an active-source preference. Their maximum
+lease is 230 seconds, capped by earlier upstream expiry; seeing a value again
+while its lease is live does not extend it. Source acquisition uses the normal
+OAuth account-test payload and OpenAI transport. Target probes use the fixed
+plaintext JSON template and the host's OpenAIHarvest policy, with no copied
+transport configuration and no business service tier inserted into their body.
+The actual selected model is preserved: Astra follows the original; Sol is a
+separate downstream model extension with independent qualification.
+
+Source acquisition has a 90-second bound. The two target probes have 45 seconds
+each and require completed HTTP 200 streams. The first must return STATE; the
+second may omit it or return the same value. Probes clone the business headers,
+clear business STATE and old body headers, preserve native session/thread/window
+headers, and generate a new legacy `session_id` per shot. The second shot carries
+only the first probe's STATE and target `__cflb` with the same borrowed `__oailb`.
+Nothing is written back to the business session. The business request keeps its
+own model, tier, cookies, STATE and history; borrowing replaces only `__oailb`.
+
+The original cache identity includes route cookie, proxy, Authorization,
+ChatGPT-Account-ID, UA, Originator, Version, business STATE and TLS profile.
+The host adds actual model and fingerprint policy revision. Trace IDs, native
+session headers and business tier are not additional cache rules. STATE changes
+therefore require fresh validation. A failed target cools that qualification for
+15 seconds; it does not discard a source candidate or force a replacement attempt.
+After cooldown the next request may validate again; missing or expired candidates
+are acquired on demand. There is no renewal timer, exit rotation, ordinary fallback
+or business replay. Business WS keeps its existing continuation anchors.
 
 Status/config/history reads do not call models. Saving an enabled config starts
 one finite preparation; business misses prepare on demand. There is no renewal
@@ -152,10 +137,10 @@ partial readiness after rechecking
 expiry. Policy, credential/model-map and exit changes invalidate displayed evidence;
 actual dispatch still verifies the finalized request fingerprint.
 
-The effective service tier travels from the finalized HTTP body or WS frame in
-local request context into both qualification and its cache key. Explicit
-`default`, `auto` and `scale` remain distinct even though their routing hints are
-model-only. No internal tier header is sent upstream.
+The finalized business service tier stays in request context for diagnostics.
+Probe and business inputs are reported separately. `acquisition` reports the
+source trigger, stage, start/end time, failure and cooldown; each target also
+reports its latest validation interval. A source candidate is not target proof.
 
 Status adds `setup`, `observed_since` and `recent_usage`. The last actual dispatch
 and in-process counters are retained per configured target/model/protocol/purpose;

@@ -57,7 +57,8 @@ func (s *CodexGatewayBorrowService) GeneratePelican(ctx context.Context, account
 	rev, revisionCtx := s.revision, s.revisionCtx
 	s.mu.Unlock()
 	s.mu.Lock()
-	cached := s.candidate != nil && time.Now().Before(s.candidate.expires)
+	candidate := s.currentCandidateLocked()
+	cached := candidate != nil && time.Now().Before(candidate.expires)
 	s.mu.Unlock()
 	if !cached {
 		result.Error = "qualified route cache is missing or expired"
@@ -87,7 +88,7 @@ func (s *CodexGatewayBorrowService) GeneratePelican(ctx context.Context, account
 		return result, nil
 	}
 	s.mu.Lock()
-	valid := s.revision == rev && revisionCtx.Err() == nil && s.candidate != nil && borrowHash(s.candidate.cookie.Value) == applied.CookieFingerprint && s.candidate.expires.After(time.Now())
+	valid := s.revision == rev && revisionCtx.Err() == nil && s.liveCookieLocked(applied.CookieFingerprint)
 	s.mu.Unlock()
 	if !valid {
 		result.Error = "gateway borrow configuration or route changed before dispatch"

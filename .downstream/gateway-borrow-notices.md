@@ -6,6 +6,9 @@ commit `5ca3cca21eeaf4ca8a694a7f2f8f0ecd9575c549`, under LGPL-3.0. The source
 files are `codex_gateway_pin.go`, `astra_routing_upstream.go`,
 `astra_target_validation.go`, `openai_codex_state_probe.go`,
 `openai_codex_ws_anchor.go`, `pelicanHtml.ts` and the pelican preview components.
+The non-rotating source/target protocol was subsequently realigned with v2.10.3,
+commit `fd1b5ee4eeb20961fbb783fa6f136a1704271e90`; retained host adaptations
+are listed in [the scoped review](upstream-review-ranxi-v2.10.3.md).
 The repository [LICENSE](../LICENSE) retains the LGPL-3.0 terms.
 
 HTML fence selection also references `web/src/lib/render.ts` from
