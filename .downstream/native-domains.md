@@ -188,6 +188,20 @@ items when the final successful envelope has empty output; a successful terminal
 is still required. This matches native streaming continuation instead of assuming
 all output is repeated inside `response.completed`.
 
+The HTTP-only `scenario: probe_contract` compares a fixed candidate under three
+request bodies: pinned ranxi field order without a tier, that same body with the
+effective tier, and the current body with the same tier. With no requested tier,
+the redundant middle pair is skipped. Native identity, routing hint, model,
+proxy and cookie stay fixed; each shot still gets its own legacy `session_id`.
+The original probe selects Astra; the result explicitly marks Sol as a downstream
+model extension. `probe_only: true` results carry per-shot completion and STATE
+facts under `verification`, and their common template/cookie and plaintext-body
+fingerprints under `probe_context`. Top-level business dispatch, application and
+completion stay false. These comparisons never publish business qualifications
+or replace real usage observations. Source acquisition and all shots share the
+existing eight-request cap; the snapshot's expiry cancels remaining comparisons
+without silently selecting a different candidate. Page reads do not invoke it.
+
 Ranxi reference: v2.10.2 (`d3e43f2de33af9e987cffa511d76dfabbcd749da`). Its five
 fingerprint, gateway-cookie, target-probe and automatic-setup core files are
 unchanged from the retained v2.10.0 reference. OAuth search-history compatibility
