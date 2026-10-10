@@ -152,7 +152,64 @@ export async function streamPelicanTests(
   }
 }
 
+export interface PelicanResultSummary {
+  id: string; task_id: string; ordinal: number; account_id: number; account_name: string
+  platform: string; model_id: string; effort: string; status: string; phase?: PelicanPhase
+  has_preview: boolean; interrupted: boolean; started_at?: string; finished_at?: string
+  generation_started_at?: string; duration_ms: number; queue_duration_ms: number
+  preparation_duration_ms: number; generation_duration_ms: number; expires_at: string
+}
+export interface PelicanTaskSnapshot extends PelicanTestTask { prompt: string; counts: Record<string, number> }
+export interface PelicanResultPage { items: PelicanResultSummary[]; total: number; page: number; page_size: number }
+export interface PelicanResultFilter { page?: number; page_size?: number; account_id?: number; model?: string; status?: string }
+export interface PelicanTaskEvent { type: 'snapshot' | 'task_complete'; task: PelicanTaskSnapshot }
+
+export async function observePelicanTask(id: string, onEvent: (event: PelicanTaskEvent) => void, signal: AbortSignal): Promise<void> {
+  const token = localStorage.getItem('auth_token')
+  const response = await fetch(buildApiUrl(`${basePath}/tasks/${encodeURIComponent(id)}/events`), {
+    method: 'GET', credentials: 'include', signal,
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), Accept: 'text/event-stream', [ADMIN_UI_REQUEST_HEADER]: '1' }
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+  if (!response.body) throw new Error('Task observation has no response body')
+  const reader = response.body.getReader(), decoder = new TextDecoder()
+  let buffer = '', complete = false
+  const abort = () => { void reader.cancel().catch(() => {}) }
+  signal.addEventListener('abort', abort, { once: true })
+  try {
+    while (!complete && !signal.aborted) {
+      const { value, done } = await reader.read()
+      if (signal.aborted) return
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+      let boundary: RegExpExecArray | null
+      while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
+        const block = buffer.slice(0, boundary.index)
+        buffer = buffer.slice(boundary.index + boundary[0].length)
+        const data = block.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+        if (!data) continue
+        const event = JSON.parse(data) as PelicanTaskEvent
+        if (event.type !== 'snapshot' && event.type !== 'task_complete') continue
+        onEvent(event)
+        if (event.type === 'task_complete') { complete = true; break }
+      }
+      if (done) break
+    }
+    if (!complete && !signal.aborted) throw new Error('Task observation disconnected')
+  } finally {
+    signal.removeEventListener('abort', abort)
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+}
+
 export const pelicanTestsAPI = {
+  startTask: async (request: PelicanTestRequest, signal?: AbortSignal) => (await apiClient.post<PelicanTaskSnapshot>(`${basePath}/tasks`, request, { signal })).data,
+  listTasks: async (page = 1, signal?: AbortSignal) => (await apiClient.get<PelicanTestHistory>(`${basePath}/tasks`, { params: { page, page_size: 12 }, signal })).data,
+  getTask: async (id: string, signal?: AbortSignal) => (await apiClient.get<PelicanTaskSnapshot>(`${basePath}/tasks/${encodeURIComponent(id)}`, { signal })).data,
+  getResults: async (id: string, filters: PelicanResultFilter = {}, signal?: AbortSignal) => (await apiClient.get<PelicanResultPage>(`${basePath}/tasks/${encodeURIComponent(id)}/results`, { params: { page: 1, page_size: 24, ...filters }, signal })).data,
+  getResult: async (task: string, id: string, signal?: AbortSignal) => (await apiClient.get<PelicanTestResult>(`${basePath}/tasks/${encodeURIComponent(task)}/results/${encodeURIComponent(id)}`, { signal })).data,
+  cancelTask: async (id: string) => (await apiClient.post<PelicanTaskSnapshot>(`${basePath}/tasks/${encodeURIComponent(id)}/cancel`)).data,
+  observeTask: observePelicanTask,
   getOptions: async (signal?: AbortSignal) => (await apiClient.get<PelicanOptions>(`${basePath}/options`, { signal })).data,
   getAccountOptions: async (accountIds: number[], signal?: AbortSignal) => (await apiClient.post<PelicanOptions>(`${basePath}/options`, { account_ids: accountIds }, { signal })).data,
   listTests: async (page = 1, signal?: AbortSignal) => (await apiClient.get<PelicanTestHistory>(`${basePath}/tests`, { params: { page, size: 12 }, signal })).data,

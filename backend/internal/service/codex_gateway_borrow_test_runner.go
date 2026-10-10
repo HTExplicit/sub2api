@@ -126,6 +126,10 @@ type codexGatewayBorrowAccountReader interface {
 // All batches, including legacy cache-only tests, share ten outbound execution
 // slots. Account leases surround actual requests rather than route preparation.
 type CodexGatewayBorrowTestRunner struct {
+	submissionMu        sync.Mutex
+	backgroundMu        sync.Mutex
+	background          map[string]*pelicanBackgroundTask
+	backgroundRunning   sync.WaitGroup
 	repo                CodexGatewayBorrowTestRepository
 	generator           codexGatewayBorrowPelicanGenerator
 	standaloneGenerator codexGatewayBorrowPelicanGenerator
@@ -141,6 +145,7 @@ type CodexGatewayBorrowTestRunner struct {
 	running             sync.WaitGroup
 	stopped             bool
 	activeTasks         map[string]bool
+	activeCancels       map[string]context.CancelFunc
 	now                 func() time.Time
 	generationContext   func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
@@ -171,6 +176,9 @@ func (r *CodexGatewayBorrowTestRunner) Stop() {
 		r.stop()
 		r.runMu.Unlock()
 		<-r.cleanupDone
+		r.submissionMu.Lock()
+		r.backgroundRunning.Wait()
+		r.submissionMu.Unlock()
 		r.running.Wait()
 	})
 }
@@ -255,16 +263,7 @@ func normalizeCodexGatewayBorrowTestRequest(request CodexGatewayBorrowTestReques
 	return request, nil
 }
 
-// Create commits the task and all pending children before Run can dispatch.
-// The repository's unique client UUID is the final guard against concurrent POSTs.
-func (r *CodexGatewayBorrowTestRunner) Create(ctx context.Context, createdBy int64, request CodexGatewayBorrowTestRequest) (*CodexGatewayBorrowTestTask, bool, error) {
-	request, err := normalizeCodexGatewayBorrowTestRequest(request, r.now().UTC())
-	if err != nil {
-		return nil, false, err
-	}
-	if err = r.initialize(ctx); err != nil {
-		return nil, false, err
-	}
+func codexGatewayBorrowTestRequestHash(request CodexGatewayBorrowTestRequest) string {
 	mode := PelicanExecutionModeLegacyCache
 	if request.Standalone {
 		mode = PelicanExecutionModeAccount
@@ -281,9 +280,26 @@ func (r *CodexGatewayBorrowTestRunner) Create(ctx context.Context, createdBy int
 		}{request.Targets, request.GenerationTimeoutSeconds, mode})
 	}
 	hash := sha256.Sum256(raw)
+	return hex.EncodeToString(hash[:])
+}
+
+// Create commits the task and all pending children before Run can dispatch.
+// The repository's unique client UUID is the final guard against concurrent POSTs.
+func (r *CodexGatewayBorrowTestRunner) Create(ctx context.Context, createdBy int64, request CodexGatewayBorrowTestRequest) (*CodexGatewayBorrowTestTask, bool, error) {
+	request, err := normalizeCodexGatewayBorrowTestRequest(request, r.now().UTC())
+	if err != nil {
+		return nil, false, err
+	}
+	if err = r.initialize(ctx); err != nil {
+		return nil, false, err
+	}
+	mode := PelicanExecutionModeLegacyCache
+	if request.Standalone {
+		mode = PelicanExecutionModeAccount
+	}
 	now := r.now().UTC()
 	task := &CodexGatewayBorrowTestTask{ID: uuid.NewString(), ClientTaskID: request.ClientTaskID,
-		CreatedBy: createdBy, RequestHash: hex.EncodeToString(hash[:]), Status: "pending",
+		CreatedBy: createdBy, RequestHash: codexGatewayBorrowTestRequestHash(request), Status: "pending",
 		GenerationTimeoutSeconds: request.GenerationTimeoutSeconds, ExecutionMode: mode,
 		Prompt: CodexGatewayBorrowPelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(CodexGatewayBorrowTestTTL),
 		Total: len(request.Targets), Results: make([]*CodexGatewayBorrowTestResult, 0, len(request.Targets))}
@@ -307,7 +323,9 @@ func (r *CodexGatewayBorrowTestRunner) Create(ctx context.Context, createdBy int
 	}
 	stored, replayed, err := r.repo.Create(ctx, task)
 	if stored != nil {
-		stored.Replayed = replayed
+		copy := *stored
+		copy.Replayed = replayed
+		stored = &copy
 	}
 	return stored, replayed, err
 }
@@ -344,7 +362,7 @@ func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGa
 	}
 	if r.stopped {
 		r.runMu.Unlock()
-		return r.finishUnstarted(parent, task, "cancelled", "test runner stopped", emit)
+		return r.finishUnstarted(parent, task, "incomplete", pelicanInterruptedMessage, emit)
 	}
 	r.running.Add(1)
 	r.activeTasks[task.ID] = true
@@ -352,11 +370,18 @@ func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGa
 	defer func() {
 		r.runMu.Lock()
 		delete(r.activeTasks, task.ID)
+		delete(r.activeCancels, task.ID)
 		r.runMu.Unlock()
 		r.running.Done()
 	}()
 	ctx, cancel := context.WithDeadline(parent, task.ExpiresAt)
 	defer cancel()
+	r.runMu.Lock()
+	if r.activeCancels == nil {
+		r.activeCancels = make(map[string]context.CancelFunc)
+	}
+	r.activeCancels[task.ID] = cancel
+	r.runMu.Unlock()
 	stopLink := context.AfterFunc(r.stopCtx, cancel)
 	defer stopLink()
 	started := r.now().UTC()
@@ -425,6 +450,9 @@ func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGa
 				}
 				result.Error += "generation budget exhausted"
 			}
+			if r.stopCtx.Err() != nil && result.Status != "complete" {
+				result.Status, result.Error, result.PreviewUnavailable = "incomplete", pelicanInterruptedMessage+"\n"+result.Error, "test interrupted"
+			}
 			writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
 			writeErr := r.repo.SaveResult(writeCtx, result)
 			writeCancel()
@@ -443,6 +471,9 @@ func (r *CodexGatewayBorrowTestRunner) Run(parent context.Context, task *CodexGa
 	finished := r.now().UTC()
 	task.FinishedAt, task.Completed = &finished, len(task.Results)
 	task.Status = codexGatewayBorrowTaskStatus(task.Results, ctx.Err() != nil)
+	if r.stopCtx.Err() != nil && task.Status != "complete" {
+		task.Status, task.Error = "incomplete", pelicanInterruptedMessage
+	}
 	if len(persistenceErrors) > 0 {
 		task.Status, task.Error = "incomplete", strings.Join(persistenceErrors, "\n")
 	}
