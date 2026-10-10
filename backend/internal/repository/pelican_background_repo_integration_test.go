@@ -66,7 +66,7 @@ func TestPelicanBackgroundSummaryPaginationRetainsFullDetails(t *testing.T) {
 	full, err = repo.GetResult(ctx, first.ID)
 	require.NoError(t, err)
 	require.Equal(t, "complete", full.Status)
-	_, err = db.ExecContext(ctx, "UPDATE codex_gateway_borrow_test_tasks SET created_at=$2 - INTERVAL '24 hours',expires_at=$2 WHERE id=$1", task.ID, time.Now().Add(-time.Second))
+	_, err = db.ExecContext(ctx, "UPDATE codex_gateway_borrow_test_tasks SET created_at=$2::timestamptz - INTERVAL '24 hours',expires_at=$2::timestamptz WHERE id=$1", task.ID, time.Now().Add(-time.Second))
 	require.NoError(t, err)
 	_, err = reader.GetTaskSnapshot(ctx, task.ID)
 	require.ErrorIs(t, err, service.ErrCodexGatewayBorrowTestNotFound)
