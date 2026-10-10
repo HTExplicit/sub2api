@@ -26,6 +26,7 @@ const codexGatewayBorrowProbeMaxBody = 1 << 20
 const codexGatewayBorrowPelicanMaxBody = 32 << 20
 
 type codexGatewayBorrowObservation struct {
+	requestEncoding   string
 	status            int
 	state             string
 	model             string
@@ -125,6 +126,7 @@ func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64)
 		return nil, "routing cookie missing, invalid, deleted or expired", errors.New("source_routing_cookie_unavailable")
 	}
 	candidate.sourceID = id
+	candidate.sourceRequestEncoding = shot.requestEncoding
 	return candidate, "", nil
 }
 
@@ -135,6 +137,7 @@ func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64)
 // closed. The source keeps its own configured OpenAI transport and proxy.
 func borrowSourceObservationRequest(ctx context.Context, headers http.Header) (*http.Request, error) {
 	ctx = WithCodexGatewayBorrowObservation(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, HTTPUpstreamProfileCodexBorrowSource)))
+	ctx = context.WithValue(ctx, codexBorrowProbeConfiguredEncodingKey{}, false)
 	payload := createOpenAITestPayload(codexGatewayBorrowSourceModel, true, "Reply with OK only.")
 	payload["reasoning"] = map[string]string{"effort": "medium"}
 	body, err := json.Marshal(payload)
@@ -206,6 +209,7 @@ func borrowCandidateFromCookies(cookies []*http.Cookie, path string, now time.Ti
 }
 
 func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *http.Request, account *Account, model, proxy string, profile *tlsfingerprint.Profile, candidate *codexGatewayBorrowCandidate) CodexGatewayBorrowVerification {
+	ctx = withCodexBorrowPlainProbe(ctx)
 	expires := candidate.expires
 	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: "ranxi_full", ServiceTier: codexBorrowRequestServiceTier(template)}
 	if shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string); shape != "" {
@@ -230,6 +234,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	}
 	mint, err := fire("", cookies)
 	result.MintStatus, result.ReportedModel = mint.status, mint.model
+	result.MintRequestEncoding = mint.requestEncoding
 	result.MintCompleted, result.MintStateLength = mint.complete, len(mint.state)
 	if err != nil || !borrowShotUsable(mint) {
 		result.Error = borrowObservationError(mint, err)
@@ -255,6 +260,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	}
 	continued, err := fire(mint.state, cookies)
 	result.ContinueStatus = continued.status
+	result.ContinueRequestEncoding = continued.requestEncoding
 	result.ContinueCompleted, result.ContinueStateLength = continued.complete, len(continued.state)
 	if continued.model != "" {
 		result.ReportedModel = continued.model
@@ -406,9 +412,17 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 		}
 		defer releaseCapacity()
 	}
-	wire, err := prepareOpenAICodexWireRequest(req, account)
-	if err != nil {
-		return shot, err
+	wire := req
+	if configured, probe := req.Context().Value(codexBorrowProbeConfiguredEncodingKey{}).(bool); !probe || configured {
+		var err error
+		wire, err = prepareOpenAICodexWireRequest(req, account)
+		if err != nil {
+			return shot, err
+		}
+	}
+	shot.requestEncoding = strings.TrimSpace(wire.Header.Get("Content-Encoding"))
+	if shot.requestEncoding == "" {
+		shot.requestEncoding = "identity"
 	}
 	resp, err := s.upstream.DoWithTLS(wire, proxy, account.ID, account.Concurrency, profile)
 	if err != nil {

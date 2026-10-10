@@ -72,6 +72,7 @@ func consumeBorrowDiagnosticRequest(ctx context.Context) error {
 }
 
 type CodexBorrowDiagnosticRequest struct {
+	Comparison   string `json:"comparison,omitempty"`
 	Scenario     string `json:"scenario,omitempty"`
 	Mode         string `json:"mode,omitempty"`
 	ServiceTier  string `json:"service_tier,omitempty"`
@@ -127,6 +128,9 @@ func (s *CodexGatewayBorrowService) Diagnose(ctx context.Context, request CodexB
 	}
 	if request.Scenario == "probe_contract" && (request.Transport != "http" || request.Mode == "ordinary") {
 		return errors.New("probe_contract requires borrowed HTTP observations")
+	}
+	if request.Comparison != "" && (request.Scenario != "probe_contract" || (request.Comparison != "body" && request.Comparison != "encoding")) {
+		return errors.New("comparison must be body or encoding in probe_contract")
 	}
 	if request.ServiceTier != "" && request.ServiceTier != "default" && request.ServiceTier != OpenAIFastTierPriority && request.ServiceTier != OpenAIFastTierFlex && request.ServiceTier != OpenAIFastTierUltrafast {
 		return errors.New("unsupported service_tier")
