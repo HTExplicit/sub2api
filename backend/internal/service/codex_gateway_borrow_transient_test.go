@@ -102,7 +102,10 @@ func TestCodexGatewayBorrowTransientEOFFreshPairOnNextRequest(t *testing.T) {
 			RecordCodexGatewayBorrowPreparationFailure(c, account, failure)
 			events, exists := c.Get(OpsUpstreamErrorsKey)
 			require.True(t, exists)
-			evidence := events.([]*OpsUpstreamErrorEvent)[0].BorrowQualification
+			records, ok := events.([]*OpsUpstreamErrorEvent)
+			require.True(t, ok)
+			require.Len(t, records, 1)
+			evidence := records[0].BorrowQualification
 			require.NotNil(t, evidence)
 			require.False(t, evidence.CacheHit)
 			require.Equal(t, expectedShot, evidence.Verification.FailedShot)
