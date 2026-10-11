@@ -376,7 +376,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			retry := r.retry[key]
 			child := r.children[identity]
 			r.mu.Unlock()
-			if pausedUntil := cache.sourceSearchPausedUntil(account.ID, time.Now()); pausedUntil.After(retry) {
+			if pausedUntil := cache.sourceSearchPausedUntil(account.ID, time.Now()); !cfg.WaitForQualifiedRoute && pausedUntil.After(retry) {
 				retry = pausedUntil
 			}
 			if time.Now().Before(retry) {
@@ -388,7 +388,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 				candidate := child.currentCandidateLocked()
 				live := candidate != nil && time.Now().Before(candidate.expires)
 				child.mu.Unlock()
-				if live {
+				if live || cfg.WaitForQualifiedRoute {
 					for _, n := range nodes {
 						if n.identity == identity {
 							node = n
@@ -454,6 +454,13 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			host := codexBorrowGateway(candidate.cookie.Value)
 			cache.observe(node.identity, host, time.Now())
 			if time.Now().Before(cache.blockedUntil(account.ID, node.identity, host, time.Now())) {
+				if cfg.WaitForQualifiedRoute {
+					// This node rediscovered a rejected gateway. Other distinct
+					// nodes may still qualify within this round's existing budget.
+					// observe() ensures this alias is skipped on later rounds.
+					lastErr = &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "gateway_cooling"}
+					continue
+				}
 				cache.pauseSourceSearch(account.ID, time.Now())
 				retry := cache.sourceSearchPausedUntil(account.ID, time.Now())
 				return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "gateway_cooling", RetryAfter: &retry}

@@ -121,7 +121,7 @@
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.validation') }}</p>
                 <span class="inline-block rounded px-2 py-1 text-xs font-medium" :class="stateClass(targetState(target))" data-test="borrow-line-state">{{ t(`admin.codexGatewayBorrow.lineStates.${targetState(target)}`) }}</span>
                 <p class="break-words text-xs text-muted" data-test="borrow-line-reason">{{ reasonLabel(target) }}</p>
-                <p v-if="target.retry_on_next_request" class="text-xs text-amber-800 dark:text-amber-200" data-test="borrow-retry-policy">{{ text('探针中断；下一次请求重新进行完整验证，通过后才发送业务。', 'The probe was interrupted. The next request runs a complete validation before business dispatch.') }}</p>
+                <p v-if="target.retry_on_next_request" class="text-xs text-amber-800 dark:text-amber-200" data-test="borrow-retry-policy">{{ recoveryPending(target) ? text('验证中断；当前请求等待下一轮完整验证，通过后才发送业务。', 'Validation was interrupted. This request waits for another complete validation before business dispatch.') : text('探针中断；下一次请求重新进行完整验证，通过后才发送业务。', 'The probe was interrupted. The next request runs a complete validation before business dispatch.') }}</p>
               </div>
               <dl class="min-w-0 space-y-2 text-xs">
                 <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(target.checked_at) }}</dd></div>
@@ -266,6 +266,7 @@ const acquisitionLabel = computed(() => {
 })
 
 function pairKey(id: number, model: string) { return `${id}:${model}` }
+function recoveryPending(target: BorrowTargetStatus) { return status.value?.recent_usage?.some(row => row.account_id === target.account_id && row.model === target.model && !row.dispatched && !row.finished_at && ['searching', 'cooling'].includes(row.recovery?.phase || '')) }
 function formatTime(value?: string) {
   if (!value || value.startsWith('0001-01-01')) return '—'
   const date = new Date(value)

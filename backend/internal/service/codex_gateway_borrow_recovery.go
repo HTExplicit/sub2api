@@ -117,7 +117,7 @@ func (s *CodexGatewayBorrowService) nextBorrowRecoveryAttempt(ctx context.Contex
 	s.rotation.mu.Lock()
 	global := s.rotation.retry[codexGatewayBorrowTargetKey{accountID, model}]
 	s.rotation.mu.Unlock()
-	if until := cache.sourceSearchPausedUntil(accountID, now); until.After(global) {
+	if until := cache.sourceSearchPausedUntil(accountID, now); !cfg.WaitForQualifiedRoute && until.After(global) {
 		global = until
 	}
 	var earliest time.Time
@@ -173,6 +173,12 @@ func (s *CodexGatewayBorrowService) waitBorrowRecovery(ctx context.Context, next
 func (s *CodexGatewayBorrowService) recoverQualifiedHTTP(ctx context.Context, req *http.Request, account *Account, model, proxy string, revision uint64, revisionCtx context.Context) (*http.Request, *CodexGatewayBorrowApplication, error) {
 	caller := ctx
 	ctx, cancel := context.WithCancel(ctx)
+	policy := currentCodexFingerprintPolicyForAccount(account).revision
+	ctx, cancelPolicy := borrowPolicyContext(ctx, account.ID, policy)
+	defer cancelPolicy()
+	changed := func() bool {
+		return revisionCtx.Err() != nil || currentCodexFingerprintPolicyForAccount(account).revision != policy
+	}
 	stopRevision := context.AfterFunc(revisionCtx, cancel)
 	defer stopRevision()
 	defer cancel()
@@ -181,7 +187,7 @@ func (s *CodexGatewayBorrowService) recoverQualifiedHTTP(ctx context.Context, re
 	wire := req.Clone(ctx) // Shares Body/GetBody; the pending generation is never read or replayed.
 	for {
 		if err := ctx.Err(); err != nil {
-			if revisionCtx.Err() != nil {
+			if changed() {
 				return nil, nil, ErrCodexGatewayBorrowChanged
 			}
 			return nil, nil, err
@@ -242,7 +248,7 @@ func (s *CodexGatewayBorrowService) recoverQualifiedHTTP(ctx context.Context, re
 		next := s.nextBorrowRecoveryAttempt(ctx, account.ID, model, err)
 		tracker.recovering("cooling", &next, err)
 		if err := s.waitBorrowRecovery(ctx, next, account.ID); err != nil {
-			if revisionCtx.Err() != nil {
+			if changed() {
 				return nil, nil, ErrCodexGatewayBorrowChanged
 			}
 			return nil, nil, err

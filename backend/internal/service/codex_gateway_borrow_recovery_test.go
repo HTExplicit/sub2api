@@ -308,3 +308,94 @@ func TestCodexBorrowRecoveryStopsWhenAccountIsDisabledDuringCooling(t *testing.T
 	}
 	require.Empty(t, *calls)
 }
+
+func TestCodexBorrowRecoveryCoolingGatewayDoesNotHideUntestedNodes(t *testing.T) {
+	s, calls, proxies := nodeFixture(t, 3, func(id int64, _ string) bool { return id == 12 })
+	cfg := s.ConfigSnapshot()
+	cfg.WaitForQualifiedRoute = true
+	cfg.NodeProxyIDs = []int64{10, 11, 12}
+	s.publishConfig(cfg, false)
+	base := s.upstream
+	alias := proxies.rows[11]
+	s.upstream = borrowCoreProbe(func(req *http.Request, proxy string, id int64, n int, p *tlsfingerprint.Profile) (*http.Response, error) {
+		resp, err := base.DoWithTLS(req, proxy, id, n, p)
+		if err == nil && id == 1 && proxy == alias.URL() {
+			resp.Header.Set("Set-Cookie", "__oailb="+borrowNodeCookie("chat.gateway.unified-10.api.openai.com")+"; Path=/; Secure; Max-Age=230")
+		}
+		return resp, err
+	})
+	a, req := nodeRequest(t, s, "gpt-6-astra")
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	prepared, _, err := s.gateway.prepareCodexGatewayBorrowHTTP(ctx, req, a, "gpt-6-astra", "saved")
+	require.NoError(t, err)
+	proof, ok := prepared.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation)
+	require.True(t, ok)
+	require.Equal(t, int64(12), proof.application.Verification.ProxyID)
+	require.Len(t, *calls, 7, "two strict pairs and three source acquisitions; no target call to the cooling alias")
+	require.EqualValues(t, 1, s.Status().RecentUsage[0].Recovery.Rounds)
+	require.True(t, time.Now().Before(s.rotation.cache("gpt-6-astra").blockedUntil(2, borrowHash("http://node-10.invalid:8080"), "", time.Now())))
+}
+
+func TestCodexBorrowRecoveryIdentityEditCancelsCoolingWait(t *testing.T) {
+	s, calls, _ := nodeFixture(t, 5, func(int64, string) bool { return true })
+	enableBorrowRecovery(t, s)
+	a, req := nodeRequest(t, s, "gpt-6-astra")
+	seedBorrowRecoveryCooling(s, "gpt-6-astra", time.Now().Add(time.Hour))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := s.gateway.prepareCodexGatewayBorrowHTTP(ctx, req, a, "gpt-6-astra", "saved")
+		done <- err
+	}()
+	require.Eventually(t, func() bool {
+		rows := s.Status().RecentUsage
+		return len(rows) > 0 && rows[0].Recovery != nil && rows[0].Recovery.Phase == "cooling"
+	}, time.Second, time.Millisecond)
+	notifyCodexFingerprintAccountChanged(2)
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrCodexGatewayBorrowChanged)
+	case <-time.After(time.Second):
+		t.Fatal("old identity kept recovering")
+	}
+	require.Empty(t, *calls)
+}
+
+func TestCodexBorrowRecoveryRenewsTheQualifiedNodeBeforeRotating(t *testing.T) {
+	s, calls, _ := nodeFixture(t, 3, func(int64, string) bool { return true })
+	cfg := s.ConfigSnapshot()
+	cfg.WaitForQualifiedRoute = true
+	cfg.NodeProxyIDs = []int64{10, 11}
+	s.publishConfig(cfg, false)
+	base := s.upstream
+	s.upstream = borrowCoreProbe(func(req *http.Request, proxy string, id int64, n int, p *tlsfingerprint.Profile) (*http.Response, error) {
+		resp, err := base.DoWithTLS(req, proxy, id, n, p)
+		if err == nil && id == 1 {
+			cookies := resp.Cookies()
+			require.Len(t, cookies, 1)
+			cookies[0].MaxAge = 1
+			resp.Header.Set("Set-Cookie", cookies[0].String())
+		}
+		return resp, err
+	})
+	a, req := nodeRequest(t, s, "gpt-6-astra")
+	first, _, err := s.gateway.prepareCodexGatewayBorrowHTTP(t.Context(), req, a, "gpt-6-astra", "saved")
+	require.NoError(t, err)
+	proof, ok := first.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation)
+	require.True(t, ok)
+	timer := time.NewTimer(time.Until(proof.application.ExpiresAt.Add(20 * time.Millisecond)))
+	defer timer.Stop()
+	<-timer.C
+	second, _, err := s.gateway.prepareCodexGatewayBorrowHTTP(t.Context(), req, a, "gpt-6-astra", "saved")
+	require.NoError(t, err)
+	next, ok := second.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation)
+	require.True(t, ok)
+	require.Equal(t, int64(10), next.application.Verification.ProxyID)
+	require.Len(t, *calls, 6, "renewal reacquires a lease and repeats both target probes")
+	for _, call := range *calls {
+		require.Contains(t, call, "10:")
+	}
+	require.True(t, next.application.ExpiresAt.After(proof.application.ExpiresAt))
+}

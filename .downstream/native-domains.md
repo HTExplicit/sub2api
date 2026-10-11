@@ -129,8 +129,14 @@ eligible routes recover; administrator probes and Pelican jobs remain bounded.
 Each search remains bounded to 180 seconds and the configured distinct-node limit.
 No total recovery deadline is added while the caller is connected. The next cycle
 waits for node/source/gateway cooling; failures without a future eligibility time
-wait at least 15 seconds. Cancellation of the last waiter cancels shared work,
-and configuration or account invalidation stops recovery. Normal token refresh
+wait at least 15 seconds. Cancellation of the last waiter cancels shared work;
+configuration, target identity or account invalidation stops recovery.
+Recovery first reacquires and requalifies an expired lease on the previously
+qualified node; it changes nodes when that route fails or is unavailable. A
+candidate that rediscovers a cooling gateway is skipped while other eligible
+nodes remain in the bounded round. The gateway/node cooldown remains intact;
+the upstream five-minute blanket search pause remains for non-waiting mode.
+Normal token refresh
 may update authentication, never business STATE, input, model, tier or history.
 Recovery emits no downstream bytes before actual business response headers, so
 the real STATE header remains deliverable. Existing proxy/client timeouts still
