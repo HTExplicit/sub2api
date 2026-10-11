@@ -69,6 +69,7 @@ func (b *codexBorrowNodeBinding) rejectBusiness(reason string, explicit bool) {
 	defer s.mu.Unlock()
 	if s.revision == b.revision && s.targets[key].result.NodeIdentity == b.node.identity {
 		check.result.ProxyID = b.node.id
+		check.result.ProxyName = b.node.name
 		check.result.NodeIdentity = b.node.identity
 		check.result.Gateway = b.gateway
 		s.targets[key] = check

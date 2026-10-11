@@ -294,6 +294,7 @@ func (s *CodexGatewayBorrowService) applyNode(req *http.Request, account *Accoun
 	if app != nil {
 		app.node = b
 		app.Verification.ProxyID = b.node.id
+		app.Verification.ProxyName = b.node.name
 		app.Verification.NodeIdentity = b.node.identity
 		app.Verification.Gateway = b.gateway
 		wire = wire.WithContext(context.WithValue(wire.Context(), codexBorrowNodeContextKey{}, b))
@@ -368,7 +369,10 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			retry := r.retry[key]
 			child := r.children[identity]
 			r.mu.Unlock()
-			if time.Now().Before(retry) || cache.sourceSearchPaused(account.ID, time.Now()) {
+			if pausedUntil := cache.sourceSearchPausedUntil(account.ID, time.Now()); pausedUntil.After(retry) {
+				retry = pausedUntil
+			}
+			if time.Now().Before(retry) {
 				return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "node_search_cooling", RetryAfter: &retry}
 			}
 			var node codexBorrowNode
@@ -444,7 +448,8 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			cache.observe(node.identity, host, time.Now())
 			if time.Now().Before(cache.blockedUntil(account.ID, node.identity, host, time.Now())) {
 				cache.pauseSourceSearch(account.ID, time.Now())
-				return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "gateway_cooling"}
+				retry := cache.sourceSearchPausedUntil(account.ID, time.Now())
+				return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "gateway_cooling", RetryAfter: &retry}
 			}
 			binding := &codexBorrowNodeBinding{s, child, rev, account.ID, model, host, node}
 			_, app, err := s.applyNode(req.WithContext(ctx), account, model, profile, false, force, binding)
@@ -532,6 +537,7 @@ func (s *CodexGatewayBorrowService) publishNodeObservation(rev uint64, key codex
 	}
 	b.child.mu.Unlock()
 	check.result.ProxyID = b.node.id
+	check.result.ProxyName = b.node.name
 	check.result.NodeIdentity = b.node.identity
 	check.result.Gateway = b.gateway
 	s.mu.Lock()

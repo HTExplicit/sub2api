@@ -215,6 +215,7 @@ type CodexGatewayBorrowSourceStatus struct {
 
 type CodexGatewayBorrowVerification struct {
 	ProxyID                   int64      `json:"proxy_id,omitempty"`
+	ProxyName                 string     `json:"proxy_name,omitempty"`
 	NodeIdentity              string     `json:"node_identity,omitempty"`
 	Gateway                   string     `json:"gateway,omitempty"`
 	RetryOnNextRequest        bool       `json:"retry_on_next_request,omitempty"`
@@ -621,6 +622,18 @@ func (s *CodexGatewayBorrowService) Status() CodexGatewayBorrowStatus {
 				if now.Before(c.retryAfter) && !c.result.Success {
 					retry := c.retryAfter
 					row.RetryAfter = &retry
+				}
+			}
+			if s.config.RotateNodes && !row.CacheValid && row.NodeIdentity != "" {
+				// The child probe's short cache is not the node's quiet window.
+				// Report the selected node snapshot, including after lease expiry.
+				row.RetryAfter, row.Acquisition.RetryAfter = nil, nil
+				for _, node := range nodes {
+					if node.AccountID == id && node.Model == model && node.NodeIdentity == row.NodeIdentity && node.RetryAfter != nil && now.Before(*node.RetryAfter) {
+						retry := *node.RetryAfter
+						row.RetryAfter, row.Acquisition.RetryAfter = &retry, &retry
+						break
+					}
 				}
 			}
 			if !s.config.Enabled {

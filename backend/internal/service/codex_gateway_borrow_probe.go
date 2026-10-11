@@ -242,6 +242,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: codexBorrowProbeRanxiLiteral}
 	if s.node != nil {
 		result.ProxyID, result.NodeIdentity, result.Gateway = s.node.id, s.node.identity, codexBorrowGateway(candidate.cookie.Value)
+		result.ProxyName = s.node.name
 	}
 	if shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string); shape != "" {
 		result.RequestShape = shape

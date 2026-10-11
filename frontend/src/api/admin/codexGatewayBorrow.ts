@@ -105,6 +105,7 @@ export interface CodexGatewayBorrowStatus {
 
 export interface BorrowVerification {
   proxy_id?: number
+  proxy_name?: string
   node_identity?: string
   gateway?: string
   retry_on_next_request?: boolean

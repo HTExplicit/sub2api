@@ -157,9 +157,9 @@ func (c *codexBorrowRotationCache) pauseSourceSearch(target int64, now time.Time
 		c.blocked[key] = now.Add(5 * time.Minute)
 	}
 }
-func (c *codexBorrowRotationCache) sourceSearchPaused(target int64, now time.Time) bool {
+func (c *codexBorrowRotationCache) sourceSearchPausedUntil(target int64, now time.Time) time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.prune(now)
-	return now.Before(c.blocked[codexBorrowRotationCacheKey{target: target, kind: "source_search"}])
+	return c.blocked[codexBorrowRotationCacheKey{target: target, kind: "source_search"}]
 }

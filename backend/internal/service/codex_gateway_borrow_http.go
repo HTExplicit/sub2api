@@ -67,9 +67,22 @@ func RecordCodexGatewayBorrowPreparationFailure(c *gin.Context, account *Account
 		event.ProxyID, event.ProxyName = opsUpstreamProxyID(account), opsUpstreamProxyName(account)
 		event.Platform, event.AccountID, event.AccountName = account.Platform, account.ID, account.Name
 	}
+	if stage == "node_selection" {
+		// A saved account binding does not identify a node-selection attempt.
+		// Keep the route unknown unless the failed probe provides its snapshot.
+		event.ProxyID, event.ProxyName = nil, opsProxyNameUnknown
+	}
 	var failure *CodexGatewayBorrowFailure
 	if errors.As(err, &failure) && failure.Verification != nil {
 		verification := *failure.Verification
+		if verification.NodeIdentity != "" {
+			event.ProxyID, event.ProxyName = nil, verification.ProxyName
+			if verification.ProxyID > 0 {
+				event.ProxyID = &verification.ProxyID
+			} else {
+				event.ProxyName = opsProxyNameDirect
+			}
+		}
 		event.BorrowQualification = &CodexGatewayBorrowFailureEvidence{CacheHit: failure.CacheHit, RetryAfter: failure.RetryAfter, Verification: &verification}
 	}
 	appendOpsUpstreamError(c, event)

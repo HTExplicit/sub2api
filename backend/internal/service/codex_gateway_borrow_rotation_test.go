@@ -106,8 +106,10 @@ func TestCodexBorrowNodeSelectionPinsBusinessAndCoolsFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "business body remains unread", string(data))
 	require.Empty(t, req.Header.Get("Cookie"))
-	require.Nil(t, s.accounts.(*borrowCoreAccounts).rows[1].ProxyID)
-	require.Nil(t, s.accounts.(*borrowCoreAccounts).rows[2].ProxyID)
+	accounts, ok := s.accounts.(*borrowCoreAccounts)
+	require.True(t, ok)
+	require.Nil(t, accounts.rows[1].ProxyID)
+	require.Nil(t, accounts.rows[2].ProxyID)
 	_, app, err = s.Apply(req, a, "gpt-6-astra", "account-original", nil, false)
 	require.NoError(t, err)
 	require.Equal(t, int64(11), app.Verification.ProxyID)
@@ -148,6 +150,29 @@ func TestCodexBorrowNodeBoundedSearchAndRevisionPreservesCooldown(t *testing.T) 
 	before := cache.blockedUntil(2, borrowHash("http://node-10.invalid:8080"), "", time.Now())
 	cache.reject(2, borrowHash("http://node-10.invalid:8080"), "", time.Now().Add(2*time.Hour), time.Now())
 	require.Equal(t, before, cache.blockedUntil(2, borrowHash("http://node-10.invalid:8080"), "", time.Now()))
+}
+
+func TestCodexBorrowNodeStatusReportsActualCoolingDeadline(t *testing.T) {
+	s, calls, _ := nodeFixture(t, 1, func(int64, string) bool { return false })
+	a, req := nodeRequest(t, s, "gpt-6-astra")
+	_, _, err := s.Apply(req, a, "gpt-6-astra", "original", nil, false)
+	require.Error(t, err)
+	status := s.Status()
+	row := status.Targets[0]
+	require.False(t, row.CacheValid)
+	require.NotNil(t, row.RetryAfter)
+	require.True(t, row.RetryAfter.After(time.Now().Add(59*time.Minute)), "must not display the child's 15-second cache as node recovery")
+	require.Equal(t, row.RetryAfter, row.Acquisition.RetryAfter)
+	require.Equal(t, status.Nodes[0].RetryAfter, row.RetryAfter)
+	cache := s.rotation.cache("gpt-6-astra")
+	cache.pauseSourceSearch(a.ID, time.Now())
+	until := cache.sourceSearchPausedUntil(a.ID, time.Now())
+	_, _, err = s.Apply(req, a, "gpt-6-astra", "original", nil, false)
+	var failure *CodexGatewayBorrowFailure
+	require.ErrorAs(t, err, &failure)
+	require.Equal(t, "node_search_cooling", failure.Reason)
+	require.Equal(t, &until, failure.RetryAfter, "must not expose a zero deadline for a five-minute pause")
+	require.Len(t, *calls, 3, "reading cooling state must not issue new probes")
 }
 
 func TestCodexBorrowNodeDispatchRejectsEditedProxyAndNeverReplaysStream(t *testing.T) {
