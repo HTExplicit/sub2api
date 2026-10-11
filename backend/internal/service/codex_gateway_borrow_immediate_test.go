@@ -33,6 +33,22 @@ func TestCodexBorrowImmediateConfigPreservesLegacyDefaults(t *testing.T) {
 	require.Zero(t, cfg.NodeCooldownSeconds)
 }
 
+func TestCodexBorrowImmediateSaveDoesNotProbeWithoutWaitingRequests(t *testing.T) {
+	s, _, _ := nodeFixture(t, 1, func(int64, string) bool { return true })
+	enableImmediateBorrow(t, s)
+	s.settings = &borrowCoreSettings{}
+	var requests atomic.Int32
+	base := s.upstream
+	s.upstream = borrowCoreProbe(func(w *http.Request, proxy string, id int64, n int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+		requests.Add(1)
+		return base.DoWithTLS(w, proxy, id, n, profile)
+	})
+	_, err := s.SaveConfig(t.Context(), s.ConfigSnapshot())
+	require.NoError(t, err)
+	require.Empty(t, s.Status().Setup.State)
+	require.Never(t, func() bool { return requests.Load() != 0 }, 50*time.Millisecond, time.Millisecond)
+}
+
 func TestCodexBorrowImmediateReacquiresAfterCachedRejectionAndEachFailedRound(t *testing.T) {
 	var pairs atomic.Int32
 	s, calls, _ := nodeFixture(t, 1, func(int64, string) bool { return pairs.Add(1) >= 3 })
@@ -134,6 +150,10 @@ func TestCodexBorrowImmediateExpiredProofRequiresFreshAcquisitionAndProbes(t *te
 	child.mu.Lock()
 	child.candidate.expires = expired
 	value := child.candidate.cookie.Value
+	for key, check := range child.qualifications {
+		check.expires = expired
+		child.qualifications[key] = check
+	}
 	child.mu.Unlock()
 	s.rotation.mu.Lock()
 	s.rotation.leases[borrowHash(value)] = expired

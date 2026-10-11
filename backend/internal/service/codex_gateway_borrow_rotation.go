@@ -438,7 +438,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			childRev, childCtx := child.revision, child.revisionCtx
 			previous := child.targets[key]
 			child.mu.Unlock()
-			freshSource := immediate && (identity != node.identity || (!previous.result.Success && previous.result.Reason != ""))
+			freshSource := immediate && (candidate == nil || !time.Now().Before(candidate.expires) || identity != node.identity || (!previous.result.Success && previous.result.Reason != ""))
 			if freshSource || candidate == nil || !time.Now().Before(candidate.expires) {
 				codexBorrowUsageFromContext(ctx).recovering("reborrowing", nil, nil)
 				sourceCtx, sourceCancel := context.WithTimeout(ctx, 45*time.Second)

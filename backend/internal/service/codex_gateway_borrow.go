@@ -466,7 +466,7 @@ func (s *CodexGatewayBorrowService) publishConfig(cfg CodexGatewayBorrowConfig, 
 	s.candidates = nil
 	s.acquisition = CodexGatewayBorrowAcquisition{}
 	s.setup = CodexGatewayBorrowSetup{}
-	if saved && cfg.Enabled {
+	if saved && cfg.Enabled && !cfg.ImmediateReborrowOnFailure {
 		s.setup = CodexGatewayBorrowSetup{State: "queued", Total: len(cfg.TargetAccountIDs) * len(cfg.Models), StartedAt: time.Now()}
 	}
 	s.usage = nil
@@ -480,7 +480,7 @@ func (s *CodexGatewayBorrowService) publishConfig(cfg CodexGatewayBorrowConfig, 
 	s.mu.Unlock()
 	// Exactly one finite preparation per save. Loading settings or restarting
 	// never calls a model. Individual source/target deadlines remain 90 seconds.
-	if saved && cfg.Enabled {
+	if saved && cfg.Enabled && !cfg.ImmediateReborrowOnFailure {
 		go func() {
 			prepareCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 			defer cancel()

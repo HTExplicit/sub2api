@@ -136,6 +136,9 @@ cooling and remain bounded. Business dispatch still requires a current successfu
 proof and is never replayed. Missing eligible nodes or invalid configuration stop
 recovery rather than spinning without network work. Acquisition and validation
 phases remain separate from a recovered proof and a completed business response.
+Saving immediate mode does not start background preparation; acquisition only
+runs while a pending business request needs it or an administrator explicitly
+invokes the existing bounded preparation/verification interface.
 For full HTTP Responses business preparation it retains the original request while
 eligible routes recover; administrator probes and Pelican jobs remain bounded.
 Each search remains bounded to 180 seconds and the configured distinct-node limit.
