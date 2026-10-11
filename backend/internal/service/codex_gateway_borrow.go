@@ -624,12 +624,17 @@ func (s *CodexGatewayBorrowService) Status() CodexGatewayBorrowStatus {
 					row.RetryAfter = &retry
 				}
 			}
-			if s.config.RotateNodes && !row.CacheValid && row.NodeIdentity != "" {
+			if s.config.RotateNodes && row.NodeIdentity != "" {
 				// The child probe's short cache is not the node's quiet window.
 				// Report the selected node snapshot, including after lease expiry.
 				row.RetryAfter, row.Acquisition.RetryAfter = nil, nil
 				for _, node := range nodes {
 					if node.AccountID == id && node.Model == model && node.NodeIdentity == row.NodeIdentity && node.RetryAfter != nil && now.Before(*node.RetryAfter) {
+						if row.CacheValid {
+							// A late failure on another node may cool this gateway
+							// after the stored probe passed. Match dispatch eligibility.
+							row.CacheValid, row.State, row.Reason = false, "rejected", "node_cooling"
+						}
 						retry := *node.RetryAfter
 						row.RetryAfter, row.Acquisition.RetryAfter = &retry, &retry
 						break

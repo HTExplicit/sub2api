@@ -282,6 +282,7 @@ function reasonLabel(target: BorrowTargetStatus) {
   const state = targetState(target)
   if (state === 'stale') return text('上次读取的结果，等待更新', 'Last observed result; awaiting an update')
   if (state === 'expired') return borrowReasonLabel('route_expired', t)
+  if (target.reason === 'node_cooling') return text('该出口或上游网关正在冷却，先前验证暂不可用于发送。', 'This exit or upstream gateway is cooling; the earlier validation cannot currently authorize dispatch.')
   if (state === 'validating' && (actionBusy.value || target.state === 'waiting')) return borrowReasonLabel('validating', t)
   return borrowReasonLabel(target.reason, t)
 }

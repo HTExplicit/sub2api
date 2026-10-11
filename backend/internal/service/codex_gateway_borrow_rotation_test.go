@@ -175,6 +175,25 @@ func TestCodexBorrowNodeStatusReportsActualCoolingDeadline(t *testing.T) {
 	require.Len(t, *calls, 3, "reading cooling state must not issue new probes")
 }
 
+func TestCodexBorrowNodeStatusRejectsAProofWhoseGatewayEnteredCooling(t *testing.T) {
+	s, _, _ := nodeFixture(t, 1, func(int64, string) bool { return true })
+	a, req := nodeRequest(t, s, "gpt-6-astra")
+	wire, app, err := s.Apply(req, a, "gpt-6-astra", "original", nil, false)
+	require.NoError(t, err)
+	require.True(t, s.Status().Targets[0].CacheValid)
+	// An older in-flight request on another node can reject the same gateway.
+	// The stored probe is still a historical success, but cannot authorize send.
+	until := time.Now().Add(time.Hour)
+	s.rotation.cache("gpt-6-astra").reject(a.ID, "previous-node", app.Verification.Gateway, until, time.Now())
+	_, _, err = s.Apply(wire, a, "gpt-6-astra", "original", nil, true)
+	require.ErrorContains(t, err, "node_cooling")
+	row := s.Status().Targets[0]
+	require.False(t, row.CacheValid, "status must agree with dispatch even while a historical proof is unexpired")
+	require.Equal(t, "rejected", row.State)
+	require.Equal(t, "node_cooling", row.Reason)
+	require.Equal(t, &until, row.RetryAfter)
+}
+
 func TestCodexBorrowNodeDispatchRejectsEditedProxyAndNeverReplaysStream(t *testing.T) {
 	s, calls, proxies := nodeFixture(t, 3, func(int64, string) bool { return true })
 	a, req := nodeRequest(t, s, "gpt-6-astra")
