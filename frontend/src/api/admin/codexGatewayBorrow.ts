@@ -27,6 +27,9 @@ export interface BorrowAcquisition {
 }
 
 export interface BorrowTargetStatus extends BorrowSourceStatus {
+  retry_on_next_request?: boolean
+  failed_shot?: string
+  failure_kind?: string
   acquisition?: BorrowAcquisition
   model: string
   cache_valid: boolean
@@ -88,6 +91,9 @@ export interface CodexGatewayBorrowStatus {
 }
 
 export interface BorrowVerification {
+  retry_on_next_request?: boolean
+  failed_shot?: string
+  failure_kind?: string
   account_id: number
   model: string
   success: boolean

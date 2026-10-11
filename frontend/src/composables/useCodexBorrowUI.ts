@@ -75,11 +75,12 @@ export function useCodexBorrowClock() {
   return { now, serverClockKnown, serverOffsetMs, receiveServerTime, cacheUsable, remainingSeconds }
 }
 
-export function borrowTargetState(target: BorrowTargetStatus | undefined, now: number): 'ready' | 'expired' | 'validating' | 'waiting' | 'rejected' {
+export function borrowTargetState(target: BorrowTargetStatus | undefined, now: number): 'ready' | 'expired' | 'validating' | 'waiting' | 'rejected' | 'retry_pending' {
   if (!target) return 'waiting'
   if (target.cache_valid && (!target.expires_at || Date.parse(target.expires_at) > now)) return 'ready'
   if (target.state === 'expired' || ((target.cache_valid || target.state === 'ready' || target.state === 'valid') && !!target.expires_at && Date.parse(target.expires_at) <= now)) return 'expired'
   if (target.state === 'validating' || target.reason === 'validating') return 'validating'
+  if (target.state === 'retry_pending' && target.retry_on_next_request) return 'retry_pending'
   if (['waiting', 'missing', 'disabled'].includes(target.state) || ['not_prepared', 'not_verified', 'not_configured', 'disabled'].includes(target.reason)) return 'waiting'
   return 'rejected'
 }

@@ -12,6 +12,12 @@ import (
 
 const CodexGatewayBorrowPreparationFailureReason GatewayFailureReason = "codex_gateway_borrow_preparation_failed"
 
+type CodexGatewayBorrowFailureEvidence struct {
+	CacheHit     bool                            `json:"cache_hit"`
+	RetryAfter   *time.Time                      `json:"retry_after,omitempty"`
+	Verification *CodexGatewayBorrowVerification `json:"verification,omitempty"`
+}
+
 // The existing failover owner may select another account. A local preparation
 // failure is not an inference attempt or evidence against the selected account.
 func NewCodexGatewayBorrowRequestFailure(_ error) *UpstreamFailoverError {
@@ -60,6 +66,11 @@ func RecordCodexGatewayBorrowPreparationFailure(c *gin.Context, account *Account
 	if account != nil {
 		event.ProxyID, event.ProxyName = opsUpstreamProxyID(account), opsUpstreamProxyName(account)
 		event.Platform, event.AccountID, event.AccountName = account.Platform, account.ID, account.Name
+	}
+	var failure *CodexGatewayBorrowFailure
+	if errors.As(err, &failure) && failure.Verification != nil {
+		verification := *failure.Verification
+		event.BorrowQualification = &CodexGatewayBorrowFailureEvidence{CacheHit: failure.CacheHit, RetryAfter: failure.RetryAfter, Verification: &verification}
 	}
 	appendOpsUpstreamError(c, event)
 }

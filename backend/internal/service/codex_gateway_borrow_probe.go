@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -267,7 +268,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 		return result
 	}
 	if err != nil || !borrowShotUsable(mint) {
-		result.Error = borrowObservationError(mint, err)
+		borrowTargetObservationFailure(ctx, &result, "mint", mint, err)
 		return result
 	}
 	if mint.state == "" {
@@ -299,7 +300,7 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 		return result
 	}
 	if err != nil || !borrowShotUsable(continued) {
-		result.Error = borrowObservationError(continued, err)
+		borrowTargetObservationFailure(ctx, &result, "continue", continued, err)
 		return result
 	}
 	result.NewTicket = continued.state != "" && continued.state != mint.state
@@ -313,6 +314,24 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 
 func borrowShotUsable(shot codexGatewayBorrowObservation) bool {
 	return shot.status == http.StatusOK && shot.complete && shot.errorText == ""
+}
+
+// A transport interruption is inconclusive, not a reusable rejection. Keep its
+// evidence, but let the next independent request run a fresh complete pair.
+// Never retry this observation or replay an uncertain business generation here.
+func borrowTargetObservationFailure(ctx context.Context, result *CodexGatewayBorrowVerification, phase string, shot codexGatewayBorrowObservation, err error) {
+	result.Error = borrowObservationError(shot, err)
+	result.FailedShot, result.FailureKind = phase, "response"
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+		result.FailureKind = "cancelled"
+		return
+	}
+	var transport *codexBorrowTransportError
+	var network net.Error
+	if err != nil && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &transport) || errors.As(err, &network)) {
+		result.FailureKind = "transport"
+		result.RetryOnNextRequest = true
+	}
 }
 
 func borrowObservationError(shot codexGatewayBorrowObservation, err error) string {

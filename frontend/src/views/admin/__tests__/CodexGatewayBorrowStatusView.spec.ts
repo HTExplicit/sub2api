@@ -73,10 +73,66 @@ beforeEach(() => {
 })
 afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount())
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
 describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
+  it('replaces an idle green result with interrupted validation before the route expires', async () => {
+    const initial = makeStatus()
+    const interrupted = makeStatus()
+    interrupted.targets[1] = { ...interrupted.targets[1], state: 'retry_pending', cache_valid: false,
+      reason: 'target_probe_failed', retry_on_next_request: true, failed_shot: 'continue', failure_kind: 'transport', error: 'unexpected EOF' }
+    mocks.getStatus.mockResolvedValueOnce(initial).mockImplementation(async () => ({ ...interrupted, generated_at: new Date().toISOString() }))
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="borrow-status-2-gpt-6.1-sol"] [data-test="borrow-line-state"]').text()).toContain('lineStates.ready')
+    await vi.advanceTimersByTimeAsync(5000)
+    const row = wrapper.get('[data-test="borrow-status-2-gpt-6.1-sol"]')
+    expect(row.get('[data-test="borrow-line-state"]').text()).toContain('lineStates.retry_pending')
+    expect(row.get('[data-test="borrow-retry-policy"]').text()).toContain('完整验证')
+    expect(row.get('[data-test="borrow-line-remaining"]').text()).toContain('"seconds":55')
+    expect(wrapper.get('[data-test="borrow-ready-count"]').text()).toContain('"ready":1')
+    expect(wrapper.get('[data-test="borrow-validation-scope"]').text()).toContain('validationMeaning')
+    expect(mocks.prepare).not.toHaveBeenCalled()
+    expect(mocks.verify).not.toHaveBeenCalled()
+  })
+
+  it('removes current-readiness claims after a failed or stalled status read', async () => {
+    const pending = deferred<CodexGatewayBorrowStatus>()
+    mocks.getStatus.mockResolvedValueOnce(makeStatus()).mockRejectedValueOnce(new Error('status unavailable')).mockImplementationOnce(() => pending.promise)
+    const wrapper = await mountView()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(wrapper.get('[data-test="borrow-status-stale"]').text()).toContain('不能确认当前可用')
+    expect(wrapper.get('[data-test="borrow-ready-count"]').text()).toContain('"ready":0')
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(wrapper.get('[data-test="borrow-status-2-gpt-6.1-sol"] [data-test="borrow-line-state"]').text()).toContain('lineStates.stale')
+    pending.resolve(makeStatus())
+    await flushPromises()
+    expect(wrapper.find('[data-test="borrow-status-stale"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="borrow-ready-count"]').text()).toContain('"ready":2')
+    expect(mocks.prepare).not.toHaveBeenCalled()
+    expect(mocks.verify).not.toHaveBeenCalled()
+  })
+
+  it('pauses reads while hidden and refreshes immediately on return without probing', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const wrapper = await mountView()
+    visibility.mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(mocks.getStatus).toHaveBeenCalledOnce()
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2)
+    expect(mocks.prepare).not.toHaveBeenCalled()
+    expect(mocks.verify).not.toHaveBeenCalled()
+  })
+
   it('mounts with saved status and local inventory only, and retains collapsed technical details in full', async () => {
     const fullError = `HTTP 403\n${'Complete synthetic upstream detail '.repeat(1800)}`
     const value = makeStatus()
@@ -102,7 +158,7 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expectNoUnrelatedCalls()
   })
 
-  it('expires ready routes using the server-aligned local clock without polling or preparing', async () => {
+  it('expires routes locally while continuing read-only observation without preparing', async () => {
     const value = makeStatus()
     value.generated_at = new Date(startTime + 120_000).toISOString()
     value.candidate!.expires_at = new Date(startTime + 123_000).toISOString()
@@ -117,13 +173,13 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expect(wrapper.get('[data-test="borrow-status-2-gpt-6-astra"] [data-test="borrow-line-reason"]').text()).toContain('reasons.route_expired')
     expect(wrapper.get('[data-test="borrow-candidate"]').text()).toContain('candidateExpired')
     await vi.advanceTimersByTimeAsync(20_000)
-    expect(mocks.getStatus).toHaveBeenCalledOnce()
+    expect(mocks.getStatus).toHaveBeenCalledTimes(5)
     expect(mocks.prepare).not.toHaveBeenCalled()
     expect(mocks.verify).not.toHaveBeenCalled()
     expectNoUnrelatedCalls()
   })
 
-  it('polls every 5 seconds while preparing, never overlaps a slow read, and stops when preparation ends', async () => {
+  it('polls every 5 seconds without overlapping slow reads and keeps observing after preparation', async () => {
     const slowRead = deferred<CodexGatewayBorrowStatus>()
     mocks.getStatus.mockResolvedValueOnce(makeStatus({ preparing: true })).mockImplementationOnce(() => slowRead.promise).mockImplementation(async () => makeStatus())
     const wrapper = await mountView()
@@ -138,9 +194,9 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     await flushPromises()
     await vi.advanceTimersByTimeAsync(5000)
     expect(mocks.getStatus).toHaveBeenCalledTimes(3)
-    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('部分线路可用')
+    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('部分最近验证通过')
     await vi.advanceTimersByTimeAsync(20_000)
-    expect(mocks.getStatus).toHaveBeenCalledTimes(3)
+    expect(mocks.getStatus).toHaveBeenCalledTimes(7)
     expect(mocks.prepare).not.toHaveBeenCalled()
     expect(mocks.verify).not.toHaveBeenCalled()
     expectNoUnrelatedCalls()
@@ -173,12 +229,12 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expect(wrapper.get('[data-test="borrow-action-failure"] details').attributes('open')).toBeUndefined()
     expect(mocks.getStatus).toHaveBeenCalledTimes(5)
     await vi.advanceTimersByTimeAsync(20_000)
-    expect(mocks.getStatus).toHaveBeenCalledTimes(5)
+    expect(mocks.getStatus).toHaveBeenCalledTimes(9)
     expect(mocks.verify).toHaveBeenCalledOnce()
     expectNoUnrelatedCalls()
   })
 
-  it('polls server validation started in another tab and stops when its terminal status arrives', async () => {
+  it('observes external validation and keeps polling after its terminal status', async () => {
     const active = makeStatus()
     active.targets[3] = { ...active.targets[3], state: 'validating', reason: 'validating' }
     const terminal = makeStatus()
@@ -193,11 +249,11 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expect(mocks.getStatus).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(1)
     expect(mocks.getStatus).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('部分线路可用')
+    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('部分最近验证通过')
     expect(wrapper.get('[data-test="borrow-status-3-gpt-6.1-sol"] [data-test="borrow-line-state"]').text()).toContain('lineStates.ready')
     expect(wrapper.get<HTMLButtonElement>('[data-test="borrow-prepare"]').element.disabled).toBe(false)
     await vi.advanceTimersByTimeAsync(10_000)
-    expect(mocks.getStatus).toHaveBeenCalledTimes(2)
+    expect(mocks.getStatus).toHaveBeenCalledTimes(4)
     expect(mocks.prepare).not.toHaveBeenCalled()
     expect(mocks.verify).not.toHaveBeenCalled()
     expectNoUnrelatedCalls()
@@ -256,7 +312,7 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expect(wrapper.get('[data-test="borrow-status-2-gpt-6.1-sol"] [data-test="borrow-line-state"]').text()).toContain('lineStates.rejected')
     expect(wrapper.get('[data-test="borrow-ready-count"]').text()).toContain('"ready":1')
     await vi.advanceTimersByTimeAsync(10_000)
-    expect(mocks.getStatus).toHaveBeenCalledTimes(3)
+    expect(mocks.getStatus).toHaveBeenCalledTimes(5)
     expectNoUnrelatedCalls()
   })
 

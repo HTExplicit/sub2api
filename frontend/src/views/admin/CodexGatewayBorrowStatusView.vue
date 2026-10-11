@@ -32,7 +32,7 @@
               <dd class="mt-1 font-medium" data-test="borrow-enabled-status">{{ status.enabled ? t('admin.codexGatewayBorrow.on') : t('admin.codexGatewayBorrow.off') }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-muted">{{ text('线路就绪情况', 'Route readiness') }}</dt>
+              <dt class="text-xs text-muted">{{ text('最近验证情况', 'Latest validation') }}</dt>
               <dd class="mt-1 font-medium" data-test="borrow-preparation-status">{{ preparationLabel }}</dd>
             </div>
             <div>
@@ -68,7 +68,8 @@
               <pre v-if="status.acquisition.error" class="borrow-error mt-2">{{ status.acquisition.error }}</pre>
             </details>
           </div>
-          <p class="text-sm">{{ t('admin.codexGatewayBorrow.validationMeaning') }}</p>
+          <p class="text-sm" data-test="borrow-validation-scope">{{ t('admin.codexGatewayBorrow.validationMeaning') }}</p>
+          <p v-if="statusStale" role="status" class="text-sm text-amber-800 dark:text-amber-200" data-test="borrow-status-stale">{{ text('状态尚未更新，以下为上次记录，不能确认当前可用。', 'Status is out of date. The last records below do not establish current availability.') }}</p>
           <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.modelScope') }}</p>
 
           <div v-if="actionFailure" role="alert" class="space-y-2" data-test="borrow-action-failure">
@@ -119,6 +120,7 @@
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.validation') }}</p>
                 <span class="inline-block rounded px-2 py-1 text-xs font-medium" :class="stateClass(targetState(target))" data-test="borrow-line-state">{{ t(`admin.codexGatewayBorrow.lineStates.${targetState(target)}`) }}</span>
                 <p class="break-words text-xs text-muted" data-test="borrow-line-reason">{{ reasonLabel(target) }}</p>
+                <p v-if="target.retry_on_next_request" class="text-xs text-amber-800 dark:text-amber-200" data-test="borrow-retry-policy">{{ text('探针中断；下一次请求重新进行完整验证，通过后才发送业务。', 'The probe was interrupted. The next request runs a complete validation before business dispatch.') }}</p>
               </div>
               <dl class="min-w-0 space-y-2 text-xs">
                 <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(target.checked_at) }}</dd></div>
@@ -188,6 +190,8 @@ const status = ref<CodexGatewayBorrowStatus | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 const statusError = ref('')
+const statusReadFailed = ref(false)
+const pageVisible = ref(document.visibilityState !== 'hidden')
 const inventoryError = ref('')
 const actionBusy = ref('')
 const actionFailure = ref<{ message: string; detail: string } | null>(null)
@@ -205,17 +209,22 @@ const targets = computed<BorrowTargetStatus[]>(() => {
     }
   ))
 })
-const readyCount = computed(() => status.value?.enabled ? targets.value.filter(target => cacheUsable(target)).length : 0)
+const statusStale = computed(() => !!status.value && (statusReadFailed.value || now.value - Date.parse(status.value.generated_at) >= 15_000))
+const readyCount = computed(() => status.value?.enabled && !statusStale.value ? targets.value.filter(target => cacheUsable(target)).length : 0)
 const candidateRemaining = computed(() => remainingSeconds(status.value?.candidate?.expires_at))
 const serverValidating = computed(() => targets.value.some(target => target.state === 'validating' || target.reason === 'validating'))
-const canAct = computed(() => !!status.value?.enabled && !loading.value && !actionBusy.value && !status.value.preparing && !serverValidating.value)
-const shouldPoll = computed(() => !!status.value?.preparing || !!actionBusy.value || serverValidating.value)
+const canAct = computed(() => !!status.value?.enabled && !statusStale.value && !loading.value && !actionBusy.value && !status.value.preparing && !serverValidating.value)
+// Business requests can invalidate a proof after this page first becomes idle.
+// These reads never prepare a route or send a model request.
+const shouldPoll = computed(() => pageVisible.value && (!!status.value?.enabled || !!status.value?.preparing || !!actionBusy.value))
 const preparationLabel = computed(() => {
+  if (statusStale.value) return text('状态待刷新', 'Status needs refreshing')
   if (status.value?.preparing || actionBusy.value === 'prepare') return t('admin.codexGatewayBorrow.preparationPending')
   if (actionBusy.value || serverValidating.value) return t('admin.codexGatewayBorrow.validating')
   if (!status.value?.enabled || !targets.value.length) return text('未配置或未启用', 'Not configured or disabled')
-  if (readyCount.value === targets.value.length) return text('线路可用', 'Routes ready')
-  if (readyCount.value > 0) return text('部分线路可用', 'Some routes ready')
+  if (readyCount.value === targets.value.length) return text('最近验证均通过', 'Latest validations passed')
+  if (readyCount.value > 0) return text('部分最近验证通过', 'Some latest validations passed')
+  if (targets.value.some(target => targetState(target) === 'retry_pending')) return text('探针中断，等待下一请求重验', 'Probe interrupted; awaiting the next request')
   if (targets.value.some(target => targetState(target) === 'expired')) return t('admin.codexGatewayBorrow.onDemandExpired')
   return text('尚无可用线路，查看下方原因', 'No ready route; see reasons below')
 })
@@ -237,6 +246,7 @@ function formatTime(value?: string) {
 }
 function targetState(target: BorrowTargetStatus) {
   if (!status.value?.enabled) return 'waiting'
+  if (statusStale.value) return 'stale'
   const state = borrowTargetState(target, now.value)
   if (state !== 'ready' && actionBusy.value === pairKey(target.account_id, target.model)) return 'validating'
   if (state === 'waiting' && (status.value.preparing || actionBusy.value === 'prepare')) return 'validating'
@@ -245,6 +255,7 @@ function targetState(target: BorrowTargetStatus) {
 function reasonLabel(target: BorrowTargetStatus) {
   if (!status.value?.enabled) return borrowReasonLabel('disabled', t)
   const state = targetState(target)
+  if (state === 'stale') return text('上次读取的结果，等待更新', 'Last observed result; awaiting an update')
   if (state === 'expired') return borrowReasonLabel('route_expired', t)
   if (state === 'validating' && (actionBusy.value || target.state === 'waiting')) return borrowReasonLabel('validating', t)
   return borrowReasonLabel(target.reason, t)
@@ -252,7 +263,7 @@ function reasonLabel(target: BorrowTargetStatus) {
 function stateClass(state: string) {
   if (state === 'ready') return 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
   if (state === 'rejected') return 'bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200'
-  if (state === 'expired') return 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+  if (['expired', 'retry_pending', 'stale'].includes(state)) return 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
   return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
 }
 function receiveStatus(value: CodexGatewayBorrowStatus) {
@@ -261,7 +272,8 @@ function receiveStatus(value: CodexGatewayBorrowStatus) {
   if (current && value.revision < current.revision) return
   if (current && value.revision === current.revision && Date.parse(value.generated_at) < Date.parse(current.generated_at)) return
   status.value = value
-  receiveServerTime(value.generated_at)
+  statusReadFailed.value = false
+  if (!current || value.generated_at !== current.generated_at) receiveServerTime(value.generated_at)
 }
 function clearPollTimer() {
   if (pollTimer !== undefined) clearTimeout(pollTimer)
@@ -283,7 +295,12 @@ function refreshStatus(): Promise<void> {
   statusError.value = ''
   statusRequest = (async () => {
     try { receiveStatus(await codexGatewayBorrowAPI.getStatus(lifecycle.signal)) }
-    catch (value) { if (!lifecycle.signal.aborted) statusError.value = extractApiErrorMessage(value, t('admin.codexGatewayBorrow.statusLoadFailed')) }
+    catch (value) {
+      if (!lifecycle.signal.aborted) {
+        statusReadFailed.value = true
+        statusError.value = extractApiErrorMessage(value, t('admin.codexGatewayBorrow.statusLoadFailed'))
+      }
+    }
     finally {
       refreshing.value = false
       statusRequest = undefined
@@ -328,13 +345,19 @@ async function verify(target: BorrowTargetStatus) {
 }
 
 watch(shouldPoll, schedulePoll)
+function visibilityChanged() {
+  pageVisible.value = document.visibilityState !== 'hidden'
+  if (pageVisible.value) void refreshStatus()
+  else clearPollTimer()
+}
 onMounted(async () => {
+  document.addEventListener('visibilitychange', visibilityChanged)
   const outcomes = await Promise.allSettled([refreshStatus(), loadAccounts()])
   if (lifecycle.signal.aborted) return
   if (outcomes[1].status === 'rejected') inventoryError.value = extractApiErrorMessage(outcomes[1].reason, t('admin.codexGatewayBorrow.inventoryLoadFailed'))
   loading.value = false
 })
-onBeforeUnmount(() => { lifecycle.abort(); clearPollTimer() })
+onBeforeUnmount(() => { lifecycle.abort(); clearPollTimer(); document.removeEventListener('visibilitychange', visibilityChanged) })
 defineExpose({ refreshStatus })
 </script>
 

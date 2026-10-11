@@ -82,8 +82,10 @@ request usage and upstream completion. Pelican stays at `/admin/pelican-tests`;
 its legacy comparison URL redirects there. Page reads and navigation only read
 local data. Unsaved configuration stays in browser-session storage. Saving an
 enabled configuration starts exactly one finite preparation, shown as queued
-before the worker starts. Status polls every five seconds only while work is
-active; countdowns expire routes without renewing them.
+before the worker starts. While enabled and visible, status polls every five
+seconds, including idle periods so later business failures become visible. Hidden pages stop polling and
+refresh on return. Failed or stale reads cannot display current readiness;
+countdowns expire routes without renewing them.
 
 `GET/PUT /admin/codex-gateway-borrow/config` owns one JSON setting,
 `codex_gateway_borrow_config`: `enabled`, `source_account_ids`,
@@ -126,9 +128,14 @@ The original cache identity includes route cookie, proxy, Authorization,
 ChatGPT-Account-ID, UA, Originator, Version, business STATE and TLS profile.
 The host adds actual model and fingerprint policy revision. Trace IDs, native
 session headers and business tier are not additional cache rules. STATE changes
-therefore require fresh validation. A failed target cools that qualification for
-15 seconds; it does not discard a source candidate or force a replacement attempt.
-After cooldown the next request may validate again; missing or expired candidates
+therefore require fresh validation. A completed rejection or protocol failure
+cools that qualification for 15 seconds. A transport interruption instead retains failed evidence with
+`retry_on_next_request`: the next independent request starts a fresh complete
+two-shot validation through the existing shared flight, without a negative-cache
+rejection. It never retries an uncertain observation within the failed request,
+admits an incomplete probe or replays a business generation. Neither failure
+discards a source candidate or extends its lease. After a rejection cooldown
+the next request may validate again; missing or expired candidates
 are acquired on demand. There is no renewal timer, exit rotation, ordinary fallback
 or business replay. Business WS keeps its existing continuation anchors.
 
@@ -168,7 +175,9 @@ separate from existing `count` (dispatches) and `applied_count`. `dispatched`,
 `failure_stage`, client and gateway request IDs distinguish a local rejection
 from an inference failure. Original target reasons survive failure cooldowns;
 Ops classifies local borrowing rejection as gateway/routing with upstream status
-zero, retaining the compatible client 503 code. Business evidence is displayed
+zero, retaining the compatible client 503 code. The event also retains probe
+shot/transport evidence, next-request recovery policy and whether a rejection
+came from the qualification cache. Business evidence is displayed
 ahead of diagnostics. Candidate expiry never implies a failed check is usable.
 
 `POST /admin/codex-gateway-borrow/diagnose` streams an explicit fixed-account
