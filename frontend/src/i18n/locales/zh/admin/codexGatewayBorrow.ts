@@ -53,7 +53,7 @@ export default {
     borrowStatus: '借用状态',
     onDemandHint: '保存启用配置后准备一次；线路缺失或过期时，由下一次业务请求自动获取并验证。没有定时续期。查看或刷新页面不会调用模型。',
     onDemandExpired: '已过期，等待请求自动获取',
-    modelScope: 'Astra 按 ranxi v2.10.3 原版验证；Sol 为本站模型扩展，单独验证。验证只检查路由 Cookie 与两轮 STATE，不证明模型身份或能力。',
+    modelScope: 'Astra 按 ranxi v2.10.5 原版验证；Sol 为本站模型扩展，单独验证。验证只检查路由 Cookie 与两轮 STATE，不证明模型身份或能力。',
     statusTitle: 'Codex 借用状态',
     statusDescription: '查看已保存配置的借用线路，按需准备或重新验证。',
     preparationState: '准备进度',

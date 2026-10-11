@@ -53,7 +53,7 @@ export default {
     borrowStatus: 'Borrow status',
     onDemandHint: 'Saving enabled settings prepares once. The next business request acquires and validates missing or expired routes. There is no renewal timer; viewing or refreshing never calls a model.',
     onDemandExpired: 'Expired; waiting for a request to acquire a route',
-    modelScope: 'Astra follows ranxi v2.10.3. Sol is a downstream model extension and is validated independently. Cookie and two-shot STATE checks do not prove model identity or capability.',
+    modelScope: 'Astra follows ranxi v2.10.5. Sol is a downstream model extension and is validated independently. Cookie and two-shot STATE checks do not prove model identity or capability.',
     statusTitle: 'Codex Borrow Status',
     statusDescription: 'Inspect borrow routes for the saved configuration, then prepare or revalidate when needed.',
     preparationState: 'Preparation progress',
