@@ -78,6 +78,15 @@ afterEach(() => {
 })
 
 describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
+  it('shows request-owned recovery above the last validation summary without issuing new probes', async () => {
+    const state = makeStatus()
+    state.recent_usage = [{ account_id: 2, model: 'gpt-6-astra', transport: 'http', origin: 'business', applied: false, dispatched: false, reason: 'preparing', started_at: new Date().toISOString(), outcome: 'preparing', count: 0, applied_count: 0, recovery: { phase: 'cooling', started_at: new Date().toISOString(), rounds: 1, source_requests: 0, probe_requests: 0 } }]
+    mocks.getStatus.mockResolvedValue(state)
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('原请求仍在等待')
+    expect(mocks.prepare).not.toHaveBeenCalled()
+    expect(mocks.verify).not.toHaveBeenCalled()
+  })
   it('identifies explicit server direct without presenting the saved proxy as the actual exit', async () => {
     const state = makeStatus()
     state.config.rotate_nodes = true

@@ -123,6 +123,19 @@ for five minutes; an exhausted search has a 15-second pause. A target transport
 interruption or missing terminal does not poison the next independent request:
 it still requires a fresh full probe pair. No business generation is replayed.
 Cooling decisions survive setting revisions but are process-local, as upstream.
+Optional `wait_for_qualified_route` defaults to false and requires node selection.
+For full HTTP Responses business preparation it retains the original request while
+eligible routes recover; administrator probes and Pelican jobs remain bounded.
+Each search remains bounded to 180 seconds and the configured distinct-node limit.
+No total recovery deadline is added while the caller is connected. The next cycle
+waits for node/source/gateway cooling; failures without a future eligibility time
+wait at least 15 seconds. Cancellation of the last waiter cancels shared work,
+and configuration or account invalidation stops recovery. Normal token refresh
+may update authentication, never business STATE, input, model, tier or history.
+Recovery emits no downstream bytes before actual business response headers, so
+the real STATE header remains deliverable. Existing proxy/client timeouts still
+apply. Recovery status, rounds and initiated source/probe counts are distinct
+from dispatched/completed business counters; shared preparations are labelled.
 Source Cookie leases retain the 230-second cap and same-value no-extension rule
 across selected nodes. Every model has its own target proof and current route.
 The status API reports actual proxy IDs, gateway metadata, expiry and cooling;

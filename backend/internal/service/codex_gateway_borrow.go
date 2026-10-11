@@ -116,14 +116,15 @@ func codexBorrowFailureStage(err error) (string, string) {
 type CodexGatewayBorrowProbeUpstream interface{ HTTPUpstream }
 
 type CodexGatewayBorrowConfig struct {
-	RotateNodes         bool     `json:"rotate_nodes,omitempty"`
-	NodeProxyIDs        []int64  `json:"node_proxy_ids,omitempty"`
-	MaxNodeAttempts     int      `json:"max_node_attempts,omitempty"`
-	NodeCooldownSeconds int      `json:"node_cooldown_seconds,omitempty"`
-	Enabled             bool     `json:"enabled"`
-	SourceAccountIDs    []int64  `json:"source_account_ids"`
-	TargetAccountIDs    []int64  `json:"target_account_ids"`
-	Models              []string `json:"models"`
+	WaitForQualifiedRoute bool     `json:"wait_for_qualified_route,omitempty"`
+	RotateNodes           bool     `json:"rotate_nodes,omitempty"`
+	NodeProxyIDs          []int64  `json:"node_proxy_ids,omitempty"`
+	MaxNodeAttempts       int      `json:"max_node_attempts,omitempty"`
+	NodeCooldownSeconds   int      `json:"node_cooldown_seconds,omitempty"`
+	Enabled               bool     `json:"enabled"`
+	SourceAccountIDs      []int64  `json:"source_account_ids"`
+	TargetAccountIDs      []int64  `json:"target_account_ids"`
+	Models                []string `json:"models"`
 }
 
 func DefaultCodexGatewayBorrowConfig() CodexGatewayBorrowConfig {

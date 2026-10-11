@@ -124,15 +124,25 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context
 	}
 	started := time.Now()
 	tracker := s.gatewayBorrow.beginAttempt(ctx, account.ID, model, "http")
+	ctx = context.WithValue(ctx, codexBorrowUsageContextKey{}, tracker)
 	req = req.WithContext(context.WithValue(req.Context(), codexBorrowUsageContextKey{}, tracker))
 	prepared := codexGatewayBorrowHTTPPreparation{service: s.gatewayBorrow, accountID: account.ID, model: model, proxy: proxy}
 	prepared.service.mu.Lock()
 	prepared.revision = prepared.service.revision
+	revisionCtx := prepared.service.revisionCtx
+	wait := prepared.service.config.WaitForQualifiedRoute && req.URL.Path == "/backend-api/codex/responses" && borrowDiagnosticFromContext(ctx) == nil && !IsPelicanGeneration(ctx)
 	prepared.service.mu.Unlock()
 	if tier, ok := req.Context().Value(codexBorrowServiceTierContextKey{}).(string); ok {
 		ctx = withCodexBorrowServiceTier(ctx, tier)
 	}
-	borrowed, application, err := prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
+	var borrowed *http.Request
+	var application *CodexGatewayBorrowApplication
+	var err error
+	if wait {
+		borrowed, application, err = prepared.service.recoverQualifiedHTTP(ctx, req, account, model, proxy, prepared.revision, revisionCtx)
+	} else {
+		borrowed, application, err = prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
+	}
 	if err != nil {
 		tracker.blocked(err)
 		return nil, 0, err

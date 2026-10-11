@@ -72,7 +72,7 @@ afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); sess
 
 describe('Codex borrow settings', () => {
   it('preserves ordered node selection and independent bounds through a normal save', async () => {
-    const config = { ...enabledConfig, rotate_nodes: true, node_proxy_ids: [43, 34], max_node_attempts: 5, node_cooldown_seconds: 3600 }
+    const config = { ...enabledConfig, rotate_nodes: true, wait_for_qualified_route: true, node_proxy_ids: [43, 34], max_node_attempts: 5, node_cooldown_seconds: 3600 }
     const wrapper = await mountView(config)
     expect(wrapper.find('[data-test="borrow-unsaved"]').exists()).toBe(false)
     expectNoModelRequests()

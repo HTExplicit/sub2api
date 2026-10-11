@@ -79,6 +79,7 @@
             <span>{{ text('为已选目标账号启用节点选择', 'Enable node selection for the selected target accounts') }}<span class="mt-1 block text-xs text-muted">{{ text('来源采集、目标验证与业务发送使用同一候选节点；失败节点进入冷却。仅支持 HTTP。', 'Acquisition, target validation and business dispatch use the same candidate node. Failed nodes enter cooling. HTTP only.') }}</span></span>
           </label>
           <template v-if="draft.rotate_nodes">
+            <label class="flex items-start gap-3 text-sm"><input v-model="draft.wait_for_qualified_route" type="checkbox" class="checkbox mt-1" data-test="borrow-wait-qualified" /><span>{{ text('等待严格验证通过后继续原请求', 'Wait for strict qualification before continuing the original request') }}<span class="mt-1 block text-xs text-muted">{{ text('失败后按冷却时间恢复，连接有效期间不设恢复总时限；取消或断开即停止。不会改走普通请求。', 'Recover after cooling without an overall recovery deadline while connected. Cancellation or disconnection stops recovery. Ordinary fallback is disabled.') }}</span></span></label>
             <p class="text-xs text-muted">{{ text('按勾选顺序搜索；仅影响上方选中的目标账号，不改写账号或共享代理。', 'Search in selection order. Only the target accounts above are affected; account and shared proxy records are preserved.') }}</p>
             <p v-if="proxyError" role="alert" class="text-sm text-red-700 dark:text-red-300">{{ proxyError }}</p>
             <div class="grid max-h-64 gap-2 overflow-auto sm:grid-cols-2">
@@ -157,6 +158,7 @@ const accountSearch = ref<Record<AccountRole, string>>({ source_account_ids: '',
 const dirty = computed(() => !!draft.value && !!saved.value && !sameConfig(draft.value, saved.value))
 const configError = computed(() => {
   if (!draft.value) return ''
+  if (draft.value.enabled && draft.value.wait_for_qualified_route && !draft.value.rotate_nodes) return text('等待恢复需要启用节点选择。', 'Recovery waiting requires node selection.')
   if (draft.value.source_account_ids.some(id => draft.value!.target_account_ids.includes(id))) return t('admin.codexGatewayBorrow.disjointRequired')
   if (draft.value.enabled && (!draft.value.source_account_ids.length || !draft.value.target_account_ids.length || !draft.value.models.length)) return t('admin.codexGatewayBorrow.selectionRequired')
   if (draft.value.rotate_nodes && (!draft.value.node_proxy_ids?.length || !Number.isInteger(draft.value.max_node_attempts) || draft.value.max_node_attempts! < 1 || draft.value.max_node_attempts! > 10 || !Number.isInteger(draft.value.node_cooldown_seconds) || draft.value.node_cooldown_seconds! < 60 || draft.value.node_cooldown_seconds! > 86400)) return text('请选择候选节点，尝试次数须为 1–10，冷却时间须为 60–86400 秒。', 'Select candidate nodes, 1–10 attempts and a cooldown of 60–86400 seconds.')
@@ -165,6 +167,7 @@ const configError = computed(() => {
 
 function copyConfig(value: CodexGatewayBorrowConfig): CodexGatewayBorrowConfig {
   const copy: CodexGatewayBorrowConfig = { enabled: value.enabled, source_account_ids: [...value.source_account_ids], target_account_ids: [...value.target_account_ids], models: [...value.models] }
+  if (value.wait_for_qualified_route) copy.wait_for_qualified_route = true
   if (value.rotate_nodes || value.node_proxy_ids?.length || value.max_node_attempts || value.node_cooldown_seconds) Object.assign(copy, { rotate_nodes: !!value.rotate_nodes, node_proxy_ids: [...(value.node_proxy_ids || [])], max_node_attempts: value.max_node_attempts || 3, node_cooldown_seconds: value.node_cooldown_seconds || 3600 })
   return copy
 }
@@ -196,6 +199,7 @@ function isConfig(value: unknown): value is CodexGatewayBorrowConfig {
     && [config.source_account_ids, config.target_account_ids].every(ids => Array.isArray(ids) && ids.every(id => Number.isSafeInteger(id) && id > 0))
     && Array.isArray(config.models) && config.models.every(model => typeof model === 'string' && (BORROW_MODELS as readonly string[]).includes(model))
     && (config.rotate_nodes === undefined || typeof config.rotate_nodes === 'boolean')
+    && (config.wait_for_qualified_route === undefined || typeof config.wait_for_qualified_route === 'boolean')
     && (config.node_proxy_ids === undefined || (Array.isArray(config.node_proxy_ids) && config.node_proxy_ids.every(id => Number.isSafeInteger(id) && id >= 0)))
     && [config.max_node_attempts, config.node_cooldown_seconds].every(value => value === undefined || (Number.isInteger(value) && value >= 0))
 }

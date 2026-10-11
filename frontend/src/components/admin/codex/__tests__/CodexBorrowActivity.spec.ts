@@ -19,6 +19,17 @@ function open(locale = 'zh') {
 beforeEach(() => { diagnose.mockReset() })
 
 describe('Codex actual-request diagnostics', () => {
+  it('shows recovery waiting and cancellation without counting it as business success or invoking a diagnostic', async () => {
+    const wrapper = open('en')
+    const row = { account_id: 2, model: 'gpt-6-astra', transport: 'http', origin: 'business', applied: false, dispatched: false, reason: 'preparing', started_at: new Date().toISOString(), outcome: 'preparing', count: 0, applied_count: 0, recovery: { phase: 'cooling' as const, started_at: new Date().toISOString(), next_attempt_at: new Date(Date.now()+3600000).toISOString(), rounds: 2, source_requests: 1, probe_requests: 2, last_reason: 'target_state_changed' } }
+    await wrapper.setProps({ status: { ...status, recent_usage: [row] } })
+    expect(wrapper.get('[data-test="borrow-recovery"]').text()).toContain('Waiting for cooling')
+    expect(wrapper.get('[data-test="borrow-recovery"]').text()).toContain('waiting is not success')
+    await wrapper.setProps({ status: { ...status, recent_usage: [{ ...row, outcome: 'cancelled', recovery: { ...row.recovery, phase: 'cancelled', next_attempt_at: undefined } }] } })
+    expect(wrapper.get('[data-test="borrow-recovery"]').text()).toContain('Recovery cancelled')
+    expect(diagnose).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('keeps blocked business attempts visible ahead of successful diagnostics', () => {
     const wrapper = open('en')
     const diagnostic = { account_id: 2, model: 'gpt-6-astra', transport: 'http', origin: 'diagnostic', applied: true, dispatched: true, reason: 'borrow_applied', started_at: new Date().toISOString(), outcome: 'completed', count: 2, applied_count: 1 }

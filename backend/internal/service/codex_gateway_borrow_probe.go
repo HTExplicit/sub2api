@@ -493,6 +493,7 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 		shot.requestEncoding = "identity"
 	}
 	resp, phase, attempts, err := s.sendBorrowObservationHTTP(wire, proxy, account, profile)
+	codexBorrowUsageFromContext(req.Context()).recoveryObservation(req.Context().Value(codexBorrowSourceObservationKey{}) == true, attempts)
 	shot.transportPhase, shot.transportAttempts = phase, attempts
 	if err != nil {
 		if resp != nil && resp.Body != nil {

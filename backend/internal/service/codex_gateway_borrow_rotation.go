@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -65,6 +66,9 @@ type codexBorrowRotation struct {
 }
 
 func validateCodexBorrowNodeConfig(cfg CodexGatewayBorrowConfig) error {
+	if cfg.Enabled && cfg.WaitForQualifiedRoute && !cfg.RotateNodes {
+		return errors.New("waiting for a qualified route requires node selection")
+	}
 	if cfg.MaxNodeAttempts < 0 || cfg.MaxNodeAttempts > 10 {
 		return errors.New("node attempts must be 0–10 (0 uses 3)")
 	}
@@ -85,7 +89,7 @@ func validateCodexBorrowNodeConfig(cfg CodexGatewayBorrowConfig) error {
 }
 
 func borrowNodeConfigEqual(a, b CodexGatewayBorrowConfig) bool {
-	return a.RotateNodes == b.RotateNodes && a.MaxNodeAttempts == b.MaxNodeAttempts && a.NodeCooldownSeconds == b.NodeCooldownSeconds && slices.Equal(a.NodeProxyIDs, b.NodeProxyIDs)
+	return a.WaitForQualifiedRoute == b.WaitForQualifiedRoute && a.RotateNodes == b.RotateNodes && a.MaxNodeAttempts == b.MaxNodeAttempts && a.NodeCooldownSeconds == b.NodeCooldownSeconds && slices.Equal(a.NodeProxyIDs, b.NodeProxyIDs)
 }
 
 func borrowNodeFromProxy(p *Proxy) (codexBorrowNode, error) {
@@ -165,6 +169,7 @@ func (s *CodexGatewayBorrowService) nodeChild(rev uint64, cfg CodexGatewayBorrow
 	child.node = &node
 	child.nodeLease = r.cookieExpiry
 	cfg.RotateNodes = false
+	cfg.WaitForQualifiedRoute = false
 	child.publishConfig(cfg, false)
 	r.children[node.identity] = child
 	return child, nil
@@ -345,7 +350,9 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 		return req, nil, initializeErr
 	}
 	flightKey := fmt.Sprintf("%d:%d:%s:%s", rev, account.ID, model, borrowRequestFingerprint(req, model, "", profile, ""))
+	var preparationOwner atomic.Bool
 	value, err := r.flights.do(req.Context(), revisionCtx, flightKey, 180*time.Second, func(ctx context.Context) (any, error) {
+		preparationOwner.Store(true)
 		limit := cfg.MaxNodeAttempts
 		if limit == 0 {
 			limit = 3
@@ -518,6 +525,9 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 		}
 		return nil, failure
 	})
+	if !preparationOwner.Load() {
+		codexBorrowUsageFromContext(req.Context()).sharedRecoveryPreparation()
+	}
 	if err != nil {
 		return req, nil, err
 	}

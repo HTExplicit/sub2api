@@ -244,6 +244,8 @@ const canAct = computed(() => !!status.value?.enabled && !statusStale.value && !
 const shouldPoll = computed(() => pageVisible.value && (!!status.value?.enabled || !!status.value?.preparing || !!actionBusy.value))
 const preparationLabel = computed(() => {
   if (statusStale.value) return text('状态待刷新', 'Status needs refreshing')
+  const waiting = (status.value?.recent_usage || []).filter(row => !row.dispatched && !row.finished_at && ['searching', 'cooling'].includes(row.recovery?.phase || ''))
+  if (waiting.length) return waiting.some(row => row.recovery?.phase === 'searching') ? text('正在恢复合格路由，业务尚未发送', 'Recovering a qualified route; business not dispatched') : text('等待冷却，原请求仍在等待', 'Cooling; the original request is still waiting')
   if (status.value?.preparing || actionBusy.value === 'prepare') return t('admin.codexGatewayBorrow.preparationPending')
   if (actionBusy.value || serverValidating.value) return t('admin.codexGatewayBorrow.validating')
   if (!status.value?.enabled || !targets.value.length) return text('未配置或未启用', 'Not configured or disabled')
