@@ -43,7 +43,7 @@
               <dt class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.currentSource') }}</dt>
               <dd v-if="status.candidate" class="mt-1 space-y-1">
                 <p class="break-words font-medium">{{ accountName(status.candidate.source_account_id) }} #{{ status.candidate.source_account_id }}</p>
-                <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ actualProxyLabel(status.candidate.proxy_id, status.candidate.source_account_id, status.candidate.node_identity) }}</p>
+                <p class="text-xs text-muted">{{ proxyTitle }}: {{ actualProxyLabel(status.candidate.proxy_id, status.candidate.source_account_id, status.candidate.node_identity) }}</p>
                 <p v-if="candidateRemaining > 0" class="text-xs" data-test="borrow-candidate-remaining">{{ t('admin.codexGatewayBorrow.remainingSeconds', { seconds: candidateRemaining }) }}</p>
                 <p v-else class="text-xs text-amber-800 dark:text-amber-200">{{ t('admin.codexGatewayBorrow.candidateExpired') }}</p>
               </dd>
@@ -98,7 +98,7 @@
                 <div><dt>{{ t('admin.codexGatewayBorrow.rawReason') }}</dt><dd class="mt-1 break-words font-mono">{{ source.reason || '—' }}</dd></div>
                 <div><dt>{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(source.checked_at) }}</dd></div>
                 <div><dt>{{ t('admin.codexGatewayBorrow.expiresAt') }}</dt><dd class="mt-1">{{ formatTime(source.expires_at) }}</dd></div>
-                <div><dt>{{ t('admin.codexGatewayBorrow.proxy') }}</dt><dd class="mt-1 break-words">{{ actualProxyLabel(source.proxy_id, source.account_id, source.node_identity) }}</dd></div>
+                <div><dt>{{ proxyTitle }}</dt><dd class="mt-1 break-words">{{ actualProxyLabel(source.proxy_id, source.account_id, source.node_identity) }}</dd></div>
               </dl>
               <pre v-if="source.error" class="borrow-error" data-test="borrow-source-error">{{ source.error }}</pre>
             </div>
@@ -114,7 +114,7 @@
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.accountModel') }}</p>
                 <p class="break-words text-sm font-medium">{{ accountName(target.account_id) }} #{{ target.account_id }}</p>
                 <p class="break-words text-xs">{{ target.model }}</p>
-                <p class="break-words text-xs text-muted" data-test="borrow-actual-node">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ actualProxyLabel(target.proxy_id, target.account_id, target.node_identity) }}</p>
+                <p class="break-words text-xs text-muted" data-test="borrow-actual-node">{{ proxyTitle }}: {{ actualProxyLabel(target.proxy_id, target.account_id, target.node_identity) }}</p>
                 <p v-if="target.gateway" class="break-all text-xs text-muted">{{ target.gateway }}</p>
               </div>
               <div class="min-w-0 space-y-2">
@@ -198,6 +198,7 @@ const lifecycle = new AbortController()
 const { loadAccounts, accountById, accountName, accountStateLabel, proxyLabel, wsLabel, modelMappingLabel } = useCodexBorrowInventory(lifecycle.signal)
 const { now, receiveServerTime, cacheUsable, remainingSeconds } = useCodexBorrowClock()
 const status = ref<CodexGatewayBorrowStatus | null>(null)
+const proxyTitle = computed(() => status.value?.config.rotate_nodes ? text('实际出口', 'Actual exit') : t('admin.codexGatewayBorrow.proxy'))
 function actualProxyLabel(id?: number, accountID?: number, identity?: string) {
   const selected = identity ? status.value?.nodes?.find(row => row.node_identity === identity) : undefined
   if (selected?.proxy_id === 0) return text('原服务器直连', 'Server direct')
