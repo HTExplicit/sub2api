@@ -5,6 +5,12 @@ export const BORROW_MODELS = ['gpt-6-astra', 'gpt-6.1-sol'] as const
 export const PELICAN_BORROW_PROMPT = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试'
 
 export interface CodexGatewayBorrowConfig {
+  immediate_reborrow_on_failure?: boolean
+  wait_for_qualified_route?: boolean
+  rotate_nodes?: boolean
+  node_proxy_ids?: number[]
+  max_node_attempts?: number
+  node_cooldown_seconds?: number
   enabled: boolean
   source_account_ids: number[]
   target_account_ids: number[]
@@ -12,6 +18,8 @@ export interface CodexGatewayBorrowConfig {
 }
 
 export interface BorrowSourceStatus {
+  proxy_id?: number
+  node_identity?: string
   account_id: number
   state: string
   reason: string
@@ -27,6 +35,8 @@ export interface BorrowAcquisition {
 }
 
 export interface BorrowTargetStatus extends BorrowSourceStatus {
+  node_identity?: string
+  gateway?: string
   retry_on_next_request?: boolean
   failed_shot?: string
   failure_kind?: string
@@ -49,6 +59,8 @@ export interface BorrowTargetStatus extends BorrowSourceStatus {
 }
 
 export interface CodexGatewayBorrowUsage {
+  recovery?: { phase: 'searching' | 'reborrowing' | 'validating' | 'cooling' | 'recovered' | 'cancelled' | 'stopped'; started_at: string; next_attempt_at?: string; rounds: number; source_requests: number; probe_requests: number; shared_preparation?: boolean; last_stage?: string; last_reason?: string; last_error?: string }
+  proxy_id?: number; node_identity?: string; gateway?: string
   account_id: number; model: string; transport: string; origin: string
   applied: boolean; reason: string; started_at: string; finished_at?: string
   outcome: string; request_id?: string; reported_model?: string; count: number; applied_count: number
@@ -70,6 +82,7 @@ export interface CodexBorrowDiagnosticEvent {
 export interface CodexBorrowDiagnosticRequest { account_id: number; model: string; transport: 'http' | 'ws'; request_limit?: number; scenario?: 'codex_session'; mode?: 'ordinary' | 'borrowed'; service_tier?: string }
 
 export interface CodexGatewayBorrowStatus {
+  nodes?: Array<{ account_id: number; model: string; proxy_id: number; proxy_name: string; node_identity: string; gateway?: string; state: string; retry_after?: string; expires_at?: string; reason?: string }>
   acquisition?: BorrowAcquisition
   setup?: { state: string; phase: string; account_id: number; model: string; completed: number; total: number; failed: number; started_at: string; finished_at?: string; error?: string }
   recent_usage?: CodexGatewayBorrowUsage[]
@@ -80,6 +93,9 @@ export interface CodexGatewayBorrowStatus {
   preparing: boolean
   config: CodexGatewayBorrowConfig
   candidate?: {
+    proxy_id?: number
+    node_identity?: string
+    gateway?: string
     source_account_id: number
     expires_at: string
     remaining_seconds: number
@@ -91,6 +107,10 @@ export interface CodexGatewayBorrowStatus {
 }
 
 export interface BorrowVerification {
+  proxy_id?: number
+  proxy_name?: string
+  node_identity?: string
+  gateway?: string
   retry_on_next_request?: boolean
   failed_shot?: string
   failure_kind?: string

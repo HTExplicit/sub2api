@@ -67,9 +67,22 @@ func RecordCodexGatewayBorrowPreparationFailure(c *gin.Context, account *Account
 		event.ProxyID, event.ProxyName = opsUpstreamProxyID(account), opsUpstreamProxyName(account)
 		event.Platform, event.AccountID, event.AccountName = account.Platform, account.ID, account.Name
 	}
+	if stage == "node_selection" {
+		// A saved account binding does not identify a node-selection attempt.
+		// Keep the route unknown unless the failed probe provides its snapshot.
+		event.ProxyID, event.ProxyName = nil, opsProxyNameUnknown
+	}
 	var failure *CodexGatewayBorrowFailure
 	if errors.As(err, &failure) && failure.Verification != nil {
 		verification := *failure.Verification
+		if verification.NodeIdentity != "" {
+			event.ProxyID, event.ProxyName = nil, verification.ProxyName
+			if verification.ProxyID > 0 {
+				event.ProxyID = &verification.ProxyID
+			} else {
+				event.ProxyName = opsProxyNameDirect
+			}
+		}
 		event.BorrowQualification = &CodexGatewayBorrowFailureEvidence{CacheHit: failure.CacheHit, RetryAfter: failure.RetryAfter, Verification: &verification}
 	}
 	appendOpsUpstreamError(c, event)
@@ -111,15 +124,25 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context
 	}
 	started := time.Now()
 	tracker := s.gatewayBorrow.beginAttempt(ctx, account.ID, model, "http")
+	ctx = context.WithValue(ctx, codexBorrowUsageContextKey{}, tracker)
 	req = req.WithContext(context.WithValue(req.Context(), codexBorrowUsageContextKey{}, tracker))
 	prepared := codexGatewayBorrowHTTPPreparation{service: s.gatewayBorrow, accountID: account.ID, model: model, proxy: proxy}
 	prepared.service.mu.Lock()
 	prepared.revision = prepared.service.revision
+	revisionCtx := prepared.service.revisionCtx
+	wait := prepared.service.config.WaitForQualifiedRoute && req.URL.Path == "/backend-api/codex/responses" && borrowDiagnosticFromContext(ctx) == nil && !IsPelicanGeneration(ctx)
 	prepared.service.mu.Unlock()
 	if tier, ok := req.Context().Value(codexBorrowServiceTierContextKey{}).(string); ok {
 		ctx = withCodexBorrowServiceTier(ctx, tier)
 	}
-	borrowed, application, err := prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
+	var borrowed *http.Request
+	var application *CodexGatewayBorrowApplication
+	var err error
+	if wait {
+		borrowed, application, err = prepared.service.recoverQualifiedHTTP(ctx, req, account, model, proxy, prepared.revision, revisionCtx)
+	} else {
+		borrowed, application, err = prepared.service.Apply(req.WithContext(ctx), account, model, proxy, nil, false)
+	}
 	if err != nil {
 		tracker.blocked(err)
 		return nil, 0, err
@@ -130,7 +153,7 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context
 		return nil, 0, failure
 	}
 	prepared.application = application
-	req = borrowed.WithContext(context.WithValue(req.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, prepared))
+	req = borrowed.WithContext(context.WithValue(borrowed.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, prepared))
 	return req, time.Since(started), nil
 }
 
@@ -190,6 +213,9 @@ func (s *OpenAIGatewayService) applyCodexGatewayBorrowHTTP(req *http.Request, ac
 	// The preparation already canonicalized this Cookie header. Validation
 	// must keep the bound plaintext request identity when it changes no bytes.
 	if slices.Equal(req.Header.Values("Cookie"), borrowed.Header.Values("Cookie")) {
+		if application.node != nil && HTTPUpstreamProfileFromContext(req.Context()) != HTTPUpstreamProfileOpenAIHarvest {
+			return req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAIHarvest)), nil
+		}
 		return req, nil
 	}
 	return borrowed, nil
@@ -200,7 +226,12 @@ type codexGatewayBorrowRecoveryContext struct {
 	values context.Context
 }
 
-func (c codexGatewayBorrowRecoveryContext) Value(key any) any { return c.values.Value(key) }
+func (c codexGatewayBorrowRecoveryContext) Value(key any) any {
+	if value := c.values.Value(key); value != nil {
+		return value
+	}
+	return c.Context.Value(key)
+}
 
 // A prepared recovery request already carries the caller's cancellation and
 // deadline. Preserve that exact context unless an old header guard was replaced.

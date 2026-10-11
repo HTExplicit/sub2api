@@ -6,7 +6,7 @@ import type { CodexGatewayBorrowConfig, CodexGatewayBorrowStatus } from '@/api/a
 
 const mocks = vi.hoisted(() => ({
   getConfig: vi.fn(), saveConfig: vi.fn(), getStatus: vi.fn(), prepare: vi.fn(), verify: vi.fn(), listTests: vi.fn(), getTest: vi.fn(), streamTests: vi.fn(),
-  listAccounts: vi.fn(), getAvailableModels: vi.fn(), testAccount: vi.fn(), showSuccess: vi.fn()
+  listAccounts: vi.fn(), listProxies: vi.fn(), getAvailableModels: vi.fn(), testAccount: vi.fn(), showSuccess: vi.fn()
 }))
 vi.mock('@/api/admin/codexGatewayBorrow', async importOriginal => ({
   ...(await importOriginal<typeof import('@/api/admin/codexGatewayBorrow')>()),
@@ -17,6 +17,7 @@ vi.mock('@/api/admin/accounts', () => {
   return { accountsAPI, default: accountsAPI }
 })
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showSuccess: mocks.showSuccess }) }))
+vi.mock('@/api/admin/proxies', () => ({ list: mocks.listProxies, default: { list: mocks.listProxies } }))
 vi.mock('vue-i18n', async importOriginal => ({
   ...(await importOriginal<typeof import('vue-i18n')>()),
   useI18n: () => ({ locale: { value: 'zh' }, t: (key: string, params?: Record<string, unknown>) => params ? `${key}:${JSON.stringify(params)}` : key, te: () => true })
@@ -65,10 +66,36 @@ beforeEach(() => {
   mocks.listAccounts.mockResolvedValue({ items: localAccounts, total: 4, page: 1, page_size: 100, pages: 1 })
   mocks.getStatus.mockResolvedValue(makeStatus())
   mocks.saveConfig.mockImplementation(async config => structuredClone(config))
+  mocks.listProxies.mockResolvedValue({ items: [{ id: 43, name: 'Candidate A' }, { id: 34, name: 'Candidate B' }], total: 2 })
 })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); sessionStorage.clear() })
 
 describe('Codex borrow settings', () => {
+  it('saves zero-cooldown reborrow explicitly without changing the legacy cooldown value', async () => {
+    const config = { ...enabledConfig, rotate_nodes: true, wait_for_qualified_route: true, node_proxy_ids: [43, 34], max_node_attempts: 5, node_cooldown_seconds: 3600 }
+    const wrapper = await mountView(config)
+    await wrapper.get('[data-test="borrow-immediate-reborrow"]').setValue(true)
+    expect(wrapper.get('[data-test="borrow-node-cooldown"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="borrow-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.saveConfig).toHaveBeenCalledWith({ ...config, immediate_reborrow_on_failure: true }, expect.any(AbortSignal))
+    expectNoModelRequests()
+    await wrapper.get('[data-test="borrow-wait-qualified"]').setValue(false)
+    expect(wrapper.text()).toContain('立即重借需要启用等待恢复和节点选择')
+    expect(wrapper.get('[data-test="borrow-save"]').attributes('disabled')).toBeDefined()
+  })
+  it('preserves ordered node selection and independent bounds through a normal save', async () => {
+    const config = { ...enabledConfig, rotate_nodes: true, wait_for_qualified_route: true, node_proxy_ids: [43, 34], max_node_attempts: 5, node_cooldown_seconds: 3600 }
+    const wrapper = await mountView(config)
+    expect(wrapper.find('[data-test="borrow-unsaved"]').exists()).toBe(false)
+    expectNoModelRequests()
+    await wrapper.get('[data-test="borrow-node-attempts"]').setValue(4)
+    await wrapper.get('[data-test="borrow-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.saveConfig).toHaveBeenCalledWith({ ...config, max_node_attempts: 4 }, expect.any(AbortSignal))
+    expect(wrapper.text()).toContain('#43 → #34')
+    expectNoModelRequests()
+  })
   it('loads local settings and inventory only, with complete account details outside selection labels', async () => {
     const wrapper = await mountView(disabledConfig)
     expect(mocks.getConfig).toHaveBeenCalledOnce()

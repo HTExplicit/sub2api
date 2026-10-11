@@ -164,6 +164,16 @@ func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account 
 		return nil, err
 	}
 	tracker := s.gatewayBorrow.beginUsage(wire.Context(), account.ID, model, "http", applied)
+	if node := borrowNodeBinding(wire); node != nil {
+		proxyURL = node.node.proxy
+		if tracker != nil {
+			tracker.mu.Lock()
+			tracker.row.ProxyID, tracker.row.NodeIdentity, tracker.row.Gateway = node.node.id, node.node.identity, node.gateway
+			tracker.publish(0, 0, 0)
+			tracker.mu.Unlock()
+		}
+	}
 	resp, sendErr := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	resp, sendErr = trackCodexBorrowNodeHTTP(wire, resp, sendErr)
 	return s.gatewayBorrow.trackHTTPResponse(tracker, resp, sendErr)
 }

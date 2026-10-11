@@ -43,7 +43,7 @@
               <dt class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.currentSource') }}</dt>
               <dd v-if="status.candidate" class="mt-1 space-y-1">
                 <p class="break-words font-medium">{{ accountName(status.candidate.source_account_id) }} #{{ status.candidate.source_account_id }}</p>
-                <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ proxyLabel(accountById(status.candidate.source_account_id)) }}</p>
+                <p class="text-xs text-muted">{{ proxyTitle }}: {{ actualProxyLabel(status.candidate.proxy_id, status.candidate.source_account_id, status.candidate.node_identity) }}</p>
                 <p v-if="candidateRemaining > 0" class="text-xs" data-test="borrow-candidate-remaining">{{ t('admin.codexGatewayBorrow.remainingSeconds', { seconds: candidateRemaining }) }}</p>
                 <p v-else class="text-xs text-amber-800 dark:text-amber-200">{{ t('admin.codexGatewayBorrow.candidateExpired') }}</p>
               </dd>
@@ -98,7 +98,7 @@
                 <div><dt>{{ t('admin.codexGatewayBorrow.rawReason') }}</dt><dd class="mt-1 break-words font-mono">{{ source.reason || '—' }}</dd></div>
                 <div><dt>{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(source.checked_at) }}</dd></div>
                 <div><dt>{{ t('admin.codexGatewayBorrow.expiresAt') }}</dt><dd class="mt-1">{{ formatTime(source.expires_at) }}</dd></div>
-                <div><dt>{{ t('admin.codexGatewayBorrow.proxy') }}</dt><dd class="mt-1 break-words">{{ proxyLabel(accountById(source.account_id)) }}</dd></div>
+                <div><dt>{{ proxyTitle }}</dt><dd class="mt-1 break-words">{{ actualProxyLabel(source.proxy_id, source.account_id, source.node_identity) }}</dd></div>
               </dl>
               <pre v-if="source.error" class="borrow-error" data-test="borrow-source-error">{{ source.error }}</pre>
             </div>
@@ -114,13 +114,14 @@
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.accountModel') }}</p>
                 <p class="break-words text-sm font-medium">{{ accountName(target.account_id) }} #{{ target.account_id }}</p>
                 <p class="break-words text-xs">{{ target.model }}</p>
-                <p class="break-words text-xs text-muted">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ proxyLabel(accountById(target.account_id)) }}</p>
+                <p class="break-words text-xs text-muted" data-test="borrow-actual-node">{{ proxyTitle }}: {{ actualProxyLabel(target.proxy_id, target.account_id, target.node_identity) }}</p>
+                <p v-if="target.gateway" class="break-all text-xs text-muted">{{ target.gateway }}</p>
               </div>
               <div class="min-w-0 space-y-2">
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.validation') }}</p>
-                <span class="inline-block rounded px-2 py-1 text-xs font-medium" :class="stateClass(targetState(target))" data-test="borrow-line-state">{{ t(`admin.codexGatewayBorrow.lineStates.${targetState(target)}`) }}</span>
+                <span class="inline-block rounded px-2 py-1 text-xs font-medium" :class="stateClass(targetState(target))" data-test="borrow-line-state">{{ targetLineLabel(target) }}</span>
                 <p class="break-words text-xs text-muted" data-test="borrow-line-reason">{{ reasonLabel(target) }}</p>
-                <p v-if="target.retry_on_next_request" class="text-xs text-amber-800 dark:text-amber-200" data-test="borrow-retry-policy">{{ text('探针中断；下一次请求重新进行完整验证，通过后才发送业务。', 'The probe was interrupted. The next request runs a complete validation before business dispatch.') }}</p>
+                <p v-if="target.retry_on_next_request" class="text-xs text-amber-800 dark:text-amber-200" data-test="borrow-retry-policy">{{ recoveryPending(target) ? text('验证中断；当前请求等待下一轮完整验证，通过后才发送业务。', 'Validation was interrupted. This request waits for another complete validation before business dispatch.') : text('探针中断；下一次请求重新进行完整验证，通过后才发送业务。', 'The probe was interrupted. The next request runs a complete validation before business dispatch.') }}</p>
               </div>
               <dl class="min-w-0 space-y-2 text-xs">
                 <div><dt class="text-muted">{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(target.checked_at) }}</dd></div>
@@ -163,6 +164,16 @@
           </ul>
           <p v-else class="rounded-lg border border-dashed border-line p-4 text-sm text-muted" data-test="borrow-no-targets">{{ t('admin.codexGatewayBorrow.noConfiguredTargets') }}</p>
         </section>
+        <section v-if="status.config.rotate_nodes" class="card space-y-3 p-4 sm:p-5" data-test="borrow-node-status">
+          <h2 class="font-semibold">{{ text('节点选择与冷却', 'Node selection and cooling') }}</h2>
+          <p class="text-sm text-muted">{{ text('按目标账号和模型分别记录。当前选中仅表示本次验证有效，不代表长期稳定或任务质量通过。', 'Recorded separately for each target and model. Selection indicates a current validation, not long-term stability or task-quality acceptance.') }}</p>
+          <div v-for="node in status.nodes || []" :key="`${node.account_id}:${node.model}:${node.node_identity}`" class="grid gap-2 border-t border-line pt-3 text-sm sm:grid-cols-3">
+            <div><p>{{ accountName(node.account_id) }} #{{ node.account_id }}</p><p class="text-xs text-muted">{{ node.model }}</p></div>
+            <div><p>{{ node.proxy_id === 0 ? text('原服务器直连', 'Server direct') : `${node.proxy_name} #${node.proxy_id}` }}</p><p class="break-all text-xs text-muted">{{ node.gateway || '—' }}</p></div>
+            <div><p :class="node.retry_after && remainingSeconds(node.retry_after) ? 'text-amber-800 dark:text-amber-200' : 'text-muted'">{{ nodeStateLabel(node) }}</p><p v-if="!status.config.immediate_reborrow_on_failure && node.retry_after && remainingSeconds(node.retry_after)" class="text-xs text-muted">{{ text('冷却截止', 'Cooling until') }}: {{ formatTime(node.retry_after) }} · {{ remainingSeconds(node.retry_after) }}s</p><p v-if="node.reason" class="break-words text-xs text-muted">{{ borrowReasonLabel(node.reason, t) }}</p></div>
+          </div>
+          <p v-if="!status.nodes?.length" class="text-sm text-muted">{{ text('尚未尝试候选节点。', 'Candidate nodes have not been attempted.') }}</p>
+        </section>
         <CodexBorrowActivity :status="status" :account-name="accountName" @refresh="refreshStatus" />
       </template>
     </div>
@@ -187,6 +198,22 @@ const lifecycle = new AbortController()
 const { loadAccounts, accountById, accountName, accountStateLabel, proxyLabel, wsLabel, modelMappingLabel } = useCodexBorrowInventory(lifecycle.signal)
 const { now, receiveServerTime, cacheUsable, remainingSeconds } = useCodexBorrowClock()
 const status = ref<CodexGatewayBorrowStatus | null>(null)
+const proxyTitle = computed(() => status.value?.config.rotate_nodes ? text('实际出口', 'Actual exit') : t('admin.codexGatewayBorrow.proxy'))
+function actualProxyLabel(id?: number, accountID?: number, identity?: string) {
+  const selected = identity ? status.value?.nodes?.find(row => row.node_identity === identity) : undefined
+  if (selected?.proxy_id === 0) return text('原服务器直连', 'Server direct')
+  if (id) { const node = status.value?.nodes?.find(row => row.proxy_id === id); return `${node?.proxy_name || ''} #${id}`.trim() }
+  return status.value?.config.rotate_nodes ? text('尚未选中节点', 'No node selected') : proxyLabel(accountID ? accountById(accountID) : undefined)
+}
+function nodeStateLabel(node: NonNullable<CodexGatewayBorrowStatus['nodes']>[number]) {
+  if (statusStale.value) return text('上次记录，等待更新', 'Last observed; awaiting an update')
+  if (status.value?.config.immediate_reborrow_on_failure && node.state === 'cooling') return text('失败待重借（0 秒冷却）', 'Rejected; ready for immediate reborrow')
+  if (status.value?.config.immediate_reborrow_on_failure && node.state === 'rejected') return text('验证失败，可立即重借', 'Rejected; immediate reborrow available')
+  if (node.retry_after && remainingSeconds(node.retry_after)) return text('冷却中', 'Cooling')
+  if (node.state === 'selected') return node.expires_at && !remainingSeconds(node.expires_at) ? text('已过期', 'Expired') : text('当前已选', 'Selected')
+  if (node.state === 'expired') return text('已过期', 'Expired')
+  return text('待验证', 'Awaiting validation')
+}
 const loading = ref(true)
 const refreshing = ref(false)
 const statusError = ref('')
@@ -219,6 +246,10 @@ const canAct = computed(() => !!status.value?.enabled && !statusStale.value && !
 const shouldPoll = computed(() => pageVisible.value && (!!status.value?.enabled || !!status.value?.preparing || !!actionBusy.value))
 const preparationLabel = computed(() => {
   if (statusStale.value) return text('状态待刷新', 'Status needs refreshing')
+  const waiting = (status.value?.recent_usage || []).filter(row => !row.dispatched && !row.finished_at && ['searching', 'reborrowing', 'validating', 'cooling'].includes(row.recovery?.phase || ''))
+  if (waiting.some(row => row.recovery?.phase === 'reborrowing')) return text('正在重新取票，原请求仍在等待', 'Reacquiring a route; the original request is still waiting')
+  if (waiting.some(row => row.recovery?.phase === 'validating')) return text('正在严格验证，业务尚未发送', 'Strict qualification in progress; business not dispatched')
+  if (waiting.length) return waiting.some(row => row.recovery?.phase === 'searching') ? text('正在恢复合格路由，业务尚未发送', 'Recovering a qualified route; business not dispatched') : text('等待冷却，原请求仍在等待', 'Cooling; the original request is still waiting')
   if (status.value?.preparing || actionBusy.value === 'prepare') return t('admin.codexGatewayBorrow.preparationPending')
   if (actionBusy.value || serverValidating.value) return t('admin.codexGatewayBorrow.validating')
   if (!status.value?.enabled || !targets.value.length) return text('未配置或未启用', 'Not configured or disabled')
@@ -239,6 +270,14 @@ const acquisitionLabel = computed(() => {
 })
 
 function pairKey(id: number, model: string) { return `${id}:${model}` }
+function recoveryPending(target: BorrowTargetStatus) { return status.value?.recent_usage?.some(row => row.account_id === target.account_id && row.model === target.model && !row.dispatched && !row.finished_at && ['searching', 'reborrowing', 'validating', 'cooling'].includes(row.recovery?.phase || '')) }
+function targetLineLabel(target: BorrowTargetStatus) {
+  const row = status.value?.recent_usage?.find(row => row.account_id === target.account_id && row.model === target.model && !row.dispatched && !row.finished_at)
+  if (!statusStale.value && row?.recovery?.phase === 'reborrowing') return text('重新取票', 'Reacquiring a route')
+  if (!statusStale.value && row?.recovery?.phase === 'validating') return text('严格验证中', 'Strict qualification in progress')
+  if (!statusStale.value && row?.recovery?.phase === 'searching') return text('寻找合格路由', 'Searching for a qualified route')
+  return t(`admin.codexGatewayBorrow.lineStates.${targetState(target)}`)
+}
 function formatTime(value?: string) {
   if (!value || value.startsWith('0001-01-01')) return '—'
   const date = new Date(value)
@@ -247,6 +286,7 @@ function formatTime(value?: string) {
 function targetState(target: BorrowTargetStatus) {
   if (!status.value?.enabled) return 'waiting'
   if (statusStale.value) return 'stale'
+  if (recoveryPending(target)) return 'validating'
   const state = borrowTargetState(target, now.value)
   if (state !== 'ready' && actionBusy.value === pairKey(target.account_id, target.model)) return 'validating'
   if (state === 'waiting' && (status.value.preparing || actionBusy.value === 'prepare')) return 'validating'
@@ -257,6 +297,7 @@ function reasonLabel(target: BorrowTargetStatus) {
   const state = targetState(target)
   if (state === 'stale') return text('上次读取的结果，等待更新', 'Last observed result; awaiting an update')
   if (state === 'expired') return borrowReasonLabel('route_expired', t)
+  if (target.reason === 'node_cooling') return text('该出口或上游网关正在冷却，先前验证暂不可用于发送。', 'This exit or upstream gateway is cooling; the earlier validation cannot currently authorize dispatch.')
   if (state === 'validating' && (actionBusy.value || target.state === 'waiting')) return borrowReasonLabel('validating', t)
   return borrowReasonLabel(target.reason, t)
 }

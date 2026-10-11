@@ -226,6 +226,11 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowWSTurn(ctx context.Conte
 	if s == nil || s.gatewayBorrow == nil || account == nil {
 		return nil, nil
 	}
+	borrowConfig := s.gatewayBorrow.ConfigSnapshot()
+	diagnosticMode := borrowDiagnosticFromContext(ctx)
+	if borrowConfig.Enabled && borrowConfig.RotateNodes && slices.Contains(borrowConfig.TargetAccountIDs, account.ID) && slices.Contains(borrowConfig.Models, model) && (diagnosticMode == nil || diagnosticMode.borrow) {
+		return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "node_selection_http_only"}
+	}
 	req, err := codexGatewayBorrowWSRequest(ctx, wsURL, headers)
 	if err != nil {
 		return nil, err

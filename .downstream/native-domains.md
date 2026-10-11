@@ -89,13 +89,17 @@ countdowns expire routes without renewing them.
 
 `GET/PUT /admin/codex-gateway-borrow/config` owns one JSON setting,
 `codex_gateway_borrow_config`: `enabled`, `source_account_ids`,
-`target_account_ids` and `models`. A missing row is off with empty account
+`target_account_ids` and `models`. Optional `rotate_nodes`, `node_proxy_ids`,
+`max_node_attempts` and `node_cooldown_seconds` enable bounded HTTP node selection
+only for those configured targets. Proxy ID `0` explicitly adds the current
+server's direct egress as a candidate; it is never an implicit fallback.
+A missing row is off with empty account
 lists and the two models `gpt-6-astra` and `gpt-6.1-sol`. Only existing OpenAI
 OAuth-like accounts can be selected; the source and target lists are disjoint.
 The extension never rewrites account model mappings, proxies, WS switches,
 groups, quota or scheduling state. Normal credential refresh remains available.
 
-The protocol reference is ranxi v2.10.5 (`d977e7a5`), non-rotating branch.
+The protocol reference is ranxi v2.10.5 (`d977e7a5`). With node selection off,
 Candidates are stored per source with an active-source preference. Their maximum
 lease is 230 seconds, capped by earlier upstream expiry; seeing a value again
 while its lease is live does not extend it. Source acquisition uses the normal
@@ -104,6 +108,64 @@ plaintext JSON template and the host's OpenAIHarvest policy, with no copied
 transport configuration and no business service tier inserted into their body.
 The actual selected model is preserved: Astra follows the original; Sol is a
 separate downstream model extension with independent qualification.
+
+With node selection enabled, the source, target probe and business request use
+the same immutable registered proxy definition and fresh-connect transport.
+Account bindings and shared proxy records are not changed. Inactive or expired
+nodes are skipped; a changed proxy definition invalidates prepared dispatch.
+Each preparation has a 180-second bound and tries at most the configured number
+of distinct eligible nodes (default 3, maximum 10), with 45 seconds per source
+acquisition. Explicit target rejection cools both the node and the named gateway
+for that account/model (default 3600 seconds). Source failures cool the donor/node
+for one minute across models. Duplicate observations cannot extend a cooling
+window. Discovering a known cooling gateway pauses that model's source search
+for five minutes; an exhausted search has a 15-second pause. A target transport
+interruption or missing terminal does not poison the next independent request:
+it still requires a fresh full probe pair. No business generation is replayed.
+Cooling decisions survive setting revisions but are process-local, as upstream.
+Optional `wait_for_qualified_route` defaults to false and requires node selection.
+Optional `immediate_reborrow_on_failure` also defaults to false and requires both
+waiting and node selection. Only pending HTTP business requests use its zero
+cooldown: failed qualifications trigger fresh source acquisition and two complete
+strict probes, bypassing preparation/source/node/gateway failure caches. Each
+180-second bounded search starts its next round immediately, without a total
+recovery deadline. Reacquiring the same cookie cannot extend an active lease;
+an expired proof requires new acquisition and complete qualification as upstream.
+Administrator diagnostics retain ordinary
+cooling and remain bounded. Business dispatch still requires a current successful
+proof and is never replayed. Missing eligible nodes or invalid configuration stop
+recovery rather than spinning without network work. Acquisition and validation
+phases remain separate from a recovered proof and a completed business response.
+Saving immediate mode does not start background preparation; acquisition only
+runs while a pending business request needs it or an administrator explicitly
+invokes the existing bounded preparation/verification interface.
+For full HTTP Responses business preparation it retains the original request while
+eligible routes recover; administrator probes and Pelican jobs remain bounded.
+Each search remains bounded to 180 seconds and the configured distinct-node limit.
+No total recovery deadline is added while the caller is connected. Without
+immediate reborrow the next cycle waits for node/source/gateway cooling; failures without a future eligibility time
+wait at least 15 seconds. Cancellation of the last waiter cancels shared work;
+configuration, target identity or account invalidation stops recovery.
+Recovery first reacquires and requalifies an expired lease on the previously
+qualified node; it changes nodes when that route fails or is unavailable. A
+candidate that rediscovers a cooling gateway is skipped while other eligible
+nodes remain in the bounded round. The gateway/node cooldown remains intact;
+the upstream five-minute blanket search pause remains for non-waiting mode.
+Normal token refresh
+may update authentication, never business STATE, input, model, tier or history.
+Recovery emits no downstream bytes before actual business response headers, so
+the real STATE header remains deliverable. Existing proxy/client timeouts still
+apply. Recovery status, rounds and initiated source/probe counts are distinct
+from dispatched/completed business counters; shared preparations are labelled.
+Source Cookie leases retain the 230-second cap and same-value no-extension rule
+across selected nodes. Every model has its own target proof and current route.
+The status API reports actual proxy IDs, gateway metadata, expiry and cooling;
+selection is not a claim of long-term availability or model quality. Full
+Responses business STATE replacement and incomplete SSE invalidate future
+selection while preserving the response. Compact/lite JSON keeps its distinct
+terminal/STATE protocol. Node selection does not enable WS and fails closed if
+a selected target attempts borrowed WS; ordinary and unselected paths retain
+their existing behavior.
 
 Source acquisition has a 90-second bound. The two target probes have 45 seconds
 each and require completed HTTP 200 streams. The first must return STATE; the

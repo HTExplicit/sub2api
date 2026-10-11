@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -14,25 +15,29 @@ import (
 )
 
 type CodexGatewayBorrowUsage struct {
-	Dispatched       bool       `json:"dispatched"`
-	FailureStage     string     `json:"failure_stage,omitempty"`
-	ClientRequestID  string     `json:"client_request_id,omitempty"`
-	GatewayRequestID string     `json:"gateway_request_id,omitempty"`
-	AttemptCount     uint64     `json:"attempt_count"`
-	BlockedCount     uint64     `json:"blocked_count"`
-	AccountID        int64      `json:"account_id"`
-	Model            string     `json:"model"`
-	Transport        string     `json:"transport"`
-	Origin           string     `json:"origin"`
-	Applied          bool       `json:"applied"`
-	Reason           string     `json:"reason"`
-	StartedAt        time.Time  `json:"started_at"`
-	FinishedAt       *time.Time `json:"finished_at,omitempty"`
-	Outcome          string     `json:"outcome"`
-	RequestID        string     `json:"request_id,omitempty"`
-	ReportedModel    string     `json:"reported_model,omitempty"`
-	Count            uint64     `json:"count"`
-	AppliedCount     uint64     `json:"applied_count"`
+	Recovery         *CodexGatewayBorrowRecovery `json:"recovery,omitempty"`
+	ProxyID          int64                       `json:"proxy_id,omitempty"`
+	NodeIdentity     string                      `json:"node_identity,omitempty"`
+	Gateway          string                      `json:"gateway,omitempty"`
+	Dispatched       bool                        `json:"dispatched"`
+	FailureStage     string                      `json:"failure_stage,omitempty"`
+	ClientRequestID  string                      `json:"client_request_id,omitempty"`
+	GatewayRequestID string                      `json:"gateway_request_id,omitempty"`
+	AttemptCount     uint64                      `json:"attempt_count"`
+	BlockedCount     uint64                      `json:"blocked_count"`
+	AccountID        int64                       `json:"account_id"`
+	Model            string                      `json:"model"`
+	Transport        string                      `json:"transport"`
+	Origin           string                      `json:"origin"`
+	Applied          bool                        `json:"applied"`
+	Reason           string                      `json:"reason"`
+	StartedAt        time.Time                   `json:"started_at"`
+	FinishedAt       *time.Time                  `json:"finished_at,omitempty"`
+	Outcome          string                      `json:"outcome"`
+	RequestID        string                      `json:"request_id,omitempty"`
+	ReportedModel    string                      `json:"reported_model,omitempty"`
+	Count            uint64                      `json:"count"`
+	AppliedCount     uint64                      `json:"applied_count"`
 }
 
 type codexBorrowUsageKey struct {
@@ -146,6 +151,14 @@ func (t *codexBorrowUsageTracker) blocked(err error) {
 	}
 	t.row.FailureStage, t.row.Reason = codexBorrowFailureStage(err)
 	t.row.Outcome, t.terminal = "blocked", true
+	if t.row.Recovery != nil {
+		copy := *t.row.Recovery
+		copy.Phase, copy.NextAttemptAt = "stopped", nil
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			copy.Phase, t.row.Outcome = "cancelled", "cancelled"
+		}
+		t.row.Recovery = &copy
+	}
 	// Mark finished while holding the tracker lock so repeated error owners
 	// cannot count the same preparation rejection twice.
 	t.finished = true

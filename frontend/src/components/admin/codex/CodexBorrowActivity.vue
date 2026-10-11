@@ -4,6 +4,15 @@
       <h2 id="codex-activity-title" class="font-semibold text-ink">{{ text('最近实际请求', 'Recent actual requests') }}</h2>
       <RouterLink to="/admin/pelican-tests" class="text-sm text-primary-700 underline dark:text-primary-300">{{ text('打开鹈鹕测试', 'Open Pelican tests') }}</RouterLink>
     </div>
+    <article v-for="row in recoveryRows" :key="`${row.account_id}:${row.model}:${row.gateway_request_id}`" class="space-y-1 rounded-lg border border-line p-3 text-sm" data-test="borrow-recovery">
+      <p class="font-medium">{{ accountName(row.account_id) }} · {{ row.model }} · {{ recoveryPhase(row.recovery!.phase) }}</p>
+      <p class="text-xs text-muted">{{ text('恢复开始', 'Recovery started') }}: {{ time(row.recovery!.started_at) }} · {{ text('轮数', 'Rounds') }} {{ row.recovery!.rounds }}</p>
+      <p v-if="row.recovery!.next_attempt_at" class="text-xs text-muted">{{ text('下一检查时间', 'Next eligibility check') }}: {{ time(row.recovery!.next_attempt_at) }}</p>
+      <p class="text-xs text-muted">{{ text('本请求发起的上游调用：来源采集', 'Upstream calls initiated for this request: source') }} {{ row.recovery!.source_requests }} · {{ text('目标探针', 'Target probes') }} {{ row.recovery!.probe_requests }} · {{ row.dispatched ? text('业务已发送，结果见下方记录', 'Business dispatched; see its outcome below') : text('业务尚未发送，恢复等待不代表成功', 'Business not dispatched; waiting is not success') }}</p>
+      <p v-if="row.recovery!.last_reason" class="break-words text-xs text-muted">{{ row.recovery!.last_stage }} / {{ row.recovery!.last_reason }}</p>
+      <p v-if="row.recovery!.shared_preparation" class="text-xs text-muted">{{ text('复用了其他并发请求的准备结果，共享探针不重复计数。', 'Reused preparation from another concurrent request; shared probes are not counted twice.') }}</p>
+      <details v-if="row.recovery!.last_error" class="text-xs text-muted"><summary class="cursor-pointer">{{ text('最近一次恢复失败详情', 'Latest recovery failure details') }}</summary><pre class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words">{{ row.recovery!.last_error }}</pre></details>
+    </article>
     <p class="text-sm text-muted">{{ text('这里记录业务从借用准备到上游完成的结果。准备失败表示业务尚未发送；诊断成功不代表业务成功。', 'Business results cover preparation through upstream completion. A preparation failure means the request was not sent; a diagnostic success does not prove business success.') }}</p>
     <p v-if="!status.recent_usage?.length" class="rounded-lg bg-surface p-4 text-sm text-muted" data-test="borrow-no-usage">{{ text('还没有实际发送记录。可运行下方对照，或在正常使用后刷新状态。', 'No dispatch has been observed. Run a comparison below, or refresh after normal use.') }}</p>
     <div v-else class="overflow-x-auto">
@@ -66,6 +75,8 @@ const usageGroups = computed(() => ['business', 'diagnostic'].map(origin => ({
   origin, title: origin === 'business' ? text('最近业务请求', 'Recent business requests') : text('诊断请求', 'Diagnostic requests'),
   rows: (props.status.recent_usage || []).filter(row => row.origin === origin)
 })).filter(group => group.rows.length))
+const recoveryRows = computed(() => (props.status.recent_usage || []).filter(row => row.recovery))
+function recoveryPhase(value: string) { return ({ searching: text('正在寻找合格路由', 'Searching for a qualified route'), reborrowing: text('正在重新取票', 'Reacquiring a route'), validating: text('正在严格验证', 'Strict qualification in progress'), cooling: text('等待冷却', 'Waiting for cooling'), recovered: text('严格验证已恢复', 'Strict qualification recovered'), cancelled: text('已取消恢复', 'Recovery cancelled'), stopped: text('恢复已停止', 'Recovery stopped') } as Record<string, string>)[value] || value }
 watch(pairs, value => { if (!value.some(pair => pair.key === selection.value)) selection.value = value[0]?.key || '' }, { immediate: true })
 let controller: AbortController | undefined
 let disposed = false
