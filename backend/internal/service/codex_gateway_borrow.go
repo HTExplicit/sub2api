@@ -47,6 +47,7 @@ var (
 // request failing upstream. Callers must surface it before ordinary account
 // failover, stream-timeout or health hooks. Unwrap preserves the specific cause.
 type CodexGatewayBorrowFailure struct {
+	CacheHit          bool
 	Revision          uint64
 	CookieFingerprint string
 	Cause             error
@@ -81,7 +82,7 @@ func IsCodexGatewayBorrowFailure(err error) bool {
 	return errors.As(err, &failure)
 }
 
-func borrowVerificationFailure(check codexGatewayBorrowTargetCheck, revision uint64) error {
+func borrowVerificationFailure(check codexGatewayBorrowTargetCheck, revision uint64) *CodexGatewayBorrowFailure {
 	result := check.result
 	failure := &CodexGatewayBorrowFailure{Revision: revision, Cause: ErrCodexGatewayBorrowUnavailable, Stage: "target_validation", Reason: result.Reason, Detail: result.Error, Verification: &result, CookieFingerprint: check.cookieKey}
 	if !check.retryAfter.IsZero() {
@@ -199,6 +200,9 @@ type CodexGatewayBorrowSourceStatus struct {
 }
 
 type CodexGatewayBorrowVerification struct {
+	RetryOnNextRequest        bool       `json:"retry_on_next_request,omitempty"`
+	FailedShot                string     `json:"failed_shot,omitempty"`
+	FailureKind               string     `json:"failure_kind,omitempty"`
 	MintTransportPhase        string     `json:"mint_transport_phase,omitempty"`
 	ContinueTransportPhase    string     `json:"continue_transport_phase,omitempty"`
 	MintTransportAttempts     int        `json:"mint_transport_attempts,omitempty"`
@@ -555,6 +559,8 @@ func (s *CodexGatewayBorrowService) Status() CodexGatewayBorrowStatus {
 					row.State = "ready"
 				} else if c.validating {
 					row.State = "validating"
+				} else if c.result.RetryOnNextRequest {
+					row.State = "retry_pending"
 				} else if c.result.Success {
 					row.State, row.Reason = "expired", "route_expired"
 				}
@@ -940,7 +946,7 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 			acquisition.Phase = "failed"
 		}
 		check := codexGatewayBorrowTargetCheck{acquisition: acquisition, validationID: validationID, identityRevision: identityRevision, policyRevision: policyRevision, key: key, cookieKey: borrowHash(candidate.cookie.Value), expires: candidate.expires, result: result}
-		if !result.Success {
+		if !result.Success && !result.RetryOnNextRequest {
 			check.retryAfter = time.Now().Add(codexGatewayBorrowFailureWait)
 			check.acquisition.RetryAfter = &check.retryAfter
 		}
@@ -1006,8 +1012,10 @@ func (s *CodexGatewayBorrowService) cachedTarget(rev uint64, key codexGatewayBor
 		}
 		return old, true, nil
 	}
-	if !old.result.Success && now.Before(old.retryAfter) {
-		return old, false, borrowVerificationFailure(old, rev)
+	if !old.result.Success && !old.result.RetryOnNextRequest && now.Before(old.retryAfter) {
+		failure := borrowVerificationFailure(old, rev)
+		failure.CacheHit = true
+		return old, false, failure
 	}
 	return old, false, nil
 }
