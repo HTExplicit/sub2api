@@ -8,6 +8,16 @@ import (
 	"time"
 )
 
+// Only request-owned recovery can bypass preparation cooldowns. Administrators
+// keep ordinary rules; dispatch still requires a matching successful proof.
+type borrowImmediateReborrowKey struct{}
+type borrowFreshSourceKey struct{}
+
+func borrowImmediateReborrow(ctx context.Context) bool {
+	value, _ := ctx.Value(borrowImmediateReborrowKey{}).(bool)
+	return value
+}
+
 // Request-owned recovery never writes downstream headers or starts a business
 // generation. Every shared preparation remains bounded; only waiting is open-ended.
 type CodexGatewayBorrowRecovery struct {
@@ -30,6 +40,9 @@ func (t *codexBorrowUsageTracker) recovering(phase string, next *time.Time, err 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.finished || t.row.Dispatched {
+		return
+	}
+	if t.row.Recovery == nil && phase != "searching" {
 		return
 	}
 	r := CodexGatewayBorrowRecovery{StartedAt: time.Now()}
@@ -94,7 +107,7 @@ func borrowRecoveryRetryable(err error) bool {
 			return false
 		}
 		switch failure.Reason {
-		case "account_unavailable", "account_inactive", "model_not_allowed", "model_mapping_mismatch", "configuration_changed", "node_proxy_repository_unavailable":
+		case "account_unavailable", "account_inactive", "model_not_allowed", "model_mapping_mismatch", "configuration_changed", "node_proxy_repository_unavailable", "node_candidates_unavailable":
 			return false
 		}
 		return true
@@ -107,6 +120,9 @@ func borrowRecoveryRetryable(err error) bool {
 // are combined; a global source-search pause is a lower bound for all nodes.
 func (s *CodexGatewayBorrowService) nextBorrowRecoveryAttempt(ctx context.Context, accountID int64, model string, err error) time.Time {
 	now := time.Now()
+	if borrowImmediateReborrow(ctx) {
+		return now
+	}
 	fallback := now.Add(codexGatewayBorrowFailureWait)
 	cfg := s.ConfigSnapshot()
 	nodes, loadErr := s.borrowNodes(ctx, cfg.NodeProxyIDs)
@@ -172,16 +188,39 @@ func (s *CodexGatewayBorrowService) waitBorrowRecovery(ctx context.Context, next
 
 func (s *CodexGatewayBorrowService) recoverQualifiedHTTP(ctx context.Context, req *http.Request, account *Account, model, proxy string, revision uint64, revisionCtx context.Context) (*http.Request, *CodexGatewayBorrowApplication, error) {
 	caller := ctx
-	ctx, cancel := context.WithCancel(ctx)
+	ctx = codexGatewayBorrowRecoveryContext{Context: ctx, values: req.Context()}
+	ctx, cancel := context.WithCancelCause(ctx)
+	if s.ConfigSnapshot().ImmediateReborrowOnFailure {
+		ctx = context.WithValue(ctx, borrowImmediateReborrowKey{}, true)
+		guardCtx := ctx
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-guardCtx.Done():
+					return
+				case <-ticker.C:
+					checkCtx, stop := context.WithTimeout(guardCtx, codexGatewayBorrowStoreTimeout)
+					current, err := s.accounts.GetByID(checkCtx, account.ID)
+					stop()
+					if err != nil || !codexGatewayBorrowAccountSupported(current) || current.Status != StatusActive || (account.Schedulable && !current.Schedulable) {
+						cancel(&CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "recovery", Reason: "account_inactive"})
+						return
+					}
+				}
+			}
+		}()
+	}
 	policy := currentCodexFingerprintPolicyForAccount(account).revision
 	ctx, cancelPolicy := borrowPolicyContext(ctx, account.ID, policy)
 	defer cancelPolicy()
 	changed := func() bool {
 		return revisionCtx.Err() != nil || currentCodexFingerprintPolicyForAccount(account).revision != policy
 	}
-	stopRevision := context.AfterFunc(revisionCtx, cancel)
+	stopRevision := context.AfterFunc(revisionCtx, func() { cancel(ErrCodexGatewayBorrowChanged) })
 	defer stopRevision()
-	defer cancel()
+	defer cancel(nil)
 	tracker := codexBorrowUsageFromContext(ctx)
 	originalAccount := req.Header.Get("ChatGPT-Account-ID")
 	wire := req.Clone(ctx) // Shares Body/GetBody; the pending generation is never read or replayed.
@@ -190,7 +229,7 @@ func (s *CodexGatewayBorrowService) recoverQualifiedHTTP(ctx context.Context, re
 			if changed() {
 				return nil, nil, ErrCodexGatewayBorrowChanged
 			}
-			return nil, nil, err
+			return nil, nil, context.Cause(ctx)
 		}
 		s.mu.Lock()
 		current := s.revision == revision && s.config.Enabled && s.config.WaitForQualifiedRoute && s.config.RotateNodes
@@ -246,6 +285,12 @@ func (s *CodexGatewayBorrowService) recoverQualifiedHTTP(ctx context.Context, re
 			return nil, nil, err
 		}
 		next := s.nextBorrowRecoveryAttempt(ctx, account.ID, model, err)
+		if borrowImmediateReborrow(ctx) {
+			// The next round starts immediately, but still performs new network
+			// acquisition and full probes. Never spin on an empty candidate pool.
+			tracker.recovering("reborrowing", nil, err)
+			continue
+		}
 		tracker.recovering("cooling", &next, err)
 		if err := s.waitBorrowRecovery(ctx, next, account.ID); err != nil {
 			if changed() {

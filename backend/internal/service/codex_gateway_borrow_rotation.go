@@ -66,6 +66,9 @@ type codexBorrowRotation struct {
 }
 
 func validateCodexBorrowNodeConfig(cfg CodexGatewayBorrowConfig) error {
+	if cfg.ImmediateReborrowOnFailure && (!cfg.WaitForQualifiedRoute || !cfg.RotateNodes) {
+		return errors.New("immediate reborrow requires recovery waiting and node selection")
+	}
 	if cfg.Enabled && cfg.WaitForQualifiedRoute && !cfg.RotateNodes {
 		return errors.New("waiting for a qualified route requires node selection")
 	}
@@ -89,7 +92,7 @@ func validateCodexBorrowNodeConfig(cfg CodexGatewayBorrowConfig) error {
 }
 
 func borrowNodeConfigEqual(a, b CodexGatewayBorrowConfig) bool {
-	return a.WaitForQualifiedRoute == b.WaitForQualifiedRoute && a.RotateNodes == b.RotateNodes && a.MaxNodeAttempts == b.MaxNodeAttempts && a.NodeCooldownSeconds == b.NodeCooldownSeconds && slices.Equal(a.NodeProxyIDs, b.NodeProxyIDs)
+	return a.ImmediateReborrowOnFailure == b.ImmediateReborrowOnFailure && a.WaitForQualifiedRoute == b.WaitForQualifiedRoute && a.RotateNodes == b.RotateNodes && a.MaxNodeAttempts == b.MaxNodeAttempts && a.NodeCooldownSeconds == b.NodeCooldownSeconds && slices.Equal(a.NodeProxyIDs, b.NodeProxyIDs)
 }
 
 func borrowNodeFromProxy(p *Proxy) (codexBorrowNode, error) {
@@ -167,9 +170,13 @@ func (s *CodexGatewayBorrowService) nodeChild(rev uint64, cfg CodexGatewayBorrow
 	child := NewCodexGatewayBorrowService(nil, s.accounts, nil, s.upstream, s.tlsProfiles)
 	child.gateway = s.gateway
 	child.node = &node
-	child.nodeLease = r.cookieExpiry
+	retainExpiredLease := cfg.ImmediateReborrowOnFailure
+	child.nodeLease = func(value string, proposed time.Time) time.Time {
+		return r.cookieExpiry(value, proposed, retainExpiredLease)
+	}
 	cfg.RotateNodes = false
 	cfg.WaitForQualifiedRoute = false
+	cfg.ImmediateReborrowOnFailure = false
 	child.publishConfig(cfg, false)
 	r.children[node.identity] = child
 	return child, nil
@@ -200,7 +207,7 @@ func (r *codexBorrowRotation) stop() {
 	}
 }
 
-func (r *codexBorrowRotation) cookieExpiry(value string, proposed time.Time) time.Time {
+func (r *codexBorrowRotation) cookieExpiry(value string, proposed time.Time, retainExpired ...bool) time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := time.Now()
@@ -208,7 +215,7 @@ func (r *codexBorrowRotation) cookieExpiry(value string, proposed time.Time) tim
 	if r.leases == nil {
 		r.leases = map[string]time.Time{}
 	}
-	if old, ok := r.leases[key]; ok && now.Before(old) && old.Before(proposed) {
+	if old, ok := r.leases[key]; ok && (now.Before(old) || (len(retainExpired) != 0 && retainExpired[0])) && old.Before(proposed) {
 		return old
 	}
 	if len(r.leases) >= 4096 {
@@ -271,7 +278,7 @@ func (s *CodexGatewayBorrowService) nodeCurrent(ctx context.Context, b *codexBor
 	} else if b.node.proxy != "" || b.node.identity != borrowHash("codex-borrow-server-direct") {
 		return ErrCodexGatewayBorrowChanged
 	}
-	if time.Now().Before(s.rotation.cache(b.model).blockedUntil(b.accountID, b.node.identity, b.gateway, time.Now())) {
+	if !borrowImmediateReborrow(ctx) && time.Now().Before(s.rotation.cache(b.model).blockedUntil(b.accountID, b.node.identity, b.gateway, time.Now())) {
 		return &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "node_cooling"}
 	}
 	return nil
@@ -313,15 +320,19 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 		return s.applyNode(req, account, model, profile, true, force, bound)
 	}
 	cfg := s.ConfigSnapshot()
+	immediate := cfg.ImmediateReborrowOnFailure && borrowImmediateReborrow(req.Context()) && !cachedOnly
 	key := codexGatewayBorrowTargetKey{account.ID, model}
 	r := &s.rotation
 	cache := r.cache(model)
 	nodes, err := s.borrowNodes(req.Context(), cfg.NodeProxyIDs)
 	if err != nil {
+		if immediate {
+			return req, nil, &CodexGatewayBorrowFailure{Cause: err, Stage: "node_selection", Reason: "node_candidates_unavailable"}
+		}
 		return req, nil, &CodexGatewayBorrowFailure{Cause: err, Stage: "node_selection", Reason: "node_unavailable"}
 	}
 	if len(nodes) == 0 {
-		return req, nil, ErrCodexGatewayBorrowUnavailable
+		return req, nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "node_candidates_unavailable"}
 	}
 	// Cached-only dispatch may use the selected node, never search or probe.
 	if cachedOnly {
@@ -379,7 +390,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			if pausedUntil := cache.sourceSearchPausedUntil(account.ID, time.Now()); !cfg.WaitForQualifiedRoute && pausedUntil.After(retry) {
 				retry = pausedUntil
 			}
-			if time.Now().Before(retry) {
+			if !immediate && time.Now().Before(retry) {
 				return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "node_search_cooling", RetryAfter: &retry}
 			}
 			var node codexBorrowNode
@@ -407,7 +418,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 				r.cursor[key] = cursor + 1
 				r.mu.Unlock()
 			}
-			if seen[node.identity] || time.Now().Before(cache.blockedUntil(account.ID, node.identity, "", time.Now())) {
+			if seen[node.identity] || (!immediate && time.Now().Before(cache.blockedUntil(account.ID, node.identity, "", time.Now()))) {
 				continue
 			}
 			allSourcesCooling := true
@@ -416,7 +427,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 					allSourcesCooling = false
 				}
 			}
-			if allSourcesCooling {
+			if !immediate && allSourcesCooling {
 				continue
 			}
 			seen[node.identity] = true
@@ -428,9 +439,16 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			child.mu.Lock()
 			candidate := child.currentCandidateLocked()
 			childRev, childCtx := child.revision, child.revisionCtx
+			previous := child.targets[key]
 			child.mu.Unlock()
-			if candidate == nil || !time.Now().Before(candidate.expires) {
+			freshSource := immediate && (identity != node.identity || (!previous.result.Success && previous.result.Reason != ""))
+			if freshSource || candidate == nil || !time.Now().Before(candidate.expires) {
+				codexBorrowUsageFromContext(ctx).recovering("reborrowing", nil, nil)
 				sourceCtx, sourceCancel := context.WithTimeout(ctx, 45*time.Second)
+				if freshSource {
+					sourceCtx = context.WithValue(sourceCtx, borrowFreshSourceKey{}, true)
+					sourceCtx = context.WithValue(sourceCtx, borrowAcquisitionTriggerKey{}, "immediate_reborrow")
+				}
 				err = child.prepareSource(sourceCtx, childRev, childCtx)
 				sourceCancel()
 				if err != nil {
@@ -453,7 +471,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			}
 			host := codexBorrowGateway(candidate.cookie.Value)
 			cache.observe(node.identity, host, time.Now())
-			if time.Now().Before(cache.blockedUntil(account.ID, node.identity, host, time.Now())) {
+			if !immediate && time.Now().Before(cache.blockedUntil(account.ID, node.identity, host, time.Now())) {
 				if cfg.WaitForQualifiedRoute {
 					// This node rediscovered a rejected gateway. Other distinct
 					// nodes may still qualify within this round's existing budget.
@@ -466,7 +484,8 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 				return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "node_selection", Reason: "gateway_cooling", RetryAfter: &retry}
 			}
 			binding := &codexBorrowNodeBinding{s, child, rev, account.ID, model, host, node}
-			_, app, err := s.applyNode(req.WithContext(ctx), account, model, profile, false, force, binding)
+			codexBorrowUsageFromContext(ctx).recovering("validating", nil, nil)
+			_, app, err := s.applyNode(req.WithContext(ctx), account, model, profile, false, force || freshSource, binding)
 			s.publishNodeObservation(rev, key, binding, candidate)
 			if err == nil && app != nil {
 				r.mu.Lock()
@@ -482,6 +501,9 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			lastErr = err
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
+			}
+			if immediate && !borrowRecoveryRetryable(err) {
+				return nil, err
 			}
 			var failure *CodexGatewayBorrowFailure
 			if errors.As(err, &failure) && failure.Verification != nil {
@@ -506,7 +528,7 @@ func (s *CodexGatewayBorrowService) applyRotated(req *http.Request, account *Acc
 			r.mu.Unlock()
 		}
 		retry := time.Now().Add(15 * time.Second)
-		if transientTargetFailure {
+		if transientTargetFailure || immediate {
 			retry = time.Time{}
 		}
 		r.mu.Lock()
@@ -605,12 +627,12 @@ func (r *codexBorrowRotation) snapshot(cfg CodexGatewayBorrowConfig, revision ui
 					row.Gateway = cache.hosts[identity].host
 					cache.mu.Unlock()
 					until := cache.blockedUntil(id, identity, row.Gateway, now)
-					if now.Before(until) {
+					if !cfg.ImmediateReborrowOnFailure && now.Before(until) {
 						row.State = "cooling"
 						row.RetryAfter = &until
 					}
 				}
-				if row.State != "cooling" {
+				if row.State != "cooling" && !cfg.ImmediateReborrowOnFailure {
 					until := r.sourceCache.sourcesBlockedUntil(cfg.SourceAccountIDs, identity, now)
 					if now.Before(until) {
 						row.State = "cooling"
@@ -626,6 +648,9 @@ func (r *codexBorrowRotation) snapshot(cfg CodexGatewayBorrowConfig, revision ui
 				}
 				if row.State == "candidate" && row.ExpiresAt != nil && !now.Before(*row.ExpiresAt) {
 					row.State = "expired"
+				}
+				if cfg.ImmediateReborrowOnFailure && row.State == "candidate" && row.Reason != "" && row.Reason != "target_probe_passed" && row.Reason != "validating" {
+					row.State = "rejected"
 				}
 				out = append(out, row)
 			}

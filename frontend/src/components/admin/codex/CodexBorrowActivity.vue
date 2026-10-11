@@ -76,7 +76,7 @@ const usageGroups = computed(() => ['business', 'diagnostic'].map(origin => ({
   rows: (props.status.recent_usage || []).filter(row => row.origin === origin)
 })).filter(group => group.rows.length))
 const recoveryRows = computed(() => (props.status.recent_usage || []).filter(row => row.recovery))
-function recoveryPhase(value: string) { return ({ searching: text('正在寻找合格路由', 'Searching for a qualified route'), cooling: text('等待冷却', 'Waiting for cooling'), recovered: text('严格验证已恢复', 'Strict qualification recovered'), cancelled: text('已取消恢复', 'Recovery cancelled'), stopped: text('恢复已停止', 'Recovery stopped') } as Record<string, string>)[value] || value }
+function recoveryPhase(value: string) { return ({ searching: text('正在寻找合格路由', 'Searching for a qualified route'), reborrowing: text('正在重新取票', 'Reacquiring a route'), validating: text('正在严格验证', 'Strict qualification in progress'), cooling: text('等待冷却', 'Waiting for cooling'), recovered: text('严格验证已恢复', 'Strict qualification recovered'), cancelled: text('已取消恢复', 'Recovery cancelled'), stopped: text('恢复已停止', 'Recovery stopped') } as Record<string, string>)[value] || value }
 watch(pairs, value => { if (!value.some(pair => pair.key === selection.value)) selection.value = value[0]?.key || '' }, { immediate: true })
 let controller: AbortController | undefined
 let disposed = false

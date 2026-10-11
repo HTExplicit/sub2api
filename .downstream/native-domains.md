@@ -124,11 +124,22 @@ interruption or missing terminal does not poison the next independent request:
 it still requires a fresh full probe pair. No business generation is replayed.
 Cooling decisions survive setting revisions but are process-local, as upstream.
 Optional `wait_for_qualified_route` defaults to false and requires node selection.
+Optional `immediate_reborrow_on_failure` also defaults to false and requires both
+waiting and node selection. Only pending HTTP business requests use its zero
+cooldown: failed qualifications trigger fresh source acquisition and two complete
+strict probes, bypassing preparation/source/node/gateway failure caches. Each
+180-second bounded search starts its next round immediately, without a total
+recovery deadline. Reacquiring the same cookie never extends the original lease,
+including an already expired lease. Administrator diagnostics retain ordinary
+cooling and remain bounded. Business dispatch still requires a current successful
+proof and is never replayed. Missing eligible nodes or invalid configuration stop
+recovery rather than spinning without network work. Acquisition and validation
+phases remain separate from a recovered proof and a completed business response.
 For full HTTP Responses business preparation it retains the original request while
 eligible routes recover; administrator probes and Pelican jobs remain bounded.
 Each search remains bounded to 180 seconds and the configured distinct-node limit.
-No total recovery deadline is added while the caller is connected. The next cycle
-waits for node/source/gateway cooling; failures without a future eligibility time
+No total recovery deadline is added while the caller is connected. Without
+immediate reborrow the next cycle waits for node/source/gateway cooling; failures without a future eligibility time
 wait at least 15 seconds. Cancellation of the last waiter cancels shared work;
 configuration, target identity or account invalidation stops recovery.
 Recovery first reacquires and requalifies an expired lease on the previously

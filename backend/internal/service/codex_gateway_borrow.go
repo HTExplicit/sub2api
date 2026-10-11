@@ -116,15 +116,16 @@ func codexBorrowFailureStage(err error) (string, string) {
 type CodexGatewayBorrowProbeUpstream interface{ HTTPUpstream }
 
 type CodexGatewayBorrowConfig struct {
-	WaitForQualifiedRoute bool     `json:"wait_for_qualified_route,omitempty"`
-	RotateNodes           bool     `json:"rotate_nodes,omitempty"`
-	NodeProxyIDs          []int64  `json:"node_proxy_ids,omitempty"`
-	MaxNodeAttempts       int      `json:"max_node_attempts,omitempty"`
-	NodeCooldownSeconds   int      `json:"node_cooldown_seconds,omitempty"`
-	Enabled               bool     `json:"enabled"`
-	SourceAccountIDs      []int64  `json:"source_account_ids"`
-	TargetAccountIDs      []int64  `json:"target_account_ids"`
-	Models                []string `json:"models"`
+	ImmediateReborrowOnFailure bool     `json:"immediate_reborrow_on_failure,omitempty"`
+	WaitForQualifiedRoute      bool     `json:"wait_for_qualified_route,omitempty"`
+	RotateNodes                bool     `json:"rotate_nodes,omitempty"`
+	NodeProxyIDs               []int64  `json:"node_proxy_ids,omitempty"`
+	MaxNodeAttempts            int      `json:"max_node_attempts,omitempty"`
+	NodeCooldownSeconds        int      `json:"node_cooldown_seconds,omitempty"`
+	Enabled                    bool     `json:"enabled"`
+	SourceAccountIDs           []int64  `json:"source_account_ids"`
+	TargetAccountIDs           []int64  `json:"target_account_ids"`
+	Models                     []string `json:"models"`
 }
 
 func DefaultCodexGatewayBorrowConfig() CodexGatewayBorrowConfig {
@@ -768,16 +769,17 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 		return ErrCodexGatewayBorrowUnavailable
 	}
 	trigger, _ := ctx.Value(borrowAcquisitionTriggerKey{}).(string)
+	fresh, _ := ctx.Value(borrowFreshSourceKey{}).(bool)
 	if trigger == "" {
 		trigger = "save_or_manual"
 	}
-	_, err := s.sourceFlight.do(ctx, revisionCtx, fmt.Sprint(rev), codexGatewayBorrowTimeout, func(ctx context.Context) (any, error) {
+	_, err := s.sourceFlight.do(ctx, revisionCtx, fmt.Sprintf("%d:%t", rev, fresh), codexGatewayBorrowTimeout, func(ctx context.Context) (any, error) {
 		s.mu.Lock()
 		if s.revision != rev || !s.config.Enabled {
 			s.mu.Unlock()
 			return nil, ErrCodexGatewayBorrowChanged
 		}
-		if c := s.currentCandidateLocked(); c != nil && time.Until(c.expires) > codexGatewayBorrowTimeout {
+		if c := s.currentCandidateLocked(); !fresh && c != nil && time.Until(c.expires) > codexGatewayBorrowTimeout {
 			s.mu.Unlock()
 			return nil, nil
 		}
@@ -785,7 +787,7 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 			s.mu.Unlock()
 			return nil, ErrCodexGatewayBorrowUnavailable
 		}
-		if time.Now().Before(s.prepareFailedUntil) {
+		if !fresh && time.Now().Before(s.prepareFailedUntil) {
 			detail, retry := s.prepareFailure, s.prepareFailedUntil
 			s.mu.Unlock()
 			return nil, &CodexGatewayBorrowFailure{Cause: ErrCodexGatewayBorrowUnavailable, Stage: "source_preparation", Reason: "source_prepare_failed", Detail: detail, RetryAfter: &retry}
@@ -850,7 +852,7 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 			s.sources[id] = row
 			// Original non-rotation preparation may still have a usable primary or
 			// backup after a failed refresh. Preserve it without extending its lease.
-			if current := s.currentCandidateLocked(); current != nil && time.Now().Before(current.expires) {
+			if current := s.currentCandidateLocked(); !fresh && current != nil && time.Now().Before(current.expires) {
 				s.acquisition.Phase, s.acquisition.Error = "candidate_retained", lastErr.Error()
 				s.prepareFailedUntil, s.prepareFailure = time.Time{}, ""
 				s.mu.Unlock()

@@ -153,7 +153,7 @@ func (s *OpenAIGatewayService) prepareCodexGatewayBorrowHTTP(ctx context.Context
 		return nil, 0, failure
 	}
 	prepared.application = application
-	req = borrowed.WithContext(context.WithValue(req.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, prepared))
+	req = borrowed.WithContext(context.WithValue(borrowed.Context(), codexGatewayBorrowHTTPPreparationContextKey{}, prepared))
 	return req, time.Since(started), nil
 }
 
@@ -226,7 +226,12 @@ type codexGatewayBorrowRecoveryContext struct {
 	values context.Context
 }
 
-func (c codexGatewayBorrowRecoveryContext) Value(key any) any { return c.values.Value(key) }
+func (c codexGatewayBorrowRecoveryContext) Value(key any) any {
+	if value := c.values.Value(key); value != nil {
+		return value
+	}
+	return c.Context.Value(key)
+}
 
 // A prepared recovery request already carries the caller's cancellation and
 // deadline. Preserve that exact context unless an old header guard was replaced.

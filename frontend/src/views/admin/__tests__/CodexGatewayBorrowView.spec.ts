@@ -71,6 +71,19 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); sessionStorage.clear() })
 
 describe('Codex borrow settings', () => {
+  it('saves zero-cooldown reborrow explicitly without changing the legacy cooldown value', async () => {
+    const config = { ...enabledConfig, rotate_nodes: true, wait_for_qualified_route: true, node_proxy_ids: [43, 34], max_node_attempts: 5, node_cooldown_seconds: 3600 }
+    const wrapper = await mountView(config)
+    await wrapper.get('[data-test="borrow-immediate-reborrow"]').setValue(true)
+    expect(wrapper.get('[data-test="borrow-node-cooldown"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="borrow-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.saveConfig).toHaveBeenCalledWith({ ...config, immediate_reborrow_on_failure: true }, expect.any(AbortSignal))
+    expectNoModelRequests()
+    await wrapper.get('[data-test="borrow-wait-qualified"]').setValue(false)
+    expect(wrapper.text()).toContain('立即重借需要启用等待恢复和节点选择')
+    expect(wrapper.get('[data-test="borrow-save"]').attributes('disabled')).toBeDefined()
+  })
   it('preserves ordered node selection and independent bounds through a normal save', async () => {
     const config = { ...enabledConfig, rotate_nodes: true, wait_for_qualified_route: true, node_proxy_ids: [43, 34], max_node_attempts: 5, node_cooldown_seconds: 3600 }
     const wrapper = await mountView(config)

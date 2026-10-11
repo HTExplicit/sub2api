@@ -99,6 +99,18 @@ describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
     expect(wrapper.get('[data-test="borrow-node-status"]').text()).not.toContain('#0')
     expectNoUnrelatedCalls()
   })
+  it('shows reacquisition over a retained rejection without claiming validation or business success', async () => {
+    const state = makeStatus()
+    state.config.rotate_nodes = state.config.wait_for_qualified_route = state.config.immediate_reborrow_on_failure = true
+    state.targets[0] = { ...state.targets[0], state: 'rejected', cache_valid: false, reason: 'target_state_changed', new_ticket: true }
+    state.recent_usage = [{ account_id: 2, model: 'gpt-6-astra', transport: 'http', origin: 'business', applied: false, dispatched: false, reason: 'preparing', started_at: new Date().toISOString(), outcome: 'preparing', count: 0, applied_count: 0, recovery: { phase: 'reborrowing', started_at: new Date().toISOString(), rounds: 3, source_requests: 3, probe_requests: 4, last_reason: 'target_state_changed' } }]
+    mocks.getStatus.mockResolvedValue(state)
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="borrow-preparation-status"]').text()).toContain('正在重新取票')
+    expect(wrapper.get('[data-test="borrow-status-2-gpt-6-astra"] [data-test="borrow-line-state"]').text()).toBe('重新取票')
+    expect(mocks.prepare).not.toHaveBeenCalled()
+    expect(mocks.verify).not.toHaveBeenCalled()
+  })
   it('shows the selected node and model-specific cooling instead of the saved account proxy', async () => {
     const state = makeStatus()
     state.config.rotate_nodes = true

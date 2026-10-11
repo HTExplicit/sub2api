@@ -5,6 +5,7 @@ export const BORROW_MODELS = ['gpt-6-astra', 'gpt-6.1-sol'] as const
 export const PELICAN_BORROW_PROMPT = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试'
 
 export interface CodexGatewayBorrowConfig {
+  immediate_reborrow_on_failure?: boolean
   wait_for_qualified_route?: boolean
   rotate_nodes?: boolean
   node_proxy_ids?: number[]
@@ -58,7 +59,7 @@ export interface BorrowTargetStatus extends BorrowSourceStatus {
 }
 
 export interface CodexGatewayBorrowUsage {
-  recovery?: { phase: 'searching' | 'cooling' | 'recovered' | 'cancelled' | 'stopped'; started_at: string; next_attempt_at?: string; rounds: number; source_requests: number; probe_requests: number; shared_preparation?: boolean; last_stage?: string; last_reason?: string; last_error?: string }
+  recovery?: { phase: 'searching' | 'reborrowing' | 'validating' | 'cooling' | 'recovered' | 'cancelled' | 'stopped'; started_at: string; next_attempt_at?: string; rounds: number; source_requests: number; probe_requests: number; shared_preparation?: boolean; last_stage?: string; last_reason?: string; last_error?: string }
   proxy_id?: number; node_identity?: string; gateway?: string
   account_id: number; model: string; transport: string; origin: string
   applied: boolean; reason: string; started_at: string; finished_at?: string

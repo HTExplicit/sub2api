@@ -119,7 +119,7 @@
               </div>
               <div class="min-w-0 space-y-2">
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.validation') }}</p>
-                <span class="inline-block rounded px-2 py-1 text-xs font-medium" :class="stateClass(targetState(target))" data-test="borrow-line-state">{{ t(`admin.codexGatewayBorrow.lineStates.${targetState(target)}`) }}</span>
+                <span class="inline-block rounded px-2 py-1 text-xs font-medium" :class="stateClass(targetState(target))" data-test="borrow-line-state">{{ targetLineLabel(target) }}</span>
                 <p class="break-words text-xs text-muted" data-test="borrow-line-reason">{{ reasonLabel(target) }}</p>
                 <p v-if="target.retry_on_next_request" class="text-xs text-amber-800 dark:text-amber-200" data-test="borrow-retry-policy">{{ recoveryPending(target) ? text('验证中断；当前请求等待下一轮完整验证，通过后才发送业务。', 'Validation was interrupted. This request waits for another complete validation before business dispatch.') : text('探针中断；下一次请求重新进行完整验证，通过后才发送业务。', 'The probe was interrupted. The next request runs a complete validation before business dispatch.') }}</p>
               </div>
@@ -170,7 +170,7 @@
           <div v-for="node in status.nodes || []" :key="`${node.account_id}:${node.model}:${node.node_identity}`" class="grid gap-2 border-t border-line pt-3 text-sm sm:grid-cols-3">
             <div><p>{{ accountName(node.account_id) }} #{{ node.account_id }}</p><p class="text-xs text-muted">{{ node.model }}</p></div>
             <div><p>{{ node.proxy_id === 0 ? text('原服务器直连', 'Server direct') : `${node.proxy_name} #${node.proxy_id}` }}</p><p class="break-all text-xs text-muted">{{ node.gateway || '—' }}</p></div>
-            <div><p :class="node.retry_after && remainingSeconds(node.retry_after) ? 'text-amber-800 dark:text-amber-200' : 'text-muted'">{{ nodeStateLabel(node) }}</p><p v-if="node.retry_after && remainingSeconds(node.retry_after)" class="text-xs text-muted">{{ text('冷却截止', 'Cooling until') }}: {{ formatTime(node.retry_after) }} · {{ remainingSeconds(node.retry_after) }}s</p><p v-if="node.reason" class="break-words text-xs text-muted">{{ borrowReasonLabel(node.reason, t) }}</p></div>
+            <div><p :class="node.retry_after && remainingSeconds(node.retry_after) ? 'text-amber-800 dark:text-amber-200' : 'text-muted'">{{ nodeStateLabel(node) }}</p><p v-if="!status.config.immediate_reborrow_on_failure && node.retry_after && remainingSeconds(node.retry_after)" class="text-xs text-muted">{{ text('冷却截止', 'Cooling until') }}: {{ formatTime(node.retry_after) }} · {{ remainingSeconds(node.retry_after) }}s</p><p v-if="node.reason" class="break-words text-xs text-muted">{{ borrowReasonLabel(node.reason, t) }}</p></div>
           </div>
           <p v-if="!status.nodes?.length" class="text-sm text-muted">{{ text('尚未尝试候选节点。', 'Candidate nodes have not been attempted.') }}</p>
         </section>
@@ -207,6 +207,8 @@ function actualProxyLabel(id?: number, accountID?: number, identity?: string) {
 }
 function nodeStateLabel(node: NonNullable<CodexGatewayBorrowStatus['nodes']>[number]) {
   if (statusStale.value) return text('上次记录，等待更新', 'Last observed; awaiting an update')
+  if (status.value?.config.immediate_reborrow_on_failure && node.state === 'cooling') return text('失败待重借（0 秒冷却）', 'Rejected; ready for immediate reborrow')
+  if (status.value?.config.immediate_reborrow_on_failure && node.state === 'rejected') return text('验证失败，可立即重借', 'Rejected; immediate reborrow available')
   if (node.retry_after && remainingSeconds(node.retry_after)) return text('冷却中', 'Cooling')
   if (node.state === 'selected') return node.expires_at && !remainingSeconds(node.expires_at) ? text('已过期', 'Expired') : text('当前已选', 'Selected')
   if (node.state === 'expired') return text('已过期', 'Expired')
@@ -244,7 +246,9 @@ const canAct = computed(() => !!status.value?.enabled && !statusStale.value && !
 const shouldPoll = computed(() => pageVisible.value && (!!status.value?.enabled || !!status.value?.preparing || !!actionBusy.value))
 const preparationLabel = computed(() => {
   if (statusStale.value) return text('状态待刷新', 'Status needs refreshing')
-  const waiting = (status.value?.recent_usage || []).filter(row => !row.dispatched && !row.finished_at && ['searching', 'cooling'].includes(row.recovery?.phase || ''))
+  const waiting = (status.value?.recent_usage || []).filter(row => !row.dispatched && !row.finished_at && ['searching', 'reborrowing', 'validating', 'cooling'].includes(row.recovery?.phase || ''))
+  if (waiting.some(row => row.recovery?.phase === 'reborrowing')) return text('正在重新取票，原请求仍在等待', 'Reacquiring a route; the original request is still waiting')
+  if (waiting.some(row => row.recovery?.phase === 'validating')) return text('正在严格验证，业务尚未发送', 'Strict qualification in progress; business not dispatched')
   if (waiting.length) return waiting.some(row => row.recovery?.phase === 'searching') ? text('正在恢复合格路由，业务尚未发送', 'Recovering a qualified route; business not dispatched') : text('等待冷却，原请求仍在等待', 'Cooling; the original request is still waiting')
   if (status.value?.preparing || actionBusy.value === 'prepare') return t('admin.codexGatewayBorrow.preparationPending')
   if (actionBusy.value || serverValidating.value) return t('admin.codexGatewayBorrow.validating')
@@ -266,7 +270,14 @@ const acquisitionLabel = computed(() => {
 })
 
 function pairKey(id: number, model: string) { return `${id}:${model}` }
-function recoveryPending(target: BorrowTargetStatus) { return status.value?.recent_usage?.some(row => row.account_id === target.account_id && row.model === target.model && !row.dispatched && !row.finished_at && ['searching', 'cooling'].includes(row.recovery?.phase || '')) }
+function recoveryPending(target: BorrowTargetStatus) { return status.value?.recent_usage?.some(row => row.account_id === target.account_id && row.model === target.model && !row.dispatched && !row.finished_at && ['searching', 'reborrowing', 'validating', 'cooling'].includes(row.recovery?.phase || '')) }
+function targetLineLabel(target: BorrowTargetStatus) {
+  const row = status.value?.recent_usage?.find(row => row.account_id === target.account_id && row.model === target.model && !row.dispatched && !row.finished_at)
+  if (!statusStale.value && row?.recovery?.phase === 'reborrowing') return text('重新取票', 'Reacquiring a route')
+  if (!statusStale.value && row?.recovery?.phase === 'validating') return text('严格验证中', 'Strict qualification in progress')
+  if (!statusStale.value && row?.recovery?.phase === 'searching') return text('寻找合格路由', 'Searching for a qualified route')
+  return t(`admin.codexGatewayBorrow.lineStates.${targetState(target)}`)
+}
 function formatTime(value?: string) {
   if (!value || value.startsWith('0001-01-01')) return '—'
   const date = new Date(value)
@@ -275,6 +286,7 @@ function formatTime(value?: string) {
 function targetState(target: BorrowTargetStatus) {
   if (!status.value?.enabled) return 'waiting'
   if (statusStale.value) return 'stale'
+  if (recoveryPending(target)) return 'validating'
   const state = borrowTargetState(target, now.value)
   if (state !== 'ready' && actionBusy.value === pairKey(target.account_id, target.model)) return 'validating'
   if (state === 'waiting' && (status.value.preparing || actionBusy.value === 'prepare')) return 'validating'
