@@ -4,7 +4,8 @@ package service
 // from ranxi2001/sub2api at 5ca3cca21eeaf4ca8a694a7f2f8f0ecd9575c549:
 // backend/internal/repository/{codex_gateway_pin,astra_target_validation}.go
 // and backend/internal/service/openai_codex_state_probe.go (LGPL-3.0).
-// This native implementation owns no exit routing, account health or quota.
+// Optional node selection changes only scoped outgoing request routes; account
+// bindings, account health and quota remain owned by the host.
 
 import (
 	"bytes"
@@ -115,10 +116,14 @@ func codexBorrowFailureStage(err error) (string, string) {
 type CodexGatewayBorrowProbeUpstream interface{ HTTPUpstream }
 
 type CodexGatewayBorrowConfig struct {
-	Enabled          bool     `json:"enabled"`
-	SourceAccountIDs []int64  `json:"source_account_ids"`
-	TargetAccountIDs []int64  `json:"target_account_ids"`
-	Models           []string `json:"models"`
+	RotateNodes         bool     `json:"rotate_nodes,omitempty"`
+	NodeProxyIDs        []int64  `json:"node_proxy_ids,omitempty"`
+	MaxNodeAttempts     int      `json:"max_node_attempts,omitempty"`
+	NodeCooldownSeconds int      `json:"node_cooldown_seconds,omitempty"`
+	Enabled             bool     `json:"enabled"`
+	SourceAccountIDs    []int64  `json:"source_account_ids"`
+	TargetAccountIDs    []int64  `json:"target_account_ids"`
+	Models              []string `json:"models"`
 }
 
 func DefaultCodexGatewayBorrowConfig() CodexGatewayBorrowConfig {
@@ -143,6 +148,9 @@ func DecodeCodexGatewayBorrowConfig(raw []byte) (CodexGatewayBorrowConfig, error
 }
 
 func normalizeCodexGatewayBorrowConfig(cfg CodexGatewayBorrowConfig) (CodexGatewayBorrowConfig, error) {
+	if err := validateCodexBorrowNodeConfig(cfg); err != nil {
+		return cfg, err
+	}
 	if cfg.SourceAccountIDs == nil {
 		cfg.SourceAccountIDs = []int64{}
 	}
@@ -175,6 +183,7 @@ func normalizeCodexGatewayBorrowConfig(cfg CodexGatewayBorrowConfig) (CodexGatew
 }
 
 func cloneCodexGatewayBorrowConfig(cfg CodexGatewayBorrowConfig) CodexGatewayBorrowConfig {
+	cfg.NodeProxyIDs = append([]int64(nil), cfg.NodeProxyIDs...)
 	cfg.SourceAccountIDs = append([]int64{}, cfg.SourceAccountIDs...)
 	cfg.TargetAccountIDs = append([]int64{}, cfg.TargetAccountIDs...)
 	cfg.Models = append([]string{}, cfg.Models...)
@@ -182,6 +191,9 @@ func cloneCodexGatewayBorrowConfig(cfg CodexGatewayBorrowConfig) CodexGatewayBor
 }
 
 type CodexGatewayBorrowCandidateStatus struct {
+	NodeIdentity          string    `json:"node_identity,omitempty"`
+	ProxyID               int64     `json:"proxy_id,omitempty"`
+	Gateway               string    `json:"gateway,omitempty"`
 	SourceRequestEncoding string    `json:"source_request_encoding,omitempty"`
 	SourceAccountID       int64     `json:"source_account_id"`
 	ExpiresAt             time.Time `json:"expires_at"`
@@ -190,6 +202,8 @@ type CodexGatewayBorrowCandidateStatus struct {
 }
 
 type CodexGatewayBorrowSourceStatus struct {
+	NodeIdentity     string     `json:"node_identity,omitempty"`
+	ProxyID          int64      `json:"proxy_id,omitempty"`
 	AccountID        int64      `json:"account_id"`
 	State            string     `json:"state"`
 	Reason           string     `json:"reason"`
@@ -200,6 +214,9 @@ type CodexGatewayBorrowSourceStatus struct {
 }
 
 type CodexGatewayBorrowVerification struct {
+	ProxyID                   int64      `json:"proxy_id,omitempty"`
+	NodeIdentity              string     `json:"node_identity,omitempty"`
+	Gateway                   string     `json:"gateway,omitempty"`
 	RetryOnNextRequest        bool       `json:"retry_on_next_request,omitempty"`
 	FailedShot                string     `json:"failed_shot,omitempty"`
 	FailureKind               string     `json:"failure_kind,omitempty"`
@@ -240,6 +257,7 @@ type CodexGatewayBorrowTargetStatus struct {
 }
 
 type CodexGatewayBorrowStatus struct {
+	Nodes         []CodexGatewayBorrowNodeStatus     `json:"nodes,omitempty"`
 	Acquisition   CodexGatewayBorrowAcquisition      `json:"acquisition"`
 	ObservedSince time.Time                          `json:"observed_since"`
 	RecentUsage   []CodexGatewayBorrowUsage          `json:"recent_usage"`
@@ -258,6 +276,7 @@ type CodexGatewayBorrowStatus struct {
 // Application contains only opaque identities. The selected cookie itself is
 // available solely in the cloned outbound request's Cookie header.
 type CodexGatewayBorrowApplication struct {
+	node              *codexBorrowNodeBinding
 	Verification      CodexGatewayBorrowVerification
 	Applied           bool
 	SourceAccountID   int64
@@ -267,6 +286,7 @@ type CodexGatewayBorrowApplication struct {
 }
 
 type codexGatewayBorrowCandidate struct {
+	node                  *codexBorrowNode
 	sourceRequestEncoding string
 	cookie                http.Cookie
 	expires               time.Time
@@ -291,6 +311,11 @@ type codexGatewayBorrowTargetCheck struct {
 }
 
 type CodexGatewayBorrowService struct {
+	proxies            ProxyRepository
+	node               *codexBorrowNode
+	nodeLease          func(string, time.Time) time.Time
+	rotation           codexBorrowRotation
+	rotationCandidates map[codexGatewayBorrowTargetKey]*codexGatewayBorrowCandidate
 	validationSequence uint64
 	sourceSequence     uint64
 	qualifications     map[string]codexGatewayBorrowTargetCheck
@@ -337,8 +362,9 @@ func NewCodexGatewayBorrowService(settings SettingRepository, accounts AccountRe
 	return s
 }
 
-func ProvideCodexGatewayBorrowService(settings SettingRepository, accounts AccountRepository, gateway *OpenAIGatewayService, upstream CodexGatewayBorrowProbeUpstream, tlsProfiles *TLSFingerprintProfileService) (*CodexGatewayBorrowService, error) {
+func ProvideCodexGatewayBorrowService(settings SettingRepository, accounts AccountRepository, gateway *OpenAIGatewayService, upstream CodexGatewayBorrowProbeUpstream, tlsProfiles *TLSFingerprintProfileService, proxies ProxyRepository) (*CodexGatewayBorrowService, error) {
 	s := NewCodexGatewayBorrowService(settings, accounts, gateway, upstream, tlsProfiles)
+	s.proxies = proxies
 	ctx, cancel := context.WithTimeout(context.Background(), codexGatewayBorrowStoreTimeout)
 	defer cancel()
 	if _, err := s.GetConfig(ctx); err != nil {
@@ -391,6 +417,11 @@ func (s *CodexGatewayBorrowService) SaveConfig(ctx context.Context, cfg CodexGat
 	if err != nil {
 		return cfg, err
 	}
+	if cfg.RotateNodes {
+		if _, err := s.borrowNodes(ctx, cfg.NodeProxyIDs, true); err != nil {
+			return cfg, err
+		}
+	}
 	// Validation only loads local rows and resolves existing parent credentials.
 	// It never discovers models, touches quota or changes any account fields.
 	for _, id := range append(append([]int64{}, cfg.SourceAccountIDs...), cfg.TargetAccountIDs...) {
@@ -419,7 +450,7 @@ func (s *CodexGatewayBorrowService) SaveConfig(ctx context.Context, cfg CodexGat
 
 func (s *CodexGatewayBorrowService) publishConfig(cfg CodexGatewayBorrowConfig, saved bool) {
 	s.mu.Lock()
-	changed := !s.loaded || !slices.Equal(cfg.SourceAccountIDs, s.config.SourceAccountIDs) || !slices.Equal(cfg.TargetAccountIDs, s.config.TargetAccountIDs) || !slices.Equal(cfg.Models, s.config.Models) || cfg.Enabled != s.config.Enabled
+	changed := !s.loaded || !slices.Equal(cfg.SourceAccountIDs, s.config.SourceAccountIDs) || !slices.Equal(cfg.TargetAccountIDs, s.config.TargetAccountIDs) || !slices.Equal(cfg.Models, s.config.Models) || cfg.Enabled != s.config.Enabled || !borrowNodeConfigEqual(cfg, s.config)
 	if !changed && !saved {
 		s.mu.Unlock()
 		return
@@ -440,6 +471,7 @@ func (s *CodexGatewayBorrowService) publishConfig(cfg CodexGatewayBorrowConfig, 
 	s.sources = map[int64]CodexGatewayBorrowSourceStatus{}
 	s.targets = map[codexGatewayBorrowTargetKey]codexGatewayBorrowTargetCheck{}
 	s.qualifications = map[string]codexGatewayBorrowTargetCheck{}
+	s.rotationCandidates = nil
 	s.prepareFailedUntil, s.prepareFailure, s.preparing, s.prepareRuns = time.Time{}, "", false, 0
 	ctx := s.revisionCtx
 	s.mu.Unlock()
@@ -459,8 +491,9 @@ func (s *CodexGatewayBorrowService) Stop() {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.cancel()
+	s.mu.Unlock()
+	s.rotation.stop()
 }
 
 func codexGatewayBorrowAccountSupported(a *Account) bool {
@@ -510,13 +543,24 @@ func (s *CodexGatewayBorrowService) Status() CodexGatewayBorrowStatus {
 		return CodexGatewayBorrowStatus{Config: DefaultCodexGatewayBorrowConfig(), Sources: []CodexGatewayBorrowSourceStatus{}, Targets: []CodexGatewayBorrowTargetStatus{}, ModelEfforts: codexGatewayBorrowModelEfforts()}
 	}
 	s.mu.Lock()
+	snapshotConfig, snapshotRevision := cloneCodexGatewayBorrowConfig(s.config), s.revision
+	s.mu.Unlock()
+	nodes := s.rotation.snapshot(snapshotConfig, snapshotRevision)
+	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.revision != snapshotRevision {
+		nodes = nil
+	}
 	now := time.Now()
 	s.currentCandidateLocked()
-	out := CodexGatewayBorrowStatus{Enabled: s.config.Enabled, Revision: s.revision, GeneratedAt: now, Preparing: s.preparing || s.prepareRuns > 0 || s.setup.State == "queued",
+	out := CodexGatewayBorrowStatus{Nodes: nodes, Enabled: s.config.Enabled, Revision: s.revision, GeneratedAt: now, Preparing: s.preparing || s.prepareRuns > 0 || s.setup.State == "queued",
 		Acquisition: s.acquisition, ObservedSince: s.observedSince, RecentUsage: []CodexGatewayBorrowUsage{}, Setup: s.setup, Config: cloneCodexGatewayBorrowConfig(s.config), Sources: []CodexGatewayBorrowSourceStatus{}, Targets: []CodexGatewayBorrowTargetStatus{}, ModelEfforts: codexGatewayBorrowModelEfforts()}
 	if c := s.candidate; c != nil {
 		out.Candidate = &CodexGatewayBorrowCandidateStatus{SourceAccountID: c.sourceID, SourceRequestEncoding: c.sourceRequestEncoding, ExpiresAt: c.expires, RemainingSeconds: borrowRemaining(c.expires, now), CookieFingerprint: borrowHash(c.cookie.Value)}
+		if c.node != nil {
+			out.Candidate.ProxyID, out.Candidate.Gateway = c.node.id, codexBorrowGateway(c.cookie.Value)
+			out.Candidate.NodeIdentity = c.node.identity
+		}
 	}
 	for _, usage := range s.usage {
 		out.RecentUsage = append(out.RecentUsage, usage)
@@ -543,12 +587,16 @@ func (s *CodexGatewayBorrowService) Status() CodexGatewayBorrowStatus {
 		for _, model := range s.config.Models {
 			row := CodexGatewayBorrowTargetStatus{CodexGatewayBorrowVerification: CodexGatewayBorrowVerification{AccountID: id, Model: model, Reason: "not_verified"}, State: "waiting"}
 			if c, ok := s.targets[codexGatewayBorrowTargetKey{id, model}]; ok {
+				candidate := s.candidate
+				if s.config.RotateNodes {
+					candidate = s.rotationCandidates[codexGatewayBorrowTargetKey{id, model}]
+				}
 				row.CodexGatewayBorrowVerification = c.result
 				row.Acquisition = c.acquisition
-				row.CacheValid = c.policyRevision == currentCodexFingerprintPolicyForAccount(&Account{ID: id}).revision && c.result.Success && s.candidate != nil && c.cookieKey == borrowHash(s.candidate.cookie.Value) && now.Before(c.expires) && now.Before(s.candidate.expires)
+				row.CacheValid = c.policyRevision == currentCodexFingerprintPolicyForAccount(&Account{ID: id}).revision && c.result.Success && candidate != nil && c.cookieKey == borrowHash(candidate.cookie.Value) && now.Before(c.expires) && now.Before(candidate.expires)
 				expires := c.expires
-				if s.candidate != nil && c.cookieKey == borrowHash(s.candidate.cookie.Value) && s.candidate.expires.Before(expires) {
-					expires = s.candidate.expires
+				if candidate != nil && c.cookieKey == borrowHash(candidate.cookie.Value) && candidate.expires.Before(expires) {
+					expires = candidate.expires
 				}
 				if !expires.IsZero() {
 					row.ExpiresAt = &expires
@@ -564,7 +612,7 @@ func (s *CodexGatewayBorrowService) Status() CodexGatewayBorrowStatus {
 				} else if c.result.Success {
 					row.State, row.Reason = "expired", "route_expired"
 				}
-				if c.result.Success && s.candidate != nil && c.cookieKey != borrowHash(s.candidate.cookie.Value) && now.Before(c.expires) {
+				if c.result.Success && candidate != nil && c.cookieKey != borrowHash(candidate.cookie.Value) && now.Before(c.expires) {
 					row.State, row.Reason = "waiting", "target_route_changed"
 				}
 				if c.policyRevision != currentCodexFingerprintPolicyForAccount(&Account{ID: id}).revision && c.result.Success {
@@ -653,9 +701,11 @@ func (s *CodexGatewayBorrowService) Prepare(ctx context.Context) (CodexGatewayBo
 			}
 			s.setSetup(rev, progress)
 		}
-		if err := s.prepareSource(runCtx, rev, revisionCtx); err != nil {
-			finish(err)
-			return nil, err
+		if !cfg.RotateNodes {
+			if err := s.prepareSource(runCtx, rev, revisionCtx); err != nil {
+				finish(err)
+				return nil, err
+			}
 		}
 		var lastErr error
 		for _, id := range cfg.TargetAccountIDs {
@@ -762,6 +812,10 @@ func (s *CodexGatewayBorrowService) prepareSource(ctx context.Context, rev uint6
 			if acquireErr == nil && candidate != nil && now.Before(candidate.expires) {
 				s.storeCandidateLocked(candidate)
 				row.State, row.Reason, row.Error, row.ExpiresAt = "ready", "source_qualified", "", &candidate.expires
+				if candidate.node != nil {
+					row.ProxyID = candidate.node.id
+					row.NodeIdentity = candidate.node.identity
+				}
 				s.sources[id] = row
 				s.acquisition.Phase = "candidate_acquired"
 				s.prepareFailedUntil, s.prepareFailure = time.Time{}, ""
@@ -854,10 +908,14 @@ func (s *CodexGatewayBorrowService) apply(req *http.Request, account *Account, m
 		return req, nil, nil
 	}
 	rev, revisionCtx := s.revision, s.revisionCtx
+	rotation := s.config.RotateNodes
 	candidate := s.currentCandidateLocked()
 	s.mu.Unlock()
 	if !codexGatewayBorrowAccountSupported(account) {
 		return req, nil, ErrCodexGatewayBorrowUnavailable
+	}
+	if rotation {
+		return s.applyRotated(req, account, model, proxy, profile, cachedOnly, force, rev, revisionCtx)
 	}
 	if candidate == nil || !time.Now().Before(candidate.expires) {
 		if cachedOnly {

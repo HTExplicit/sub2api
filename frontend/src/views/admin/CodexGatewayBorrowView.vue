@@ -72,6 +72,28 @@
             <span>{{ model === 'gpt-6-astra' ? 'Astra' : '6.1 Sol' }} <span class="text-xs text-muted">{{ model }}</span></span>
           </label>
         </fieldset>
+        <fieldset :disabled="saving" class="space-y-3 rounded-lg border border-line p-4" data-test="borrow-node-config">
+          <legend class="px-1 text-sm font-medium">{{ text('候选节点与失败冷却', 'Candidate nodes and failure cooling') }}</legend>
+          <label class="flex items-start gap-3 text-sm">
+            <input v-model="draft.rotate_nodes" type="checkbox" class="checkbox mt-1" data-test="borrow-rotate-nodes" @change="initializeNodes" />
+            <span>{{ text('为已选目标账号启用节点选择', 'Enable node selection for the selected target accounts') }}<span class="mt-1 block text-xs text-muted">{{ text('来源采集、目标验证与业务发送使用同一候选节点；失败节点进入冷却。仅支持 HTTP。', 'Acquisition, target validation and business dispatch use the same candidate node. Failed nodes enter cooling. HTTP only.') }}</span></span>
+          </label>
+          <template v-if="draft.rotate_nodes">
+            <p class="text-xs text-muted">{{ text('按勾选顺序搜索；仅影响上方选中的目标账号，不改写账号或共享代理。', 'Search in selection order. Only the target accounts above are affected; account and shared proxy records are preserved.') }}</p>
+            <p v-if="proxyError" role="alert" class="text-sm text-red-700 dark:text-red-300">{{ proxyError }}</p>
+            <div class="grid max-h-64 gap-2 overflow-auto sm:grid-cols-2">
+              <label class="flex items-center gap-2 text-sm"><input v-model="draft.node_proxy_ids" type="checkbox" class="checkbox" :value="0" data-test="borrow-node-0" />{{ text('原服务器直连', 'Server direct') }}</label>
+              <label v-for="proxy in proxies" :key="proxy.id" class="flex items-center gap-2 text-sm"><input v-model="draft.node_proxy_ids" type="checkbox" class="checkbox" :value="proxy.id" :data-test="`borrow-node-${proxy.id}`" />{{ proxy.name }} #{{ proxy.id }}</label>
+              <template v-if="proxiesLoaded"><label v-for="id in draft.node_proxy_ids?.filter(id => id !== 0 && !proxies.some(proxy => proxy.id === id)) || []" :key="id" class="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200"><input v-model="draft.node_proxy_ids" type="checkbox" class="checkbox" :value="id" />#{{ id }} · {{ text('不在可用清单中', 'Not in the available list') }}</label></template>
+            </div>
+            <p class="text-xs text-muted">{{ text('当前顺序', 'Current order') }}: {{ draft.node_proxy_ids?.map(id => id === 0 ? text('原服务器直连', 'Server direct') : `#${id}`).join(' → ') || '—' }}</p>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="text-sm">{{ text('每次准备最多尝试节点数', 'Maximum nodes per preparation') }}<input v-model.number="draft.max_node_attempts" type="number" min="1" max="10" class="input mt-1 w-full" data-test="borrow-node-attempts" /></label>
+              <label class="text-sm">{{ text('明确拒绝后的冷却秒数', 'Cooldown after an explicit rejection (seconds)') }}<input v-model.number="draft.node_cooldown_seconds" type="number" min="60" max="86400" class="input mt-1 w-full" data-test="borrow-node-cooldown" /></label>
+            </div>
+            <p class="text-xs text-muted">{{ text('Sol 和 Astra 分别验证。候选耗尽会明确报错，已发送的生成不会换节点重放。', 'Sol and Astra are validated independently. Exhaustion is reported explicitly; a dispatched generation is never replayed on another node.') }}</p>
+          </template>
+        </fieldset>
         <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.localInventoryHint') }}</p>
         <p v-if="configError" role="alert" class="text-sm text-red-700 dark:text-red-300">{{ configError }}</p>
             <button type="button" class="btn btn-primary btn-sm" :disabled="loading || !dirty || !!configError || saving || statusRefreshing" data-test="borrow-save" @click="saveConfig">{{ saving ? t('common.saving') : text('3. 保存并检查', '3. Save and check') }}</button>
@@ -100,7 +122,8 @@ import Toggle from '@/components/common/Toggle.vue'
 import { BORROW_MODELS, codexGatewayBorrowAPI, type CodexGatewayBorrowConfig, type CodexGatewayBorrowStatus } from '@/api/admin/codexGatewayBorrow'
 import { useCodexBorrowInventory } from '@/composables/useCodexBorrowUI'
 import { useAppStore } from '@/stores/app'
-import type { AccountListItem } from '@/types'
+import type { AccountListItem, Proxy } from '@/types'
+import { list as listProxies } from '@/api/admin/proxies'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t, locale } = useI18n()
@@ -120,6 +143,9 @@ const savedNotice = ref(false)
 const loadError = ref('')
 const statusError = ref('')
 const saveError = ref('')
+const proxies = ref<Proxy[]>([])
+const proxyError = ref('')
+const proxiesLoaded = ref(false)
 const DRAFT_KEY = 'codex-gateway-borrow-draft'
 
 type AccountRole = 'source_account_ids' | 'target_account_ids'
@@ -133,11 +159,34 @@ const configError = computed(() => {
   if (!draft.value) return ''
   if (draft.value.source_account_ids.some(id => draft.value!.target_account_ids.includes(id))) return t('admin.codexGatewayBorrow.disjointRequired')
   if (draft.value.enabled && (!draft.value.source_account_ids.length || !draft.value.target_account_ids.length || !draft.value.models.length)) return t('admin.codexGatewayBorrow.selectionRequired')
+  if (draft.value.rotate_nodes && (!draft.value.node_proxy_ids?.length || !Number.isInteger(draft.value.max_node_attempts) || draft.value.max_node_attempts! < 1 || draft.value.max_node_attempts! > 10 || !Number.isInteger(draft.value.node_cooldown_seconds) || draft.value.node_cooldown_seconds! < 60 || draft.value.node_cooldown_seconds! > 86400)) return text('请选择候选节点，尝试次数须为 1–10，冷却时间须为 60–86400 秒。', 'Select candidate nodes, 1–10 attempts and a cooldown of 60–86400 seconds.')
   return ''
 })
 
 function copyConfig(value: CodexGatewayBorrowConfig): CodexGatewayBorrowConfig {
-  return { enabled: value.enabled, source_account_ids: [...value.source_account_ids], target_account_ids: [...value.target_account_ids], models: [...value.models] }
+  const copy: CodexGatewayBorrowConfig = { enabled: value.enabled, source_account_ids: [...value.source_account_ids], target_account_ids: [...value.target_account_ids], models: [...value.models] }
+  if (value.rotate_nodes || value.node_proxy_ids?.length || value.max_node_attempts || value.node_cooldown_seconds) Object.assign(copy, { rotate_nodes: !!value.rotate_nodes, node_proxy_ids: [...(value.node_proxy_ids || [])], max_node_attempts: value.max_node_attempts || 3, node_cooldown_seconds: value.node_cooldown_seconds || 3600 })
+  return copy
+}
+async function loadNodes() {
+  if (proxies.value.length || lifecycle.signal.aborted) return
+  proxyError.value = ''
+  try {
+    const found: Proxy[] = []
+    for (let page = 1; !lifecycle.signal.aborted; page++) {
+      const result = await listProxies(page, 100, { status: 'active' }, { signal: lifecycle.signal })
+      found.push(...result.items)
+      if (!result.items.length || page * 100 >= result.total) break
+    }
+    if (!lifecycle.signal.aborted) { proxies.value = found; proxiesLoaded.value = true }
+  } catch (error) { if (!lifecycle.signal.aborted) proxyError.value = extractApiErrorMessage(error, text('候选节点读取失败', 'Could not load candidate nodes')) }
+}
+function initializeNodes() {
+  if (!draft.value?.rotate_nodes) return
+  draft.value.node_proxy_ids ||= []
+  draft.value.max_node_attempts ||= 3
+  draft.value.node_cooldown_seconds ||= 3600
+  void loadNodes()
 }
 function sameConfig(left: CodexGatewayBorrowConfig, right: CodexGatewayBorrowConfig) { return JSON.stringify(copyConfig(left)) === JSON.stringify(copyConfig(right)) }
 function isConfig(value: unknown): value is CodexGatewayBorrowConfig {
@@ -146,6 +195,9 @@ function isConfig(value: unknown): value is CodexGatewayBorrowConfig {
   return typeof config.enabled === 'boolean'
     && [config.source_account_ids, config.target_account_ids].every(ids => Array.isArray(ids) && ids.every(id => Number.isSafeInteger(id) && id > 0))
     && Array.isArray(config.models) && config.models.every(model => typeof model === 'string' && (BORROW_MODELS as readonly string[]).includes(model))
+    && (config.rotate_nodes === undefined || typeof config.rotate_nodes === 'boolean')
+    && (config.node_proxy_ids === undefined || (Array.isArray(config.node_proxy_ids) && config.node_proxy_ids.every(id => Number.isSafeInteger(id) && id >= 0)))
+    && [config.max_node_attempts, config.node_cooldown_seconds].every(value => value === undefined || (Number.isInteger(value) && value >= 0))
 }
 function clearStoredDraft() { try { sessionStorage.removeItem(DRAFT_KEY) } catch { /* The form remains usable when storage is unavailable. */ } }
 function restoredDraft(base: CodexGatewayBorrowConfig): CodexGatewayBorrowConfig {
@@ -170,6 +222,7 @@ function receiveConfig(value: CodexGatewayBorrowConfig, restore = false) {
   const nextDraft = restore ? restoredDraft(base) : copyConfig(base)
   saved.value = base
   draft.value = nextDraft
+  initializeNodes()
   if (!restore) clearStoredDraft()
 }
 function resetDraft() {

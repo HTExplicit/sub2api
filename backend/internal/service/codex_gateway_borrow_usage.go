@@ -14,6 +14,9 @@ import (
 )
 
 type CodexGatewayBorrowUsage struct {
+	ProxyID          int64      `json:"proxy_id,omitempty"`
+	NodeIdentity     string     `json:"node_identity,omitempty"`
+	Gateway          string     `json:"gateway,omitempty"`
 	Dispatched       bool       `json:"dispatched"`
 	FailureStage     string     `json:"failure_stage,omitempty"`
 	ClientRequestID  string     `json:"client_request_id,omitempty"`

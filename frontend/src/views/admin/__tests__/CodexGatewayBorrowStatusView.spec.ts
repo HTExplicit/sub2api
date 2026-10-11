@@ -78,6 +78,37 @@ afterEach(() => {
 })
 
 describe('CodexGatewayBorrowStatusView request and expiry boundaries', () => {
+  it('identifies explicit server direct without presenting the saved proxy as the actual exit', async () => {
+    const state = makeStatus()
+    state.config.rotate_nodes = true
+    state.config.node_proxy_ids = [0]
+    state.targets[0].node_identity = 'direct-node'
+    state.nodes = [{ account_id: 2, model: 'gpt-6-astra', proxy_id: 0, proxy_name: 'Server direct', node_identity: 'direct-node', state: 'selected', expires_at: state.targets[0].expires_at }]
+    mocks.getStatus.mockResolvedValue(state)
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="borrow-status-2-gpt-6-astra"] [data-test="borrow-actual-node"]').text()).toContain('原服务器直连')
+    expect(wrapper.get('[data-test="borrow-node-status"]').text()).not.toContain('#0')
+    expectNoUnrelatedCalls()
+  })
+  it('shows the selected node and model-specific cooling instead of the saved account proxy', async () => {
+    const state = makeStatus()
+    state.config.rotate_nodes = true
+    state.config.node_proxy_ids = [43, 34]
+    state.targets[0].proxy_id = 43
+    state.targets[0].gateway = 'chat.gateway.unified-198.api.openai.com'
+    state.nodes = [
+      { account_id: 2, model: 'gpt-6-astra', proxy_id: 43, proxy_name: 'Selected candidate', node_identity: 'selected', gateway: state.targets[0].gateway, state: 'selected', expires_at: state.targets[0].expires_at },
+      { account_id: 2, model: 'gpt-6.1-sol', proxy_id: 34, proxy_name: 'Cooling candidate', node_identity: 'cooling', state: 'cooling', retry_after: new Date(Date.now() + 3_600_000).toISOString(), reason: 'target_state_changed' }
+    ]
+    mocks.getStatus.mockResolvedValue(state)
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="borrow-status-2-gpt-6-astra"] [data-test="borrow-actual-node"]').text()).toContain('Selected candidate #43')
+    expect(wrapper.get('[data-test="borrow-node-status"]').text()).toContain('冷却中')
+    expect(wrapper.get('[data-test="borrow-node-status"]').text()).toContain('3600s')
+    expect(wrapper.get('[data-test="borrow-node-status"]').text()).toContain('不代表长期稳定')
+    expect(mocks.prepare).not.toHaveBeenCalled()
+    expect(mocks.verify).not.toHaveBeenCalled()
+  })
   it('replaces an idle green result with interrupted validation before the route expires', async () => {
     const initial = makeStatus()
     const interrupted = makeStatus()

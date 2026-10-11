@@ -120,7 +120,7 @@ func TestCodexGatewayBorrowConfigDefaultsAndLoadNeverProbe(t *testing.T) {
 		return nil, errors.New("must not call upstream")
 	})
 	store := &borrowCoreSettings{}
-	s, err := ProvideCodexGatewayBorrowService(store, nil, nil, probe, nil)
+	s, err := ProvideCodexGatewayBorrowService(store, nil, nil, probe, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(s.Stop)
 	require.Equal(t, DefaultCodexGatewayBorrowConfig(), s.ConfigSnapshot())

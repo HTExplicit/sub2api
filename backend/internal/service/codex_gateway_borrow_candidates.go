@@ -44,6 +44,11 @@ func (s *CodexGatewayBorrowService) storeCandidateLocked(candidate *codexGateway
 }
 
 func (s *CodexGatewayBorrowService) liveCookieLocked(key string) bool {
+	for _, c := range s.rotationCandidates {
+		if c != nil && borrowHash(c.cookie.Value) == key && time.Now().Before(c.expires) {
+			return true
+		}
+	}
 	if c := s.candidate; c != nil && borrowHash(c.cookie.Value) == key && time.Now().Before(c.expires) {
 		return true
 	}

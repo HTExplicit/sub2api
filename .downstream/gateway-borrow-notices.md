@@ -11,6 +11,18 @@ commit `fd1b5ee4eeb20961fbb783fa6f136a1704271e90`; retained host adaptations
 are listed in [the scoped review](upstream-review-ranxi-v2.10.3.md).
 The repository [LICENSE](../LICENSE) retains the LGPL-3.0 terms.
 
+Optional HTTP node selection additionally adapts `astra_rotation.go` and
+`astra_rotation_cache.go` from v2.10.5, commit
+`d977e7a5e24e5536db6ce8b8478743e0c4b11f77`. The bounded node cursor, one-hour
+default target/node/gateway cooling, one-minute source cooling, duplicate-window
+rule and five-minute repeated-host search pause come from that implementation.
+The host adapter uses explicitly selected registered proxies instead of a managed
+Mihomo listener. Sol and Astra require separate target proofs and cooldowns.
+Interrupted target probes retain the host's v16 no-negative-cache behavior;
+source failures still share source/node cooling across models. Business STATE
+replacement and incomplete SSE invalidate future selection without replaying
+the generation or changing the upstream response.
+
 HTML fence selection also references `web/src/lib/render.ts` from
 [iwyxdxl/gpttesticu](https://github.com/iwyxdxl/gpttesticu), commit
 `1b3e237c15dcdf89c4aa66d3521f8d6485d6da4a`. Its MIT notice follows.

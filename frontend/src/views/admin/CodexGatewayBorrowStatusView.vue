@@ -43,7 +43,7 @@
               <dt class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.currentSource') }}</dt>
               <dd v-if="status.candidate" class="mt-1 space-y-1">
                 <p class="break-words font-medium">{{ accountName(status.candidate.source_account_id) }} #{{ status.candidate.source_account_id }}</p>
-                <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ proxyLabel(accountById(status.candidate.source_account_id)) }}</p>
+                <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ actualProxyLabel(status.candidate.proxy_id, status.candidate.source_account_id, status.candidate.node_identity) }}</p>
                 <p v-if="candidateRemaining > 0" class="text-xs" data-test="borrow-candidate-remaining">{{ t('admin.codexGatewayBorrow.remainingSeconds', { seconds: candidateRemaining }) }}</p>
                 <p v-else class="text-xs text-amber-800 dark:text-amber-200">{{ t('admin.codexGatewayBorrow.candidateExpired') }}</p>
               </dd>
@@ -98,7 +98,7 @@
                 <div><dt>{{ t('admin.codexGatewayBorrow.rawReason') }}</dt><dd class="mt-1 break-words font-mono">{{ source.reason || '—' }}</dd></div>
                 <div><dt>{{ t('admin.codexGatewayBorrow.checkedAt') }}</dt><dd class="mt-1">{{ formatTime(source.checked_at) }}</dd></div>
                 <div><dt>{{ t('admin.codexGatewayBorrow.expiresAt') }}</dt><dd class="mt-1">{{ formatTime(source.expires_at) }}</dd></div>
-                <div><dt>{{ t('admin.codexGatewayBorrow.proxy') }}</dt><dd class="mt-1 break-words">{{ proxyLabel(accountById(source.account_id)) }}</dd></div>
+                <div><dt>{{ t('admin.codexGatewayBorrow.proxy') }}</dt><dd class="mt-1 break-words">{{ actualProxyLabel(source.proxy_id, source.account_id, source.node_identity) }}</dd></div>
               </dl>
               <pre v-if="source.error" class="borrow-error" data-test="borrow-source-error">{{ source.error }}</pre>
             </div>
@@ -114,7 +114,8 @@
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.accountModel') }}</p>
                 <p class="break-words text-sm font-medium">{{ accountName(target.account_id) }} #{{ target.account_id }}</p>
                 <p class="break-words text-xs">{{ target.model }}</p>
-                <p class="break-words text-xs text-muted">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ proxyLabel(accountById(target.account_id)) }}</p>
+                <p class="break-words text-xs text-muted" data-test="borrow-actual-node">{{ t('admin.codexGatewayBorrow.proxy') }}: {{ actualProxyLabel(target.proxy_id, target.account_id, target.node_identity) }}</p>
+                <p v-if="target.gateway" class="break-all text-xs text-muted">{{ target.gateway }}</p>
               </div>
               <div class="min-w-0 space-y-2">
                 <p class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.validation') }}</p>
@@ -163,6 +164,16 @@
           </ul>
           <p v-else class="rounded-lg border border-dashed border-line p-4 text-sm text-muted" data-test="borrow-no-targets">{{ t('admin.codexGatewayBorrow.noConfiguredTargets') }}</p>
         </section>
+        <section v-if="status.config.rotate_nodes" class="card space-y-3 p-4 sm:p-5" data-test="borrow-node-status">
+          <h2 class="font-semibold">{{ text('节点选择与冷却', 'Node selection and cooling') }}</h2>
+          <p class="text-sm text-muted">{{ text('按目标账号和模型分别记录。当前选中仅表示本次验证有效，不代表长期稳定或任务质量通过。', 'Recorded separately for each target and model. Selection indicates a current validation, not long-term stability or task-quality acceptance.') }}</p>
+          <div v-for="node in status.nodes || []" :key="`${node.account_id}:${node.model}:${node.node_identity}`" class="grid gap-2 border-t border-line pt-3 text-sm sm:grid-cols-3">
+            <div><p>{{ accountName(node.account_id) }} #{{ node.account_id }}</p><p class="text-xs text-muted">{{ node.model }}</p></div>
+            <div><p>{{ node.proxy_id === 0 ? text('原服务器直连', 'Server direct') : `${node.proxy_name} #${node.proxy_id}` }}</p><p class="break-all text-xs text-muted">{{ node.gateway || '—' }}</p></div>
+            <div><p :class="node.retry_after && remainingSeconds(node.retry_after) ? 'text-amber-800 dark:text-amber-200' : 'text-muted'">{{ nodeStateLabel(node) }}</p><p v-if="node.retry_after && remainingSeconds(node.retry_after)" class="text-xs text-muted">{{ text('冷却截止', 'Cooling until') }}: {{ formatTime(node.retry_after) }} · {{ remainingSeconds(node.retry_after) }}s</p><p v-if="node.reason" class="break-words text-xs text-muted">{{ borrowReasonLabel(node.reason, t) }}</p></div>
+          </div>
+          <p v-if="!status.nodes?.length" class="text-sm text-muted">{{ text('尚未尝试候选节点。', 'Candidate nodes have not been attempted.') }}</p>
+        </section>
         <CodexBorrowActivity :status="status" :account-name="accountName" @refresh="refreshStatus" />
       </template>
     </div>
@@ -187,6 +198,19 @@ const lifecycle = new AbortController()
 const { loadAccounts, accountById, accountName, accountStateLabel, proxyLabel, wsLabel, modelMappingLabel } = useCodexBorrowInventory(lifecycle.signal)
 const { now, receiveServerTime, cacheUsable, remainingSeconds } = useCodexBorrowClock()
 const status = ref<CodexGatewayBorrowStatus | null>(null)
+function actualProxyLabel(id?: number, accountID?: number, identity?: string) {
+  const selected = identity ? status.value?.nodes?.find(row => row.node_identity === identity) : undefined
+  if (selected?.proxy_id === 0) return text('原服务器直连', 'Server direct')
+  if (id) { const node = status.value?.nodes?.find(row => row.proxy_id === id); return `${node?.proxy_name || ''} #${id}`.trim() }
+  return status.value?.config.rotate_nodes ? text('尚未选中节点', 'No node selected') : proxyLabel(accountID ? accountById(accountID) : undefined)
+}
+function nodeStateLabel(node: NonNullable<CodexGatewayBorrowStatus['nodes']>[number]) {
+  if (statusStale.value) return text('上次记录，等待更新', 'Last observed; awaiting an update')
+  if (node.retry_after && remainingSeconds(node.retry_after)) return text('冷却中', 'Cooling')
+  if (node.state === 'selected') return node.expires_at && !remainingSeconds(node.expires_at) ? text('已过期', 'Expired') : text('当前已选', 'Selected')
+  if (node.state === 'expired') return text('已过期', 'Expired')
+  return text('待验证', 'Awaiting validation')
+}
 const loading = ref(true)
 const refreshing = ref(false)
 const statusError = ref('')

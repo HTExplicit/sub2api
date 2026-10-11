@@ -120,6 +120,11 @@ func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64)
 	if err != nil {
 		return nil, err.Error(), err
 	}
+	if s.node != nil {
+		proxy = s.node.proxy
+		req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAIHarvest))
+		req.Close = true
+	}
 	shot, err := s.sendObservation(req, a, proxy, nil, codexGatewayBorrowSourceModel, codexGatewayBorrowProbeMaxBody)
 	if err != nil {
 		return nil, shot.errorText, err
@@ -136,7 +141,14 @@ func (s *CodexGatewayBorrowService) acquireSource(ctx context.Context, id int64)
 		return nil, "routing cookie missing, invalid, deleted or expired", errors.New("source_routing_cookie_unavailable")
 	}
 	candidate.sourceID = id
+	candidate.node = s.node
 	candidate.sourceRequestEncoding = shot.requestEncoding
+	if s.node != nil && s.node.expires != nil && s.node.expires.Before(candidate.expires) {
+		candidate.expires = *s.node.expires
+	}
+	if s.nodeLease != nil {
+		candidate.expires = s.nodeLease(candidate.cookie.Value, candidate.expires)
+	}
 	return candidate, "", nil
 }
 
@@ -228,6 +240,9 @@ func (s *CodexGatewayBorrowService) probeTarget(ctx context.Context, template *h
 	ctx = withCodexBorrowPlainProbe(ctx)
 	expires := candidate.expires
 	result := CodexGatewayBorrowVerification{AccountID: account.ID, Model: model, CheckedAt: time.Now(), ExpiresAt: &expires, Reason: "target_probe_failed", RequestShape: codexBorrowProbeRanxiLiteral}
+	if s.node != nil {
+		result.ProxyID, result.NodeIdentity, result.Gateway = s.node.id, s.node.identity, codexBorrowGateway(candidate.cookie.Value)
+	}
 	if shape, _ := ctx.Value(codexBorrowProbeShapeContextKey{}).(string); shape != "" {
 		result.RequestShape = shape
 	} else {

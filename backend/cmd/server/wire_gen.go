@@ -300,7 +300,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	auditLogHandler := admin.NewAuditLogHandler(auditLogService, totpService)
 	systemPromptHandler := admin.NewSystemPromptHandler(systemPromptService)
 	codexGatewayBorrowProbeUpstream := repository.NewCodexGatewayBorrowProbeUpstream(httpUpstream)
-	codexGatewayBorrowService, err := service.ProvideCodexGatewayBorrowService(settingRepository, accountRepository, openAIGatewayService, codexGatewayBorrowProbeUpstream, tlsFingerprintProfileService)
+	codexGatewayBorrowService, err := service.ProvideCodexGatewayBorrowService(settingRepository, accountRepository, openAIGatewayService, codexGatewayBorrowProbeUpstream, tlsFingerprintProfileService, proxyRepository)
 	if err != nil {
 		return nil, err
 	}

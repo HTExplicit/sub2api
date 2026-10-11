@@ -190,6 +190,9 @@ func (s *OpenAIGatewayService) applyCodexGatewayBorrowHTTP(req *http.Request, ac
 	// The preparation already canonicalized this Cookie header. Validation
 	// must keep the bound plaintext request identity when it changes no bytes.
 	if slices.Equal(req.Header.Values("Cookie"), borrowed.Header.Values("Cookie")) {
+		if application.node != nil && HTTPUpstreamProfileFromContext(req.Context()) != HTTPUpstreamProfileOpenAIHarvest {
+			return req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAIHarvest)), nil
+		}
 		return req, nil
 	}
 	return borrowed, nil
