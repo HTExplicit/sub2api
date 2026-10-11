@@ -26,7 +26,8 @@ func TestCodexGatewayBorrowTransientEOFFreshPairOnNextRequest(t *testing.T) {
 		name               string
 		shot               int32
 		completedBeforeEOF bool
-	}{{"mint", 1, false}, {"continue", 2, false}, {"completed_then_eof", 2, true}} {
+		cleanEOF           bool
+	}{{"mint", 1, false, false}, {"continue", 2, false, false}, {"completed_then_eof", 2, true, false}, {"clean_eof_without_completion", 1, false, true}, {"unterminated_completion", 2, true, true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
 			var statesMu sync.Mutex
@@ -43,7 +44,12 @@ func TestCodexGatewayBorrowTransientEOFFreshPairOnNextRequest(t *testing.T) {
 					if !tc.completedBeforeEOF {
 						body = "data: {\"type\":\"response.created\"}\n\n"
 					}
-					w.Header().Set("Content-Length", fmt.Sprint(len(body)+100))
+					if tc.cleanEOF && tc.completedBeforeEOF {
+						body = strings.TrimSuffix(body, "\n\n")
+					}
+					if !tc.cleanEOF {
+						w.Header().Set("Content-Length", fmt.Sprint(len(body)+100))
+					}
 				}
 				_, _ = io.WriteString(w, body)
 			}))
@@ -69,11 +75,17 @@ func TestCodexGatewayBorrowTransientEOFFreshPairOnNextRequest(t *testing.T) {
 			var failure *CodexGatewayBorrowFailure
 			require.ErrorAs(t, err, &failure)
 			require.Equal(t, "target_probe_failed", failure.Reason)
-			require.Contains(t, failure.Detail, "unexpected EOF")
+			if !tc.cleanEOF {
+				require.Contains(t, failure.Detail, "unexpected EOF")
+			}
 			require.False(t, failure.CacheHit)
 			require.Nil(t, failure.RetryAfter)
 			require.True(t, failure.Verification.RetryOnNextRequest)
-			require.Equal(t, "transport", failure.Verification.FailureKind)
+			expectedKind := "transport"
+			if tc.cleanEOF {
+				expectedKind = "stream_incomplete"
+			}
+			require.Equal(t, expectedKind, failure.Verification.FailureKind)
 			expectedShot := "mint"
 			if tc.shot == 2 {
 				expectedShot = "continue"

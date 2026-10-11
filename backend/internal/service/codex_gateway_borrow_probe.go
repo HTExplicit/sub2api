@@ -42,6 +42,7 @@ type codexGatewayBorrowObservation struct {
 	errorText         string
 	complete          bool
 	incomplete        bool
+	interrupted       bool
 	modelMismatch     bool
 	cookies           []*http.Cookie
 	cookiesObservedAt time.Time
@@ -326,6 +327,10 @@ func borrowTargetObservationFailure(ctx context.Context, result *CodexGatewayBor
 		result.FailureKind = "cancelled"
 		return
 	}
+	if shot.interrupted {
+		result.FailureKind = "stream_incomplete"
+		result.RetryOnNextRequest = true
+	}
 	var transport *codexBorrowTransportError
 	var network net.Error
 	if err != nil && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &transport) || errors.As(err, &network)) {
@@ -524,6 +529,7 @@ func (s *CodexGatewayBorrowService) sendObservation(req *http.Request, account *
 			// business sender's early-terminal optimization for this criterion.
 			validationErr := validateCodexGatewayBorrowPinnedProbeResponse(data)
 			shot.complete = validationErr == nil
+			shot.interrupted = errors.Is(validationErr, errCodexBorrowProbeNoCompletion) || errors.Is(validationErr, errCodexBorrowProbeUnterminated)
 			if validationErr == nil {
 				shot.errorText = ""
 			} else if shot.errorText == "" {

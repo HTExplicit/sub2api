@@ -284,7 +284,7 @@ func TestCodexGatewayBorrowTargetCacheModelAndFingerprintIsolation(t *testing.T)
 }
 
 func TestCodexGatewayBorrowTargetChangedStateRouteAndFailureCooldown(t *testing.T) {
-	for _, mode := range []string{"state", "cookie", "missing", "incomplete"} {
+	for _, mode := range []string{"state", "cookie", "missing", "incomplete", "upstream_failed"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls int
 			a := borrowCoreAccount(2)
@@ -300,6 +300,9 @@ func TestCodexGatewayBorrowTargetChangedStateRouteAndFailureCooldown(t *testing.
 				if mode == "incomplete" {
 					return &http.Response{StatusCode: 200, Header: http.Header{"X-Codex-Turn-State": []string{"first"}}, Body: io.NopCloser(strings.NewReader("data: [DONE]\n\n"))}, nil
 				}
+				if mode == "upstream_failed" {
+					return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.failed\"}\n\n"))}, nil
+				}
 				state := "first"
 				if calls == 2 {
 					state = "changed"
@@ -314,10 +317,16 @@ func TestCodexGatewayBorrowTargetChangedStateRouteAndFailureCooldown(t *testing.
 			initial := calls
 			_, _, err = s.Apply(req, a, "gpt-6.1-sol", "", nil, false)
 			require.Error(t, err)
-			require.Equal(t, initial, calls, "failure stays in 15-second cooldown")
 			status := s.Status()
 			require.False(t, status.Targets[1].CacheValid)
-			require.NotNil(t, status.Targets[1].RetryAfter)
+			if mode == "incomplete" {
+				require.Equal(t, initial+1, calls, "each independent request revalidates the incomplete stream")
+				require.Nil(t, status.Targets[1].RetryAfter)
+				require.True(t, status.Targets[1].RetryOnNextRequest)
+			} else {
+				require.Equal(t, initial, calls, "rejection stays in 15-second cooldown")
+				require.NotNil(t, status.Targets[1].RetryAfter)
+			}
 		})
 	}
 }

@@ -13,6 +13,11 @@ import (
 	"strings"
 )
 
+var (
+	errCodexBorrowProbeNoCompletion = errors.New("probe did not complete successfully")
+	errCodexBorrowProbeUnterminated = errors.New("unterminated probe event")
+)
+
 // A clean EOF or [DONE] is not evidence of a successful Responses generation.
 func validateCodexGatewayBorrowPinnedProbeResponse(body []byte) error {
 	completed := false
@@ -85,11 +90,11 @@ func validateCodexGatewayBorrowPinnedProbeResponse(body []byte) error {
 		}
 		// A trailing unterminated event may be truncated, even if its JSON parses.
 		if len(data) > 0 {
-			return errors.New("unterminated probe event")
+			return errCodexBorrowProbeUnterminated
 		}
 	}
 	if !completed {
-		return errors.New("probe did not complete successfully")
+		return errCodexBorrowProbeNoCompletion
 	}
 	return nil
 }
