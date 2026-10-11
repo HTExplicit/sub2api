@@ -123,26 +123,29 @@ func TestCodexBorrowImmediateNoEligibleNodesStopsWithoutSpinning(t *testing.T) {
 	require.Equal(t, "stopped", s.Status().RecentUsage[0].Recovery.Phase)
 }
 
-func TestCodexBorrowImmediateCannotReviveAnExpiredIdenticalCookie(t *testing.T) {
-	s, calls, _ := nodeFixture(t, 1, func(int64, string) bool { return false })
+func TestCodexBorrowImmediateExpiredProofRequiresFreshAcquisitionAndProbes(t *testing.T) {
+	s, calls, _ := nodeFixture(t, 1, func(int64, string) bool { return true })
 	enableImmediateBorrow(t, s)
 	a, req := nodeRequest(t, s, "gpt-6-astra")
 	_, _, err := s.Apply(req, a, "gpt-6-astra", "saved", nil, false)
-	require.Error(t, err)
+	require.NoError(t, err)
 	child := s.rotation.children[borrowHash("http://node-10.invalid:8080")]
 	expired := time.Now().Add(-time.Second)
 	child.mu.Lock()
 	child.candidate.expires = expired
 	value := child.candidate.cookie.Value
-	rev, revisionCtx := child.revision, child.revisionCtx
 	child.mu.Unlock()
 	s.rotation.mu.Lock()
 	s.rotation.leases[borrowHash(value)] = expired
 	s.rotation.mu.Unlock()
-	err = child.prepareSource(context.WithValue(t.Context(), borrowFreshSourceKey{}, true), rev, revisionCtx)
+	_, _, err = s.Apply(req, a, "gpt-6-astra", "saved", nil, true)
 	require.Error(t, err)
-	require.Len(t, *calls, 4, "a new source response containing an expired identical ticket must not start target probes")
-	require.Equal(t, expired, child.candidate.expires)
+	require.Len(t, *calls, 3, "an expired proof cannot dispatch or probe underneath business sending")
+	_, _, err = s.gateway.prepareCodexGatewayBorrowHTTP(t.Context(), req, a, "gpt-6-astra", "saved")
+	require.NoError(t, err)
+	require.Len(t, *calls, 6, "lease expiry requires a new source response and two complete target probes, even if the routing cookie value is the same")
+	require.True(t, time.Now().Before(child.candidate.expires))
+	require.LessOrEqual(t, time.Until(child.candidate.expires), 230*time.Second)
 }
 
 func TestCodexBorrowImmediateCancelledProbeReleasesPreparation(t *testing.T) {

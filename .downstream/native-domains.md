@@ -129,8 +129,9 @@ waiting and node selection. Only pending HTTP business requests use its zero
 cooldown: failed qualifications trigger fresh source acquisition and two complete
 strict probes, bypassing preparation/source/node/gateway failure caches. Each
 180-second bounded search starts its next round immediately, without a total
-recovery deadline. Reacquiring the same cookie never extends the original lease,
-including an already expired lease. Administrator diagnostics retain ordinary
+recovery deadline. Reacquiring the same cookie cannot extend an active lease;
+an expired proof requires new acquisition and complete qualification as upstream.
+Administrator diagnostics retain ordinary
 cooling and remain bounded. Business dispatch still requires a current successful
 proof and is never replayed. Missing eligible nodes or invalid configuration stop
 recovery rather than spinning without network work. Acquisition and validation

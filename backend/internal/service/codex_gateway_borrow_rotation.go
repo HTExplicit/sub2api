@@ -170,10 +170,7 @@ func (s *CodexGatewayBorrowService) nodeChild(rev uint64, cfg CodexGatewayBorrow
 	child := NewCodexGatewayBorrowService(nil, s.accounts, nil, s.upstream, s.tlsProfiles)
 	child.gateway = s.gateway
 	child.node = &node
-	retainExpiredLease := cfg.ImmediateReborrowOnFailure
-	child.nodeLease = func(value string, proposed time.Time) time.Time {
-		return r.cookieExpiry(value, proposed, retainExpiredLease)
-	}
+	child.nodeLease = r.cookieExpiry
 	cfg.RotateNodes = false
 	cfg.WaitForQualifiedRoute = false
 	cfg.ImmediateReborrowOnFailure = false
@@ -207,7 +204,7 @@ func (r *codexBorrowRotation) stop() {
 	}
 }
 
-func (r *codexBorrowRotation) cookieExpiry(value string, proposed time.Time, retainExpired ...bool) time.Time {
+func (r *codexBorrowRotation) cookieExpiry(value string, proposed time.Time) time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := time.Now()
@@ -215,7 +212,7 @@ func (r *codexBorrowRotation) cookieExpiry(value string, proposed time.Time, ret
 	if r.leases == nil {
 		r.leases = map[string]time.Time{}
 	}
-	if old, ok := r.leases[key]; ok && (now.Before(old) || (len(retainExpired) != 0 && retainExpired[0])) && old.Before(proposed) {
+	if old, ok := r.leases[key]; ok && now.Before(old) && old.Before(proposed) {
 		return old
 	}
 	if len(r.leases) >= 4096 {
