@@ -34,6 +34,7 @@ var effortFamilies = []effortFamily{
 	{family: "claude-opus-4-5", levels: effortLowMediumHigh},
 	{family: "claude-opus-5-5", levels: effortLowMediumHighXHighMax, adaptive: true},
 	{family: "claude-opus-5", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-haiku-5-5", levels: effortLowMediumHighXHighMax, adaptive: true},
 }
 
 func findEffortFamily(model string) *effortFamily {
@@ -93,8 +94,8 @@ func DefaultEffortForModel(model string) string {
 	switch {
 	case entry == nil:
 		return ""
-	case entry.family == "claude-opus-5-5":
-		// Opus 5.5 defaults one level below every other effort family.
+	case entry.family == "claude-opus-5-5" || entry.family == "claude-haiku-5-5":
+		// Opus and Haiku 5.5 default to medium effort.
 		return "medium"
 	default:
 		return "high"
@@ -109,6 +110,11 @@ func IsOpus55(model string) bool {
 // IsSonnet55 identifies the fixed Sonnet 5.5 ID after provider/local suffix normalization.
 func IsSonnet55(model string) bool {
 	return normalizeEffortModelID(model) == "claude-sonnet-5-5"
+}
+
+// IsHaiku55 identifies the fixed Haiku 5.5 ID after provider/local suffix normalization.
+func IsHaiku55(model string) bool {
+	return normalizeEffortModelID(model) == "claude-haiku-5-5"
 }
 
 func normalizeEffortModelID(model string) string {

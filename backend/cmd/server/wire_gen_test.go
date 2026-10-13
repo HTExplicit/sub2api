@@ -84,6 +84,7 @@ func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *serv
 		subscriptionExpirySvc,
 		&service.UsageCleanupService{},
 		idempotencyCleanupSvc,
+		service.NewGeminiCachedContentService(nil, nil, cfg),
 		&service.BatchImageCleanupService{},
 		nil, // batchImageWorker
 		pricingSvc,

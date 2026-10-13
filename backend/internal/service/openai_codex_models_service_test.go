@@ -324,8 +324,8 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(claudeOpus5.SupportedReasoningLevels))
 	claudeSonnet55 := newConfiguredCodexModelDescriptor("anthropic/claude-sonnet-5-5")
 	require.Equal(t, "Claude Sonnet 5.5", claudeSonnet55.DisplayName)
-	require.Equal(t, int64(1_000_000), claudeSonnet55.ContextWindow)
-	require.Equal(t, int64(1_000_000), claudeSonnet55.MaxContextWindow)
+	require.Zero(t, claudeSonnet55.ContextWindow)
+	require.Zero(t, claudeSonnet55.MaxContextWindow)
 	require.Equal(t, "high", *claudeSonnet55.DefaultReasoningLevel)
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(claudeSonnet55.SupportedReasoningLevels))
 
@@ -338,6 +338,16 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.NotNil(t, claudeHaiku.DefaultReasoningLevel)
 	require.Equal(t, "none", *claudeHaiku.DefaultReasoningLevel)
 	require.Equal(t, []string{"none"}, effortsFromConfiguredCodexLevels(claudeHaiku.SupportedReasoningLevels))
+
+	claudeHaiku55 := newConfiguredCodexModelDescriptor("claude-haiku-5-5")
+	require.Equal(t, "Claude Haiku 5.5", claudeHaiku55.DisplayName)
+	// The provider's official API capacity is resolved from the evidence catalog,
+	// rather than written as an offline descriptor default.
+	require.Zero(t, claudeHaiku55.ContextWindow)
+	require.Zero(t, claudeHaiku55.MaxContextWindow)
+	require.NotNil(t, claudeHaiku55.DefaultReasoningLevel)
+	require.Equal(t, "medium", *claudeHaiku55.DefaultReasoningLevel)
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(claudeHaiku55.SupportedReasoningLevels))
 
 	gpt56 := newConfiguredCodexModelDescriptor("gpt-5.6-sol")
 	require.Equal(t, "GPT-5.6 Sol", gpt56.DisplayName)
@@ -2343,7 +2353,7 @@ func TestBuildOpenAIModelsCacheKeyKeepsCapacityOverridesLocal(t *testing.T) {
 }
 
 func TestFetchCodexModelsManifestOAuthPreservesResponsesLite(t *testing.T) {
-	const manifestBody = ` {"models":[{"slug":"gpt-5.6-sol","use_responses_lite":true}]} `
+	const manifestBody = ` {"models":[{"slug":"gpt-5.6-sol","use_responses_lite":true},{"slug":"gpt-6.1-sol","context_window":500000,"max_context_window":1000000,"use_responses_lite":true}]} `
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(manifestBody))
 	}))
@@ -4279,4 +4289,26 @@ func TestGPT61SolAPIKeyCatalogUsesFullResponses(t *testing.T) {
 	require.NoError(t, json.Unmarshal(body, &catalog))
 	require.Equal(t, false, catalog.Models[0]["use_responses_lite"])
 	require.Equal(t, "low", catalog.Models[0]["default_reasoning_level"])
+}
+
+func TestGPT61SolAPIKeyCatalogContextWindow(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
+	for _, tc := range []struct {
+		name string
+		body string
+		want int64
+	}{
+		{"missing uses updated default", `{"models":[{"slug":"gpt-6.1-sol"}]}`, 500_000},
+		{"null uses updated default", `{"models":[{"slug":"gpt-6.1-sol","context_window":null}]}`, 500_000},
+		{"lower upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":272000}]}`, 272_000},
+		{"higher upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":1000000,"max_context_window":1000000}]}`, 1_000_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := completeAPIKeyCodexModelsManifestMetadata([]byte(tc.body), true, account)
+			require.NoError(t, err)
+			models := decodeCodexManifestModels(t, body)
+			require.Len(t, models, 1)
+			require.EqualValues(t, tc.want, models[0]["context_window"])
+		})
+	}
 }

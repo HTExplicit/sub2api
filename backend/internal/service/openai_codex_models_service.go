@@ -470,10 +470,6 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 	}
 
 	if isClaudeCodexModel(modelID) {
-		if claude.IsOpus55(modelID) || claude.IsSonnet55(modelID) {
-			descriptor.ContextWindow = 1_000_000
-			descriptor.MaxContextWindow = 1_000_000
-		}
 		descriptor.DisplayName = claudeCodexDisplayName(modelID)
 		descriptor.Description = "Claude coding and reasoning model routed through Sub2API."
 		descriptor.SupportsParallelToolCalls = true

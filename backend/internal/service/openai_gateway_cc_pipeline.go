@@ -70,11 +70,23 @@ type rewoundOpenAIUpstreamErrorBody struct {
 
 func (b *rewoundOpenAIUpstreamErrorBody) Close() error { return nil }
 
-// readOpenAIUpstreamError keeps the exact wire bytes available to the account
-// error classifiers while every other inspector and downstream reader sees the
-// body with the client's own instructions echo.
+// readOpenAIUpstreamError restores only the client's prompt echo for display;
+// account classifiers retain the original wire body through the rewound reader.
 func (s *OpenAIGatewayService) readOpenAIUpstreamError(resp *http.Response, c *gin.Context) ([]byte, string) {
-	rawBody := s.readUpstreamErrorBody(resp)
+	respBody, upstreamMsg, _ := s.readOpenAIUpstreamErrorWithCompleteness(resp, c)
+	return respBody, upstreamMsg
+}
+
+func (s *OpenAIGatewayService) readOpenAIUpstreamErrorWithCompleteness(resp *http.Response, c *gin.Context) ([]byte, string, bool) {
+	limit := openAIUpstreamErrorBodyReadLimitForConfig(nil)
+	if s != nil {
+		limit = openAIUpstreamErrorBodyReadLimitForConfig(s.cfg)
+	}
+	rawBody, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	complete := readErr == nil && int64(len(rawBody)) <= limit
+	if int64(len(rawBody)) > limit {
+		rawBody = rawBody[:limit]
+	}
 	respBody := restoreSystemPromptEcho(c, rawBody)
 	_ = resp.Body.Close()
 	resp.Body = &rewoundOpenAIUpstreamErrorBody{
@@ -84,7 +96,7 @@ func (s *OpenAIGatewayService) readOpenAIUpstreamError(resp *http.Response, c *g
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-	return respBody, upstreamMsg
+	return respBody, upstreamMsg, complete
 }
 
 // failoverOpenAIUpstreamHTTPError 对 >=400 的上游响应做 failover 判定：命中时

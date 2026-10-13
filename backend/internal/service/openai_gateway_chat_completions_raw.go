@@ -61,7 +61,17 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	startTime := time.Now()
+	return s.forwardAsRawChatCompletionsWithStartTime(ctx, c, account, body, defaultMappedModel, time.Now())
+}
+
+func (s *OpenAIGatewayService) forwardAsRawChatCompletionsWithStartTime(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	defaultMappedModel string,
+	startTime time.Time,
+) (*OpenAIForwardResult, error) {
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
 		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
