@@ -4298,8 +4298,8 @@ func TestGPT61SolAPIKeyCatalogContextWindow(t *testing.T) {
 		body string
 		want int64
 	}{
-		{"missing uses updated default", `{"models":[{"slug":"gpt-6.1-sol"}]}`, 500_000},
-		{"null uses updated default", `{"models":[{"slug":"gpt-6.1-sol","context_window":null}]}`, 500_000},
+		{"missing remains unknown until capacity resolution", `{"models":[{"slug":"gpt-6.1-sol"}]}`, 0},
+		{"null remains unknown until capacity resolution", `{"models":[{"slug":"gpt-6.1-sol","context_window":null}]}`, 0},
 		{"lower upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":272000}]}`, 272_000},
 		{"higher upstream window is preserved", `{"models":[{"slug":"gpt-6.1-sol","context_window":1000000,"max_context_window":1000000}]}`, 1_000_000},
 	} {
@@ -4308,7 +4308,11 @@ func TestGPT61SolAPIKeyCatalogContextWindow(t *testing.T) {
 			require.NoError(t, err)
 			models := decodeCodexManifestModels(t, body)
 			require.Len(t, models, 1)
-			require.EqualValues(t, tc.want, models[0]["context_window"])
+			if tc.want == 0 {
+				require.Nil(t, models[0]["context_window"])
+			} else {
+				require.EqualValues(t, tc.want, models[0]["context_window"])
+			}
 		})
 	}
 }

@@ -495,6 +495,18 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 		return true
 	}
+	// An explicit model-scoped 401 rule also applies to count/probe entrypoints
+	// outside the ordinary HTTP marker. Evaluate it before their legacy auth
+	// fast path; absent/account-scoped rules retain that existing auth behavior.
+	if s != nil && s.rateLimitService != nil && statusCode == http.StatusUnauthorized &&
+		!IsOpenAIOfficialHTTPFailover(ctx, account) && len(canonicalModel) > 0 &&
+		strings.TrimSpace(canonicalModel[0]) != "" && tempUnschedRulesApply(account, statusCode, responseBody, canonicalModel[0]) {
+		stateCtx, cancel := openAIAccountStateContext(ctx)
+		defer cancel()
+		if s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, canonicalModel[0]) {
+			return true
+		}
+	}
 	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey && !IsOpenAIOfficialHTTPFailover(ctx, account) {
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:

@@ -239,7 +239,9 @@ func TestOpenAIFailoverSideEffects_401FollowsTempUnschedScope(t *testing.T) {
 			}
 
 			require.True(t, gateway.shouldFailoverOpenAIUpstreamResponse(account, http.StatusUnauthorized, "unauthorized", body))
-			gateway.handleFailoverSideEffects(context.Background(), &http.Response{
+			// Match the ordinary production HTTP handler's policy marker; the
+			// unmarked count/probe path retains its downstream authentication policy.
+			gateway.handleFailoverSideEffects(WithOpenAIOfficialHTTPFailover(context.Background()), &http.Response{
 				StatusCode: http.StatusUnauthorized,
 				Header:     http.Header{},
 			}, account, body, "gpt-5.4")
