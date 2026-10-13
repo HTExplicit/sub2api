@@ -28,7 +28,8 @@
 - Ordinary OpenAI HTTP scope tests use the production failover marker. Explicit
   model-scoped 401 rules are also evaluated before the unmarked count/probe auth
   fast path; missing/account-scoped rules retain the existing downstream behavior,
-  and credential-level/OAuth failures keep their authentication handling.
+  and credential-level/OAuth failures keep their authentication handling. The
+  unmarked API-key path still records its scheduling-neutral last upstream error.
 - Existing Codex identity and strict STATE borrowing, Pelican jobs, prompt binding,
   full administrator visibility, account/model mapping, capacity evidence and
   flat-console hooks remain. The model picker keeps its explicit confirmation and

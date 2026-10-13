@@ -504,6 +504,9 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		stateCtx, cancel := openAIAccountStateContext(ctx)
 		defer cancel()
 		if s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, canonicalModel[0]) {
+			if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
+				s.recordOpenAILastUpstreamError(ctx, account, statusCode, responseBody)
+			}
 			return true
 		}
 	}
