@@ -5,7 +5,7 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 ## Source baseline
 
 - Integrated official baseline: the release recorded in `.downstream/upstream-base`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.15.md).
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.16.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
 ## Settings and account operations
@@ -186,9 +186,21 @@ Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
 
-`.downstream/upstream-risk.json` records the v0.2.14-to-v0.2.15 integration against
-downstream commit `d469422e94b0655b22dd9d0a826decda61ffb91e`. The risk gate
-recomputes those exact inputs. `initial_conflict_files` lists the 40
-conflicts resolved during this merge; `merge_conflicts: []` records that none
-remain. A `review_required` candidate needs a real completed review and the
-`upstream-reviewed` label before promotion.
+`.downstream/upstream-risk.json` records the v0.2.15-to-v0.2.16 integration against
+downstream commit `157836bdc12424a71f1d0bd30a37fcca38842fc9`. The risk gate
+recomputes those exact inputs. `initial_conflict_files` records the 17 resolved
+conflicts; `merge_conflicts: []` records that none remain. The candidate requires
+a completed review and the `upstream-reviewed` label before promotion.
+
+Gemini explicit caches follow the official account/key binding, storage billing,
+mutation lease and recovery rules. Vertex API-key authentication and service-account
+model discovery, account/model temporary-unschedulable scopes and group display
+translations follow v0.2.16. Existing unconfigured accounts and rules retain their
+stored behavior. Official migrations 242 through 245 keep their original filenames
+and coexist with downstream migrations of the same numeric prefixes.
+
+Haiku 5.5 uses adaptive thinking and medium default effort; its API limits are
+resolved through the official evidence catalog. Local Codex descriptors still
+carry no capacity defaults, including the official Sol 500k generation default.
+Sol's subscription model-card long-context exemption follows the actual credential
+and upstream model; API-key and custom-interval pricing keep their own policies.

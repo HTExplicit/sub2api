@@ -195,6 +195,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
 import { findContextCapacityRow } from '@/utils/modelContextCapacity'
 import { supportsUpstreamModelSync } from '@/constants/platformCatalog'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 
@@ -441,7 +442,7 @@ const syncUpstreamModels = async () => {
     pickerResult.value = result
   } catch (error) {
     if (generation !== syncGeneration) return
-    const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
+    const message = extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
     if (generation === syncGeneration) isSyncingUpstream.value = false

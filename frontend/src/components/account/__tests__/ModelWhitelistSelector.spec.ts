@@ -36,6 +36,7 @@ vi.mock('vue-i18n', async () => {
         if (key === 'admin.accounts.modelMappingConflict') {
           return `Model mapping conflict: ${params?.from} → ${params?.to}`
         }
+        if (key === 'admin.accounts.syncUpstreamModelsError') return `${key}: ${params?.message}`
         if (params && key.startsWith('admin.accounts.syncUpstreamPicker.')) {
           return `${key} ${JSON.stringify(params)}`
         }
@@ -528,6 +529,26 @@ describe('ModelWhitelistSelector', () => {
     expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncUpstreamPicker.updated {"added":1,"removed":0}')
     expect(showWarning).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+
+  it('shows the backend message when upstream sync is rejected', async () => {
+    syncUpstreamModels.mockRejectedValue({
+      status: 400,
+      code: 'BAD_REQUEST',
+      message: 'Vertex API key accounts do not support upstream model listing'
+    })
+    const wrapper = mountSelector({ platform: 'gemini', accountId: 174 })
+
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+    expect(syncButton).toBeDefined()
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith(
+      'admin.accounts.syncUpstreamModelsError: Vertex API key accounts do not support upstream model listing'
+    )
   })
 
   it('shows partial capability metadata inside the picker and the whitelist change on confirm', async () => {

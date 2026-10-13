@@ -495,6 +495,21 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 		return true
 	}
+	// An explicit model-scoped 401 rule also applies to count/probe entrypoints
+	// outside the ordinary HTTP marker. Evaluate it before their legacy auth
+	// fast path; absent/account-scoped rules retain that existing auth behavior.
+	if s != nil && s.rateLimitService != nil && statusCode == http.StatusUnauthorized &&
+		!IsOpenAIOfficialHTTPFailover(ctx, account) && len(canonicalModel) > 0 &&
+		strings.TrimSpace(canonicalModel[0]) != "" && tempUnschedRulesApply(account, statusCode, responseBody, canonicalModel[0]) {
+		stateCtx, cancel := openAIAccountStateContext(ctx)
+		defer cancel()
+		if s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, canonicalModel[0]) {
+			if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
+				s.recordOpenAILastUpstreamError(ctx, account, statusCode, responseBody)
+			}
+			return true
+		}
+	}
 	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey && !IsOpenAIOfficialHTTPFailover(ctx, account) {
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
@@ -550,7 +565,8 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	// Isolate a custom temporary-unschedulable match to the known upstream
 	// model before entering the generic account error path. This keeps the
 	// account available to other models and avoids the account runtime blocker.
-	if s.rateLimitService != nil && statusCode != http.StatusUnauthorized && len(canonicalModel) > 0 && strings.TrimSpace(canonicalModel[0]) != "" &&
+	if s.rateLimitService != nil && len(canonicalModel) > 0 && strings.TrimSpace(canonicalModel[0]) != "" &&
+		tempUnschedRulesApply(account, statusCode, responseBody, canonicalModel[0]) &&
 		s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, canonicalModel[0]) {
 		return true
 	}
@@ -569,7 +585,8 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	}
 	beforeGeneration, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
 	shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
-	modelTempMatched := statusCode != http.StatusUnauthorized && tempUnschedulableModel(stateCtx, nil) != "" &&
+	tempModel := tempUnschedulableModel(stateCtx, nil)
+	modelTempMatched := tempModel != "" && tempUnschedRulesApply(account, statusCode, responseBody, tempModel) &&
 		len(matchTempUnschedulableRules(account, statusCode, responseBody)) > 0
 	if shouldDisable && !modelTempMatched {
 		// A finite DB-cooldown notification already supplies the bridge for this

@@ -30,6 +30,8 @@ func TestModelContextCapacitySelectedGPTReferenceAndExactVariants(t *testing.T) 
 		{"gpt-5.2", 400000, "gpt-5.2"},
 		{"vendor/gpt-5.3-codex", 400000, "gpt-5.3-codex"},
 		{"vendor/claude-sonnet-4-6", 1000000, "claude-sonnet-4-6"},
+		{"claude-haiku-5-5", 1000000, "claude-haiku-5-5"},
+		{"anthropic/claude-haiku-5.5", 1000000, "claude-haiku-5-5"},
 		{"anthropic/claude-opus-4.6", 1000000, "claude-opus-4-6"},
 		{"anthropic/claude-opus-4-6:free", 1000000, "claude-opus-4-6"},
 		{"vendor/gpt-5.4-2099-01-01", 0, ""},

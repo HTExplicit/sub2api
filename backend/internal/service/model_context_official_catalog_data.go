@@ -247,6 +247,14 @@ var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
 		NormalizationBasis: claudeUnitsBasis,
 	},
 	{
+		ModelID: "claude-haiku-5-5", Provider: "anthropic", Product: "messages_api",
+		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1000000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
+		SourceURL:            "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+		SourceURLs:           []string{claudeContextSource, claudeIntegerSource, claudeOutputSource},
+		VerifiedAt:           "2026-10-13", OriginalText: "1M; 128K",
+		NormalizationBasis: claudeUnitsBasis,
+	},
+	{
 		ModelID: "claude-fable-5-1", Provider: "anthropic", Product: "messages_api",
 		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1000000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
 		SourceURL:            "https://platform.claude.com/docs/en/models/fable-5-1/overview",
