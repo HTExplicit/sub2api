@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pelicanTestsAPI, streamPelicanTests, type PelicanTestRequest } from '../pelicanTests'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn() }))
 vi.mock('@/api/client', () => ({ apiClient: mocks, buildApiUrl: (path: string) => `/api/v1${path}` }))
 
 const request: PelicanTestRequest = {
@@ -18,6 +18,17 @@ function response(chunks: string[]) {
 describe('Standalone Pelican transport', () => {
   beforeEach(() => { vi.clearAllMocks(); localStorage.setItem('auth_token', 'admin-test-token') })
   afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+
+  it('deletes only the specified task or its bound result', async () => {
+    mocks.delete.mockResolvedValue({ data: { deleted: true } })
+    await expect(pelicanTestsAPI.deleteTask('task/id')).resolves.toEqual({ deleted: true })
+    await pelicanTestsAPI.deleteResult('task/id', 'result/id')
+    expect(mocks.delete.mock.calls).toEqual([
+      ['/admin/pelican-tests/tasks/task%2Fid'],
+      ['/admin/pelican-tests/tasks/task%2Fid/results/result%2Fid']
+    ])
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
 
   it('uses only independent local metadata and stored test endpoints for page reads', async () => {
     mocks.get.mockResolvedValue({ data: { accounts: [] } })

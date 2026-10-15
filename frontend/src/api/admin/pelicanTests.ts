@@ -96,6 +96,7 @@ export interface PelicanOptions {
 export type PelicanPhase = 'queued' | 'preparing' | 'generating'
 
 export interface PelicanTestResult extends PelicanResultBase {
+  task_id?: string
   platform?: string
   actual_endpoint?: string
   actual_protocol?: string
@@ -259,6 +260,8 @@ export const pelicanTestsAPI = {
   getResults: async (id: string, filters: PelicanResultFilter = {}, signal?: AbortSignal) => (await apiClient.get<PelicanResultPage>(`${basePath}/tasks/${encodeURIComponent(id)}/results`, { params: { page: 1, page_size: 24, ...filters }, signal })).data,
   getResult: async (task: string, id: string, signal?: AbortSignal) => (await apiClient.get<PelicanTestResult>(`${basePath}/tasks/${encodeURIComponent(task)}/results/${encodeURIComponent(id)}`, { signal })).data,
   cancelTask: async (id: string) => (await apiClient.post<PelicanTaskSnapshot>(`${basePath}/tasks/${encodeURIComponent(id)}/cancel`)).data,
+  deleteTask: async (id: string) => (await apiClient.delete<{ deleted: boolean }>(`${basePath}/tasks/${encodeURIComponent(id)}`)).data,
+  deleteResult: async (task: string, id: string) => (await apiClient.delete<{ deleted: boolean }>(`${basePath}/tasks/${encodeURIComponent(task)}/results/${encodeURIComponent(id)}`)).data,
   observeTask: observePelicanTask,
   getOptions: async (signal?: AbortSignal) => (await apiClient.get<PelicanOptions>(`${basePath}/options`, { signal })).data,
   getAccountOptions: async (accountIds: number[], signal?: AbortSignal) => (await apiClient.post<PelicanOptions>(`${basePath}/options`, { account_ids: accountIds }, { signal })).data,

@@ -16,6 +16,8 @@ func registerPelicanTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	pelican.GET("/tasks/:id/results/:result_id", h.Admin.PelicanTest.GetTaskResult)
 	pelican.GET("/tasks/:id/events", h.Admin.PelicanTest.ObserveTask)
 	pelican.POST("/tasks/:id/cancel", h.Admin.PelicanTest.CancelTask)
+	pelican.DELETE("/tasks/:id", h.Admin.PelicanTest.DeleteTask)
+	pelican.DELETE("/tasks/:id/results/:result_id", h.Admin.PelicanTest.DeleteTaskResult)
 	pelican.POST("/tests", h.Admin.PelicanTest.StartTests)
 	pelican.GET("/tests", h.Admin.PelicanTest.ListTests)
 	pelican.GET("/tests/:id", h.Admin.PelicanTest.GetTest)

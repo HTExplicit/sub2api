@@ -58,6 +58,33 @@ type PelicanTaskReader interface {
 	ListTaskResults(context.Context, string, PelicanResultFilter) (*PelicanResultPage, error)
 }
 
+type PelicanTaskDeleter interface {
+	DeleteTask(context.Context, string) error
+	DeleteTaskResult(context.Context, string, string) error
+}
+
+func (r *PelicanTestRunner) DeleteTask(ctx context.Context, id string) error {
+	return r.deleteTask(ctx, id, "")
+}
+
+func (r *PelicanTestRunner) DeleteTaskResult(ctx context.Context, taskID, resultID string) error {
+	return r.deleteTask(ctx, taskID, resultID)
+}
+
+func (r *PelicanTestRunner) deleteTask(ctx context.Context, taskID, resultID string) error {
+	if err := r.initialize(ctx); err != nil {
+		return err
+	}
+	deleter, ok := r.repo.(PelicanTaskDeleter)
+	if !ok {
+		return errors.New("pelican deletion repository is unavailable")
+	}
+	if resultID == "" {
+		return deleter.DeleteTask(ctx, taskID)
+	}
+	return deleter.DeleteTaskResult(ctx, taskID, resultID)
+}
+
 type pelicanBackgroundTask struct {
 	cancel context.CancelFunc
 	phases map[string]*PelicanResultSummary

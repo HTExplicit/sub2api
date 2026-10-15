@@ -103,6 +103,12 @@ func pelicanPrivateIntegrationDB(t *testing.T, ctx context.Context) *sql.DB {
         WHERE table_schema=current_schema() AND table_name='codex_gateway_borrow_test_tasks' AND column_name='execution_mode'`).Scan(&modeDefault))
 	require.Equal(t, "'account'::text", modeDefault)
 	var answer, originalError []byte
+	deletion, err := migrations.FS.ReadFile("279_pelican_test_deletion.sql")
+	require.NoError(t, err)
+	for i := 0; i < 2; i++ {
+		_, err = privateDB.ExecContext(ctx, string(deletion))
+		require.NoError(t, err)
+	}
 	var executionMode string
 	var timeout int
 	var retention int64

@@ -119,6 +119,9 @@ func (r *pelicanBackgroundRepo) GetTaskSnapshot(_ context.Context, id string) (*
 	defer r.mu.Unlock()
 	for _, task := range r.tasks {
 		if task.ID == id || task.ClientTaskID == id {
+			if task.DeletedAt != nil {
+				return nil, ErrPelicanTestDeleted
+			}
 			copy := *task
 			copy.Results = nil
 			counts := map[string]int{}
@@ -132,6 +135,28 @@ func (r *pelicanBackgroundRepo) GetTaskSnapshot(_ context.Context, id string) (*
 		}
 	}
 	return nil, ErrPelicanTestNotFound
+}
+
+func TestPelicanBackgroundDeletedSubmissionNeverRegenerates(t *testing.T) {
+	var calls atomic.Int32
+	runner, repo, catalog := newPelicanBackgroundFixture(t, func(context.Context, int64, string, string) (*PelicanResult, error) {
+		calls.Add(1)
+		return &PelicanResult{RawAnswer: "saved"}, nil
+	})
+	request := PelicanTestRequest{ClientTaskID: pelicanV7(t), Targets: []PelicanTestTarget{{AccountID: 1, ModelID: "gpt-6.1-sol"}}}
+	task, err := runner.StartBackground(context.Background(), 1, request, catalog)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		snapshot, readErr := runner.TaskSnapshot(context.Background(), task.ID)
+		return readErr == nil && snapshot.Status != "pending" && snapshot.Status != "running"
+	}, time.Second, time.Millisecond)
+	repo.mu.Lock()
+	now := time.Now()
+	repo.tasks[task.ID].DeletedAt = &now
+	repo.mu.Unlock()
+	_, err = runner.StartBackground(context.Background(), 1, request, nil)
+	require.ErrorIs(t, err, ErrPelicanTestDeleted, "a replay must fail before consulting current capabilities")
+	require.EqualValues(t, 1, calls.Load())
 }
 func (r *pelicanBackgroundRepo) ListTaskResults(_ context.Context, id string, filter PelicanResultFilter) (*PelicanResultPage, error) {
 	r.mu.Lock()

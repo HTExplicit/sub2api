@@ -31,7 +31,7 @@
     <template v-else>
       <div v-if="step === 2" class="space-y-4">
         <div class="flex flex-wrap items-end gap-2 rounded-lg border border-line p-3">
-          <label class="min-w-40 flex-1 text-sm">{{ text('批量模型（留空保留各自模型）', 'Bulk model (blank keeps each model)') }}<input v-model="bulkModel" class="input mt-1 w-full" /></label>
+          <div class="min-w-40 flex-1 text-sm"><label for="pelican-bulk-model">{{ t('admin.pelicanTests.bulkModel') }}</label><Select id="pelican-bulk-model" v-model="bulkModel" class="mt-1" :aria-label="t('admin.pelicanTests.bulkModel')" :options="bulkModelOptions" searchable :disabled="optionsLoading || submitting" data-test="pelican-bulk-model" /></div>
           <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="bulkEffort" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in effortLevels" :key="effort" :value="effort">{{ effort }}</option></select></label>
           <button type="button" class="btn btn-secondary" @click="applyBulk">{{ text('批量设置兼容组合', 'Apply to compatible combinations') }}</button>
         </div>
@@ -41,15 +41,13 @@
           <p v-if="options[id]?.capability_reason" class="text-xs text-muted">{{ options[id].capability_reason }}</p>
           <div v-for="row in rows.filter(item => item.account_id === id)" :key="row.key" class="space-y-1">
             <div class="flex flex-wrap items-end gap-2">
-              <label class="min-w-36 flex-1 text-sm">{{ t('admin.pelicanTests.model') }}<input v-model="row.model_id" :list="`pelican-models-${id}`" class="input mt-1 w-full" :data-test="`pelican-model-${row.key}`" @input="row.effort = ''" /></label>
+              <div class="min-w-36 flex-1 text-sm"><label :for="`pelican-model-${row.key}`">{{ t('admin.pelicanTests.model') }}</label><Select :id="`pelican-model-${row.key}`" v-model="row.model_id" class="mt-1" :aria-label="`${t('admin.pelicanTests.model')} #${id}`" :options="rowModelOptions(row)" searchable :disabled="optionsLoading || submitting" :error="!!issue(row)" :data-test="`pelican-model-${row.key}`" @change="row.effort = ''" /></div>
               <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="row.effort" class="input mt-1" :data-test="`pelican-effort-${row.key}`"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in modelOption(row)?.reasoning_efforts || []" :key="effort" :value="effort">{{ effort }}</option></select></label>
               <button type="button" class="btn btn-ghost btn-sm" :aria-label="`${t('admin.pelicanTests.removeModel')} ${row.model_id} #${id}`" @click="removeRow(row.key)">{{ text('移除', 'Remove') }}</button>
             </div>
             <p v-if="issue(row)" role="alert" class="text-xs text-red-700 dark:text-red-300">{{ issue(row) }}</p>
-            <p v-else-if="!modelOption(row)" class="text-xs text-amber-800 dark:text-amber-200">{{ text('手动模型：未经过本地目录确认，提交时仍会检查发送能力。', 'Manual model: not confirmed by the local catalog; sender capability is checked on submission.') }}</p>
             <p v-else class="text-xs text-muted">{{ t('admin.pelicanTests.mappedModel') }}: {{ modelOption(row)?.upstream_model }}</p>
           </div>
-          <datalist :id="`pelican-models-${id}`"><option v-for="model in options[id]?.models || []" :key="model.id" :value="model.id">{{ model.text_supported ? model.display_name : model.capability_reason }}</option></datalist>
         </div>
       </div>
       <div v-else class="space-y-4" data-test="pelican-review">
@@ -73,10 +71,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Pagination from '@/components/common/Pagination.vue'
+import Select from '@/components/common/Select.vue'
 import { accountsAPI, type AccountListFilters } from '@/api/admin/accounts'
 import { groupsAPI } from '@/api/admin/groups'
 import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
-import { pelicanTestsAPI, PELICAN_PROMPT, type PelicanAccountOption, type PelicanTestRequest } from '@/api/admin/pelicanTests'
+import { pelicanTestsAPI, PELICAN_PROMPT, type PelicanAccountOption, type PelicanModelOption, type PelicanTestRequest } from '@/api/admin/pelicanTests'
 import { applyPelicanBulk, pelicanDefaultModel, pelicanDuplicateKeys, pelicanCombinationIssue, type PelicanCombination } from '@/utils/pelicanTaskSelection'
 import type { AccountListItem, AdminGroup } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -102,11 +101,23 @@ const duplicates = computed(() => pelicanDuplicateKeys(rows.value))
 const valid = computed(() => rows.value.length > 0 && rows.value.length <= 5000 && !optionsLoading.value && !rows.value.some(row => issue(row)))
 const budgetValid = computed(() => Number.isInteger(budgetMinutes.value) && budgetMinutes.value >= 1 && budgetMinutes.value <= 30)
 function modelOption(row: PelicanCombination) { return options.value[row.account_id]?.models.find(model => model.id === row.model_id.trim()) }
+function modelLabel(model: PelicanModelOption) { return model.display_name && model.display_name !== model.id ? `${model.display_name} (${model.id})` : model.id }
+function rowModelOptions(row: PelicanCombination) {
+  const models = (options.value[row.account_id]?.models || []).map(model => ({ value: model.id, label: `${modelLabel(model)}${model.text_supported ? '' : ` · ${model.capability_reason}`}`, disabled: !model.text_supported }))
+  if (row.model_id && !models.some(model => model.value === row.model_id)) models.unshift({ value: row.model_id, label: `${row.model_id} · ${t('admin.pelicanTests.modelUnavailable')}`, disabled: true })
+  return models
+}
+const bulkModelOptions = computed(() => {
+  const models = new Map<string, string>()
+  for (const id of selected.value) for (const model of options.value[id]?.models || []) if (model.text_supported && !models.has(model.id)) models.set(model.id, modelLabel(model))
+  return [{ value: '', label: t('admin.pelicanTests.keepModels') }, ...[...models].sort(([a], [b]) => a.localeCompare(b)).map(([value, label]) => ({ value, label }))]
+})
 function issue(row: PelicanCombination): string {
   if (duplicates.value.has(row.key)) return text('同一账号与模型只能有一个档位，请修改已有行或移除重复行。', 'Use one reasoning level per account/model; edit the existing row or remove duplicates.')
   const value = pelicanCombinationIssue(row, options.value[row.account_id])
   if (value === 'options_pending') return t('common.loading')
-  if (value === 'model_required') return text('没有有效的默认模型，请选择或输入模型。', 'No valid default model; select or enter one.')
+  if (value === 'model_required') return t('admin.pelicanTests.noAvailableModel')
+  if (value === 'model_unavailable') return t('admin.pelicanTests.modelUnavailable')
   if (value === 'effort_unsupported') return text('该模型不支持所选档位，请修改。', 'This model does not support the selected reasoning level.')
   return value
 }

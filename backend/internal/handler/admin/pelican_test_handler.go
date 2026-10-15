@@ -222,11 +222,11 @@ func pelicanPrivateHeaders(c *gin.Context) {
 func pelicanTestError(c *gin.Context, err error) {
 	status := http.StatusInternalServerError
 	switch {
-	case errors.Is(err, service.ErrPelicanTestReplayConflict):
+	case errors.Is(err, service.ErrPelicanTestReplayConflict), errors.Is(err, service.ErrPelicanTestRunning):
 		status = http.StatusConflict
 	case errors.Is(err, service.ErrPelicanTestInvalidRequest):
 		status = http.StatusBadRequest
-	case errors.Is(err, service.ErrPelicanTestExpired):
+	case errors.Is(err, service.ErrPelicanTestExpired), errors.Is(err, service.ErrPelicanTestDeleted):
 		status = http.StatusGone
 	case errors.Is(err, service.ErrPelicanTestNotFound):
 		status = http.StatusNotFound

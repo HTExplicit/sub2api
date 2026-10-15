@@ -142,10 +142,20 @@ func pelicanTestAccountOptions(account *Account) PelicanTestAccountOption {
 	if account.Proxy != nil {
 		option.ProxyName = account.Proxy.Name
 	}
+	preferred := ""
+	switch account.Platform {
+	case PlatformOpenAI:
+		preferred = "gpt-6.1-sol"
+	case PlatformAnthropic:
+		preferred = "claude-opus-5-5"
+	}
 	for _, id := range pelicanTestLocalModelIDs(account) {
 		model := PelicanTestModelOptions(account, id)
 		option.Models = append(option.Models, model)
 		if option.DefaultModelID == "" && model.TextSupported {
+			option.DefaultModelID = id
+		}
+		if model.TextSupported && id == preferred {
 			option.DefaultModelID = id
 		}
 	}

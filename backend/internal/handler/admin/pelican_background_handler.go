@@ -105,6 +105,40 @@ func (h *PelicanTestHandler) CancelTask(c *gin.Context) {
 	response.Success(c, task)
 }
 
+func (h *PelicanTestHandler) DeleteTask(c *gin.Context) {
+	h.deleteTask(c, false)
+}
+
+func (h *PelicanTestHandler) DeleteTaskResult(c *gin.Context) {
+	h.deleteTask(c, true)
+}
+
+func (h *PelicanTestHandler) deleteTask(c *gin.Context, single bool) {
+	id, ok := pelicanTaskID(c)
+	if !ok {
+		return
+	}
+	var err error
+	resultID := ""
+	if single {
+		parsed, parseErr := uuid.Parse(c.Param("result_id"))
+		if parseErr != nil {
+			response.BadRequest(c, "result ID must be a UUID")
+			return
+		}
+		resultID = parsed.String()
+		err = h.runner.DeleteTaskResult(c.Request.Context(), id, resultID)
+	} else {
+		err = h.runner.DeleteTask(c.Request.Context(), id)
+	}
+	if err != nil {
+		pelicanTestError(c, err)
+		return
+	}
+	middleware.SetAuditExtra(c, map[string]any{"result": "pelican_deleted", "task_id": id, "result_id": resultID})
+	response.Success(c, gin.H{"deleted": true})
+}
+
 // Read-only progress stream. Disconnecting never owns or cancels execution;
 // reconnect starts with a durable snapshot, not a POST or model replay.
 func (h *PelicanTestHandler) ObserveTask(c *gin.Context) {

@@ -47,7 +47,7 @@ jobs:
         run: |
           python3 ../.github/scripts/prepare_test_images.py
           go test -p=1 -tags unit ./internal/service ./internal/repository ./internal/handler ./internal/handler/admin ./internal/server/routes -run '^Test(Pelican|AccountObservation|ObservedAccountLease)' -count=1
-          go test -p=1 -tags integration ./internal/repository -run '^TestPelicanTestRepositoryIntegrationLifecycle$' -count=1
+          go test -p=1 -tags integration ./internal/repository -run '^TestPelican(TestRepositoryIntegrationLifecycle|DeletionIntegration)$' -count=1
       - name: Pelican cancellation race test
         working-directory: backend
         run: go test -p=1 -race -tags unit ./internal/service -run '^TestPelicanRunnerCancellationStopsQueuedAndInflightAndRetainsRawOutput$' -count=1
@@ -150,6 +150,8 @@ jobs:
             src/views/admin/ops/components/__tests__/OpsErrorDetailModal.spec.ts \
             src/components/admin/codex/__tests__/PelicanPreview.spec.ts \
             src/views/admin/__tests__/CodexPelicanComparisonView.spec.ts \
+            src/components/admin/codex/__tests__/PelicanTaskComposer.spec.ts \
+            src/utils/__tests__/pelicanTaskSelection.spec.ts \
             src/api/admin/__tests__/pelicanTests.spec.ts \
             src/router/__tests__/codex-routes.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \

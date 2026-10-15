@@ -24,8 +24,8 @@ func newPelicanRepoTest(t *testing.T) (*pelicanTestRepository, sqlmock.Sqlmock) 
 }
 
 func pelicanTaskTestRows(task *service.PelicanTestTask) *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "client_task_id", "created_by", "request_hash", "status", "prompt", "created_at", "expires_at", "started_at", "finished_at", "total", "completed", "error", "generation_timeout_seconds", "execution_mode"}).AddRow(
-		task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Status, task.Prompt, task.CreatedAt, task.ExpiresAt, nil, nil, task.Total, task.Completed, []byte(task.Error), task.GenerationTimeoutSeconds, task.ExecutionMode)
+	return sqlmock.NewRows([]string{"id", "client_task_id", "created_by", "request_hash", "status", "prompt", "created_at", "expires_at", "started_at", "finished_at", "total", "completed", "error", "generation_timeout_seconds", "execution_mode", "deleted_at"}).AddRow(
+		task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Status, task.Prompt, task.CreatedAt, task.ExpiresAt, nil, nil, task.Total, task.Completed, []byte(task.Error), task.GenerationTimeoutSeconds, task.ExecutionMode, task.DeletedAt)
 }
 
 func pelicanResultTestRows(result *service.PelicanTestResult) *sqlmock.Rows {
@@ -113,7 +113,7 @@ func TestPelicanTestRepositoryExpiredReadsAndScopedCleanup(t *testing.T) {
 	mock.ExpectQuery("FROM codex_gateway_borrow_test_tasks WHERE scope='manual_pelican'.*expires_at>CURRENT_TIMESTAMP").WithArgs(id).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	_, err := repo.Get(context.Background(), id)
 	require.ErrorIs(t, err, service.ErrPelicanTestNotFound)
-	mock.ExpectQuery("WHERE t.scope='manual_pelican' AND r.id=\\$1 AND t.expires_at>CURRENT_TIMESTAMP").WithArgs(id).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery("WHERE t.scope='manual_pelican' AND r.id=\\$1 AND t.deleted_at IS NULL AND t.expires_at>CURRENT_TIMESTAMP").WithArgs(id).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	_, err = repo.GetResult(context.Background(), id)
 	require.ErrorIs(t, err, service.ErrPelicanTestNotFound)
 	now := time.Now().UTC()
@@ -147,7 +147,7 @@ func TestPelicanTestRepositorySavesFullRawValuesAndMarksRestartIncomplete(t *tes
 	mock.ExpectExec("UPDATE codex_gateway_borrow_test_tasks t.*completed=.*status NOT IN").WithArgs(task.ID).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	require.NoError(t, repo.SaveResult(context.Background(), result))
-	mock.ExpectQuery("WHERE t.scope='manual_pelican' AND r.id=\\$1 AND t.expires_at>CURRENT_TIMESTAMP").WithArgs(result.ID).WillReturnRows(pelicanResultTestRows(result))
+	mock.ExpectQuery("WHERE t.scope='manual_pelican' AND r.id=\\$1 AND t.deleted_at IS NULL AND t.expires_at>CURRENT_TIMESTAMP").WithArgs(result.ID).WillReturnRows(pelicanResultTestRows(result))
 	stored, err := repo.GetResult(context.Background(), result.ID)
 	require.NoError(t, err)
 	result.PreviewUnavailable = "test incomplete"

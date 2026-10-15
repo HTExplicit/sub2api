@@ -16,7 +16,7 @@ func NewPelicanTestRepository(db *sql.DB) service.PelicanTestRepository {
 }
 
 const pelicanTestTaskColumns = `id, client_task_id, created_by, request_hash, status, prompt,
-    created_at, expires_at, started_at, finished_at, total, completed, error, generation_timeout_seconds, execution_mode`
+    created_at, expires_at, started_at, finished_at, total, completed, error, generation_timeout_seconds, execution_mode, deleted_at`
 
 const pelicanTestResultColumns = `r.id, r.task_id, r.ordinal, r.account_id, r.account_name, r.model_id,
     r.upstream_model, r.effort, r.status, r.raw_answer, r.raw_response, r.raw_html, r.html, r.error,
@@ -27,10 +27,10 @@ type pelicanTestScanner interface{ Scan(...any) error }
 
 func scanPelicanTestTask(row pelicanTestScanner) (*service.PelicanTestTask, error) {
 	task := &service.PelicanTestTask{}
-	var started, finished sql.NullTime
+	var started, finished, deleted sql.NullTime
 	var rawError []byte
 	if err := row.Scan(&task.ID, &task.ClientTaskID, &task.CreatedBy, &task.RequestHash, &task.Status, &task.Prompt,
-		&task.CreatedAt, &task.ExpiresAt, &started, &finished, &task.Total, &task.Completed, &rawError, &task.GenerationTimeoutSeconds, &task.ExecutionMode); err != nil {
+		&task.CreatedAt, &task.ExpiresAt, &started, &finished, &task.Total, &task.Completed, &rawError, &task.GenerationTimeoutSeconds, &task.ExecutionMode, &deleted); err != nil {
 		return nil, err
 	}
 	if started.Valid {
@@ -40,6 +40,9 @@ func scanPelicanTestTask(row pelicanTestScanner) (*service.PelicanTestTask, erro
 		task.FinishedAt = &finished.Time
 	}
 	task.Error = string(rawError)
+	if deleted.Valid {
+		task.DeletedAt = &deleted.Time
+	}
 	return task, nil
 }
 
@@ -93,6 +96,9 @@ func (r *pelicanTestRepository) Create(ctx context.Context, task *service.Pelica
 		if !stored.ExpiresAt.After(time.Now().UTC()) {
 			return nil, true, service.ErrPelicanTestExpired
 		}
+		if stored.DeletedAt != nil {
+			return nil, true, service.ErrPelicanTestDeleted
+		}
 		if stored.RequestHash != task.RequestHash {
 			return nil, true, service.ErrPelicanTestReplayConflict
 		}
@@ -128,9 +134,12 @@ func (r *pelicanTestRepository) Get(ctx context.Context, id string) (*service.Pe
 	if err != nil {
 		return nil, err
 	}
+	if task.DeletedAt != nil {
+		return nil, service.ErrPelicanTestDeleted
+	}
 	rows, err := r.db.QueryContext(ctx, `SELECT `+pelicanTestResultColumns+`
         FROM codex_gateway_borrow_test_results r JOIN codex_gateway_borrow_test_tasks t ON t.id=r.task_id
-        WHERE t.scope='manual_pelican' AND t.id=$1 AND t.expires_at>CURRENT_TIMESTAMP ORDER BY r.ordinal`, task.ID)
+        WHERE t.scope='manual_pelican' AND t.id=$1 AND t.deleted_at IS NULL AND t.expires_at>CURRENT_TIMESTAMP ORDER BY r.ordinal`, task.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +164,7 @@ func (r *pelicanTestRepository) Get(ctx context.Context, id string) (*service.Pe
 func (r *pelicanTestRepository) GetResult(ctx context.Context, id string) (*service.PelicanTestResult, error) {
 	result, err := scanPelicanTestResult(r.db.QueryRowContext(ctx, `SELECT `+pelicanTestResultColumns+`
         FROM codex_gateway_borrow_test_results r JOIN codex_gateway_borrow_test_tasks t ON t.id=r.task_id
-        WHERE t.scope='manual_pelican' AND r.id=$1 AND t.expires_at>CURRENT_TIMESTAMP`, id))
+        WHERE t.scope='manual_pelican' AND r.id=$1 AND t.deleted_at IS NULL AND t.expires_at>CURRENT_TIMESTAMP`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, service.ErrPelicanTestNotFound
 	}
@@ -177,11 +186,11 @@ func (r *pelicanTestRepository) List(ctx context.Context, page, size int) (*serv
 	}
 	list := &service.PelicanTestList{Items: make([]*service.PelicanTestTask, 0, size), Page: page, Size: size, PageSize: size}
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM codex_gateway_borrow_test_tasks
-        WHERE scope='manual_pelican' AND expires_at>CURRENT_TIMESTAMP`).Scan(&list.Total); err != nil {
+        WHERE scope='manual_pelican' AND deleted_at IS NULL AND expires_at>CURRENT_TIMESTAMP`).Scan(&list.Total); err != nil {
 		return nil, err
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT `+pelicanTestTaskColumns+` FROM codex_gateway_borrow_test_tasks
-        WHERE scope='manual_pelican' AND expires_at>CURRENT_TIMESTAMP ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2`, size, (page-1)*size)
+        WHERE scope='manual_pelican' AND deleted_at IS NULL AND expires_at>CURRENT_TIMESTAMP ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2`, size, (page-1)*size)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +224,7 @@ func pelicanRequireAffected(result sql.Result, err error) error {
 func (r *pelicanTestRepository) StartTask(ctx context.Context, id string, started time.Time) error {
 	return pelicanRequireAffected(r.db.ExecContext(ctx, `UPDATE codex_gateway_borrow_test_tasks
         SET status='running',started_at=$2,updated_at=CURRENT_TIMESTAMP
-        WHERE scope='manual_pelican' AND id=$1 AND status='pending' AND expires_at>CURRENT_TIMESTAMP`, id, started))
+        WHERE scope='manual_pelican' AND id=$1 AND deleted_at IS NULL AND status='pending' AND expires_at>CURRENT_TIMESTAMP`, id, started))
 }
 
 func (r *pelicanTestRepository) SaveResult(ctx context.Context, result *service.PelicanTestResult) error {
@@ -230,7 +239,7 @@ func (r *pelicanTestRepository) SaveResult(ctx context.Context, result *service.
             actual_transport=$18,borrow_applied=$19,queue_duration_ms=$20,preparation_duration_ms=$21,
             generation_duration_ms=$22,generation_started_at=$23,updated_at=CURRENT_TIMESTAMP
         FROM codex_gateway_borrow_test_tasks t
-        WHERE r.id=$1 AND r.task_id=$2 AND t.id=r.task_id AND t.scope='manual_pelican' AND t.expires_at>CURRENT_TIMESTAMP`,
+        WHERE r.id=$1 AND r.task_id=$2 AND t.id=r.task_id AND t.scope='manual_pelican' AND t.deleted_at IS NULL AND t.expires_at>CURRENT_TIMESTAMP`,
 		result.ID, result.TaskID, result.AccountName, result.UpstreamModel, result.Effort, result.Status,
 		[]byte(result.RawAnswer), []byte(result.RawResponse), []byte(result.RawHTML), []byte(result.HTML), []byte(result.Error),
 		result.StartedAt, result.FinishedAt, result.DurationMS, result.Platform, result.ActualEndpoint, result.ActualProtocol,
@@ -249,7 +258,7 @@ func (r *pelicanTestRepository) SaveResult(ctx context.Context, result *service.
 func (r *pelicanTestRepository) FinishTask(ctx context.Context, id, status, errorText string, finished time.Time) error {
 	return pelicanRequireAffected(r.db.ExecContext(ctx, `UPDATE codex_gateway_borrow_test_tasks
         SET status=$2,error=$3,finished_at=$4,updated_at=CURRENT_TIMESTAMP
-        WHERE scope='manual_pelican' AND id=$1 AND expires_at>CURRENT_TIMESTAMP`, id, status, []byte(errorText), finished))
+        WHERE scope='manual_pelican' AND id=$1 AND deleted_at IS NULL AND expires_at>CURRENT_TIMESTAMP`, id, status, []byte(errorText), finished))
 }
 
 func (r *pelicanTestRepository) MarkInterrupted(ctx context.Context, now time.Time) error {
