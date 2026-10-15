@@ -1607,6 +1607,11 @@ func (s *AccountTestService) fetchAntigravityOAuthUpstreamModels(ctx context.Con
 }
 
 func (s *AccountTestService) doUpstreamModelsRequest(req *http.Request, proxyURL string, account *Account) (*http.Response, error) {
+	var bindErr error
+	req, bindErr = bindCodexTransport(req, account, currentCodexFingerprintPolicyForAccount(account), "http")
+	if bindErr != nil {
+		return nil, bindErr
+	}
 	if s.tlsFPProfileService == nil {
 		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
 	}

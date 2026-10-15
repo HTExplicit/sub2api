@@ -228,7 +228,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		account.ProxyID != nil && account.Proxy != nil,
 	)
 
-	acquireCtx, acquireCancel := context.WithTimeout(ctx, s.openAIWSAcquireTimeout())
+	boundCtx, bindErr := codexTransportContext(ctx, wsHeaders, codexAccountIdentitySource(c, account), codexFingerprintPolicyForContext(c, account), "ws")
+	if bindErr != nil {
+		return nil, bindErr
+	}
+	acquireCtx, acquireCancel := context.WithTimeout(boundCtx, s.openAIWSAcquireTimeout())
 	defer acquireCancel()
 
 	acquireReq := openAIWSAcquireRequest{
@@ -236,6 +240,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		Account:           account,
 		WSURL:             wsURL,
 		Headers:           wsHeaders,
+		BodyIdentityKey:   codexWSBodyIdentityKey(wirePayload),
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},

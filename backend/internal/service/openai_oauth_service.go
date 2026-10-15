@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/subtle"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -222,6 +223,14 @@ func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 // 一致的账号级身份（真实 Codex 客户端以自己的 UA/originator 刷新）；身份为空或客户端
 // 不支持时退回全局规范身份。
 func (s *OpenAIOAuthService) refreshTokenWithIdentity(ctx context.Context, refreshToken, proxyURL, clientID string, identity codexOutboundIdentity, selectedAccount *Account) (*OpenAITokenInfo, error) {
+	if selectedAccount != nil && selectedAccount.IsOpenAIOAuthLike() && currentCodexFingerprintPolicyForAccount(selectedAccount).enabled {
+		binding, err := codextransport.Select(identity.userAgent, codexTransportScope(selectedAccount), "http")
+		if err != nil {
+			return nil, err
+		}
+		ctx = codextransport.WithBinding(ctx, binding)
+	}
+
 	var tokenResp *openai.TokenResponse
 	var err error
 	refresher, ok := s.oauthClient.(OpenAIOAuthIdentityRefresher)

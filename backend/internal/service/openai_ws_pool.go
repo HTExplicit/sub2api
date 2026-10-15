@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -68,6 +69,7 @@ func (e *openAIWSDialError) Unwrap() error {
 }
 
 type openAIWSAcquireRequest struct {
+	BodyIdentityKey   string
 	FingerprintPolicy *codexFingerprintPolicy
 	Account           *Account
 	WSURL             string
@@ -88,6 +90,7 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
+	bodyIdentityKey     string
 	codexPolicyRevision uint64
 	codexMode           string
 	userAgent           string
@@ -2357,6 +2360,7 @@ func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 func normalizeOpenAIWSAcquireCompatibility(req openAIWSAcquireRequest) openAIWSHandshakeCompatibilityKey {
 	key := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers, req.FingerprintPolicy)
 	key.anchorScope = stringsTrim(req.AnchorScope)
+	key.bodyIdentityKey = req.BodyIdentityKey
 	return key
 }
 
@@ -2400,17 +2404,17 @@ func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Head
 		key.originator = headers.Get("originator")
 		key.version = headers.Get("version")
 	}
-	if !policy.enabled || account == nil {
-		return key
-	}
-	mode := activeCodexFingerprintMode(account, policy)
-	if mode == codexFingerprintOff {
+	if account == nil {
 		return key
 	}
 	key.codexInstallationID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-installation-id")
-	if mode == codexFingerprintDevice {
-		return key
+	if raw := headers.Get("x-codex-turn-metadata"); raw != "" {
+		var metadata map[string]any
+		if json.Unmarshal([]byte(raw), &metadata) == nil {
+			key.codexInstallationID = stringMetadataValue(metadata, "installation_id")
+		}
 	}
+
 	key.sessionIDHyphen = normalizeOpenAIWSStableIdentityHeader(headers, "session-id")
 	key.sessionIDUnderscore = normalizeOpenAIWSStableIdentityHeader(headers, "session_id")
 	key.threadID = normalizeOpenAIWSStableIdentityHeader(headers, "thread-id")

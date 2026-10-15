@@ -121,20 +121,13 @@ func TestCodexFingerprintAccountViewPoliciesMatchSharedForwardingAndParentSource
 			}
 			require.Equal(t, ids.installationID, *view.IdentifierPolicy.InstallationID.Value)
 			require.Equal(t, "43ef16f3-2c23-4ca0-b67d-7c3f0189aca4", *view.IdentifierPolicy.InstallationID.Value)
-			if mode == "device" {
-				require.Equal(t, "passthrough", view.IdentifierPolicy.SessionID.Behavior)
-				return
-			}
-			require.Equal(t, ids.sessionID, *view.IdentifierPolicy.SessionID.Value)
-			require.Nil(t, view.IdentifierPolicy.WindowID.Value, "the real request window index is not known by this endpoint")
-			if mode == "session" {
-				require.Equal(t, "request_derived", view.IdentifierPolicy.ThreadID.Behavior)
-				require.Nil(t, view.IdentifierPolicy.ThreadID.Value, "do not display the empty-request thread fallback")
-				require.Equal(t, "mapped_parent_thread", view.IdentifierPolicy.ParentThreadID.Rule)
-			} else {
-				require.Equal(t, ids.threadID, *view.IdentifierPolicy.ThreadID.Value)
-				require.Equal(t, "remove_parent_self_reference", view.IdentifierPolicy.ParentThreadID.Rule)
-			}
+			require.Equal(t, "request_derived", view.IdentifierPolicy.SessionID.Behavior)
+			require.Nil(t, view.IdentifierPolicy.SessionID.Value)
+			require.Nil(t, view.IdentifierPolicy.ThreadID.Value)
+			require.Nil(t, view.IdentifierPolicy.WindowID.Value)
+			require.Equal(t, "scoped_real_parent", view.IdentifierPolicy.ParentThreadID.Rule)
+			require.Equal(t, "device", view.Identity.FingerprintModeEffective)
+
 		})
 	}
 }

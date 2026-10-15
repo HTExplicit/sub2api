@@ -1,6 +1,9 @@
 package service
 
-import "net/http"
+import (
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
+	"net/http"
+)
 
 func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 	s.pluginManager = manager
@@ -9,7 +12,15 @@ func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 // doOpenAIUpstream 只在 OpenAI OAuth 能力绑定已启用时把真实请求交给插件。
 // 插件返回标准 http.Response，响应解析、错误映射、SSE 和计费仍由现有核心链处理。
 func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL string, account *Account) (*http.Response, error) {
+	var bindErr error
+	request, bindErr = bindCodexTransport(request, account, currentCodexFingerprintPolicyForAccount(account), "http")
+	if bindErr != nil {
+		return nil, bindErr
+	}
 	if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
+		if currentCodexFingerprintPolicyForAccount(account).enabled {
+			return nil, codexStrictClientError(&codextransport.Error{Reason: "third-party plugin cannot attest the verified transport profile"})
+		}
 		prepared, finish, prepareErr := PreparePelicanHTTPRequest(request, account.ID, account.Concurrency, "plugin")
 		if prepareErr != nil {
 			return nil, prepareErr
@@ -34,7 +45,15 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	account *Account,
 	useTLSFallback bool,
 ) (*http.Response, error) {
+	var bindErr error
+	request, bindErr = bindCodexTransport(request, account, currentCodexFingerprintPolicyForAccount(account), "http")
+	if bindErr != nil {
+		return nil, bindErr
+	}
 	if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
+		if currentCodexFingerprintPolicyForAccount(account).enabled {
+			return nil, codexStrictClientError(&codextransport.Error{Reason: "third-party plugin cannot attest the verified transport profile"})
+		}
 		prepared, finish, prepareErr := PreparePelicanHTTPRequest(request, account.ID, account.Concurrency, "plugin")
 		if prepareErr != nil {
 			return nil, prepareErr

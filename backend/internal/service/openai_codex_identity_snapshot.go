@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,29 +16,32 @@ import (
 // process state published by NewOpenAIGatewayService, so the snapshot describes
 // the policy that was actually active in this process.
 type codexIdentitySnapshot struct {
-	SchemaVersion             int       `json:"v"`
-	AccountID                 int64     `json:"account_id"`
-	IdentityAccountID         int64     `json:"identity_account_id"`
-	ShadowParentID            *int64    `json:"shadow_parent_id,omitempty"`
-	AccountRevision           time.Time `json:"account_revision"`
-	ProxyID                   *int64    `json:"proxy_id,omitempty"`
-	Transport                 string    `json:"transport"`
-	IdentitySource            string    `json:"identity_source"`
-	IdentityPersisted         bool      `json:"identity_persisted"`
-	EnforcementEnabled        bool      `json:"enforcement_enabled"`
-	ForceCodexCLI             bool      `json:"force_codex_cli"`
-	UserAgent                 string    `json:"user_agent"`
-	UAOverridePresent         bool      `json:"ua_override_present"`
-	Originator                string    `json:"originator"`
-	Version                   string    `json:"version"`
-	FingerprintModeConfigured string    `json:"fingerprint_mode_configured"`
-	FingerprintModeEffective  string    `json:"fingerprint_mode_effective"`
-	FingerprintReason         string    `json:"fingerprint_reason"`
-	SessionIDPresent          bool      `json:"session_id_present"`
-	ClientRequestIDPresent    bool      `json:"client_request_id_present"`
-	ZstdEnabled               bool      `json:"zstd_enabled"`
-	ZstdApplied               bool      `json:"zstd_applied"`
-	ZstdReason                string    `json:"zstd_reason"`
+	TransportProfile          *codextransport.Binding `json:"transport_profile,omitempty"`
+	TransportProfileError     string                  `json:"transport_profile_error,omitempty"`
+	WireIdentity              *CodexWireIdentity      `json:"wire_identity,omitempty"`
+	SchemaVersion             int                     `json:"v"`
+	AccountID                 int64                   `json:"account_id"`
+	IdentityAccountID         int64                   `json:"identity_account_id"`
+	ShadowParentID            *int64                  `json:"shadow_parent_id,omitempty"`
+	AccountRevision           time.Time               `json:"account_revision"`
+	ProxyID                   *int64                  `json:"proxy_id,omitempty"`
+	Transport                 string                  `json:"transport"`
+	IdentitySource            string                  `json:"identity_source"`
+	IdentityPersisted         bool                    `json:"identity_persisted"`
+	EnforcementEnabled        bool                    `json:"enforcement_enabled"`
+	ForceCodexCLI             bool                    `json:"force_codex_cli"`
+	UserAgent                 string                  `json:"user_agent"`
+	UAOverridePresent         bool                    `json:"ua_override_present"`
+	Originator                string                  `json:"originator"`
+	Version                   string                  `json:"version"`
+	FingerprintModeConfigured string                  `json:"fingerprint_mode_configured"`
+	FingerprintModeEffective  string                  `json:"fingerprint_mode_effective"`
+	FingerprintReason         string                  `json:"fingerprint_reason"`
+	SessionIDPresent          bool                    `json:"session_id_present"`
+	ClientRequestIDPresent    bool                    `json:"client_request_id_present"`
+	ZstdEnabled               bool                    `json:"zstd_enabled"`
+	ZstdApplied               bool                    `json:"zstd_applied"`
+	ZstdReason                string                  `json:"zstd_reason"`
 }
 
 // resolveCodexIdentitySnapshot computes the identity and fingerprint state
@@ -83,6 +87,9 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, po
 		}
 		if snapshot.FingerprintReason == "" {
 			snapshot.FingerprintReason = "ok"
+			if snapshot.FingerprintModeConfigured == "session" || snapshot.FingerprintModeConfigured == "full" {
+				snapshot.FingerprintReason = "legacy_mode_normalized"
+			}
 		}
 	}
 	if source != nil {
@@ -98,6 +105,14 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, po
 	snapshot.UserAgent = identity.userAgent
 	snapshot.Originator = identity.originator
 	snapshot.Version = identity.version
+	if policy.enabled && source != nil && source.IsOpenAIOAuthLike() {
+		binding, err := codextransport.Select(identity.userAgent, codexTransportScope(source), "http")
+		if err != nil {
+			snapshot.TransportProfileError = err.Error()
+		} else {
+			snapshot.TransportProfile = &binding
+		}
+	}
 	snapshot.IdentitySource = "canonical"
 	if !policy.enabled {
 		snapshot.IdentitySource = "protocol_fallback"
@@ -168,4 +183,12 @@ func (s codexIdentitySnapshot) summary() string {
 	}
 	return fmt.Sprintf("codex identity: transport=%s source=%s originator=%s version=%s fingerprint=%s zstd=%s proxy=%s",
 		s.Transport, s.IdentitySource, s.Originator, s.Version, s.FingerprintModeEffective, s.ZstdReason, proxy)
+}
+
+func (s codexIdentitySnapshot) withRequest(transport string, request *http.Request) codexIdentitySnapshot {
+	if binding, ok := codextransport.FromContext(request.Context()); ok {
+		s.ZstdEnabled = binding.RequestZstd
+		s.TransportProfile = &binding
+	}
+	return s.withWire(transport, request.Header)
 }

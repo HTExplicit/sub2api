@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -1004,6 +1005,14 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth, prompt)
 	applyAccountTestReasoning(c, payload, false)
+	var identityHeaders http.Header
+	if isOAuth {
+		var err error
+		identityHeaders, err = projectCodexAccountTest(c, account, credentialAccount, payload)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+	}
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -1018,6 +1027,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
+	for name, values := range identityHeaders {
+		req.Header[name] = values
+	}
 	// Set common headers
 	req.Header.Set("Content-Type", "application/json")
 	if !isOAuth {
@@ -1060,6 +1072,13 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 	if isOAuth {
+		var err error
+		req, err = bindCodexTransport(req, credentialAccount, codexFingerprintPolicyForContext(c, account), "http")
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+	}
+	if isOAuth {
 		// Report the request this test puts on the wire before it is sent. A
 		// plugin round trip takes the plaintext request; every other send goes
 		// out as the transport copy prepared here, which the sender passes on.
@@ -1070,7 +1089,8 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 		}
 		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account))
-		snapshot := base.withWire(transport, req.Header)
+		snapshot := base.withRequest(transport, req)
+		snapshot.WireIdentity = codexWireIdentity(payload, req.Header)
 		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
 		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(req.Header)})
 	}
@@ -1079,6 +1099,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
+	if isOAuth && resp.TLS != nil {
+		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex negotiated transport", Data: map[string]any{"tls_version": tls.VersionName(resp.TLS.Version), "alpn": resp.TLS.NegotiatedProtocol, "cipher_suite": tls.CipherSuiteName(resp.TLS.CipherSuite), "tls_session_resumed": resp.TLS.DidResume}})
+	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if isOAuth && !account.IsShadow() && s.accountRepo != nil && !IsAccountObservation(ctx) {
@@ -2368,7 +2392,16 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if isOAuth {
 		testModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
-	payloadBytes, _ := json.Marshal(createOpenAICompactProbePayload(testModelID, isOAuth))
+	payload := createOpenAICompactProbePayload(testModelID, isOAuth)
+	var identityHeaders http.Header
+	if isOAuth {
+		var err error
+		identityHeaders, err = projectCodexAccountTest(c, account, credentialAccount, payload)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+	}
+	payloadBytes, _ := json.Marshal(payload)
 	if !agentIdentityTaskRecoveryWasTried(ctx) {
 		s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 	}
@@ -2396,25 +2429,20 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	} else {
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
-	applyOpenAICodexProbeHeaders(req.Header)
+	if !isOAuth {
+		applyOpenAICodexProbeHeaders(req.Header)
+	}
+	for name, values := range identityHeaders {
+		req.Header[name] = values
+	}
 	if isOAuth {
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 经 ForceCodexCLI
 		// 策略过滤后作为管理员显式配置传入（同普通 OAuth 连接测试）。
 		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account))
 	}
-	probeSessionID := compactProbeSessionID(account.ID)
-	req.Header.Set("Session_ID", probeSessionID)
-	req.Header.Set("Conversation_ID", probeSessionID)
-
 	if isOAuth {
 		req.Host = "chatgpt.com"
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
-		// 指纹收敛：探测与真实转发走同一个 /responses 端点，身份也必须同构，
-		// 否则探测流量会以「缺 x-codex-installation-id + 非收敛 session」的
-		// 形态暴露在上游眼里。账号关闭收敛（off）时返回 nil，探测保持原样。
-		if fpIDs := resolveCodexFingerprintIDsFromRequest(account, req.Header, codexFingerprintPolicyForContext(c, account)); fpIDs != nil {
-			applyCodexFingerprintHeaders(req.Header, fpIDs)
-		}
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
@@ -2423,6 +2451,22 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
+	}
+
+	if isOAuth {
+		var err error
+		req, err = bindCodexTransport(req, credentialAccount, codexFingerprintPolicyForContext(c, account), "http")
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+		req, err = prepareOpenAICodexWireRequest(req, account)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+		snapshot := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account)).withRequest("http", req)
+		snapshot.WireIdentity = codexWireIdentity(payload, req.Header)
+		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
+		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(req.Header)})
 	}
 
 	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
@@ -2434,6 +2478,10 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		}
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
+	if isOAuth && resp.TLS != nil {
+		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex negotiated transport", Data: map[string]any{"tls_version": tls.VersionName(resp.TLS.Version), "alpn": resp.TLS.NegotiatedProtocol, "cipher_suite": tls.CipherSuiteName(resp.TLS.CipherSuite), "tls_session_resumed": resp.TLS.DidResume}})
+	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))

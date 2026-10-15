@@ -337,7 +337,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalized = next
 		}
 		accountIdentitySourceRaw := append([]byte(nil), normalized...)
-		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
+		accountScopedPayload, accountScoped, scopeErr := s.scopeCodexRequestMetadataRaw(c, account, normalized)
 		if scopeErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 		}
@@ -885,6 +885,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		Account:           account,
 		WSURL:             wsURL,
 		Headers:           wsHeaders,
+		BodyIdentityKey:   codexWSBodyIdentityKey(firstPayload.payloadRaw),
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},
@@ -960,7 +961,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		req.ForcePreferredConn = forcePreferredConn
 		// dedicated 模式及重试均新建连接，避免复用陈旧上下文。
 		req.ForceNewConn = dedicatedMode || forceNewConn || (turn == 1 && initialTransportRetryUsed)
-		acquireCtx, acquireCancel := context.WithTimeout(ctx, acquireTimeout)
+		boundCtx, bindErr := codexTransportContext(ctx, req.Headers, codexAccountIdentitySource(c, account), codexFingerprintPolicyForContext(c, account), "ws")
+		if bindErr != nil {
+			return nil, bindErr
+		}
+		acquireCtx, acquireCancel := context.WithTimeout(boundCtx, acquireTimeout)
 		lease, acquireErr := pool.Acquire(acquireCtx, req)
 		acquireCancel()
 		var dialErr *openAIWSDialError
@@ -1799,6 +1804,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		baseAcquireReq.FingerprintPolicy = codexFingerprintPolicyForContext(c, account)
 		baseAcquireReq.Headers = finalHeaders
+		baseAcquireReq.BodyIdentityKey = codexWSBodyIdentityKey(wirePayload)
+		if sessionLease != nil && !sessionLease.conn.matchesHandshakeCompatibility(normalizeOpenAIWSAcquireCompatibility(baseAcquireReq)) {
+			resetSessionLease(false)
+			return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, openAIWSNonInitialTurnRetryCloseReason,
+				errors.New("codex conversation identity changed; a new handshake is required"))
+		}
 
 		forcePreferredConn := isStrictAffinityTurn(currentPayload) && strings.TrimSpace(preferredConnID) != ""
 		if sessionLease == nil {
