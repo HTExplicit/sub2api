@@ -2535,6 +2535,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if sawFailedEvent {
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
+		if strictErr := codexStrictResponseFailure(resp, err); strictErr != nil {
+			return resultWithUsage(), strictErr
+		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
 		}
@@ -2571,6 +2574,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if !sawTerminalEvent {
 		if ctx.Err() != nil {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ctx.Err())
+		}
+		if strictErr := codexStrictResponseFailure(resp, errors.New("stream ended before a terminal event")); strictErr != nil {
+			return resultWithUsage(), strictErr
 		}
 		logger.FromContext(ctx).With(
 			zap.String("component", "service.openai_gateway"),

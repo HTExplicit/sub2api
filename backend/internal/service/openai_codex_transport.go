@@ -22,10 +22,25 @@ func codexTransportScope(account *Account) string {
 	return fmt.Sprintf("%x", sum[:16])
 }
 
-func codexStrictClientError(err error) error {
+func codexStrictClientError(err error) *UpstreamFailoverError {
+	code := "codex_transport_profile_unavailable"
+	if codextransport.IsFailure(err) {
+		code = "codex_transport_failed"
+	}
 	return &UpstreamFailoverError{Scope: GatewayFailureScopeRequest, NextAccountAction: NextAccountStop,
 		SuppressAccountHealthPenalty: true, ClientStatusCode: http.StatusBadGateway,
-		ClientErrorType: "codex_transport_error", ClientErrorCode: "codex_transport_profile_unavailable", ClientMessage: err.Error()}
+		ClientErrorType: "codex_transport_error", ClientErrorCode: code, ClientMessage: err.Error()}
+}
+
+// A successful handshake cannot make an interrupted, already-sent turn replayable.
+func codexStrictResponseFailure(response *http.Response, err error) *UpstreamFailoverError {
+	if response == nil || response.Request == nil {
+		return nil
+	}
+	if _, ok := codextransport.FromContext(response.Request.Context()); !ok {
+		return nil
+	}
+	return codexStrictClientError(&codextransport.Failure{Err: err})
 }
 
 func bindCodexTransport(request *http.Request, source *Account, policy *codexFingerprintPolicy, plane string) (*http.Request, error) {

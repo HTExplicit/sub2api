@@ -516,7 +516,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAntigravityUserAgentVersion] = antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
 	updates[SettingKeyOpenAICodexUserAgent] = strings.TrimSpace(settings.OpenAICodexUserAgent)
 	if settings.OpenAICodexClientVersion != "" && !codextransport.SupportsVersion(NormalizeCodexClientVersion(settings.OpenAICodexClientVersion)) {
-		return nil, fmt.Errorf("Codex version has no verified transport profile")
+		return nil, fmt.Errorf("codex version has no verified transport profile")
 	}
 	updates[SettingKeyOpenAICodexClientVersion] = NormalizeCodexClientVersion(settings.OpenAICodexClientVersion)
 	updates[SettingKeyOpenAICodexVersionAutoSyncEnabled] = strconv.FormatBool(settings.OpenAICodexVersionAutoSyncEnabled)

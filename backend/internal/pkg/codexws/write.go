@@ -376,8 +376,8 @@ func extractBufioWriterBuf(bw *bufio.Writer, w io.Writer) []byte {
 		return len(p2), nil
 	}))
 
-	bw.WriteByte(0)
-	bw.Flush()
+	_ = bw.WriteByte(0) // The temporary in-memory writer above cannot fail.
+	_ = bw.Flush()
 
 	bw.Reset(w)
 
@@ -385,5 +385,5 @@ func extractBufioWriterBuf(bw *bufio.Writer, w io.Writer) []byte {
 }
 
 func (c *Conn) writeError(code StatusCode, err error) {
-	c.writeClose(code, err.Error())
+	_ = c.writeClose(code, err.Error())
 }

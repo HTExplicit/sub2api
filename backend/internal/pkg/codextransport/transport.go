@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -104,7 +105,7 @@ func New(binding Binding, opts Options) (*req.Transport, error) {
 		defer cancel()
 		if err = conn.HandshakeContext(handshake); err != nil {
 			_ = plain.Close()
-			return nil, nil, fmt.Errorf("Codex TLS handshake: %w", err)
+			return nil, nil, fmt.Errorf("codex TLS handshake: %w", err)
 		}
 		if err = conn.SetDeadline(time.Time{}); err != nil {
 			_ = conn.Close()
@@ -112,8 +113,9 @@ func New(binding Binding, opts Options) (*req.Transport, error) {
 		}
 		cs := conn.ConnectionState()
 		state := &tls.ConnectionState{Version: cs.Version, HandshakeComplete: cs.HandshakeComplete, DidResume: cs.DidResume,
-			CipherSuite: cs.CipherSuite, NegotiatedProtocol: cs.NegotiatedProtocol, NegotiatedProtocolIsMutual: cs.NegotiatedProtocolIsMutual,
-			ServerName: cs.ServerName, PeerCertificates: cs.PeerCertificates, VerifiedChains: cs.VerifiedChains,
+			CipherSuite: cs.CipherSuite, NegotiatedProtocol: cs.NegotiatedProtocol,
+			NegotiatedProtocolIsMutual: cs.NegotiatedProtocolIsMutual, //nolint:staticcheck // req/v3 still requires this legacy flag to activate HTTP/2.
+			ServerName:                 cs.ServerName, PeerCertificates: cs.PeerCertificates, VerifiedChains: cs.VerifiedChains,
 			SignedCertificateTimestamps: cs.SignedCertificateTimestamps, OCSPResponse: cs.OCSPResponse}
 		verifiedConn := &verifiedTLSConn{UConn: conn, state: *state}
 		if cs.NegotiatedProtocol != "h2" {
@@ -135,10 +137,33 @@ func New(binding Binding, opts Options) (*req.Transport, error) {
 			if err != nil {
 				return response, &Failure{Err: err}
 			}
+			response.Request = wire
+			if response.Body != nil {
+				body := &strictResponseBody{ReadCloser: response.Body}
+				if writer, ok := response.Body.(io.Writer); ok {
+					// Upgraded WebSockets must retain their duplex body interface.
+					response.Body = &struct {
+						*strictResponseBody
+						io.Writer
+					}{body, writer}
+				} else {
+					response.Body = body
+				}
+			}
 			return response, nil
 		}
 	})
 	return transport, nil
+}
+
+type strictResponseBody struct{ io.ReadCloser }
+
+func (b *strictResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && err != io.EOF && !IsFailure(err) {
+		err = &Failure{Err: err}
+	}
+	return n, err
 }
 
 func clientHello(h hello) *utls.ClientHelloSpec {

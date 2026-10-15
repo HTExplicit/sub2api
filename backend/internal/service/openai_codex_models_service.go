@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -1551,7 +1552,7 @@ func isRetryableCodexModelsManifestStatus(statusCode int, useAPIKeyUpstream bool
 }
 
 func isRetryableCodexModelsManifestTransportError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) {
+	if err == nil || errors.Is(err, context.Canceled) || codextransport.IsFailure(err) {
 		return false
 	}
 	if errors.Is(err, context.DeadlineExceeded) ||

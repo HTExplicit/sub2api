@@ -56,7 +56,7 @@ func canonicalCodexMetadata(flat map[string]any) (map[string]any, []string, erro
 	for _, name := range []string{"installation_id", "session_id", "thread_id", "window_id", "turn_id", "parent_thread_id", "parent_turn_id", "root_turn_id", "forked_from_thread_id", "request_kind", "subagent_kind", "thread_source", "sandbox", "sandbox_mode"} {
 		if value, exists := canonical[name]; exists {
 			if _, ok := value.(string); !ok {
-				return nil, nil, fmt.Errorf("Codex turn metadata %s must be a string", name)
+				return nil, nil, fmt.Errorf("codex turn metadata %s must be a string", name)
 			}
 		}
 	}

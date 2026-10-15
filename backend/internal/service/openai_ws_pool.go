@@ -2423,17 +2423,6 @@ func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Head
 	return key
 }
 
-func activeCodexFingerprintMode(account *Account, policies ...*codexFingerprintPolicy) codexFingerprintMode {
-	policy := selectCodexFingerprintPolicy(policies)
-	if account == nil || !policy.enabled || account.GetCodexFingerprintMode() == codexFingerprintOff {
-		return codexFingerprintOff
-	}
-	if _, ok := codexFingerprintSeed(account.Extra); !ok {
-		return codexFingerprintOff
-	}
-	return account.GetCodexFingerprintMode()
-}
-
 func normalizeOpenAIWSStableIdentityHeader(headers http.Header, name string) string {
 	if headers == nil {
 		return ""

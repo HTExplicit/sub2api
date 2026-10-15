@@ -136,7 +136,7 @@ func newConn(cfg connConfig) *Conn {
 	}
 
 	runtime.SetFinalizer(c, func(c *Conn) {
-		c.close()
+		_ = c.close()
 	})
 
 	return c
@@ -171,7 +171,7 @@ func (c *Conn) close() error {
 func (c *Conn) setupWriteTimeout(ctx context.Context) {
 	stop := context.AfterFunc(ctx, func() {
 		c.clearWriteTimeout()
-		c.close()
+		_ = c.close()
 	})
 	swapTimeoutStop(&c.writeTimeoutStop, &stop)
 }
@@ -183,7 +183,7 @@ func (c *Conn) clearWriteTimeout() {
 func (c *Conn) setupReadTimeout(ctx context.Context) {
 	stop := context.AfterFunc(ctx, func() {
 		c.clearReadTimeout()
-		c.close()
+		_ = c.close()
 	})
 	swapTimeoutStop(&c.readTimeoutStop, &stop)
 }

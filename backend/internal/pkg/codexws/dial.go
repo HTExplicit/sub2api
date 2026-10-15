@@ -157,12 +157,12 @@ func dial(ctx context.Context, urls string, opts *DialOptions, rand io.Reader) (
 			r := io.LimitReader(respBody, 1024)
 
 			timer := time.AfterFunc(time.Second*3, func() {
-				respBody.Close()
+				_ = respBody.Close()
 			})
 			defer timer.Stop()
 
 			b, _ := io.ReadAll(r)
-			respBody.Close()
+			_ = respBody.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(b))
 		}
 	}()

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -27,6 +28,18 @@ import (
 
 type codexModelsHTTPUpstreamStub struct {
 	do func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error)
+}
+
+// Model projection/cache tests inject a loopback sender at the same boundary as
+// production. Wire-profile conformance is verified in codextransport, separately.
+func newCodexModelsLoopbackUpstream() HTTPUpstream {
+	return &codexModelsHTTPUpstreamStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+		ip := net.ParseIP(req.URL.Hostname())
+		if ip == nil || !ip.IsLoopback() {
+			return nil, fmt.Errorf("model fixture must use a loopback endpoint")
+		}
+		return http.DefaultClient.Do(req)
+	}}
 }
 
 type codexModelsVisibilityAccountRepo struct {
@@ -1191,7 +1204,7 @@ func TestMergeGroupConfiguredCodexModelsInjectsCurrentGroupAliases(t *testing.T)
 	t.Parallel()
 
 	const groupID int64 = 71
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{
 			groupID: {
 				{
@@ -1267,7 +1280,7 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesAdministratorConfiguration(t
 			CapacitySource:           ModelContextSourceUpstream,
 		},
 	}})
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{
 			groupID: {
 				{
@@ -1317,7 +1330,7 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesResolvedTargetsForOrdinaryGP
 		"gpt-5.6-terra": "provider-terra",
 		"gpt-5.6-luna":  "provider-luna",
 	}
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{groupID: {*account}},
 	}}
 
@@ -1377,7 +1390,7 @@ func TestConfiguredCodexManifestCapacityComesFromResolver(t *testing.T) {
 					account.Extra = map[string]any{ModelContextOverridesExtraKey: map[string]int64{test.target: test.override}}
 				}
 				repo := codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{groupID: {*account}}}
-				svc := &OpenAIGatewayService{accountRepo: repo}
+				svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: repo}
 				group := &Group{ID: groupID, Platform: PlatformOpenAI}
 				var body []byte
 				switch path {
@@ -1428,7 +1441,7 @@ func TestMergeGroupConfiguredCodexModelsAppliesReferenceCapacityAfterFinalMerge(
 
 	const groupID int64 = 79
 	account := newCodexModelsAPIKeyTestAccount("https://openai-compatible.example.test/v1")
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{groupID: {*account}},
 	}}
 	manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[
@@ -1480,7 +1493,7 @@ func TestBuildGroupConfiguredCodexModelsManifestExpandsSelectedModelCoveredByWil
 	t.Parallel()
 
 	const groupID int64 = 80
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{
 			groupID: {{
 				Platform: PlatformOpenAI,
@@ -1533,7 +1546,7 @@ func TestBuildGroupConfiguredCodexModelsManifestIntersectsTransientlyUnschedulab
 		true,
 		map[string]any{"exclusive-model": "exclusive-upstream"},
 	)
-	svc := &OpenAIGatewayService{accountRepo: splitCodexModelsAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: splitCodexModelsAccountRepo{
 		schedulable: map[int64][]Account{groupID: {schedulable}},
 		catalog:     map[int64][]Account{groupID: {schedulable, transientlyUnschedulable}},
 	}}
@@ -1580,7 +1593,7 @@ func TestBuildGroupConfiguredCodexModelsManifestIgnoresPersistentlyDisabledMappe
 		false,
 		nil,
 	)
-	svc := &OpenAIGatewayService{accountRepo: splitCodexModelsAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: splitCodexModelsAccountRepo{
 		schedulable: map[int64][]Account{groupID: {enabled}},
 		catalog:     map[int64][]Account{groupID: {enabled}},
 		all:         map[int64][]Account{groupID: {enabled, disabled}},
@@ -1607,7 +1620,7 @@ func TestBuildGroupConfiguredCodexModelsManifestFallsThroughWithoutConfiguration
 	t.Parallel()
 
 	const groupID int64 = 78
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{
 			groupID: {{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}},
 		},
@@ -1627,7 +1640,7 @@ func TestMergeGroupConfiguredCodexModelsFiltersAutoReviewByDefault(t *testing.T)
 	t.Parallel()
 
 	const groupID int64 = 74
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{}}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{}}
 	manifest := &OpenAIModelsResponse{
 		Body: []byte(`{"models":[{"slug":"codex-auto-review","visibility":"list"},{"slug":"codex-auto-future","visibility":"list"},{"slug":"gpt-image-2","visibility":"list"},{"slug":"gpt-5.6","visibility":"list"}]}`),
 	}
@@ -1649,7 +1662,7 @@ func TestMergeGroupConfiguredCodexModelsFiltersAccountMappedAutoReviewByDefault(
 	t.Parallel()
 
 	const groupID int64 = 75
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{
 			groupID: {
 				{
@@ -1681,7 +1694,7 @@ func TestMergeGroupConfiguredCodexModelsKeepsExplicitAutoReviewSelection(t *test
 	t.Parallel()
 
 	const groupID int64 = 76
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{}}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{}}
 	manifest := &OpenAIModelsResponse{
 		Body: []byte(`{"models":[{"slug":"codex-auto-review","visibility":"list"},{"slug":"gpt-5.6","visibility":"list"}]}`),
 	}
@@ -1702,7 +1715,7 @@ func TestMergeGroupConfiguredCodexModelsHonorsCustomListAndFinalETag(t *testing.
 	t.Parallel()
 
 	const groupID int64 = 73
-	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{
 			groupID: {
 				{
@@ -1780,6 +1793,8 @@ func TestIsRetryableCodexModelsManifestTransportError(t *testing.T) {
 		{name: "upstream configuration error", err: errors.New("upstream error: invalid proxy")},
 		{name: "proxy connection configuration error", err: errors.New("proxy connection error: invalid configuration")},
 		{name: "canceled request", err: context.Canceled},
+		{name: "strict transport deadline", err: &codextransport.Failure{Err: context.DeadlineExceeded}},
+		{name: "strict transport truncated response", err: &codextransport.Failure{Err: io.ErrUnexpectedEOF}},
 		{
 			name: "redirect policy error",
 			err: &url.Error{
@@ -1891,7 +1906,7 @@ func TestFetchCodexModelsManifestPassthrough(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.137.0", "")
 	if err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
@@ -1944,7 +1959,7 @@ func TestFetchCodexModelsManifestAgentIdentityUsesAssertionWithoutOAuthToken(t *
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	if err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
@@ -2003,7 +2018,7 @@ func TestFetchCodexModelsManifestAgentIdentityRecoversInvalidTaskOnce(t *testing
 	openAIAgentIdentityAuthAPIBaseURL = server.URL
 	t.Cleanup(func() { openAIAgentIdentityAuthAPIBaseURL = originalAuthBase })
 
-	s := &OpenAIGatewayService{accountRepo: repo}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: repo}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.NoError(t, err)
 	require.Equal(t, `{"models":[]}`, string(manifest.Body))
@@ -2037,7 +2052,7 @@ func TestFetchCodexModelsManifestAgentIdentityRedactsUpstreamErrors(t *testing.T
 	chatgptCodexModelsURL = server.URL
 	t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), key.runtimeID)
@@ -2059,7 +2074,7 @@ func TestFetchCodexModelsManifestDefaultClientVersion(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	if _, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "", ""); err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
 	}
@@ -2082,7 +2097,7 @@ func TestFetchCodexModelsManifestNotModified(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	account := newCodexModelsTestAccount()
 	first, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	if err != nil {
@@ -2122,7 +2137,7 @@ func TestFetchCodexModelsManifestUpstreamError(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	if _, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.137.0", ""); err == nil {
 		t.Fatal("expected error for upstream 500, got nil")
 	}
@@ -2132,7 +2147,7 @@ func TestFetchCodexModelsManifestMissingToken(t *testing.T) {
 	account := newCodexModelsTestAccount()
 	delete(account.Credentials, "access_token")
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	if _, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", ""); err == nil {
 		t.Fatal("expected error for missing access token, got nil")
 	}
@@ -2362,7 +2377,7 @@ func TestFetchCodexModelsManifestOAuthPreservesResponsesLite(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.145.0", "")
 	require.NoError(t, err)
 	require.Equal(t, manifestBody, string(manifest.Body))
@@ -2494,7 +2509,7 @@ func TestFetchCodexModelsManifestAcceptsConfiguredLimitAboveLegacyBoundary(t *te
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{cfg: &config.Config{}}
+	s := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: newCodexModelsLoopbackUpstream()}
 	s.cfg.Gateway.ModelsListReadMaxBytes = 16 << 20
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.144.0", "")
 	require.NoError(t, err)
@@ -3159,7 +3174,7 @@ func (r *codexModelsAccountStateRepo) SetTempUnschedulable(_ context.Context, _ 
 
 func newCodexModels401TestService(repo AccountRepository) *OpenAIGatewayService {
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
-	s := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	s := &OpenAIGatewayService{rateLimitService: rateLimitService, httpUpstream: newCodexModelsLoopbackUpstream()}
 	rateLimitService.SetAccountRuntimeBlocker(s)
 	return s
 }
@@ -3325,7 +3340,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientFillsMissingProviderFieldsWit
 		"context_window":64000,
 		"max_context_window":64000
 	}]}`)}
-	svc := &OpenAIGatewayService{}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 
 	require.NoError(t, svc.CompleteAPIKeyCodexModelsManifestForClient(manifest, account))
 	models := decodeCodexManifestModels(t, manifest.Body)
@@ -3344,7 +3359,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientFillsMissingProviderFieldsWit
 func TestCompleteAPIKeyCodexModelsManifestForClientFiltersOfficialNonAgentModels(t *testing.T) {
 	t.Parallel()
 
-	svc := &OpenAIGatewayService{}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"gpt-5.6-sol"},{"slug":"gpt-4o-realtime-preview"},{"slug":"gpt-4o-mini-tts"},{"slug":"text-embedding-3-large"},{"slug":"omni-moderation-latest"},{"slug":"o4-mini"},{"slug":"codex-mini-latest"}]}`)}
 	account := newCodexModelsAPIKeyTestAccount("")
 
@@ -3356,7 +3371,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientFiltersOfficialNonAgentModels
 func TestCompleteAPIKeyCodexModelsManifestForClientMarksOnlyOfficialVisionGPTImageInput(t *testing.T) {
 	t.Parallel()
 
-	svc := &OpenAIGatewayService{}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"gpt-5.6-sol"},{"slug":"gpt-4o"},{"slug":"gpt-3.5-turbo"},{"slug":"gpt-4"}]}`)}
 	account := newCodexModelsAPIKeyTestAccount("")
 
@@ -3384,7 +3399,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientMarksOnlyOfficialVisionGPTIma
 func TestCompleteAPIKeyCodexModelsManifestForClientPreservesProviderMetadata(t *testing.T) {
 	t.Parallel()
 
-	svc := &OpenAIGatewayService{}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest := &OpenAIModelsResponse{
 		Body: []byte(`{"models":[{"slug":"grok-4.6","description":"Provider supplied","service_tiers":[{"id":"provider-priority","name":"Provider Fast","description":"Provider supplied tier."}],"model_messages":{"auto_review":{"enabled":true}},"truncation_policy":{"mode":"tokens"},"unknown":{"kept":true}}],"metadata":{"source":"upstream"}}`),
 	}
@@ -3483,7 +3498,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesCurrentSnapshotForCachedN
 func TestCompleteAPIKeyCodexModelsManifestForClientUsesKnownGPTImageFallback(t *testing.T) {
 	t.Parallel()
 
-	svc := &OpenAIGatewayService{}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[
 		{"slug":"gpt-5.6-sol"},
 		{"slug":"company-coding-model"},
@@ -3509,7 +3524,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesKnownGPTImageFallback(t *
 func TestCompleteAPIKeyCodexModelsManifestForClientDoesNotApplyLegacyFixedSolContext(t *testing.T) {
 	t.Parallel()
 
-	svc := &OpenAIGatewayService{}
+	svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[
 		{"slug":"gpt-5.6-sol"},
 		{"slug":"gpt-5.6-terra"},
@@ -3910,7 +3925,7 @@ func expireCodexModelsManifestCache(s *OpenAIGatewayService, age time.Duration) 
 
 func TestFetchCodexModelsManifestOAuthFreshWindowZeroUpstreamRequests(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-5.5"}]}`)
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	account := newCodexModelsTestAccount()
 
 	for i := 0; i < 10; i++ {
@@ -3940,7 +3955,7 @@ func TestFetchCodexModelsManifestOAuthStaleServesOldValueAndRefreshesInBackgroun
 	chatgptCodexModelsURL = server.URL
 	t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	account := newCodexModelsTestAccount()
 	first, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.NoError(t, err)
@@ -4006,7 +4021,7 @@ func TestFetchCodexModelsManifestOAuthOverdueSynchronousRefreshAndFailure(t *tes
 		chatgptCodexModelsURL = server.URL
 		t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-		s := &OpenAIGatewayService{}
+		s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 		account := newCodexModelsTestAccount()
 		_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 		require.NoError(t, err)
@@ -4042,7 +4057,7 @@ func TestFetchCodexModelsManifestOAuthOverdueSynchronousRefreshAndFailure(t *tes
 		chatgptCodexModelsURL = server.URL
 		t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-		s := &OpenAIGatewayService{}
+		s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 		account := newCodexModelsTestAccount()
 		_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 		require.NoError(t, err)
@@ -4058,7 +4073,7 @@ func TestFetchCodexModelsManifestOAuthOverdueSynchronousRefreshAndFailure(t *tes
 
 func TestFetchCodexModelsManifestOAuthTokenChangeCacheMiss(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[]}`)
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	account := newCodexModelsTestAccount()
 
 	_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
@@ -4091,6 +4106,7 @@ func TestFetchCodexModelsManifestOAuthSharedAcrossGroupsWithIndependentFiltering
 	t.Cleanup(func() { chatgptCodexModelsURL = original })
 
 	s := &OpenAIGatewayService{
+		httpUpstream: newCodexModelsLoopbackUpstream(),
 		accountRepo: codexModelsVisibilityAccountRepo{
 			byGroup: map[int64][]Account{
 				91: {},
@@ -4205,7 +4221,7 @@ func TestCodexGPTIdentityPatternsCoverBundledPrompts(t *testing.T) {
 
 func TestGPT6SolLunaCatalogKeepsAuthoritativeCapabilities(t *testing.T) {
 	for _, id := range []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"} {
-		svc := &OpenAIGatewayService{}
+		svc := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 		manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"` + id + `","supported_reasoning_levels":[{"effort":"ultra"}],"default_reasoning_level":"ultra","multi_agent_reasoning_effort":"xhigh","service_tiers":[{"id":"ultrafast"}],"context_window":300000,"max_context_window":900000,"supports_search_tool":false,"apply_patch_tool_type":null}]}`)}
 		account := newCodexModelsAPIKeyTestAccount("https://api.openai.com/v1")
 		require.NoError(t, svc.CompleteAPIKeyCodexModelsManifestForClient(manifest, account))

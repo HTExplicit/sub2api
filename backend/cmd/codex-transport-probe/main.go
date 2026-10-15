@@ -67,7 +67,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		if err = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"response.create","model":"local-fixture","input":[]}`)); err != nil {
 			return err
 		}

@@ -108,3 +108,33 @@ func TestStrictCodexUnsupportedAndCanceledRequests(t *testing.T) {
 		t.Fatal("sent a canceled POST")
 	}
 }
+
+func TestStrictCodexInterruptedResponseRetainsFailureWithoutReplay(t *testing.T) {
+	var posts atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		w.Header().Set("Content-Length", "64")
+		_, _ = w.Write([]byte("incomplete response"))
+	}))
+	defer server.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	rt, err := New(testBinding(t), Options{RootCAs: roots})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.CloseIdleConnections()
+	request, _ := http.NewRequest(http.MethodPost, server.URL, strings.NewReader("already sent"))
+	response, err := (&http.Client{Transport: rt, Timeout: time.Second}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	_, err = io.ReadAll(response.Body)
+	if !IsFailure(err) {
+		t.Fatalf("interrupted body lost strict failure classification: %v", err)
+	}
+	if posts.Load() != 1 {
+		t.Fatalf("interrupted POST was replayed %d times", posts.Load())
+	}
+}

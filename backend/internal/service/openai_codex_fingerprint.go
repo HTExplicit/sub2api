@@ -470,8 +470,6 @@ func stringMetadataValue(metadata map[string]any, key string) string {
 	return value
 }
 
-func (ids *codexFingerprintIDs) mapThread(original string) string { return original }
-
 func (ids *codexFingerprintIDs) captureThreadAndWindow(thread, window string) {
 	if strings.TrimSpace(thread) != "" {
 		ids.threadID = thread
@@ -484,10 +482,6 @@ func (ids *codexFingerprintIDs) captureThreadAndWindow(thread, window string) {
 	} else if ids.windowID == "" && ids.threadID != "" {
 		ids.windowID = ids.threadID + ":0"
 	}
-}
-
-func (ids *codexFingerprintIDs) rewriteThreadReferences(metadata map[string]any) {
-	// The account-scoping pass preserves the complete root/child/fork graph.
 }
 
 func (ids *codexFingerprintIDs) rewriteTurnMetadata(metadata map[string]any) {

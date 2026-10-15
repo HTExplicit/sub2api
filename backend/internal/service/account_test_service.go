@@ -2438,6 +2438,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if isOAuth {
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 经 ForceCodexCLI
 		// 策略过滤后作为管理员显式配置传入（同普通 OAuth 连接测试）。
+		ensureCodexIdentityHeaders(req.Header, codexFingerprintPolicyForContext(c, account))
 		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), codexFingerprintPolicyForContext(c, account))
 	}
 	if isOAuth {

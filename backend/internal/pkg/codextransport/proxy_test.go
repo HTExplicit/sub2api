@@ -52,13 +52,13 @@ func TestStrictCodexProxyVariantsPreserveAuthenticationAndStreaming(t *testing.T
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer listener.Close()
+				defer func() { _ = listener.Close() }()
 				go func() {
 					client, err := listener.Accept()
 					if err != nil {
 						return
 					}
-					defer client.Close()
+					defer func() { _ = client.Close() }()
 					_ = client.SetDeadline(time.Now().Add(5 * time.Second))
 					head := make([]byte, 2)
 					if _, err = io.ReadFull(client, head); err != nil {
@@ -88,10 +88,11 @@ func TestStrictCodexProxyVariantsPreserveAuthenticationAndStreaming(t *testing.T
 						return
 					}
 					size := 4
-					if request[3] == 3 {
+					switch request[3] {
+					case 3:
 						_, _ = io.ReadFull(client, one)
 						size = int(one[0])
-					} else if request[3] == 4 {
+					case 4:
 						size = 16
 					}
 					address := make([]byte, size+2)
@@ -124,10 +125,16 @@ func TestStrictCodexProxyVariantsPreserveAuthenticationAndStreaming(t *testing.T
 					}
 					upstream, err := net.DialTimeout("tcp", targetURL.Host, time.Second)
 					if err != nil {
-						http.Error(w, "tunnel failed", 502)
+						http.Error(w, "tunnel failed", http.StatusBadGateway)
 						return
 					}
-					client, buffer, err := w.(http.Hijacker).Hijack()
+					hijacker, ok := w.(http.Hijacker)
+					if !ok {
+						_ = upstream.Close()
+						t.Error("fixture does not support hijacking")
+						return
+					}
+					client, buffer, err := hijacker.Hijack()
 					if err != nil {
 						_ = upstream.Close()
 						return
@@ -175,7 +182,12 @@ func TestStrictCodexDoesNotReplaySentPOSTOrCanceledCONNECT(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		posts.Add(1)
 		_, _ = io.Copy(io.Discard, r.Body)
-		conn, _, err := w.(http.Hijacker).Hijack()
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("fixture does not support hijacking")
+			return
+		}
+		conn, _, err := hijacker.Hijack()
 		if err == nil {
 			_ = conn.Close()
 		}
@@ -203,13 +215,13 @@ func TestStrictCodexDoesNotReplaySentPOSTOrCanceledCONNECT(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	go func() {
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, _ = http.ReadRequest(bufio.NewReader(conn))
 		_, _ = io.Copy(io.Discard, conn)
 	}()

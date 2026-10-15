@@ -34,7 +34,7 @@ func (c *http1WireConn) Write(input []byte) (int, error) {
 				n = c.bodyRemaining
 			}
 			if _, err := c.Conn.Write(p[:n]); err != nil {
-				_ = c.Conn.Close()
+				_ = c.Close()
 				return 0, err
 			}
 			c.bodyRemaining -= n
@@ -44,11 +44,11 @@ func (c *http1WireConn) Write(input []byte) (int, error) {
 		if c.chunked {
 			n, err := c.consumeChunk(p)
 			if err != nil {
-				_ = c.Conn.Close()
+				_ = c.Close()
 				return 0, err
 			}
 			if _, err = c.Conn.Write(p[:n]); err != nil {
-				_ = c.Conn.Close()
+				_ = c.Close()
 				return 0, err
 			}
 			p = p[n:]
@@ -56,11 +56,11 @@ func (c *http1WireConn) Write(input []byte) (int, error) {
 		}
 		// Headers may be split across writes. Bound only the header allocation,
 		// retaining net/http's existing default header-size boundary.
-		c.header.WriteByte(p[0])
+		_ = c.header.WriteByte(p[0]) // bytes.Buffer.WriteByte cannot fail.
 		p = p[1:]
 		if c.header.Len() > 1<<20 {
-			_ = c.Conn.Close()
-			return 0, fmt.Errorf("Codex HTTP1 headers exceed 1 MiB")
+			_ = c.Close()
+			return 0, fmt.Errorf("codex HTTP1 headers exceed 1 MiB")
 		}
 		if !bytes.HasSuffix(c.header.Bytes(), []byte("\r\n\r\n")) {
 			continue
@@ -81,7 +81,7 @@ func (c *http1WireConn) Write(input []byte) (int, error) {
 			case "content-length":
 				length, err := strconv.ParseInt(value, 10, 64)
 				if err != nil || length < 0 {
-					_ = c.Conn.Close()
+					_ = c.Close()
 					return 0, fmt.Errorf("invalid HTTP1 Content-Length")
 				}
 				c.bodyRemaining = length
@@ -93,7 +93,7 @@ func (c *http1WireConn) Write(input []byte) (int, error) {
 			}
 		}
 		if _, err := c.Conn.Write(raw); err != nil {
-			_ = c.Conn.Close()
+			_ = c.Close()
 			return 0, err
 		}
 		c.header.Reset()

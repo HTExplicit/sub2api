@@ -144,7 +144,10 @@ func getFlateReader(r io.Reader, dict []byte) io.Reader {
 	if !ok {
 		return flate.NewReaderDict(r, dict)
 	}
-	fr.(flate.Resetter).Reset(r, dict)
+	resetter, ok := fr.(flate.Resetter)
+	if !ok || resetter.Reset(r, dict) != nil {
+		return flate.NewReaderDict(r, dict)
+	}
 	return fr
 }
 

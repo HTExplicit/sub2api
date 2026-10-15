@@ -76,10 +76,10 @@ func (c *Conn) CloseRead(ctx context.Context) context.Context {
 	go func() {
 		defer close(c.closeReadDone)
 		defer cancel()
-		defer c.close()
+		defer func() { _ = c.close() }()
 		_, _, err := c.Reader(ctx)
 		if err == nil {
-			c.Close(StatusPolicyViolation, "unexpected data message")
+			_ = c.Close(StatusPolicyViolation, "unexpected data message")
 		}
 	}()
 	return ctx

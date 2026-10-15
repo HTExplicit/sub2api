@@ -1,13 +1,17 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -45,7 +49,8 @@ func TestCodexConversationsPreserveRootAndChildGraph(t *testing.T) {
 				require.True(t, applyCodexFingerprintClientMetadata(body, ids))
 				require.NoError(t, ids.err)
 				applyCodexFingerprintHeaders(headers, ids)
-				flat := body["client_metadata"].(map[string]any)
+				flat, ok := body["client_metadata"].(map[string]any)
+				require.True(t, ok)
 				canonical, _, err := canonicalCodexMetadata(flat)
 				require.NoError(t, err)
 				mappedThread := scopeCodexAccountIdentityValue(account, 9, thread)
@@ -186,7 +191,9 @@ func TestCodexLegacyWindowRetainsTheThreadMappingAndIndex(t *testing.T) {
 	for _, raw := range []string{"legacy-thread", "project:legacy", uuid.NewString(), uuid.Must(uuid.NewV7()).String()} {
 		metadata := map[string]any{"thread_id": raw, "window_id": raw + ":19"}
 		require.True(t, applyCodexAccountIdentityFields(metadata, account, 9, policy))
-		require.Equal(t, metadata["thread_id"].(string)+":19", metadata["window_id"])
+		thread, ok := metadata["thread_id"].(string)
+		require.True(t, ok)
+		require.Equal(t, thread+":19", metadata["window_id"])
 	}
 }
 
@@ -200,4 +207,46 @@ func TestCodexWSLeaseCannotCrossBodyDeviceIdentity(t *testing.T) {
 	next.BodyIdentityKey = codexWSBodyIdentityKey([]byte(`{"client_metadata":{"x-codex-installation-id":"device-b","session_id":"root","thread_id":"root"}}`))
 	require.NotEqual(t, first.BodyIdentityKey, next.BodyIdentityKey)
 	require.False(t, conn.matchesHandshakeCompatibility(normalizeOpenAIWSAcquireCompatibility(next)))
+}
+
+func TestCodexStrictStreamInterruptionCannotBecomeReplay(t *testing.T) {
+	binding, err := codextransport.Select(codexCLIUserAgent, "stream-test", "http")
+	require.NoError(t, err)
+	for _, passthrough := range []bool{false, true} {
+		for _, truncated := range []bool{false, true} {
+			name := "native"
+			if passthrough {
+				name = "passthrough"
+			}
+			if truncated {
+				name += "/truncated"
+			} else {
+				name += "/missing-terminal"
+			}
+			t.Run(name, func(t *testing.T) {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+				request := c.Request.WithContext(codextransport.WithBinding(context.Background(), binding))
+				var body io.Reader = strings.NewReader("")
+				if truncated {
+					body = &prefixThenErrorReader{err: io.ErrUnexpectedEOF}
+				}
+				response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}},
+					Body: io.NopCloser(body), Request: request}
+				s := &OpenAIGatewayService{cfg: &config.Config{}}
+				account := fingerprintTestAccount("device")
+				if passthrough {
+					_, err = s.handleStreamingResponsePassthrough(context.Background(), response, c, account, time.Now(), "gpt-5.6-sol", "gpt-5.6-sol")
+				} else {
+					_, err = s.handleStreamingResponse(context.Background(), response, c, account, time.Now(), "gpt-5.6-sol", "gpt-5.6-sol")
+				}
+				var failure *UpstreamFailoverError
+				require.ErrorAs(t, err, &failure)
+				require.Equal(t, GatewayFailureScopeRequest, failure.Scope)
+				require.Equal(t, NextAccountStop, failure.NextAccountAction)
+				require.True(t, failure.SuppressAccountHealthPenalty)
+				require.Equal(t, "codex_transport_failed", failure.ClientErrorCode)
+			})
+		}
+	}
 }

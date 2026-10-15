@@ -228,7 +228,7 @@ func (s *SettingService) LoadCodexFingerprintSettings(ctx context.Context) error
 
 func (s *SettingService) UpdateCodexFingerprintSettings(ctx context.Context, config CodexFingerprintSettings) (CodexFingerprintSettingsView, error) {
 	if config.ClientVersion != "" && !codextransport.SupportsVersion(config.ClientVersion) {
-		return CodexFingerprintSettingsView{}, fmt.Errorf("Codex version %s has no verified transport profile", config.ClientVersion)
+		return CodexFingerprintSettingsView{}, fmt.Errorf("codex version %s has no verified transport profile", config.ClientVersion)
 	}
 	s.codexFingerprintMu.Lock()
 	defer s.codexFingerprintMu.Unlock()

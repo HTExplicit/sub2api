@@ -31,7 +31,7 @@ func TestCodexBoundedWindowNegotiationAndCompression(t *testing.T) {
 				t.Fatal(err)
 			}
 			// RFC 7692 stream tail, followed by the final empty DEFLATE block.
-			wire.Write([]byte{1, 0, 0, 255, 255})
+			_, _ = wire.Write([]byte{1, 0, 0, 255, 255})
 			reader := flate.NewReader(bytes.NewReader(wire.Bytes()))
 			decoded, err := io.ReadAll(reader)
 			_ = reader.Close()
