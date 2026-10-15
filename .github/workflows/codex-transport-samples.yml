@@ -17,15 +17,6 @@ jobs:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
             digest: 86f268d81b898f3e144c5ecff2ad2fda2c5802e042d6195b72538fe0fa125057
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            digest: b293a0fcdd871900a44c0a4f40a1aa401b31e02854f790ebdb8bd5d1177fd1fe
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            digest: d68e39d8f62639f33f7d00656554cb9c3ef7809e664a3827e62ab3ace3c21b21
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc.exe
-            digest: a97c427a033b08d58902af3e52e8586ad2013267212112d306100223e2b12ec7
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 12
     steps:

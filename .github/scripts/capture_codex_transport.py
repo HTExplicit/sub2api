@@ -303,6 +303,7 @@ def drive(binary, capture, scratch, mode):
         env.pop(key, None)
     env.update(CODEX_HOME=str(home), CODEX_CA_CERTIFICATE=str(capture.ca),
                SSL_CERT_FILE=str(capture.ca), CODEX_PROFILE_TEST_KEY="local-dummy-key", NO_PROXY="localhost,127.0.0.1")
+    env["RUST_LOG"] = "codex_http_client=debug,reqwest=debug,hyper_util=debug"
     provider = dict(name="Loopback only", base_url=f"https://localhost:{capture.port}/v1",
                     env_key="CODEX_PROFILE_TEST_KEY", wire_api="responses", requires_openai_auth=False,
                     supports_websockets=mode == "ws", request_max_retries=0, stream_max_retries=0)
@@ -323,7 +324,10 @@ def drive(binary, capture, scratch, mode):
             except json.JSONDecodeError:
                 pass
     threading.Thread(target=reader, daemon=True).start()
-    threading.Thread(target=lambda: errors.extend(process.stderr.read().splitlines()), daemon=True).start()
+    def read_errors():
+        for line in process.stderr:
+            errors.append(line.rstrip())
+    threading.Thread(target=read_errors, daemon=True).start()
     def send(value):
         process.stdin.write(json.dumps(value) + "\n")
         process.stdin.flush()
@@ -354,7 +358,7 @@ def drive(binary, capture, scratch, mode):
                   "input": [{"type": "text", "text": "Reply ok from the loopback fixture."}]}})
             result = until(lambda v: v.get("method") == "turn/completed")
             if result["params"]["turn"]["status"] != "completed":
-                raise RuntimeError("local fixture turn failed: " + json.dumps(result))
+                raise RuntimeError("local fixture turn failed: " + json.dumps(result) + "\n" + "\n".join(errors[-15:]))
     finally:
         process.stdin.close()
         try:
