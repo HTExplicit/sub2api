@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"io"
 	"strconv"
 	"strings"
@@ -29,9 +30,12 @@ type CodexFingerprintSettings struct {
 
 type CodexFingerprintSettingsView struct {
 	CodexFingerprintSettings
-	SyncedVersion      string `json:"synced_version"`
-	EffectiveVersion   string `json:"effective_version"`
-	EffectiveUserAgent string `json:"effective_user_agent"`
+	SyncedVersion            string `json:"synced_version"`
+	VerifiedVersion          string `json:"verified_version"`
+	VersionPendingValidation bool   `json:"version_pending_validation"`
+	TransportPolicy          string `json:"transport_policy"`
+	EffectiveVersion         string `json:"effective_version"`
+	EffectiveUserAgent       string `json:"effective_user_agent"`
 }
 
 // An immutable policy is shared by the body, headers and connection selection of
@@ -180,8 +184,11 @@ func (s *SettingService) codexFingerprintSettingsFromValues(values map[string]st
 	if version == "" {
 		version = synced
 	}
+	if config.ClientVersion == "" && !codextransport.SupportsVersion(version) {
+		version = codextransport.LatestVersion()
+	}
 	if version == "" || CompareVersions(version, codexUpstreamMinVersion) < 0 {
-		version = codexCLIVersion
+		version = codextransport.LatestVersion()
 	}
 	ua := buildCodexCLIUserAgent(version)
 	if _, paired, ok := openai.PairCodexClientIdentity(config.UserAgent); ok {
@@ -189,7 +196,7 @@ func (s *SettingService) codexFingerprintSettingsFromValues(values map[string]st
 			ua = rebuilt
 		}
 	}
-	return CodexFingerprintSettingsView{CodexFingerprintSettings: config, SyncedVersion: synced, EffectiveVersion: version, EffectiveUserAgent: ua}, nil
+	return CodexFingerprintSettingsView{CodexFingerprintSettings: config, SyncedVersion: synced, EffectiveVersion: version, EffectiveUserAgent: ua, VerifiedVersion: codextransport.LatestVersion(), VersionPendingValidation: synced != "" && CompareVersions(synced, version) > 0 && !codextransport.SupportsVersion(synced), TransportPolicy: "strict"}, nil
 }
 
 func publishCodexFingerprintSettings(view CodexFingerprintSettingsView) {
@@ -220,6 +227,9 @@ func (s *SettingService) LoadCodexFingerprintSettings(ctx context.Context) error
 }
 
 func (s *SettingService) UpdateCodexFingerprintSettings(ctx context.Context, config CodexFingerprintSettings) (CodexFingerprintSettingsView, error) {
+	if config.ClientVersion != "" && !codextransport.SupportsVersion(config.ClientVersion) {
+		return CodexFingerprintSettingsView{}, fmt.Errorf("codex version %s has no verified transport profile", config.ClientVersion)
+	}
 	s.codexFingerprintMu.Lock()
 	defer s.codexFingerprintMu.Unlock()
 	values, err := s.settingRepo.GetMultiple(ctx, codexFingerprintSettingKeys)

@@ -19,33 +19,31 @@ vi.mock('vue-i18n', async importOriginal => ({
   useI18n: () => ({ t: (key: string) => key, locale: ref(language) })
 }))
 
-const settings = { enabled: true, user_agent: '', client_version: '', version_auto_sync_enabled: true, synced_version: '0.161.0', effective_version: '0.161.0', effective_user_agent: 'codex_cli_rs/0.161.0 (Ubuntu 24.4.0; x86_64) xterm-256color' }
+const settings = { enabled: true, user_agent: '', client_version: '', version_auto_sync_enabled: true, synced_version: '0.162.1', effective_version: '0.162.1', effective_user_agent: 'codex_cli_rs/0.162.1 (Ubuntu 24.4.0; x86_64) xterm-256color' }
 const accountView: CodexFingerprintAccountView = {
   mode: 'full', simulation_enabled: true,
-  identity: { user_agent: 'codex-tui/0.161.0 (Windows 10.0.26100; x86_64) vscode/1.104.0 (codex-tui; 0.161.0)', originator: 'codex-tui', version: '0.161.0', identity_source: 'account', identity_account_id: 1, identity_persisted: true, fingerprint_mode_configured: 'full', fingerprint_mode_effective: 'full', fingerprint_reason: 'ok' },
+  identity: { user_agent: 'codex-tui/0.162.1 (Windows 10.0.26100; x86_64) vscode/1.104.0 (codex-tui; 0.162.1)', originator: 'codex-tui', version: '0.162.1', identity_source: 'account', identity_account_id: 1, identity_persisted: true, fingerprint_mode_configured: 'full', fingerprint_mode_effective: 'device', fingerprint_reason: 'legacy_mode_normalized', transport_profile: { profile_id: 'codex-rust-0.162.1-r1', version: '0.162.1', source_commit: '092d3acd', system: 'Windows', arch: 'x86_64', strict: true, validated: true, plane: 'http' } },
   device_identity: { v: 1, os_type: 'Windows', os_version: '10.0.26100', arch: 'x86_64', terminal: 'vscode/1.104.0', sandbox: 'windows_sandbox', generated_at: '2026-10-08T08:00:00Z' },
   effective_device: { os_type: 'Windows', os_version: '10.0.26100', arch: 'x86_64', terminal: 'vscode/1.104.0', platform_sandbox: 'windows_sandbox' },
   identifier_policy: {
     installation_id: { behavior: 'fixed', rule: 'account_device', value: 'fixed-installation' },
-    session_id: { behavior: 'fixed', rule: 'account_session', value: 'fixed-session' },
-    thread_id: { behavior: 'fixed', rule: 'account_thread', value: 'fixed-session' },
-    parent_thread_id: { behavior: 'request_derived', rule: 'remove_parent_self_reference', value: null },
-    window_id: { behavior: 'request_derived', rule: 'merged_window', value: null }
+    session_id: { behavior: 'request_derived', rule: 'scoped_real_session', value: null },
+    thread_id: { behavior: 'request_derived', rule: 'scoped_real_thread', value: null },
+    parent_thread_id: { behavior: 'request_derived', rule: 'scoped_real_parent', value: null },
+    window_id: { behavior: 'request_derived', rule: 'scoped_real_window', value: null }
   }
 }
 function viewFor(id: number, mode: CodexFingerprintMode = serverModes[id] || 'device'): CodexFingerprintAccountView {
   const view = structuredClone(accountView)
   view.mode = mode; view.simulation_enabled = simulationEnabled
   view.identity.identity_account_id = id; view.identity.fingerprint_mode_configured = mode
-  view.identity.fingerprint_mode_effective = simulationEnabled ? mode : 'off'
+  view.identity.fingerprint_mode_effective = simulationEnabled ? (mode === 'off' ? 'off' : 'device') : 'off'
   if (!simulationEnabled) {
     view.effective_device = null; view.identity.identity_source = 'protocol_fallback'; view.identity.fingerprint_reason = 'simulation_disabled'
     view.identity.user_agent = settings.effective_user_agent
   }
   if (mode === 'off' || !simulationEnabled) {
     for (const key of Object.keys(view.identifier_policy) as Array<keyof typeof view.identifier_policy>) view.identifier_policy[key] = { behavior: 'passthrough', rule: 'preserve_client', value: null }
-  } else if (mode !== 'full') {
-    view.identifier_policy.thread_id = { behavior: mode === 'session' ? 'request_derived' : 'passthrough', rule: mode === 'session' ? 'mapped_thread' : 'preserve_client', value: null }
   }
   return view
 }
@@ -71,7 +69,7 @@ describe('CodexFingerprintView', () => {
 
   it('loads the effective version and saves only the four global settings without resetting account identity', async () => {
     const wrapper = await open()
-    expect(wrapper.get('[data-test="fingerprint-effective-version"]').text()).toBe('0.161.0')
+    expect(wrapper.get('[data-test="fingerprint-effective-version"]').text()).toBe('0.162.1')
     await wrapper.get('[data-test="fingerprint-enabled"]').setValue(false)
     await wrapper.find('form').trigger('submit.prevent')
     await flushPromises()
@@ -83,10 +81,10 @@ describe('CodexFingerprintView', () => {
 
   it('updates a single mode through the bounded endpoint and displays the shared effective identity', async () => {
     const wrapper = await open()
-    await wrapper.get('[data-test="fingerprint-mode-1"]').setValue('session')
+    await wrapper.get('[data-test="fingerprint-mode-1"]').setValue('off')
     await wrapper.get('[data-test="fingerprint-account-save-1"]').trigger('click')
     await flushPromises()
-    expect(saveAccount).toHaveBeenCalledWith(1, 'session')
+    expect(saveAccount).toHaveBeenCalledWith(1, 'off')
     expect(wrapper.text()).toContain(settings.effective_user_agent)
     expect(wrapper.get<HTMLButtonElement>('[data-test="fingerprint-account-save-1"]').element.disabled).toBe(true)
     await wrapper.get('[data-test="fingerprint-account-refresh-1"]').trigger('click'); await flushPromises()
@@ -100,7 +98,7 @@ describe('CodexFingerprintView', () => {
     const identity = wrapper.findAll('[data-test="fingerprint-identity"]')[0]!
     for (const value of ['固定设备身份', '已持久保存', 'Windows', '10.0.26100', 'x86_64', 'vscode/1.104.0', 'windows_sandbox', '生成时间', '身份结构版本', '当前策略，适用于新请求', '保存的收敛模式', '生效收敛模式']) expect(identity.text()).toContain(value)
     expect(identity.get('[data-test="fingerprint-installation_id"]').text()).toBe('fixed-installation')
-    expect(identity.text()).toContain('保留请求中的窗口序号')
+    expect(identity.text()).toContain('保留窗口序号')
     expect(wrapper.text()).not.toContain('查看生效身份')
     expect(wrapper.get('[data-test="fingerprint-account-refresh-1"]').attributes('aria-label')).toBe('刷新账号身份 First')
     wrapper.unmount()
@@ -130,18 +128,18 @@ describe('CodexFingerprintView', () => {
     let finish!: (view: CodexFingerprintAccountView) => void
     getAccount.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     const wrapper = await open()
-    await wrapper.get('[data-test="fingerprint-mode-1"]').setValue('session')
+    await wrapper.get('[data-test="fingerprint-mode-1"]').setValue('off')
     finish(viewFor(1)); await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('session')
+    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('off')
     getAccount.mockRejectedValueOnce(new Error('identity read failed'))
     await wrapper.get('[data-test="fingerprint-account-refresh-1"]').trigger('click'); await flushPromises()
     expect(wrapper.get('[role="alert"]').text()).toContain('identity read failed')
     expect(wrapper.findAll('[data-test="fingerprint-identity"]')).toHaveLength(2)
     await wrapper.get('[data-test="fingerprint-account-retry-1"]').trigger('click'); await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('session')
+    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('off')
     await wrapper.findAll('button').find(button => button.text() === '刷新账号')!.trigger('click'); await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('session')
+    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('off')
     wrapper.unmount()
   })
 
@@ -180,11 +178,11 @@ describe('CodexFingerprintView', () => {
     let finish!: (view: CodexFingerprintAccountView) => void
     getAccount.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     const wrapper = await open()
-    await wrapper.get('[data-test="fingerprint-mode-1"]').setValue('session')
+    await wrapper.get('[data-test="fingerprint-mode-1"]').setValue('off')
     await wrapper.get('[data-test="fingerprint-account-save-1"]').trigger('click'); await flushPromises()
     const obsolete = structuredClone(accountView); obsolete.identity.user_agent = 'obsolete-mode-identity'
     finish(obsolete); await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('session')
+    expect(wrapper.get<HTMLSelectElement>('[data-test="fingerprint-mode-1"]').element.value).toBe('off')
     expect(wrapper.get<HTMLButtonElement>('[data-test="fingerprint-account-save-1"]').element.disabled).toBe(true)
     expect(wrapper.text()).not.toContain('obsolete-mode-identity')
     wrapper.unmount()

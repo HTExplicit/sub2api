@@ -66,13 +66,18 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactOAuthSuccessPersi
 	require.Equal(t, "chatgpt.com", upstream.lastReq.Host)
 	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
 	require.Contains(t, upstream.lastReq.Header.Get("x-codex-beta-features"), "remote_compaction_v2")
-	require.NotEmpty(t, upstream.lastReq.Header.Get("Session_Id"))
+	sessionID := upstream.lastReq.Header.Get("Session-Id")
+	require.NotEmpty(t, sessionID)
+	require.Equal(t, uuid.Version(7), uuid.MustParse(sessionID).Version())
+	require.Equal(t, sessionID, upstream.lastReq.Header.Get("Thread-Id"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "chatgpt-acc", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, "true", upstream.lastReq.Header.Get("x-openai-fedramp"))
 	require.Equal(t, "zstd", upstream.lastReq.Header.Get("Content-Encoding"))
 	probeBody := zstdDecodeForTest(t, upstream.lastBody)
+	require.Equal(t, sessionID, gjson.GetBytes(probeBody, "client_metadata.session_id").String())
+	require.Equal(t, sessionID, gjson.GetBytes(probeBody, "client_metadata.thread_id").String())
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(probeBody, "model").String())
 	require.True(t, gjson.GetBytes(probeBody, "stream").Bool())
 	require.False(t, gjson.GetBytes(probeBody, "store").Bool())
@@ -270,7 +275,7 @@ func TestAccountTestService_TestAccountConnection_OpenAICompact2xxWithoutItemMar
 }
 
 // 探测与真实转发走同一 /responses 端点，出站身份必须与真实 Codex 同构：
-// session/thread 为 UUID、携带 x-codex-installation-id（收敛账号用收敛值）。
+// session/thread 使用本次测试的 UUIDv7 根，installation 使用固定设备值。
 func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatchesRealTraffic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -310,12 +315,16 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 
 	require.NoError(t, svc.TestAccountConnection(c, account.ID, "gpt-5.4", "", AccountTestModeCompact))
 
-	// 显式 session 收敛模式：出站身份 = 账号级收敛值
+	// 旧 session 配置归一为固定设备、多独立根对话，不能再合并为账号会话。
 	seed, ok := codexFingerprintSeed(account.Extra)
 	require.True(t, ok)
-	converged := resolveConvergedSessionID(seed)
-	require.Equal(t, converged, upstream.lastReq.Header.Get("session-id"))
-	require.Equal(t, converged, upstream.lastReq.Header.Get("session_id"))
+	sessionID := upstream.lastReq.Header.Get("session-id")
+	require.Equal(t, uuid.Version(7), uuid.MustParse(sessionID).Version())
+	require.Equal(t, sessionID, upstream.lastReq.Header.Get("thread-id"))
+	require.Equal(t, sessionID, gjson.GetBytes(upstream.lastBody, "client_metadata.session_id").String())
+	require.Equal(t, sessionID, gjson.GetBytes(upstream.lastBody, "client_metadata.thread_id").String())
+	metadata := gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-turn-metadata").String()
+	require.Equal(t, resolveConvergedInstallationID(&account, seed), gjson.Get(metadata, "installation_id").String())
 	require.Empty(t, upstream.lastReq.Header.Get("x-codex-installation-id"),
 		"真实 Codex 从不以请求头形式发送 installation id")
 	require.NotContains(t, upstream.lastReq.Header.Get("session-id"), "probe_compact",
@@ -323,14 +332,4 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 	// 出站 UA = 该账号（种子派生）的 Codex TUI 身份，而不是全局规范身份。
 	require.Equal(t, resolveCodexOutboundIdentityForAccount(&account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	<-updateCalls
-}
-
-func TestCompactProbeSessionID_IsUUIDShaped(t *testing.T) {
-	for _, id := range []int64{0, 1, 987654} {
-		got := compactProbeSessionID(id)
-		_, err := uuid.Parse(got)
-		require.NoError(t, err, "探测会话标识必须是 UUID 形态: %s", got)
-	}
-	require.Equal(t, compactProbeSessionID(7), compactProbeSessionID(7), "同账号应稳定复用同一会话")
-	require.NotEqual(t, compactProbeSessionID(7), compactProbeSessionID(8))
 }

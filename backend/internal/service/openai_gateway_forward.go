@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"net/http"
 	"strings"
@@ -558,9 +559,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if !isCompactRequest && codexFingerprintPolicyForContext(c, account).enabled && applyCodexClientMetadata(decoded, account) {
 			markDecodedModified()
 		}
-		if !isCompactRequest && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account)) {
-			markDecodedModified()
+		if !isCompactRequest {
+			scoped, scopeErr := s.scopeCodexRequestMetadataMap(c, account, decoded)
+			if scopeErr != nil {
+				return nil, scopeErr
+			}
+			if scoped {
+				markDecodedModified()
+			}
 		}
+
 		stageCodexFingerprintIDs(c, nil)
 		// 指纹收敛：一次性解析收敛 ID，请求体和出站头共享同一份 IDs（保证 turn_id 等随机字段一致）。
 		// fingerprintIDs 在此处解析，后续 buildUpstreamRequest 中使用同一份。
@@ -574,6 +582,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
 					markDecodedModified()
 				}
+			}
+			if fpIDs != nil && fpIDs.err != nil {
+				return nil, fpIDs.err
 			}
 			// 将 fpIDs 存入 gin context，供 buildUpstreamRequest 中头改写使用。
 			// 无条件覆写（含 nil）：failover 从收敛账号切到 off 账号时，上一
@@ -1551,7 +1562,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("user-agent", CodexCanonicalUserAgent())
 	}
 
-	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
+	applyCodexAccountIdentityHeaders(req.Header, codexAccountProjectionSource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
 	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
 	applyStagedCodexFingerprintHeaders(c, account, req.Header)
 	// 真实 Codex 必带的连字符会话头：入站缺失时以最终请求体的 prompt_cache_key
@@ -1583,7 +1594,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
 		return nil, err
 	}
-	return req, nil
+	return bindCodexAttemptRequest(c, req, account)
 }
 
 // codexIdentityOverrideUA 返回账号级显式配置的出站 User-Agent，供强制统一身份时作为覆写来源。
@@ -1596,12 +1607,12 @@ func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string 
 	return codexAccountIdentityOverrideUA(account)
 }
 
-// resolveStagedCodexFingerprintIDs 解析本次请求的收敛 ID，并让 turn metadata 的 sandbox 跟随
-// 最终出站 UA：UA 来源与构造器/收口点一致——影子账号取 staged 的父账号身份，账号显式 UA
-// 按 ForceCodexCLI 策略生效——否则父/子系统不同或显式 UA 覆盖时 sandbox 会与 UA 分裂。
+// resolveStagedCodexFingerprintIDs uses the staged credential source and policy.
+// Missing conversation IDs receive one real temporary root per logical request;
+// the device label never changes actual sandbox or permission diagnostics.
 func (s *OpenAIGatewayService) resolveStagedCodexFingerprintIDs(c *gin.Context, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
 	policy := codexFingerprintPolicyForContext(c, account)
-	source := codexAccountIdentitySource(c, account)
+	source := codexAccountProjectionSource(c, account)
 	scopedHeaders := clientHeaders.Clone()
 	if scopedHeaders == nil {
 		scopedHeaders = http.Header{}
@@ -1610,6 +1621,29 @@ func (s *OpenAIGatewayService) resolveStagedCodexFingerprintIDs(c *gin.Context, 
 	ids := resolveCodexFingerprintIDsWithSource(account, source, scopedHeaders, policy)
 	if ids == nil {
 		return nil
+	}
+	if c != nil && ids.sessionID == "" && ids.threadID == "" {
+		const key = "codex_synthetic_request_conversation"
+		root, _ := c.Get(key)
+		raw, _ := root.(string)
+		if raw == "" {
+			generated, err := uuid.NewV7()
+			if err != nil {
+				ids.err = err
+				return ids
+			}
+			raw = generated.String()
+			c.Set(key, raw)
+		}
+		ids.sessionID = scopeCodexAccountIdentityValue(source, getAPIKeyIDFromContext(c), raw)
+		ids.threadID = ids.sessionID
+		ids.windowID = ids.threadID + ":0"
+		ids.synthetic = true
+	}
+	if c != nil {
+		if value, ok := c.Get(codexMetadataConflictsContextKey); ok {
+			ids.metadataConflicts, _ = value.([]string)
+		}
 	}
 	ids.alignSandboxWithUserAgent(s.effectiveCodexOutboundUserAgent(c, account, clientHeaders))
 	return ids
@@ -1662,10 +1696,9 @@ func (s *OpenAIGatewayService) effectiveCodexOutboundUserAgent(c *gin.Context, a
 	return resolveCodexOutboundIdentity("").userAgent
 }
 
-// stageCodexFingerprintForWSFrame 为原生 WS 入口的每一帧解析、暂存并应用收敛 ID：原生
-// Proxy 不经过 HTTP Forward，握手头（buildOpenAIWSHeaders → applyStagedCodexFingerprintHeaders）
-// 与帧体 client_metadata 由此共用同一份 IDs；每帧重算使 session/full 模式的 turn_id 逐轮更新，
-// device 模式只收敛 installation 与 sandbox。返回改写后的帧（未变化时原样返回）。
+// stageCodexFingerprintForWSFrame shares each frame's final device and graph
+// snapshot with its handshake. Legacy enabled modes use the same independent
+// conversation mapping; genuine turn and execution diagnostics stay intact.
 func (s *OpenAIGatewayService) stageCodexFingerprintForWSFrame(c *gin.Context, account *Account, frame []byte) ([]byte, error) {
 	var clientHeaders http.Header
 	if c != nil && c.Request != nil {
@@ -1683,6 +1716,7 @@ func (s *OpenAIGatewayService) stageCodexFingerprintForWSFrame(c *gin.Context, a
 	if err != nil {
 		return frame, err
 	}
+	recordCodexMetadataConflicts(c, ids.metadataConflicts)
 	if changed {
 		return next, nil
 	}

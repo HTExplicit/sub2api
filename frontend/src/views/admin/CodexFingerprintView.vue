@@ -13,7 +13,7 @@
             <input v-model="draft.enabled" data-test="fingerprint-enabled" type="checkbox" />
             {{ text('启用客户端身份模拟', 'Enable client identity simulation') }}
           </label>
-          <p class="text-sm text-muted">{{ text('开启：使用每账号固定 TUI 身份，并按账号模式收敛标识。关闭：新请求保留客户端指纹；保存的配置和账号身份继续保留。', 'On: use a fixed TUI identity per account and converge identifiers according to its mode. Off: new requests retain the client fingerprint; saved configuration and account identities are preserved.') }}</p>
+          <p class="text-sm text-muted">{{ text('开启：每个凭据来源使用固定设备身份，独立对话保留各自会话与线程关系；使用已验证的严格传输，失败不回退。关闭：保留客户端身份与标识，已保存的设备档案继续保留。', 'On: use a fixed device per credential source, preserve independent conversations, and require verified transport without fallback. Off: retain caller identity and identifiers; saved devices are preserved.') }}</p>
           <div v-if="advanced" class="grid gap-4 lg:grid-cols-2">
             <label class="block text-sm text-ink lg:col-span-2" for="codex-fingerprint-ua">
               {{ text('全局 UA', 'Global User-Agent') }}
@@ -31,6 +31,8 @@
           </div>
           <dl v-if="settings" class="grid gap-3 text-sm sm:grid-cols-2">
             <div><dt class="text-muted">{{ text('同步版本', 'Synced version') }}</dt><dd class="font-mono text-ink">{{ settings.synced_version || '—' }}</dd></div>
+            <div><dt class="text-muted">{{ text('已验证版本', 'Verified version') }}</dt><dd class="font-mono text-ink">{{ settings.verified_version || '—' }}</dd></div>
+            <div v-if="settings.version_pending_validation" role="status" class="sm:col-span-2 text-amber-700 dark:text-amber-300">{{ text('已发现新版，传输档案尚未验证；继续使用已验证版本。', 'A newer release is available; its transport profile is pending validation. The verified version remains effective.') }}</div>
             <div><dt class="text-muted">{{ settings.enabled ? text('生效模拟版本', 'Effective simulated version') : text('待启用模拟版本', 'Saved simulation version') }}</dt><dd class="font-mono text-ink" data-test="fingerprint-effective-version">{{ settings.effective_version }}</dd></div>
             <div class="sm:col-span-2"><dt class="text-muted">{{ text('全局默认身份', 'Global default identity') }}</dt><dd class="break-words font-mono text-ink">{{ settings.effective_user_agent }}</dd></div>
           </dl>
@@ -126,9 +128,7 @@ type DetailTask = { id: number; epoch: number; serial: number; list: number; gen
 const detailQueue: DetailTask[] = []
 const modes = computed(() => [
   { value: 'off' as const, label: text('保留设备／会话标识', 'Preserve device/session identifiers') },
-  { value: 'device' as const, label: text('固定设备（推荐）', 'Fixed device (recommended)') },
-  { value: 'session' as const, label: text('固定设备，分别映射会话', 'Fixed device, separate mapped sessions') },
-  { value: 'full' as const, label: text('固定设备，合并会话与线程', 'Fixed device, merged sessions and threads') }
+  { value: 'device' as const, label: text('固定设备，多独立对话', 'Fixed device, independent conversations') }
 ])
 const settingsDirty = computed(() => settings.value && (draft.enabled !== settings.value.enabled || draft.user_agent !== settings.value.user_agent || draft.client_version !== settings.value.client_version || draft.version_auto_sync_enabled !== settings.value.version_auto_sync_enabled))
 const allPageSelected = computed(() => rows.value.length > 0 && rows.value.every(row => selectedIDs.value.includes(row.id)))
@@ -160,7 +160,7 @@ function applyAccountView(account: AccountListItem, view: CodexFingerprintAccoun
   storedModes[account.id] = view.mode
   account.extra = { ...account.extra, codex_fingerprint_mode: view.mode }
   accountViews[account.id] = view
-  if (!dirty) draftModes[account.id] = view.mode
+  if (!dirty) draftModes[account.id] = savedMode(account)
 }
 function pumpDetails() {
   while (activeDetails < 3 && detailQueue.length) {

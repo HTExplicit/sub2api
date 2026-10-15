@@ -29,6 +29,11 @@ jobs:
           check-latest: false
           cache: true
           cache-dependency-path: backend/go.sum
+      - name: Verified Codex transport wire contract
+        run: |
+          python3 -m pip install cryptography==48.0.1 h2==4.3.0
+          go -C backend build -o "$RUNNER_TEMP/codex-transport-probe" ./cmd/codex-transport-probe
+          python3 .github/scripts/verify_codex_transport.py --probe "$RUNNER_TEMP/codex-transport-probe" --reference backend/internal/pkg/codextransport/reference.json --output "$RUNNER_TEMP/codex-wire.json"
       - name: Release metadata contracts
         run: |
           python3 .github/scripts/test_release_preflight.py

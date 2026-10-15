@@ -786,7 +786,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	} else if changed {
 		firstClientMessage = normalized
 	}
-	accountScopedFirst, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(firstClientMessage, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
+	accountScopedFirst, accountScoped, scopeErr := s.scopeCodexRequestMetadataRaw(c, account, firstClientMessage)
 	if scopeErr != nil {
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 	}
@@ -922,7 +922,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		if err != nil {
 			return fmt.Errorf("refresh ws authentication headers: %w", err)
 		}
-		dialCtx, cancelDial := context.WithTimeout(ctx, s.openAIWSDialTimeout())
+		boundCtx, bindErr := codexTransportContext(ctx, headers, codexAccountIdentitySource(c, account), codexFingerprintPolicyForContext(c, account), "ws")
+		if bindErr != nil {
+			return bindErr
+		}
+		dialCtx, cancelDial := context.WithTimeout(boundCtx, s.openAIWSDialTimeout())
 		upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL)
 		cancelDial()
 		if err == nil {
@@ -1077,7 +1081,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				}
 			}
 			if isResponseCreate || eventType == "session.update" {
-				accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(payload, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
+				accountScopedPayload, accountScoped, scopeErr := s.scopeCodexRequestMetadataRaw(c, account, payload)
 				if scopeErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 				}

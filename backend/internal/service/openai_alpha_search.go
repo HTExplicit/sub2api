@@ -323,7 +323,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 		// 下面的 applyCodexAccountIdentityHeaders 统一完成，与其他 Codex 路径一致。
 		fillCodexSessionIdentityHeaders(req.Header, generateSessionUUID(sessionID))
 	}
-	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), apiKeyID)
+	applyCodexAccountIdentityHeaders(req.Header, codexAccountProjectionSource(c, account), apiKeyID)
 	enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
@@ -462,7 +462,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 		if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 			req.Header.Set("User-Agent", canonical.userAgent)
 		}
-		applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		applyCodexAccountIdentityHeaders(req.Header, codexAccountProjectionSource(c, account), getAPIKeyIDFromContext(c))
 		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
 	}
 

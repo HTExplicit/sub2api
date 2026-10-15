@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"io"
 	"net/http"
 	"net/url"
@@ -123,6 +124,9 @@ func (d *coderOpenAIWSClientDialer) Dial(
 		return nil, 0, nil, errors.New("ws url is empty")
 	}
 
+	if binding, ok := codextransport.FromContext(ctx); ok {
+		return d.dialStrictCodex(ctx, targetURL, headers, proxyURL, binding)
+	}
 	wrapped := &coderOpenAIWSClientConn{}
 	opts := &coderws.DialOptions{
 		HTTPHeader:      cloneHeader(headers),

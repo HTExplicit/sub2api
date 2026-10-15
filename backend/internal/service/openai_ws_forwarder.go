@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"math/rand"
 	"strings"
 	"time"
@@ -80,6 +81,9 @@ func (e *openAIWSFallbackError) Unwrap() error {
 }
 
 func wrapOpenAIWSFallback(reason string, err error) error {
+	if codextransport.IsFailure(err) {
+		return codexStrictClientError(err)
+	}
 	return &openAIWSFallbackError{Reason: strings.TrimSpace(reason), Err: err}
 }
 

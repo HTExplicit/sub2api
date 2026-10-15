@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -68,6 +69,7 @@ func (e *openAIWSDialError) Unwrap() error {
 }
 
 type openAIWSAcquireRequest struct {
+	BodyIdentityKey   string
 	FingerprintPolicy *codexFingerprintPolicy
 	Account           *Account
 	WSURL             string
@@ -88,6 +90,7 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
+	bodyIdentityKey     string
 	codexPolicyRevision uint64
 	codexMode           string
 	userAgent           string
@@ -2357,7 +2360,37 @@ func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 func normalizeOpenAIWSAcquireCompatibility(req openAIWSAcquireRequest) openAIWSHandshakeCompatibilityKey {
 	key := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers, req.FingerprintPolicy)
 	key.anchorScope = stringsTrim(req.AnchorScope)
+	key.bodyIdentityKey = req.BodyIdentityKey
 	return key
+}
+
+func (key openAIWSHandshakeCompatibilityKey) changedFields(next openAIWSHandshakeCompatibilityKey) string {
+	fields := []struct {
+		name    string
+		changed bool
+	}{
+		{"body", key.bodyIdentityKey != next.bodyIdentityKey},
+		{"policy", key.codexPolicyRevision != next.codexPolicyRevision},
+		{"mode", key.codexMode != next.codexMode},
+		{"user_agent", key.userAgent != next.userAgent},
+		{"originator", key.originator != next.originator},
+		{"version", key.version != next.version},
+		{"anchor", key.anchorScope != next.anchorScope},
+		{"beta_features", key.betaFeatures != next.betaFeatures},
+		{"installation", key.codexInstallationID != next.codexInstallationID},
+		{"session", key.sessionIDHyphen != next.sessionIDHyphen},
+		{"session_alias", key.sessionIDUnderscore != next.sessionIDUnderscore},
+		{"thread", key.threadID != next.threadID},
+		{"client_request", key.clientRequestID != next.clientRequestID},
+		{"window", key.codexWindowID != next.codexWindowID},
+	}
+	changed := []string{}
+	for _, field := range fields {
+		if field.changed {
+			changed = append(changed, field.name)
+		}
+	}
+	return strings.Join(changed, ",")
 }
 
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
@@ -2400,34 +2433,23 @@ func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Head
 		key.originator = headers.Get("originator")
 		key.version = headers.Get("version")
 	}
-	if !policy.enabled || account == nil {
-		return key
-	}
-	mode := activeCodexFingerprintMode(account, policy)
-	if mode == codexFingerprintOff {
+	if account == nil {
 		return key
 	}
 	key.codexInstallationID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-installation-id")
-	if mode == codexFingerprintDevice {
-		return key
+	if raw := headers.Get("x-codex-turn-metadata"); raw != "" {
+		var metadata map[string]any
+		if json.Unmarshal([]byte(raw), &metadata) == nil {
+			key.codexInstallationID = stringMetadataValue(metadata, "installation_id")
+		}
 	}
+
 	key.sessionIDHyphen = normalizeOpenAIWSStableIdentityHeader(headers, "session-id")
 	key.sessionIDUnderscore = normalizeOpenAIWSStableIdentityHeader(headers, "session_id")
 	key.threadID = normalizeOpenAIWSStableIdentityHeader(headers, "thread-id")
 	key.clientRequestID = normalizeOpenAIWSStableIdentityHeader(headers, "x-client-request-id")
 	key.codexWindowID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-window-id")
 	return key
-}
-
-func activeCodexFingerprintMode(account *Account, policies ...*codexFingerprintPolicy) codexFingerprintMode {
-	policy := selectCodexFingerprintPolicy(policies)
-	if account == nil || !policy.enabled || account.GetCodexFingerprintMode() == codexFingerprintOff {
-		return codexFingerprintOff
-	}
-	if _, ok := codexFingerprintSeed(account.Extra); !ok {
-		return codexFingerprintOff
-	}
-	return account.GetCodexFingerprintMode()
 }
 
 func normalizeOpenAIWSStableIdentityHeader(headers http.Header, name string) string {

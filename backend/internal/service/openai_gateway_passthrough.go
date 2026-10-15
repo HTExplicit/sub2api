@@ -196,7 +196,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 		// 账号作用域：body client_metadata / prompt_cache_key 与出站头共用同一映射，
 		// 否则头已按账号改写而 body 仍是客户端原值，同一请求会暴露两套身份。
-		accountScopedBody, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(body, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
+		accountScopedBody, accountScoped, scopeErr := s.scopeCodexRequestMetadataRaw(c, account, body)
 		if scopeErr != nil {
 			return nil, scopeErr
 		}
@@ -767,7 +767,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", CodexCanonicalUserAgent())
 	}
-	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
+	applyCodexAccountIdentityHeaders(req.Header, codexAccountProjectionSource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
 	// 指纹收敛：使用 forwardOpenAIPassthrough 中预计算的收敛 ID 改写出站头，
 	// 与请求体 client_metadata 共享同一份 IDs（与非透传路径相同的相对位置：
 	// 会话隔离之后、终态身份收口之前）。
@@ -797,7 +797,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
 		return nil, err
 	}
-	return req, nil
+	return bindCodexAttemptRequest(c, req, account)
 }
 
 func stripOpenAILegacyResponsesBeta(headers http.Header) {
@@ -2535,6 +2535,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if sawFailedEvent {
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
+		if strictErr := codexStrictResponseFailure(resp, err); strictErr != nil {
+			return resultWithUsage(), strictErr
+		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
 		}
@@ -2571,6 +2574,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if !sawTerminalEvent {
 		if ctx.Err() != nil {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ctx.Err())
+		}
+		if strictErr := codexStrictResponseFailure(resp, errors.New("stream ended before a terminal event")); strictErr != nil {
+			return resultWithUsage(), strictErr
 		}
 		logger.FromContext(ctx).With(
 			zap.String("component", "service.openai_gateway"),

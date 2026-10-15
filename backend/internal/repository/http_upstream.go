@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"io"
 	"log/slog"
 	"net"
@@ -218,7 +219,12 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	}
 
 	// 获取或创建对应的客户端，并标记请求占用
-	entry, err := s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
+	var entry *upstreamClientEntry
+	if binding, ok := codextransport.FromContext(req.Context()); ok {
+		entry, err = s.acquireCodexClient(proxyURL, accountID, accountConcurrency, binding)
+	} else {
+		entry, err = s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
+	}
 	if err != nil {
 		return nil, err
 	}

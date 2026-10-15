@@ -396,6 +396,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				message = "OpenAI first-output staging limit exceeded"
 			}
 			logger.LegacyPrintf("service.openai_gateway", "%s: account=%d model=%s error=%v", message, account.ID, originalModel, err)
+			if strictErr := codexStrictResponseFailure(resp, err); strictErr != nil {
+				streamEarlyErr = strictErr
+				_ = resp.Body.Close()
+				return
+			}
 			failoverErr := s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, nil, message, resp.StatusCode)
 			failoverErr.SafeToFailoverAfterWrite = true
 			streamEarlyErr = failoverErr
@@ -519,6 +524,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if sawTerminalEvent && !sawFailedEvent && terminalResponseErr == nil {
 			s.clearOpenAIProxyStreamDisconnectInContext(ctx, account)
 		}
+		if !sawTerminalEvent {
+			if strictErr := codexStrictResponseFailure(resp, errors.New("stream ended before a terminal event")); strictErr != nil {
+				return resultWithUsage(), strictErr
+			}
+		}
 		if !sawTerminalEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted) && !eventShouldFlush {
 			return resultWithUsage(), s.newOpenAIStreamFailoverError(
 				c,
@@ -553,6 +563,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
 		if scanErr == nil {
 			return nil, nil, false
+		}
+		if strictErr := codexStrictResponseFailure(resp, scanErr); strictErr != nil {
+			return resultWithUsage(), strictErr, true
 		}
 		if errors.Is(scanErr, errOpenAIFirstOutputScannerLimit) && !firstOutputProgressObserved {
 			logger.LegacyPrintf("service.openai_gateway", "SSE token exceeded guarded first-output limit: account=%d limit=%d error=%v", account.ID, openAIFirstOutputStageMaxBytes+openAIFirstOutputScannerFramingAllowance, scanErr)
@@ -1246,6 +1259,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			_ = resp.Body.Close()
 			for ev := range events {
 				markEventProcessed(ev)
+			}
+			if strictErr := codexStrictResponseFailure(resp, errors.New("first output timeout")); strictErr != nil {
+				return resultWithUsage(), strictErr
 			}
 			return resultWithUsage(), s.newOpenAIFirstOutputTimeoutError(
 				ctx, c, account, opsUpstreamProxyID(account), opsUpstreamProxyName(account),

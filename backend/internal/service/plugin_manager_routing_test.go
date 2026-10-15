@@ -96,12 +96,16 @@ func TestOpenAIGatewayPluginRoutingPreservesAPIKeyAndFailsClosedForOAuth(t *test
 
 	oauthRequest, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://example.com/v1/responses", nil)
 	require.NoError(t, err)
+	oauthRequest.Header.Set("User-Agent", codexCLIUserAgent)
 	oauthResponse, err := service.doOpenAIUpstream(oauthRequest, "", &Account{
 		ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
 	})
 	require.Error(t, err)
 	assert.Nil(t, oauthResponse)
-	assert.Contains(t, err.Error(), "插件不可用")
+	var strictErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &strictErr)
+	assert.Contains(t, strictErr.ClientMessage, "third-party plugin cannot attest")
+	assert.Equal(t, NextAccountStop, strictErr.NextAccountAction)
 	assert.Equal(t, 1, upstream.doCalls)
 }
 

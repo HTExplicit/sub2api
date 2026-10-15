@@ -63,7 +63,7 @@ func TestCodexFingerprintSettingsPreserveStorageAndPublishOnlyAfterSave(t *testi
 	account := fingerprintTestAccount("session")
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	frozen := stageCodexFingerprintPolicy(c, account)
-	sent := CodexFingerprintSettings{Enabled: false, ClientVersion: "0.162.0", VersionAutoSyncEnabled: false}
+	sent := CodexFingerprintSettings{Enabled: false, ClientVersion: "0.162.1", VersionAutoSyncEnabled: false}
 	repo.fail = errors.New("storage unavailable")
 	_, err := svc.UpdateCodexFingerprintSettings(context.Background(), sent)
 	require.Error(t, err)
@@ -73,7 +73,7 @@ func TestCodexFingerprintSettingsPreserveStorageAndPublishOnlyAfterSave(t *testi
 	view, err := svc.UpdateCodexFingerprintSettings(context.Background(), sent)
 	require.NoError(t, err)
 	require.False(t, view.Enabled)
-	require.Equal(t, "0.162.0", view.EffectiveVersion)
+	require.Equal(t, "0.162.1", view.EffectiveVersion)
 	require.Equal(t, "0.161.0", repo.values[SettingKeyOpenAICodexClientVersionSynced])
 	require.False(t, currentCodexFingerprintPolicy().enabled)
 	require.Same(t, frozen, codexFingerprintPolicyForContext(c, account), "an active attempt keeps its policy")
@@ -135,12 +135,7 @@ func TestCodexFingerprintLogicalTurnReferencesAndPermissions(t *testing.T) {
 				require.Equal(t, headers.Get("thread-id"), embedded["thread_id"])
 				require.Equal(t, headers.Get("x-codex-window-id"), embedded["window_id"])
 				require.Contains(t, embedded["window_id"], ":8")
-				if mode == "full" {
-					require.NotContains(t, embedded, "parent_thread_id")
-					require.Empty(t, headers.Get("x-codex-parent-thread-id"))
-				} else {
-					require.Equal(t, ids.mapThread("parent-thread"), embedded["parent_thread_id"])
-				}
+				require.Equal(t, "parent-thread", embedded["parent_thread_id"])
 			}
 		})
 	}
@@ -214,16 +209,16 @@ func TestCodexFingerprintAccountModeEpochAndGeneralEditPreservation(t *testing.T
 }
 
 func TestCodexFingerprintSandboxAlignmentPreservesActualPolicy(t *testing.T) {
-	for _, backend := range []string{"none", "external", "custom-sandbox", ""} {
-		metadata := map[string]any{"sandbox": backend, "sandbox_mode": "read-only"}
+	for _, metadata := range []map[string]any{
+		{"sandbox": "none", "sandbox_mode": "danger-full-access"},
+		{"sandbox": "external", "sandbox_mode": "external-sandbox"},
+		{"sandbox": "seccomp", "sandbox_mode": "workspace-write"},
+		{"sandbox": "windows_mxc", "sandbox_mode": "read-only"},
+		{"sandbox": "future-backend", "sandbox_mode": "future-policy"},
+	} {
+		before, _ := json.Marshal(metadata)
 		require.False(t, alignCodexSandboxMetadata(metadata, "seatbelt"))
-		require.Equal(t, backend, metadata["sandbox"])
+		after, _ := json.Marshal(metadata)
+		require.Equal(t, string(before), string(after))
 	}
-	metadata := map[string]any{"sandbox": "windows_mxc", "sandbox_mode": "workspace-write"}
-	require.False(t, alignCodexSandboxMetadata(metadata, "windows_sandbox"))
-	metadata = map[string]any{"sandbox": "seccomp", "sandbox_mode": "workspace-write", "thread_id": "original", "turn_id": "original-turn"}
-	require.True(t, alignCodexSandboxMetadata(metadata, "seatbelt"))
-	require.Equal(t, "workspace-write", metadata["sandbox_mode"])
-	require.Equal(t, "original", metadata["thread_id"])
-	require.Equal(t, "original-turn", metadata["turn_id"])
 }

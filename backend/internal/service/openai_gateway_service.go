@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -61,7 +62,7 @@ const (
 	// 陈旧版本会被优先丢弃（HTTP 200 + 流内 server_is_overloaded）；非官方客户端配不出
 	// 官方身份时整体回退到本常量，因此它必须跟随官方 CLI 的当前发布版本，
 	// 落后多个版本会让这些请求稳定落在被优先丢弃的一侧。
-	codexCLIVersion = "0.161.0"
+	codexCLIVersion = "0.162.1"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
 	// 配额自动暂停时，超过该时长仍未刷新的 used% 快照视为陈旧，不再据此暂停账号。
@@ -786,6 +787,13 @@ func (s *OpenAIGatewayService) getOpenAIWSProtocolResolver() OpenAIWSProtocolRes
 }
 
 func classifyOpenAIWSReconnectReason(err error) (string, bool) {
+	if codextransport.IsFailure(err) {
+		return "codex_strict_transport", false
+	}
+	var strict *UpstreamFailoverError
+	if errors.As(err, &strict) && strict.ClientErrorType == "codex_transport_error" {
+		return "codex_strict_transport", false
+	}
 	if err == nil {
 		return "", false
 	}

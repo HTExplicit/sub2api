@@ -945,7 +945,7 @@ func TestOpenAIWSConnPool_AcquireRoutingHintRemainsSoftAffinity(t *testing.T) {
 	require.Equal(t, 1, dialer.DialCount())
 }
 
-func TestOpenAIWSConnPool_DeviceModeKeysOnlyInstallationIdentity(t *testing.T) {
+func TestOpenAIWSConnPool_DeviceModeKeysDeviceAndConversationIdentity(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
@@ -979,9 +979,17 @@ func TestOpenAIWSConnPool_DeviceModeKeysOnlyInstallationIdentity(t *testing.T) {
 		Headers: sessionChanged,
 	})
 	require.NoError(t, err)
-	require.True(t, second.Reused())
-	require.Equal(t, firstConnID, second.ConnID())
+	require.False(t, second.Reused())
+	require.NotEqual(t, firstConnID, second.ConnID())
+	secondConnID := second.ConnID()
 	second.Release()
+	same, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
+		Account: account, WSURL: "wss://example.com/v1/responses", Headers: sessionChanged,
+	})
+	require.NoError(t, err)
+	require.True(t, same.Reused())
+	require.Equal(t, secondConnID, same.ConnID())
+	same.Release()
 
 	installationChanged := sessionChanged.Clone()
 	installationChanged.Set("x-codex-installation-id", "install-b")
@@ -994,7 +1002,7 @@ func TestOpenAIWSConnPool_DeviceModeKeysOnlyInstallationIdentity(t *testing.T) {
 	require.False(t, third.Reused())
 	require.NotEqual(t, firstConnID, third.ConnID())
 	third.Release()
-	require.Equal(t, 2, dialer.DialCount())
+	require.Equal(t, 3, dialer.DialCount())
 }
 
 func TestOpenAIWSConnPool_AcquireReplacesIdleConnWithDifferentBetaFeatures(t *testing.T) {
