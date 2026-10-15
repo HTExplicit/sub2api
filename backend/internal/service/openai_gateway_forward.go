@@ -1716,6 +1716,7 @@ func (s *OpenAIGatewayService) stageCodexFingerprintForWSFrame(c *gin.Context, a
 	if err != nil {
 		return frame, err
 	}
+	recordCodexMetadataConflicts(c, ids.metadataConflicts)
 	if changed {
 		return next, nil
 	}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 )
@@ -138,10 +139,15 @@ func (ids *codexFingerprintIDs) captureCanonicalMetadata(flat map[string]any) {
 		merged = map[string]any{}
 	}
 	for key, value := range canonical {
+		if previous, exists := merged[key]; exists && !reflect.DeepEqual(previous, value) {
+			conflicts = append(conflicts, "header."+key)
+		}
 		merged[key] = value
 	}
 	ids.logicalMetadata = merged
-	ids.metadataConflicts = append(ids.metadataConflicts, conflicts...)
+	ids.metadataConflicts = append(append([]string(nil), ids.metadataConflicts...), conflicts...)
+	slices.Sort(ids.metadataConflicts)
+	ids.metadataConflicts = slices.Compact(ids.metadataConflicts)
 	if value := stringMetadataValue(canonical, "session_id"); value != "" {
 		ids.sessionID = value
 		if ids.synthetic && stringMetadataValue(canonical, "thread_id") == "" {
@@ -169,6 +175,6 @@ func recordCodexMetadataConflicts(c *gin.Context, conflicts []string) {
 		c.Set(codexMetadataConflictsContextKey, slices.Clone(conflicts))
 	}
 	if len(conflicts) > 0 {
-		slog.Debug("codex metadata canonical projection", "source", "body_embedded", "conflicting_fields", conflicts)
+		slog.Debug("codex metadata canonical projection", "source", "canonical_body", "conflicting_fields", conflicts)
 	}
 }

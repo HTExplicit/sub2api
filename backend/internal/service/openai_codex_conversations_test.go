@@ -87,6 +87,14 @@ func TestCodexConversationsCanonicalPrecedenceAndInvalidMetadata(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, conflicts, "session_id")
 	require.Equal(t, root, flat["session_id"])
+	headers := http.Header{"X-Codex-Turn-Metadata": {`{"session_id":"stale-header","thread_id":"stale-header"}`}}
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers, policy)
+	require.NotNil(t, ids)
+	require.True(t, applyCodexFingerprintClientMetadata(map[string]any{"client_metadata": flat}, ids))
+	require.NoError(t, ids.err)
+	require.Contains(t, ids.metadataConflicts, "header.session_id")
+	applyCodexFingerprintHeaders(headers, ids)
+	require.Equal(t, root, headers.Get("session-id"))
 	for _, raw := range []string{`{"client_metadata":{"x-codex-turn-metadata":"{invalid"}}`, `{"client_metadata":[]}`} {
 		_, _, err := applyCodexAccountIdentityClientMetadataRaw([]byte(raw), account, 1, policy)
 		require.Error(t, err)
