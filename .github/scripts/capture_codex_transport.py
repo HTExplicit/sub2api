@@ -237,6 +237,9 @@ class Capture:
                     request["frames"].append({"opcode": op, "masked": bool(mask), "keys": sorted(value)})
                     for event in events(len(request["frames"]), value.get("generate") is False):
                         ws_send(conn, event)
+                    if value.get("generate") is not False:
+                        ws_send(conn, b"\x03\xe8", 8)
+                        return
             return
         if "content-length" in lower:
             recv_exact(conn, int(lower["content-length"]))
@@ -251,14 +254,14 @@ class Capture:
         h = h2.connection.H2Connection(config=h2.config.H2Configuration(client_side=False, header_encoding="utf-8"))
         h.initiate_connection()
         conn.sendall(h.data_to_send())
-        first = True
+        initial = bytearray()
         while True:
             data = conn.recv(65535)
             if not data:
                 return
-            if first:
-                record["http2_initial_bytes"] = data.hex()
-                first = False
+            if not record["requests"]:
+                initial.extend(data)
+                record["http2_initial_bytes"] = initial.hex()
             for event in h.receive_data(data):
                 if isinstance(event, h2.events.RequestReceived):
                     record["requests"].append({"headers": event.headers})
@@ -281,6 +284,9 @@ def drive(binary, capture, scratch, mode):
     workspace = scratch / "workspace"
     workspace.mkdir(exist_ok=True)
     env = dict(os.environ)
+    for key in list(env):
+        if key.startswith(("CODEX_", "OPENAI_")):
+            env.pop(key, None)
     for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy",
                 "OPENAI_API_KEY", "CODEX_API_KEY", "ACCESS_TOKEN"]:
         env.pop(key, None)
