@@ -626,6 +626,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/login-protection',
+    name: 'AdminLoginProtection',
+    component: () => import('@/views/admin/LoginProtectionView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Login Protection', titleKey: 'admin.loginProtection.title' }
+  },
+  {
     path: '/admin/system-prompts',
     name: 'AdminSystemPrompts',
     component: () => import('@/views/admin/SystemPromptsView.vue'),

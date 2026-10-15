@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
+	LoginProtection      *service.LoginProtectionService
 	cfg                  *config.Config
 	authService          *service.AuthService
 	userService          *service.UserService
@@ -251,10 +253,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	token, user, err := h.authService.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) && h.recordLoginFailure(c) {
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
 	_ = token // token 由 authService.Login 返回但此处由 respondWithTokenPair 重新生成
+	if h.rejectProtectedLogin(c) {
+		return
+	}
 
 	if err := h.ensureBackendModeAllowsUser(c.Request.Context(), user); err != nil {
 		response.ErrorFrom(c, err)
@@ -329,6 +337,9 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 
 	// Verify the TOTP code
 	if err := h.totpService.VerifyCode(c.Request.Context(), session.UserID, req.TotpCode); err != nil {
+		if (errors.Is(err, service.ErrTotpInvalidCode) || errors.Is(err, service.ErrTotpTooManyAttempts)) && h.recordLoginFailure(c) {
+			return
+		}
 		slog.Debug("login_2fa_verify_failed",
 			"user_id", session.UserID,
 			"error", err)
@@ -337,6 +348,9 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 	}
 
 	// Get the user (before session deletion so we can check backend mode)
+	if h.rejectProtectedLogin(c) {
+		return
+	}
 	user, err := h.userService.GetByID(c.Request.Context(), session.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)

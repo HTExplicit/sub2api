@@ -1,3 +1,4 @@
+import loginProtection from './loginProtection'
 import overview from './overview'
 import channels from './channels'
 import accounts from './accounts'
@@ -12,6 +13,7 @@ import accountTasks from './accountTasks'
 import plugins from './plugins'
 
 export default {
+  ...loginProtection,
   ...overview,
   ...channels,
   ...accounts,
