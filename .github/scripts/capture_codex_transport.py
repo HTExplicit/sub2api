@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import pathlib
+import ipaddress
 import platform
 import queue
 import socket
@@ -135,7 +136,7 @@ class Capture:
                 .serial_number(x509.random_serial_number()).not_valid_before(now - timedelta(minutes=5))
                 .not_valid_after(now + timedelta(days=1))
                 .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-                .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False)
+                .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
                 .sign(key, hashes.SHA256()))
         self.ca = directory / "ca.pem"
         self.ca.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
@@ -145,7 +146,7 @@ class Capture:
                 .not_valid_after(now + timedelta(days=1))
                 .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
                 .add_extension(x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
-                .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False)
+                .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
                 .sign(key, hashes.SHA256()))
         leaf_path = directory / "server.pem"
         leaf_path.write_bytes(leaf.public_bytes(serialization.Encoding.PEM))
@@ -158,12 +159,22 @@ class Capture:
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen()
         self.port = self.listener.getsockname()[1]
-        threading.Thread(target=self.accept, daemon=True).start()
+        self.listeners = [self.listener]
+        try:
+            ipv6 = socket.socket(socket.AF_INET6)
+            ipv6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            ipv6.bind(("::1", self.port))
+            ipv6.listen()
+            self.listeners.append(ipv6)
+        except OSError:
+            pass
+        for listener in self.listeners:
+            threading.Thread(target=self.accept, args=(listener,), daemon=True).start()
 
-    def accept(self):
+    def accept(self, listener):
         while True:
             try:
-                conn, _ = self.listener.accept()
+                conn, _ = listener.accept()
             except OSError:
                 return
             threading.Thread(target=self.handle, args=(conn,), daemon=True).start()
@@ -301,7 +312,7 @@ def drive(binary, capture, scratch, mode):
     args = [str(binary), "app-server", "--listen", "stdio://", "-c", 'model_provider="capture"',
             "-c", config, "-c", 'model="gpt-5.4"', "-c", 'approval_policy="never"',
             "-c", 'sandbox_mode="read-only"', "-c", 'features.responses_websockets_v2=' + str(mode == "ws").lower(),
-            "-c", 'analytics.enabled=false']
+            "-c", 'analytics.enabled=false', "-c", 'features.plugins=false']
     process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                cwd=workspace, env=env, text=True, encoding="utf-8")
     incoming, errors = queue.Queue(), []
@@ -345,11 +356,12 @@ def drive(binary, capture, scratch, mode):
             if result["params"]["turn"]["status"] != "completed":
                 raise RuntimeError("local fixture turn failed: " + json.dumps(result))
     finally:
-        process.terminate()
+        process.stdin.close()
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.kill()
+            process.terminate()
+            process.wait(timeout=5)
 
 
 def main():
@@ -361,7 +373,7 @@ def main():
     version = subprocess.check_output([str(binary), "--version"], text=True).strip()
     if version != "codex-cli " + VERSION:
         raise SystemExit("unexpected official binary version: " + version)
-    with tempfile.TemporaryDirectory(prefix="codex-transport-capture-") as temp:
+    with tempfile.TemporaryDirectory(prefix="codex-transport-capture-", ignore_cleanup_errors=True) as temp:
         scratch = pathlib.Path(temp)
         capture = Capture(scratch)
         modes = {}
@@ -380,7 +392,8 @@ def main():
                 raise RuntimeError("no completed " + mode + " capture")
             if mode == "ws" and not any("frames" in req for row in modes[mode] for req in row["requests"]):
                 raise RuntimeError("official client did not use WebSocket")
-        capture.listener.close()
+        for listener in capture.listeners:
+            listener.close()
         result = dict(schema=1, version=VERSION, source_commit=SOURCE, binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
                       system=platform.system(), release=platform.release(), machine=platform.machine(),
                       trust_mode="isolated CODEX_CA_CERTIFICATE", real_model_requests=0, captures=modes,

@@ -50,6 +50,7 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: python .github/scripts/capture_codex_transport.py --binary "official/codex-${TARGET}" --output "capture-${TARGET}.json"
       - uses: actions/upload-artifact@v6
+        if: always()
         with:
           name: codex-transport-${{ matrix.target }}
           path: capture-*.json
