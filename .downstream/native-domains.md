@@ -19,12 +19,10 @@ nothing. While no Codex runtime row is stored,
 
 ## Codex fingerprint simulation
 
-The Extensions sidebar owns one Codex entry. `/admin/codex` combines borrowing
-configuration and status; `/admin/codex/identity` shows client identity; and
-`/admin/codex/advanced` owns manual UA/version, identifier modes and compression.
-The previous runtime, fingerprint, borrowing and status URLs redirect to these
-pages. Configured borrowing opens with its editor folded; a new setup opens the
-three-step editor. Full saved/effective identity fields remain available in
+The Extensions sidebar owns one Codex entry. `/admin/codex` redirects to
+`/admin/codex/identity`; `/admin/codex/advanced` owns manual UA/version,
+identifier modes and compression. Previous runtime and fingerprint URLs retain
+their redirects. Full saved/effective identity fields remain available in
 keyboard-accessible disclosures. General settings and account create/edit/bulk
 forms do not submit fingerprint configuration.
 `GET/PUT /admin/settings/codex-fingerprint` uses `enabled`, `user_agent`,
@@ -75,252 +73,6 @@ Account connection tests exclude and reject `ultra` across every capability
 source before dispatch; stale UI selections reset to default. Codex client
 orchestration catalogs retain their existing capabilities.
 
-## Codex gateway borrowing
-
-The unified Codex page separates configuration, route qualification, actual
-request usage and upstream completion. Pelican stays at `/admin/pelican-tests`;
-its legacy comparison URL redirects there. Page reads and navigation only read
-local data. Unsaved configuration stays in browser-session storage. Saving an
-enabled configuration starts exactly one finite preparation, shown as queued
-before the worker starts. While enabled and visible, status polls every five
-seconds, including idle periods so later business failures become visible. Hidden pages stop polling and
-refresh on return. Failed or stale reads cannot display current readiness;
-countdowns expire routes without renewing them.
-
-`GET/PUT /admin/codex-gateway-borrow/config` owns one JSON setting,
-`codex_gateway_borrow_config`: `enabled`, `source_account_ids`,
-`target_account_ids` and `models`. Optional `rotate_nodes`, `node_proxy_ids`,
-`max_node_attempts` and `node_cooldown_seconds` enable bounded HTTP node selection
-only for those configured targets. Proxy ID `0` explicitly adds the current
-server's direct egress as a candidate; it is never an implicit fallback.
-A missing row is off with empty account
-lists and the two models `gpt-6-astra` and `gpt-6.1-sol`. Only existing OpenAI
-OAuth-like accounts can be selected; the source and target lists are disjoint.
-The extension never rewrites account model mappings, proxies, WS switches,
-groups, quota or scheduling state. Normal credential refresh remains available.
-
-The protocol reference is ranxi v2.10.5 (`d977e7a5`). With node selection off,
-Candidates are stored per source with an active-source preference. Their maximum
-lease is 230 seconds, capped by earlier upstream expiry; seeing a value again
-while its lease is live does not extend it. Source acquisition uses the normal
-OAuth account-test payload and OpenAI transport. Target probes use the fixed
-plaintext JSON template and the host's OpenAIHarvest policy, with no copied
-transport configuration and no business service tier inserted into their body.
-The actual selected model is preserved: Astra follows the original; Sol is a
-separate downstream model extension with independent qualification.
-
-With node selection enabled, the source, target probe and business request use
-the same immutable registered proxy definition and fresh-connect transport.
-Account bindings and shared proxy records are not changed. Inactive or expired
-nodes are skipped; a changed proxy definition invalidates prepared dispatch.
-Each preparation has a 180-second bound and tries at most the configured number
-of distinct eligible nodes (default 3, maximum 10), with 45 seconds per source
-acquisition. Explicit target rejection cools both the node and the named gateway
-for that account/model (default 3600 seconds). Source failures cool the donor/node
-for one minute across models. Duplicate observations cannot extend a cooling
-window. Discovering a known cooling gateway pauses that model's source search
-for five minutes; an exhausted search has a 15-second pause. A target transport
-interruption or missing terminal does not poison the next independent request:
-it still requires a fresh full probe pair. No business generation is replayed.
-Cooling decisions survive setting revisions but are process-local, as upstream.
-Optional `wait_for_qualified_route` defaults to false and requires node selection.
-Optional `immediate_reborrow_on_failure` also defaults to false and requires both
-waiting and node selection. Only pending HTTP business requests use its zero
-cooldown: failed qualifications trigger fresh source acquisition and two complete
-strict probes, bypassing preparation/source/node/gateway failure caches. Each
-180-second bounded search starts its next round immediately, without a total
-recovery deadline. Reacquiring the same cookie cannot extend an active lease;
-an expired proof requires new acquisition and complete qualification as upstream.
-Administrator diagnostics retain ordinary
-cooling and remain bounded. Business dispatch still requires a current successful
-proof and is never replayed. Missing eligible nodes or invalid configuration stop
-recovery rather than spinning without network work. Acquisition and validation
-phases remain separate from a recovered proof and a completed business response.
-Saving immediate mode does not start background preparation; acquisition only
-runs while a pending business request needs it or an administrator explicitly
-invokes the existing bounded preparation/verification interface.
-For full HTTP Responses business preparation it retains the original request while
-eligible routes recover; administrator probes and Pelican jobs remain bounded.
-Each search remains bounded to 180 seconds and the configured distinct-node limit.
-No total recovery deadline is added while the caller is connected. Without
-immediate reborrow the next cycle waits for node/source/gateway cooling; failures without a future eligibility time
-wait at least 15 seconds. Cancellation of the last waiter cancels shared work;
-configuration, target identity or account invalidation stops recovery.
-Recovery first reacquires and requalifies an expired lease on the previously
-qualified node; it changes nodes when that route fails or is unavailable. A
-candidate that rediscovers a cooling gateway is skipped while other eligible
-nodes remain in the bounded round. The gateway/node cooldown remains intact;
-the upstream five-minute blanket search pause remains for non-waiting mode.
-Normal token refresh
-may update authentication, never business STATE, input, model, tier or history.
-Recovery emits no downstream bytes before actual business response headers, so
-the real STATE header remains deliverable. Existing proxy/client timeouts still
-apply. Recovery status, rounds and initiated source/probe counts are distinct
-from dispatched/completed business counters; shared preparations are labelled.
-Source Cookie leases retain the 230-second cap and same-value no-extension rule
-across selected nodes. Every model has its own target proof and current route.
-The status API reports actual proxy IDs, gateway metadata, expiry and cooling;
-selection is not a claim of long-term availability or model quality. Full
-Responses business STATE replacement and incomplete SSE invalidate future
-selection while preserving the response. Compact/lite JSON keeps its distinct
-terminal/STATE protocol. Node selection does not enable WS and fails closed if
-a selected target attempts borrowed WS; ordinary and unselected paths retain
-their existing behavior.
-
-Source acquisition has a 90-second bound. The two target probes have 45 seconds
-each and require completed HTTP 200 streams. The first must return STATE; the
-second may omit it or return the same value. Probes clone the business headers,
-clear business STATE and old body headers, preserve native session/thread/window
-headers, and generate a new legacy `session_id` per shot. The second shot carries
-only the first probe's STATE and target `__cflb` with the same borrowed `__oailb`.
-Nothing is written back to the business session. The business request keeps its
-own model, tier, cookies, STATE and history; borrowing replaces only `__oailb`.
-Native HTTP business STATE echo follows the original provenance rule: unknown or expired
-process-local provenance preserves the caller's STATE; a live foreign-account
-record strips it. This does not relax two-shot target qualification or the
-existing WS/WS-to-HTTP bridge provenance requirements.
-
-Observations report their connect/TLS/write/header phase and attempt count.
-They may retry once only with transport trace proving a connection failure before
-HTTP request headers were written. Unobserved errors, responses, written headers,
-cancellation or an exhausted diagnostic budget forbid retry. Ordinary business
-generations retain their existing retry policy.
-
-The original cache identity includes route cookie, proxy, Authorization,
-ChatGPT-Account-ID, UA, Originator, Version, business STATE and TLS profile.
-The host adds actual model and fingerprint policy revision. Trace IDs, native
-session headers and business tier are not additional cache rules. STATE changes
-therefore require fresh validation. A completed rejection or protocol failure
-cools that qualification for 15 seconds. A transport interruption instead retains failed evidence with
-`retry_on_next_request`: the next independent request starts a fresh complete
-two-shot validation through the existing shared flight, without a negative-cache
-rejection. It never retries an uncertain observation within the failed request,
-admits an incomplete probe or replays a business generation. Neither failure
-discards a source candidate or extends its lease. After a rejection cooldown
-the next request may validate again; missing or expired candidates
-are acquired on demand. There is no renewal timer, exit rotation, ordinary fallback
-or business replay. Business WS keeps its existing continuation anchors.
-
-Status/config/history reads do not call models. Saving an enabled config starts
-one finite preparation; business misses prepare on demand. There is no renewal
-timer. `/prepare` and `/verify` retain their interfaces. Same-revision, same-wire
-qualifications share work; cancelling one caller does not cancel other waiters,
-and the final departing waiter cancels abandoned work. Distinct targets no longer
-fail because another target is validating. Outbound observations share the existing
-ten execution slots and serialize by account. The two target shots retain one
-account lease from mint through continuation, so a different model or client
-window cannot interleave another probe. Source preparation finishes before that
-lease is acquired; nested shots reuse it without taking a second permit.
-Preparation has a ten-minute bound, continues after a target failure, and reports
-partial readiness after rechecking
-expiry. Policy, credential/model-map and exit changes invalidate displayed evidence;
-actual dispatch still verifies the finalized request fingerprint.
-
-The finalized business service tier stays in request context for diagnostics.
-Probe and business inputs are reported separately. `acquisition` reports the
-source trigger, stage, start/end time, failure and cooldown; each target also
-reports its latest validation interval. A source candidate is not target proof.
-
-Status adds `setup`, `observed_since` and `recent_usage`. The last actual dispatch
-and in-process counters are retained per configured target/model/protocol/purpose;
-configuration publication resets this index. HTTP/SSE, pooled WS and native WS
-relay observations record application independently from upstream completion.
-HTTP application is checked against the immutable preparation proof and final
-cookie, including after restoring the caller context. A parsed successful terminal
-and visible text remain authoritative when read-ahead cleanup later reports
-cancellation; that detail remains available as `read_error`. Captures are snapshotted
-under a lock, and the usage index preserves the first terminal event.
-Diagnostic and business requests are distinguished. This index contains no request
-payloads or credential/cookie values; the existing administrator error records remain.
-Attempts now start before preparation: `attempt_count` and `blocked_count` are
-separate from existing `count` (dispatches) and `applied_count`. `dispatched`,
-`failure_stage`, client and gateway request IDs distinguish a local rejection
-from an inference failure. Original target reasons survive failure cooldowns;
-Ops classifies local borrowing rejection as gateway/routing with upstream status
-zero, retaining the compatible client 503 code. The event also retains probe
-shot/transport evidence, next-request recovery policy and whether a rejection
-came from the qualification cache. Business evidence is displayed
-ahead of diagnostics. Candidate expiry never implies a failed check is usable.
-
-`POST /admin/codex-gateway-borrow/diagnose` streams an explicit fixed-account
-comparison with `account_id`, `model`, `transport` (`http` or `ws`), and optional
-`request_limit` (1–8, default 8). Its ordinary and borrowed requests use the normal
-sender with observation isolation and a fixed short prompt. WS uses separate
-short-lived diagnostic anchors and performs one continuation on each socket;
-account/global WS settings must already permit WS. Source/target probes and all
-compatibility sends count toward the same hard request limit. Events include
-`phase`, `request`, `result`, `done`, and `error`; results contain original output,
-completion, actual borrow application and reported model. Cancellation releases
-owned work and sockets. The UI retains the current run and can download JSON;
-there is no new table or migration. These observations do not prove intelligence
-or physical model identity. Normal token refresh remains permitted.
-Optional `scenario: codex_session` checks HTTP native client metadata, a fixed
-side-effect-free echo tool call, returned STATE and complete-history continuation.
-It defaults to the borrowed path to fit preparation and two business turns within
-the same eight-request bound. Optional `mode` selects `ordinary` or `borrowed`;
-omitting it for the original short scenario retains both-path comparison.
-Optional `service_tier` exercises the effective routing tier. Results include the
-specific verification (shape, actual model/tier, both completions, STATE lengths
-and route replacement), failure stage and tool-round-trip result. HTTP diagnostic
-history and STATE live only within that invocation, never in client sessions.
-Complete `response.output_item.done` events rebuild tool calls and reasoning
-items when the final successful envelope has empty output; a successful terminal
-is still required. This matches native streaming continuation instead of assuming
-all output is repeated inside `response.completed`.
-
-The HTTP-only `scenario: probe_contract` compares a fixed candidate under three
-request bodies: the prior sorted-map body, the current pinned template with the
-same effective tier, and the pinned template without a tier. With no effective
-tier, the redundant final pair is skipped. The older serializer runs first to
-avoid always confounding its position with later upstream failures.
-Native identity, routing hint, model,
-proxy and cookie stay fixed; each shot still gets its own legacy `session_id`.
-The original probe selects Astra; the result explicitly marks Sol as a downstream
-model extension. `probe_only: true` results carry per-shot completion and STATE
-facts under `verification`, and their common template/cookie and plaintext-body
-fingerprints under `probe_context`. Top-level business dispatch, application and
-completion stay false. These comparisons never publish business qualifications
-or replace real usage observations. Source acquisition and all shots share the
-existing eight-request cap; the snapshot's expiry cancels remaining comparisons
-without silently selecting a different candidate. Page reads do not invoke it.
-Optional `comparison: encoding` keeps the same current body, tier, identity,
-cookie and exit, and compares plaintext probes with the configured business
-codec. It changes no global setting or business qualification; actual per-shot
-encoding distinguishes an enabled zstd comparison from two plaintext samples.
-The same probe-only scenario can select a configured source for one plaintext,
-no-tier Astra pair against its own current live candidate. It cannot generate,
-test another source model, acquire a replacement or substitute a different
-candidate owner. `probe_context.subject_role` distinguishes source self-checks
-from target checks. Self-check results do not qualify business traffic or mutate
-the source's health/status.
-
-Administrator `scenario: codex_replay` accepts explicit HTTP `mode: ordinary` or
-`borrowed` and `replay: {body, headers}` for controlled task/tool comparisons.
-The JSON body is limited to 1 MiB, must select the requested model, stream with
-`store: false`, use complete history without `previous_response_id`, and carry a
-`codex-acceptance-` session in both prompt-cache and native session/thread headers.
-Only native client identity/metadata/STATE headers are accepted; auth, cookies,
-URL overrides and duplicate fields are rejected. The ordinary source control
-must use a saved source and configured model; borrowing still requires a saved
-target. Each call retains the eight-physical-attempt cap and a five-minute
-generation budget. Results return actual business `turn_state` for the next
-isolated replay turn; probe STATE is never returned or copied. The controller
-executes synthetic tools locally and preserves full-history items, rather than
-inventing tool results or executing model code in the production service.
-
-Ranxi reference: v2.10.5 (`d977e7a5e24e5536db6ce8b8478743e0c4b11f77`). Its
-fingerprint, gateway-cookie, target-probe and automatic-setup core files are
-unchanged from v2.10.2. The scoped update and retained host adaptations are
-listed in [the review](upstream-review-ranxi-v2.10.5.md). OAuth search-history compatibility
-is supplied by the official v0.2.15 integration. Automatic group membership,
-Mihomo exit rotation and removal of harvesting attempt/concurrency bounds are
-not adopted; existing account mappings, network routes and protocol switches stay
-under their existing owners.
-
-The historical `/admin/codex-gateway-borrow/tests` endpoints retain their
-cache-qualified, 90-second request contract. They share execution admission with
-the independent tests described below.
-
 ## Independent Pelican tests
 
 `/admin/pelican-tests` is a task/result workbench. The new-task composer loads
@@ -349,12 +101,11 @@ complete administrator evidence. The page supports 2–4 same/cross-task compari
 filters, enlargement, downloads, parameter copying and failed-item retries into a
 new reviewed task. History, browsing, reconnecting and comparison are read-only.
 The fixed Pelican prompt is preserved. The actual sending path, credentials,
-identity, model mapping, proxy, TLS, protocol and configured borrowing remain
-owned by each account. No API Key, group policy, model score or fallback account
+identity, model mapping, proxy, TLS and protocol remain owned by each account. No API Key, group policy, model score or fallback account
 is manufactured for a test.
 
 All batches share ten model execution slots, with one request per account.
-Nested borrowing probes participate in the same coordination and normal business
+Ordinary selected-account sends participate in normal business
 account capacity. Generation starts after preparation and admission; its default
 budget is 600 seconds, configurable from 60 to 1800 seconds. Queue, preparation
 and generation durations are recorded separately. Observed business account slots
@@ -372,13 +123,28 @@ binary upstream envelopes use lossless Base64. Truncated or incomplete output is
 recorded without another generation or automatic repair.
 
 Result previews use short random capability URLs under
-`/pelican-tests/preview/` (the historical borrowing path remains an alias),
+`/pelican-tests/preview/` only,
 expire within 30 minutes and the task's remaining lifetime, and use an opaque
 script-enabled sandbox and their own
 response CSP. Inline animation and external scripts/styles/fonts/images are
 allowed. Preview documents receive no administrator token or UI bridge.
 Adaptation sources and retained notices are in
-[gateway borrowing notices](gateway-borrow-notices.md).
+[third-party notices](../THIRD_PARTY_NOTICES.md).
+
+## Retired gateway borrowing
+
+Gateway borrowing has no service, forwarding hooks, administrative interfaces,
+page or compatibility routes. Migration 278 deletes only
+`settings.codex_gateway_borrow_config` and changes the task execution-mode default
+to `account`. Accounts, model mappings, proxies, groups and identity settings
+are not changed. Historical migrations retain their filenames and checksums.
+
+The independent Pelican repository retains the historical
+`codex_gateway_borrow_test_tasks` and `codex_gateway_borrow_test_results` table
+names to preserve records. Historical `execution_mode` and `borrow_applied`
+remain readable facts. New tasks always use `account` and never apply borrowing;
+non-account historical tasks cannot be executed or replayed. Account-mode request
+hashes retain their original field order and wire representation.
 
 ## Startup and stored data
 

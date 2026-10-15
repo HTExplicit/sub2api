@@ -5,7 +5,7 @@
         <div><h1 class="text-xl font-semibold">{{ t('admin.pelicanTests.title') }}</h1><p class="mt-1 text-sm text-muted">{{ text('同一道题，按任务保存作品，比较完整结果。', 'One fixed prompt, saved tasks and complete works to compare.') }}</p></div>
         <button type="button" class="btn btn-primary" :disabled="submitting || !!pendingRequest" data-test="pelican-new" @click="newTest"><Icon name="plus" size="sm" />{{ text('新建测试', 'New test') }}</button>
       </header>
-      <p class="rounded-lg border border-line p-3 text-sm text-muted">{{ text('作品呈现只供观察。模型名称、借用应用和完成状态分别记录，不据此判断真实模型身份或“满血／降智”。', 'Visual works are observations. Model labels, borrowing and completion are recorded separately; they do not prove model identity or intelligence.') }}</p>
+      <p class="rounded-lg border border-line p-3 text-sm text-muted">{{ text('作品呈现只供观察。模型名称与完成状态分别记录，不据此判断真实模型身份或“满血／降智”。', 'Visual works are observations. Model labels and completion are recorded separately; they do not prove model identity or intelligence.') }}</p>
       <pre v-if="error" role="alert" class="pelican-error">{{ error }}</pre>
       <div v-if="pendingRequest" class="space-y-2 rounded-lg border border-amber-300 p-3 text-sm" role="status">
         <p>{{ text('上次提交结果尚未确认。查询或重试使用同一个任务标识，避免重复生成。', 'The previous submission is unconfirmed. Checking or retrying uses the same task identity to avoid duplicate generation.') }}</p>
@@ -14,12 +14,12 @@
       <div class="flex gap-2 lg:hidden"><button type="button" class="btn btn-secondary flex-1" :aria-pressed="mobilePane === 'tasks'" @click="mobilePane = 'tasks'">{{ text('任务', 'Tasks') }}</button><button type="button" class="btn btn-secondary flex-1" :aria-pressed="mobilePane === 'works'" @click="mobilePane = 'works'">{{ text('作品与比较', 'Works and comparison') }}</button></div>
       <div class="grid min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside class="min-w-0 space-y-3" :class="mobilePane === 'tasks' ? '' : 'hidden lg:block'" :aria-label="text('测试任务', 'Test tasks')">
-          <div class="flex items-center justify-between"><h2 class="font-semibold">{{ text('最近 24 小时任务', 'Tasks from the last 24 hours') }}</h2><button type="button" class="btn btn-ghost btn-sm" :disabled="historyLoading" data-test="pelican-refresh" @click="loadHistory">{{ t('admin.codexGatewayBorrow.refreshHistory') }}</button></div>
+          <div class="flex items-center justify-between"><h2 class="font-semibold">{{ text('最近 24 小时任务', 'Tasks from the last 24 hours') }}</h2><button type="button" class="btn btn-ghost btn-sm" :disabled="historyLoading" data-test="pelican-refresh" @click="loadHistory">{{ t('admin.pelicanTests.refreshHistory') }}</button></div>
           <p v-if="historyLoading" class="text-sm text-muted">{{ t('common.loading') }}</p>
           <button v-for="task in history.items" :key="task.id" type="button" class="block w-full rounded-lg border p-3 text-left" :class="activeTask?.id === task.id ? 'border-primary-500 bg-primary-50 dark:bg-primary-950' : 'border-line'" :aria-current="activeTask?.id === task.id ? 'true' : undefined" :data-test="`pelican-task-${task.id}`" @click="selectTask(task.id)">
             <span class="block text-sm font-medium">{{ formatTime(task.created_at) }}</span><span class="mt-1 block text-xs">{{ stateLabel(task.status) }} · {{ text('已处理', 'Processed') }} {{ task.completed }} / {{ task.total }}</span><span class="mt-1 block truncate text-xs text-muted">{{ task.id }}</span>
           </button>
-          <p v-if="!historyLoading && !history.items.length" class="rounded-lg border border-dashed border-line p-5 text-sm text-muted">{{ t('admin.codexGatewayBorrow.noHistory') }}</p>
+          <p v-if="!historyLoading && !history.items.length" class="rounded-lg border border-dashed border-line p-5 text-sm text-muted">{{ t('admin.pelicanTests.noHistory') }}</p>
           <div class="flex items-center justify-between text-sm"><button type="button" class="btn btn-secondary btn-sm" :disabled="historyPage <= 1 || historyLoading" @click="historyPage--; loadHistory()">{{ t('pagination.previous') }}</button><span>{{ historyPage }}</span><button type="button" class="btn btn-secondary btn-sm" :disabled="historyPage * 12 >= history.total || historyLoading" @click="historyPage++; loadHistory()">{{ t('pagination.next') }}</button></div>
         </aside>
         <section :aria-label="text('作品与比较', 'Works and comparison')" class="min-w-0 space-y-4" :class="mobilePane === 'works' ? '' : 'hidden lg:block'">
@@ -45,7 +45,7 @@
         </section>
       </div>
       <BaseDialog :show="composerOpen" :title="text('新建鹈鹕测试', 'New Pelican test')" width="extra-wide" @close="composerOpen = false"><PelicanTaskComposer v-if="composerOpen" :initial="draft" :submitting="submitting" @submit="startTask" /></BaseDialog>
-      <BaseDialog :show="comparisonOpen" :title="text('作品比较', 'Compare works')" width="extra-wide" @close="comparisonOpen = false"><div class="grid gap-4 md:grid-cols-2"><section v-for="item in comparisonDetails" :key="item.id" class="min-w-0 space-y-2"><h3 class="break-words text-sm font-semibold">{{ previewTitle(item) }}</h3><div class="aspect-[4/3] min-h-48 rounded-lg border border-line"><BorrowPelicanPreview v-if="item.preview_url" :preview-url="item.preview_url" :title="previewTitle(item)" interactive /><p v-else class="p-5 text-sm text-muted">{{ item.preview_unavailable || stateLabel(item.status) }}</p></div><button type="button" class="btn btn-secondary btn-sm" @click="detailResult = item">{{ t('admin.pelicanTests.details') }}</button><pre v-if="item.error" class="pelican-error">{{ item.error }}</pre></section></div></BaseDialog>
+      <BaseDialog :show="comparisonOpen" :title="text('作品比较', 'Compare works')" width="extra-wide" @close="comparisonOpen = false"><div class="grid gap-4 md:grid-cols-2"><section v-for="item in comparisonDetails" :key="item.id" class="min-w-0 space-y-2"><h3 class="break-words text-sm font-semibold">{{ previewTitle(item) }}</h3><div class="aspect-[4/3] min-h-48 rounded-lg border border-line"><PelicanPreview v-if="item.preview_url" :preview-url="item.preview_url" :title="previewTitle(item)" interactive /><p v-else class="p-5 text-sm text-muted">{{ item.preview_unavailable || stateLabel(item.status) }}</p></div><button type="button" class="btn btn-secondary btn-sm" @click="detailResult = item">{{ t('admin.pelicanTests.details') }}</button><pre v-if="item.error" class="pelican-error">{{ item.error }}</pre></section></div></BaseDialog>
       <BaseDialog :show="!!detailResult" :title="detailResult ? previewTitle(detailResult) : t('admin.pelicanTests.details')" width="extra-wide" @close="detailResult = null">
         <div v-if="detailResult" class="space-y-4 text-sm" data-test="pelican-detail-content">
           <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -54,23 +54,23 @@
             <div><dt class="text-xs text-muted">{{ t('admin.pelicanTests.mappedModel') }}</dt><dd class="break-words">{{ detailResult.upstream_model || '—' }}</dd></div>
             <div><dt class="text-xs text-muted">{{ t('admin.pelicanTests.actualCall') }}</dt><dd class="break-all">{{ detailResult.actual_endpoint || '—' }} · {{ detailResult.actual_protocol || '—' }} · {{ detailResult.actual_transport || '—' }} · {{ detailResult.borrow_applied === undefined ? '—' : t(detailResult.borrow_applied ? 'admin.pelicanTests.borrowApplied' : 'admin.pelicanTests.accountRoute') }}</dd></div>
             <div><dt class="text-xs text-muted">{{ t('admin.pelicanTests.phaseDurations') }}</dt><dd>{{ t('admin.pelicanTests.phases.queued') }} {{ formatDuration(detailResult.queue_duration_ms) }} · {{ t('admin.pelicanTests.phases.preparing') }} {{ formatDuration(detailResult.preparation_duration_ms) }} · {{ t('admin.pelicanTests.phases.generating') }} {{ formatDuration(detailResult.generation_duration_ms) }}</dd></div>
-            <div><dt class="text-xs text-muted">{{ t('admin.codexGatewayBorrow.duration') }}</dt><dd>{{ formatDuration(detailResult.duration_ms) }} · {{ formatTime(detailResult.started_at) }} · {{ stateLabel(detailResult.status) }}</dd></div>
+            <div><dt class="text-xs text-muted">{{ t('admin.pelicanTests.duration') }}</dt><dd>{{ formatDuration(detailResult.duration_ms) }} · {{ formatTime(detailResult.started_at) }} · {{ stateLabel(detailResult.status) }}</dd></div>
           </dl>
           <pre v-if="detailResult.error" class="pelican-error" data-test="pelican-result-error">{{ detailResult.error }}</pre>
           <pre v-if="detailResult.preview_unavailable" class="pelican-error">{{ detailResult.preview_unavailable }}</pre>
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="!detailResult.preview_url" @click="enlarged = detailResult">{{ t('admin.codexGatewayBorrow.enlarge') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="!detailResult.preview_url" @click="enlarged = detailResult">{{ t('admin.pelicanTests.enlarge') }}</button>
             <button type="button" class="btn btn-secondary btn-sm" :disabled="!detailResult.raw_html && !detailResult.html" @click="downloadHtml(detailResult)">{{ t('admin.pelicanTests.downloadHtml') }}</button>
             <button type="button" class="btn btn-secondary btn-sm" :disabled="!detailResult.raw_response" @click="downloadResponse(detailResult)">{{ text('下载响应原文', 'Download raw response') }}</button>
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="!detailResult.raw_answer" @click="downloadAnswer(detailResult)">{{ t('admin.codexGatewayBorrow.downloadAnswer') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="!detailResult.raw_answer" @click="downloadAnswer(detailResult)">{{ t('admin.pelicanTests.downloadAnswer') }}</button>
           </div>
-          <details v-if="detailResult.raw_answer"><summary class="cursor-pointer font-medium">{{ t('admin.codexGatewayBorrow.rawAnswer') }}</summary><pre class="pelican-source mt-2" data-test="pelican-raw-answer">{{ detailResult.raw_answer }}</pre></details>
-          <details v-if="detailResult.raw_html || detailResult.html"><summary class="cursor-pointer font-medium">{{ t('admin.codexGatewayBorrow.htmlSource') }}</summary><pre class="pelican-source mt-2" data-test="pelican-raw-html">{{ detailResult.raw_html || detailResult.html }}</pre></details>
-          <details v-if="detailResult.raw_response"><summary class="cursor-pointer font-medium">{{ t('admin.codexGatewayBorrow.rawResponse') }}</summary><pre class="pelican-source mt-2" data-test="pelican-raw-response">{{ detailResult.raw_response }}</pre></details>
+          <details v-if="detailResult.raw_answer"><summary class="cursor-pointer font-medium">{{ t('admin.pelicanTests.rawAnswer') }}</summary><pre class="pelican-source mt-2" data-test="pelican-raw-answer">{{ detailResult.raw_answer }}</pre></details>
+          <details v-if="detailResult.raw_html || detailResult.html"><summary class="cursor-pointer font-medium">{{ t('admin.pelicanTests.htmlSource') }}</summary><pre class="pelican-source mt-2" data-test="pelican-raw-html">{{ detailResult.raw_html || detailResult.html }}</pre></details>
+          <details v-if="detailResult.raw_response"><summary class="cursor-pointer font-medium">{{ t('admin.pelicanTests.rawResponse') }}</summary><pre class="pelican-source mt-2" data-test="pelican-raw-response">{{ detailResult.raw_response }}</pre></details>
         </div>
       </BaseDialog>
-      <BaseDialog :show="!!enlarged" :title="enlarged ? previewTitle(enlarged) : t('admin.codexGatewayBorrow.enlarge')" width="extra-wide" @close="enlarged = null">
-        <div v-if="enlarged?.preview_url" class="aspect-[4/3] max-h-[70vh] w-full" data-test="pelican-enlarged-content"><BorrowPelicanPreview :preview-url="enlarged.preview_url" :title="previewTitle(enlarged)" interactive /></div>
+      <BaseDialog :show="!!enlarged" :title="enlarged ? previewTitle(enlarged) : t('admin.pelicanTests.enlarge')" width="extra-wide" @close="enlarged = null">
+        <div v-if="enlarged?.preview_url" class="aspect-[4/3] max-h-[70vh] w-full" data-test="pelican-enlarged-content"><PelicanPreview :preview-url="enlarged.preview_url" :title="previewTitle(enlarged)" interactive /></div>
       </BaseDialog>
 
     </div>
@@ -85,7 +85,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
-import BorrowPelicanPreview from '@/components/admin/codex/BorrowPelicanPreview.vue'
+import PelicanPreview from '@/components/admin/codex/PelicanPreview.vue'
 import PelicanTaskComposer from '@/components/admin/codex/PelicanTaskComposer.vue'
 import PelicanResultCard from '@/components/admin/codex/PelicanResultCard.vue'
 import { pelicanTestsAPI, PELICAN_PROMPT, createPelicanClientTaskId, type PelicanTaskSnapshot, type PelicanResultSummary, type PelicanTestResult, type PelicanResultPage, type PelicanTestHistory, type PelicanTestRequest } from '@/api/admin/pelicanTests'
@@ -112,7 +112,7 @@ function readPending(): PelicanTestRequest | null { try { return JSON.parse(sess
 function storePending(value: PelicanTestRequest | null) { pendingRequest.value = value; if (value) sessionStorage.setItem('pelican.pending-task.v1', JSON.stringify(value)); else sessionStorage.removeItem('pelican.pending-task.v1') }
 function formatTime(value?: string) { if (!value || value.startsWith('0001-')) return '—'; return new Date(value).toLocaleString() }
 function formatDuration(ms?: number) { return `${((ms || 0) / 1000).toFixed(1)} s` }
-function stateLabel(value: string) { const key = `admin.codexGatewayBorrow.states.${value}`; return te(key) ? t(key) : value }
+function stateLabel(value: string) { const key = `admin.pelicanTests.states.${value}`; return te(key) ? t(key) : value }
 function previewTitle(result: PelicanTestResult) { return `${result.account_name} #${result.account_id} · ${result.model_id} · ${result.effort || t('admin.pelicanTests.normalDefault')}` }
 function report(value: unknown) { if (!lifecycle.signal.aborted) error.value = extractApiErrorMessage(value, text('操作未完成，请查看原因后重试。', 'The operation did not complete; review the error and retry.')) }
 async function loadHistory() {
@@ -181,7 +181,7 @@ async function observe(id: string) {
 }
 function newTest() { draft.value = undefined; composerOpen.value = true; error.value = '' }
 async function startTask(parameters: Omit<PelicanTestRequest, 'client_task_id'>) {
-  if (!clockKnown.value) { error.value = t('admin.codexGatewayBorrow.clockUnavailable'); return }
+  if (!clockKnown.value) { error.value = t('admin.pelicanTests.clockUnavailable'); return }
   await submitRequest({ ...parameters, client_task_id: createPelicanClientTaskId(serverOffset.value) })
 }
 async function submitRequest(request: PelicanTestRequest) {

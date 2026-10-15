@@ -34,7 +34,7 @@ type PelicanResultSummary struct {
 }
 
 type PelicanTaskSnapshot struct {
-	*CodexGatewayBorrowTestTask
+	*PelicanTestTask
 	Counts map[string]int `json:"counts"`
 }
 
@@ -65,7 +65,7 @@ type pelicanBackgroundTask struct {
 
 const pelicanInterruptedMessage = "process stopped before the test finished; this task will not be replayed"
 
-func pelicanResultSummary(result *CodexGatewayBorrowTestResult, phase string) *PelicanResultSummary {
+func pelicanResultSummary(result *PelicanTestResult, phase string) *PelicanResultSummary {
 	return &PelicanResultSummary{ID: result.ID, TaskID: result.TaskID, Ordinal: result.Ordinal,
 		AccountID: result.AccountID, AccountName: result.AccountName, Platform: result.Platform,
 		ModelID: result.ModelID, Effort: result.Effort, Status: result.Status, Phase: phase,
@@ -75,16 +75,15 @@ func pelicanResultSummary(result *CodexGatewayBorrowTestResult, phase string) *P
 		PreparationDurationMS: result.PreparationDurationMS, GenerationDurationMS: result.GenerationDurationMS, ExpiresAt: result.ExpiresAt}
 }
 
-func (r *CodexGatewayBorrowTestRunner) StartBackground(ctx context.Context, createdBy int64, request CodexGatewayBorrowTestRequest, catalog *PelicanTestCatalog) (*PelicanTaskSnapshot, error) {
-	request.Standalone = true
-	normalized, err := normalizeCodexGatewayBorrowTestRequest(request, r.now().UTC())
+func (r *PelicanTestRunner) StartBackground(ctx context.Context, createdBy int64, request PelicanTestRequest, catalog *PelicanTestCatalog) (*PelicanTaskSnapshot, error) {
+	normalized, err := normalizePelicanTestRequest(request, r.now().UTC())
 	if err != nil {
 		return nil, err
 	}
 	// Legacy normalization deduplicates; the new workbench must reject conflicting
 	// efforts instead of silently dropping a later row.
 	if len(normalized.Targets) != len(request.Targets) {
-		return nil, fmt.Errorf("%w: one effort per account/model; edit the existing combination", ErrCodexGatewayBorrowTestInvalidRequest)
+		return nil, fmt.Errorf("%w: one effort per account/model; edit the existing combination", ErrPelicanTestInvalidRequest)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -104,12 +103,12 @@ func (r *CodexGatewayBorrowTestRunner) StartBackground(ctx context.Context, crea
 	// Replays compare their immutable normalized parameters before consulting
 	// today's account capabilities, and read summaries rather than every raw work.
 	if existing, readErr := r.TaskSnapshot(ctx, normalized.ClientTaskID); readErr == nil {
-		if existing.RequestHash != codexGatewayBorrowTestRequestHash(normalized) {
-			return nil, ErrCodexGatewayBorrowTestReplayConflict
+		if existing.RequestHash != pelicanTestRequestHash(normalized) {
+			return nil, ErrPelicanTestReplayConflict
 		}
 		existing.Replayed = true
 		return existing, nil
-	} else if !errors.Is(readErr, ErrCodexGatewayBorrowTestNotFound) {
+	} else if !errors.Is(readErr, ErrPelicanTestNotFound) {
 		return nil, readErr
 	}
 	if catalog == nil {
@@ -131,7 +130,7 @@ func (r *CodexGatewayBorrowTestRunner) StartBackground(ctx context.Context, crea
 	}
 	copyTask := *task
 	copyTask.Results = nil
-	snapshot := &PelicanTaskSnapshot{CodexGatewayBorrowTestTask: &copyTask, Counts: map[string]int{"pending": task.Total}}
+	snapshot := &PelicanTaskSnapshot{PelicanTestTask: &copyTask, Counts: map[string]int{"pending": task.Total}}
 	// No HTTP request values, Gin writer or observer cancellation enters the run.
 	runCtx, cancel := context.WithCancel(r.stopCtx)
 	control := &pelicanBackgroundTask{cancel: cancel, phases: make(map[string]*PelicanResultSummary)}
@@ -145,7 +144,7 @@ func (r *CodexGatewayBorrowTestRunner) StartBackground(ctx context.Context, crea
 	go func() {
 		defer r.backgroundRunning.Done()
 		defer cancel()
-		runErr := r.Run(runCtx, task, func(event CodexGatewayBorrowTestEvent) {
+		runErr := r.Run(runCtx, task, func(event PelicanTestEvent) {
 			if event.Result == nil {
 				return
 			}
@@ -156,7 +155,7 @@ func (r *CodexGatewayBorrowTestRunner) StartBackground(ctx context.Context, crea
 		})
 		if runErr != nil {
 			slog.Error("pelican_background_task_failed", "task_id", task.ID, "error", runErr)
-			if !errors.Is(runErr, ErrCodexGatewayBorrowTestNotFound) {
+			if !errors.Is(runErr, ErrPelicanTestNotFound) {
 				writeCtx, cancelWrite := context.WithTimeout(context.Background(), 10*time.Second)
 				_ = r.repo.FinishTask(writeCtx, task.ID, "incomplete", runErr.Error(), r.now().UTC())
 				cancelWrite()
@@ -169,7 +168,7 @@ func (r *CodexGatewayBorrowTestRunner) StartBackground(ctx context.Context, crea
 	return snapshot, nil
 }
 
-func (r *CodexGatewayBorrowTestRunner) TaskSnapshot(ctx context.Context, id string) (*PelicanTaskSnapshot, error) {
+func (r *PelicanTestRunner) TaskSnapshot(ctx context.Context, id string) (*PelicanTaskSnapshot, error) {
 	if err := r.initialize(ctx); err != nil {
 		return nil, err
 	}
@@ -180,7 +179,7 @@ func (r *CodexGatewayBorrowTestRunner) TaskSnapshot(ctx context.Context, id stri
 	return reader.GetTaskSnapshot(ctx, id)
 }
 
-func (r *CodexGatewayBorrowTestRunner) TaskResults(ctx context.Context, id string, filter PelicanResultFilter) (*PelicanResultPage, error) {
+func (r *PelicanTestRunner) TaskResults(ctx context.Context, id string, filter PelicanResultFilter) (*PelicanResultPage, error) {
 	if _, err := r.TaskSnapshot(ctx, id); err != nil {
 		return nil, err
 	}
@@ -205,7 +204,7 @@ func (r *CodexGatewayBorrowTestRunner) TaskResults(ctx context.Context, id strin
 	return page, nil
 }
 
-func (r *CodexGatewayBorrowTestRunner) CancelBackground(ctx context.Context, id string) (*PelicanTaskSnapshot, error) {
+func (r *PelicanTestRunner) CancelBackground(ctx context.Context, id string) (*PelicanTaskSnapshot, error) {
 	r.submissionMu.Lock()
 	defer r.submissionMu.Unlock()
 	snapshot, err := r.TaskSnapshot(ctx, id)
@@ -226,7 +225,7 @@ func (r *CodexGatewayBorrowTestRunner) CancelBackground(ctx context.Context, id 
 	return r.TaskSnapshot(ctx, id)
 }
 
-func (r *CodexGatewayBorrowTestRunner) TaskResult(ctx context.Context, taskID, resultID string) (*CodexGatewayBorrowTestResult, error) {
+func (r *PelicanTestRunner) TaskResult(ctx context.Context, taskID, resultID string) (*PelicanTestResult, error) {
 	if err := r.initialize(ctx); err != nil {
 		return nil, err
 	}
@@ -235,20 +234,20 @@ func (r *CodexGatewayBorrowTestRunner) TaskResult(ctx context.Context, taskID, r
 		return nil, err
 	}
 	if result.TaskID != taskID {
-		return nil, ErrCodexGatewayBorrowTestNotFound
+		return nil, ErrPelicanTestNotFound
 	}
 	return result, nil
 }
 
 // Validate exactly the capabilities used again by the native generator. Reads
 // are local; paused/error/limited accounts stay explicitly selectable.
-func (s *PelicanTestCatalog) ValidateTargets(ctx context.Context, targets []CodexGatewayBorrowTestTarget) error {
+func (s *PelicanTestCatalog) ValidateTargets(ctx context.Context, targets []PelicanTestTarget) error {
 	ids := make([]int64, 0, len(targets))
 	for _, target := range targets {
 		ids = append(ids, target.AccountID)
 	}
 	if len(ids) == 0 || len(ids) > pelicanTestCatalogMaxAccounts {
-		return ErrCodexGatewayBorrowTestInvalidRequest
+		return ErrPelicanTestInvalidRequest
 	}
 	accounts, err := s.accounts.GetByIDs(ctx, ids)
 	if err != nil {
@@ -263,10 +262,10 @@ func (s *PelicanTestCatalog) ValidateTargets(ctx context.Context, targets []Code
 	for _, target := range targets {
 		option := PelicanTestModelOptions(byID[target.AccountID], target.ModelID)
 		if !option.TextSupported {
-			return fmt.Errorf("%w: account %d / %s: %s", ErrCodexGatewayBorrowTestInvalidRequest, target.AccountID, target.ModelID, option.CapabilityReason)
+			return fmt.Errorf("%w: account %d / %s: %s", ErrPelicanTestInvalidRequest, target.AccountID, target.ModelID, option.CapabilityReason)
 		}
 		if target.Effort != "" && !slices.Contains(option.ReasoningEfforts, strings.ToLower(strings.TrimSpace(target.Effort))) {
-			return fmt.Errorf("%w: account %d / %s does not support effort %q", ErrCodexGatewayBorrowTestInvalidRequest, target.AccountID, target.ModelID, target.Effort)
+			return fmt.Errorf("%w: account %d / %s does not support effort %q", ErrPelicanTestInvalidRequest, target.AccountID, target.ModelID, target.Effort)
 		}
 	}
 	return nil

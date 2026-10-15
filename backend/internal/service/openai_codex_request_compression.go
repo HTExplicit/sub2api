@@ -143,37 +143,10 @@ func prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.R
 
 // doOpenAICodexUpstream 是 OpenAI 网关所有 Responses 端点 POST 的统一发送入口：先按上述
 // 规则生成线上请求（满足条件时压缩），再交给 httpUpstream。读取失败作为传输错误返回。
-func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account *Account, proxyURL string, resolvedModels ...string) (*http.Response, error) {
-	model := CodexGatewayBorrowModelFromContext(req.Context())
-	if len(resolvedModels) > 0 {
-		model = resolvedModels[0]
-	}
-	borrowed, err := s.applyCodexGatewayBorrowHTTP(req, account, model, proxyURL)
-	if err != nil {
-		return nil, err
-	}
-	req = borrowed
+func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account *Account, proxyURL string) (*http.Response, error) {
 	wire, err := prepareOpenAICodexWireRequest(req, account)
 	if err != nil {
-		codexBorrowUsageFromContext(req.Context()).blocked(err)
 		return nil, err
 	}
-	applied := codexBorrowHTTPApplied(wire)
-	if err := consumeBorrowDiagnosticRequest(wire.Context()); err != nil {
-		codexBorrowUsageFromContext(req.Context()).blocked(err)
-		return nil, err
-	}
-	tracker := s.gatewayBorrow.beginUsage(wire.Context(), account.ID, model, "http", applied)
-	if node := borrowNodeBinding(wire); node != nil {
-		proxyURL = node.node.proxy
-		if tracker != nil {
-			tracker.mu.Lock()
-			tracker.row.ProxyID, tracker.row.NodeIdentity, tracker.row.Gateway = node.node.id, node.node.identity, node.gateway
-			tracker.publish(0, 0, 0)
-			tracker.mu.Unlock()
-		}
-	}
-	resp, sendErr := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
-	resp, sendErr = trackCodexBorrowNodeHTTP(wire, resp, sendErr)
-	return s.gatewayBorrow.trackHTTPResponse(tracker, resp, sendErr)
+	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
 }

@@ -18,16 +18,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// PelicanTestHandler owns the independent administrator entry point. Borrowing
-// configuration and preparation remain in CodexGatewayBorrowHandler; this entry
-// selects only an account, a model, an effort, and a generation budget.
+// PelicanTestHandler selects only an account, a model, an effort,
+// and a generation budget for ordinary account execution.
 type PelicanTestHandler struct {
 	catalog *service.PelicanTestCatalog
-	runner  *service.CodexGatewayBorrowTestRunner
-	preview *service.CodexGatewayBorrowPreviewService
+	runner  *service.PelicanTestRunner
+	preview *service.PelicanPreviewService
 }
 
-func NewPelicanTestHandler(catalog *service.PelicanTestCatalog, runner *service.CodexGatewayBorrowTestRunner, preview *service.CodexGatewayBorrowPreviewService) *PelicanTestHandler {
+func NewPelicanTestHandler(catalog *service.PelicanTestCatalog, runner *service.PelicanTestRunner, preview *service.PelicanPreviewService) *PelicanTestHandler {
 	return &PelicanTestHandler{catalog: catalog, runner: runner, preview: preview}
 }
 
@@ -36,7 +35,7 @@ func (h *PelicanTestHandler) GetOptions(c *gin.Context) {
 }
 
 func (h *PelicanTestHandler) GetAccountOptions(c *gin.Context) {
-	codexGatewayBorrowPrivateHeaders(c)
+	pelicanPrivateHeaders(c)
 	var request struct {
 		AccountIDs []int64 `json:"account_ids"`
 	}
@@ -48,7 +47,7 @@ func (h *PelicanTestHandler) GetAccountOptions(c *gin.Context) {
 }
 
 func (h *PelicanTestHandler) options(c *gin.Context, accountIDs []int64) {
-	codexGatewayBorrowPrivateHeaders(c)
+	pelicanPrivateHeaders(c)
 	options, err := h.catalog.Options(c.Request.Context(), accountIDs)
 	if err != nil {
 		if errors.Is(err, service.ErrPelicanTestOptionsInvalidRequest) {
@@ -62,8 +61,8 @@ func (h *PelicanTestHandler) options(c *gin.Context, accountIDs []int64) {
 }
 
 func (h *PelicanTestHandler) StartTests(c *gin.Context) {
-	codexGatewayBorrowPrivateHeaders(c)
-	var request service.CodexGatewayBorrowTestRequest
+	pelicanPrivateHeaders(c)
+	var request service.PelicanTestRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -76,16 +75,13 @@ func (h *PelicanTestHandler) StartTests(c *gin.Context) {
 		response.BadRequest(c, "targets is required")
 		return
 	}
-	// Only this server-side entry point can select account execution. A JSON
-	// field cannot change the legacy borrowing handler's existing contract.
-	request.Standalone = true
 	var createdBy int64
 	if subject, ok := middleware.GetAuthSubjectFromContext(c); ok {
 		createdBy = subject.UserID
 	}
 	task, replayed, err := h.runner.Create(c.Request.Context(), createdBy, request)
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{"result": "pelican_manual_test", "task_id": task.ID, "replayed": replayed, "targets": task.Total})
@@ -96,7 +92,7 @@ func (h *PelicanTestHandler) StartTests(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
 	var writeMu sync.Mutex
-	emit := func(event service.CodexGatewayBorrowTestEvent) {
+	emit := func(event service.PelicanTestEvent) {
 		if ctx.Err() != nil {
 			return
 		}
@@ -122,9 +118,9 @@ func (h *PelicanTestHandler) StartTests(c *gin.Context) {
 		}
 		c.Writer.Flush()
 	}
-	emit(service.CodexGatewayBorrowTestEvent{Type: "task_start", Task: task})
+	emit(service.PelicanTestEvent{Type: "task_start", Task: task})
 	if replayed {
-		emit(service.CodexGatewayBorrowTestEvent{Type: "task_complete", Task: task})
+		emit(service.PelicanTestEvent{Type: "task_complete", Task: task})
 		return
 	}
 	keepAliveDone, keepAliveStopped := make(chan struct{}), make(chan struct{})
@@ -156,12 +152,12 @@ func (h *PelicanTestHandler) StartTests(c *gin.Context) {
 	<-keepAliveStopped
 	if runErr != nil && ctx.Err() == nil {
 		task.Status, task.Error = "incomplete", runErr.Error()
-		emit(service.CodexGatewayBorrowTestEvent{Type: "task_complete", Task: task})
+		emit(service.PelicanTestEvent{Type: "task_complete", Task: task})
 	}
 }
 
 func (h *PelicanTestHandler) ListTests(c *gin.Context) {
-	codexGatewayBorrowPrivateHeaders(c)
+	pelicanPrivateHeaders(c)
 	page, size := response.ParsePagination(c)
 	if rawSize := c.Query("size"); rawSize != "" {
 		if parsed, err := strconv.Atoi(rawSize); err == nil && parsed > 0 {
@@ -170,19 +166,19 @@ func (h *PelicanTestHandler) ListTests(c *gin.Context) {
 	}
 	list, err := h.runner.List(c.Request.Context(), page, size)
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	response.Success(c, list)
 }
 
 func (h *PelicanTestHandler) GetTest(c *gin.Context) {
-	codexGatewayBorrowPrivateHeaders(c)
+	pelicanPrivateHeaders(c)
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "last" {
 		list, err := h.runner.List(c.Request.Context(), 1, 1)
 		if err != nil {
-			codexGatewayBorrowTestError(c, err)
+			pelicanTestError(c, err)
 			return
 		}
 		if len(list.Items) == 0 {
@@ -198,15 +194,15 @@ func (h *PelicanTestHandler) GetTest(c *gin.Context) {
 	}
 	task, err := h.runner.Get(c.Request.Context(), parsed.String())
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	response.Success(c, h.preview.DecorateTask(task))
 }
 
 func (h *PelicanTestHandler) ServePreview(c *gin.Context) {
-	codexGatewayBorrowPrivateHeaders(c)
-	c.Header("Content-Security-Policy", service.CodexGatewayBorrowPreviewCSP)
+	pelicanPrivateHeaders(c)
+	c.Header("Content-Security-Policy", service.PelicanPreviewCSP)
 	c.Header("X-Frame-Options", "SAMEORIGIN")
 	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
 	html, err := h.preview.Resolve(c.Request.Context(), strings.TrimSpace(c.Param("cap")))
@@ -215,4 +211,25 @@ func (h *PelicanTestHandler) ServePreview(c *gin.Context) {
 		return
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+func pelicanPrivateHeaders(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("X-Content-Type-Options", "nosniff")
+}
+
+func pelicanTestError(c *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, service.ErrPelicanTestReplayConflict):
+		status = http.StatusConflict
+	case errors.Is(err, service.ErrPelicanTestInvalidRequest):
+		status = http.StatusBadRequest
+	case errors.Is(err, service.ErrPelicanTestExpired):
+		status = http.StatusGone
+	case errors.Is(err, service.ErrPelicanTestNotFound):
+		status = http.StatusNotFound
+	}
+	response.Error(c, status, err.Error())
 }

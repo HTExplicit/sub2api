@@ -1023,7 +1023,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	var wireBody []byte
-	var borrowPreparationElapsed time.Duration
 	for {
 		// Read the final attempt payload. A compatibility retry may have changed
 		// the request, so neither the original alias nor prior attempt is usage
@@ -1042,9 +1041,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		var headerGuard *openAIFirstOutputHeaderGuard
 		var pelicanHeaderPolicy *pelicanFirstOutputPolicy
-		if firstOutputTimeout > 0 && !IsPelicanGeneration(ctx) && !s.codexGatewayBorrowHTTPConfigured(account, upstreamModel) {
+		if firstOutputTimeout > 0 && !IsPelicanGeneration(ctx) {
 			upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(
-				upstreamCtx, releaseUpstreamCtx, startTime.Add(borrowPreparationElapsed).Add(firstOutputTimeout),
+				upstreamCtx, releaseUpstreamCtx, startTime.Add(firstOutputTimeout),
 			)
 		}
 		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, reqStream, promptCacheKey, isCodexCLI)
@@ -1080,75 +1079,26 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return nil, integrityErr
 		}
-		// Qualification observes the fully finalized request, after recovery and
-		// integrity checks, using the original client's cancellation/deadline.
-		// It must finish before the business header and semantic-output budgets.
-		prepared, preparationElapsed, preparationErr := s.prepareCodexGatewayBorrowHTTP(ctx, upstreamReq, account, upstreamModel, proxyURL)
-		if preparationErr != nil {
-			if headerGuard != nil {
-				headerGuard.close()
-			}
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, preparationErr, false)
-		}
-		upstreamReq = prepared
-		if preparationElapsed > 0 {
-			borrowPreparationElapsed += preparationElapsed
-			// A save may have enabled borrowing after the earlier configuration
-			// check. Drop that old guard without treating its cancellation as an
-			// upstream timeout, and retain the finalized request's context values.
-			replacedGuard := headerGuard != nil
-			if headerGuard != nil {
-				headerGuard.close()
-				headerGuard = nil
-			}
-			upstreamReq = upstreamReq.WithContext(codexGatewayBorrowHTTPPreparedContext(ctx, upstreamReq.Context(), replacedGuard, httpInvalidEncryptedContentRetryTried))
-		}
-		firstOutputStartedAt := startTime.Add(borrowPreparationElapsed)
 		if firstOutputTimeout > 0 && headerGuard == nil {
 			if IsPelicanGeneration(ctx) {
 				pelicanHeaderPolicy = &pelicanFirstOutputPolicy{timeout: firstOutputTimeout}
 				upstreamReq = upstreamReq.WithContext(context.WithValue(upstreamReq.Context(), pelicanFirstOutputPolicyContextKey{}, pelicanHeaderPolicy))
 			} else {
-				upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(upstreamReq.Context(), releaseUpstreamCtx, firstOutputStartedAt.Add(firstOutputTimeout))
+				upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(upstreamReq.Context(), releaseUpstreamCtx, startTime.Add(firstOutputTimeout))
 				upstreamReq = upstreamReq.WithContext(upstreamCtx)
 			}
 		}
-		if _, borrowed := upstreamReq.Context().Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation); borrowed {
-			finalized, finalizationErr := s.applyCodexGatewayBorrowHTTP(upstreamReq, account, upstreamModel, proxyURL)
-			if finalizationErr != nil {
-				if headerGuard != nil {
-					headerGuard.close()
-				}
-				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, finalizationErr, false)
-			}
-			upstreamReq = finalized
-		}
-		// Bind only after preparation, context/guard changes and the final
-		// cached Cookie canonicalization. Dispatch preserves this plaintext
-		// pointer; wire compression still uses its separate outbound copy.
-
 		// Send request
 		freezeOpenAIContinuationWire(c, upstreamReq, wireBody)
 		upstreamStart := time.Now()
 
-		resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
+		resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 		if pelicanHeaderPolicy != nil {
 			headerGuard = pelicanHeaderPolicy.guard
-			if !pelicanHeaderPolicy.startedAt.IsZero() {
-				firstOutputStartedAt = pelicanHeaderPolicy.startedAt
-			}
 		}
 
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
-		if IsCodexGatewayBorrowRequestFailure(err) {
-			if resp != nil && resp.Body != nil {
-				_ = resp.Body.Close()
-			}
-			if headerGuard != nil {
-				headerGuard.close()
-			}
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
-		}
+
 		headerTimedOut := false
 		if pelicanHeaderPolicy != nil {
 			headerTimedOut = pelicanHeaderPolicy.stopHeaderWait()
@@ -1330,13 +1280,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		var imageOutputSizes []string
 		if reqStream {
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
-			streamCtx := ctx
-			if borrowPreparationElapsed > 0 || IsPelicanGeneration(ctx) {
-				streamCtx = withCodexGatewayBorrowHTTPFirstOutputStart(ctx, firstOutputStartedAt)
-			}
-			streamResult, err := s.handleStreamingResponseWithReasoning(streamCtx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
+			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
 			if err != nil {
-
 				if signal, ok := asOpenAICompactFallbackSignal(err); ok {
 					if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
 						c, account, originalModel, body, http.StatusBadRequest, signal.message, signal.payload, compactModelFallbackRetried,
@@ -1386,7 +1331,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		} else {
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
-
 				if signal, ok := asOpenAICompactFallbackSignal(err); ok {
 					if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
 						c, account, originalModel, body, http.StatusBadRequest, signal.message, signal.payload, compactModelFallbackRetried,
@@ -1631,7 +1575,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// x-codex-beta-features：按真实 Codex 的会话级行为补注（在账号级覆写之后，
 	// 保证不被覆盖丢失）。
 	applyOpenAICodexBetaFeatures(c, account, req.Header)
-	req = req.WithContext(withCodexBorrowServiceTier(req.Context(), gjson.GetBytes(body, "service_tier").String()))
 	if err := s.finalizeCodexOutboundHeaders(req.Context(), c, account, req.Header, gjson.GetBytes(body, "model").String(), gjson.GetBytes(body, "service_tier").String()); err != nil {
 		return nil, err
 	}

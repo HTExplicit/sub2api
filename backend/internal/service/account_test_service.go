@@ -167,7 +167,6 @@ type AccountTestService struct {
 	pelicanGatewayService       *GatewayService
 	pelicanGeminiService        *GeminiMessagesCompatService
 	pelicanConcurrencyService   *ConcurrencyService
-	pelicanBorrowService        *CodexGatewayBorrowService
 	modelMetadataRegistryMu     sync.Mutex
 	modelMetadataRegistry       map[string]modelsDevProvider
 	modelMetadataRegistryAt     time.Time
@@ -198,18 +197,7 @@ func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayService) {
 	if s != nil {
 		s.openaiGatewayService = gateway
-		if gateway != nil && s.pelicanBorrowService != nil {
-			gateway.SetCodexGatewayBorrowService(s.pelicanBorrowService)
-		}
-	}
-}
 
-func (s *AccountTestService) SetCodexGatewayBorrowService(borrow *CodexGatewayBorrowService) {
-	if s != nil {
-		s.pelicanBorrowService = borrow
-		if s.openaiGatewayService != nil {
-			s.openaiGatewayService.SetCodexGatewayBorrowService(borrow)
-		}
 	}
 }
 

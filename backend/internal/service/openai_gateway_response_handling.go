@@ -328,9 +328,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	var firstOutputTimer *time.Timer
 	var firstOutputCh <-chan time.Time
 	if firstOutputTimeout > 0 {
-		// Borrow preparation is outside the business first-output budget; TTFT
-		// and the total request duration continue to use the original startTime.
-		remaining := time.Until(codexGatewayBorrowHTTPFirstOutputStart(ctx, startTime).Add(firstOutputTimeout))
+		// Pelican queueing is outside its first-output budget; ordinary
+		// requests keep the original startTime.
+		remaining := time.Until(PelicanFirstOutputStart(ctx, startTime).Add(firstOutputTimeout))
 		if remaining <= 0 {
 			remaining = time.Nanosecond
 		}
@@ -495,7 +495,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		lastDownstreamWriteAt = time.Now()
 	}
 	finalizeStream := func() (*openaiStreamingResult, error) {
-
 		if stageFirstOutput && eventInProgress {
 			// EOF dispatches the final SSE event even without a trailing blank line.
 			completeGuardedEvent(true)
@@ -540,7 +539,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		if sawFailedEvent {
-
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if terminalResponseErr != nil {

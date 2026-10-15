@@ -416,11 +416,10 @@ retryUpstream:
 		freezeOpenAIContinuationWire(c, upstreamReq, wireBody)
 		upstreamStart := time.Now()
 
-		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, actualModel)
+		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
-
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account.
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -511,7 +510,6 @@ retryUpstream:
 		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
-
 			if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 				c, account, reqModel, body, err, compactModelFallbackRetried, resp,
 			); retry {
@@ -538,7 +536,6 @@ retryUpstream:
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
-
 			if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 				c, account, reqModel, body, err, compactModelFallbackRetried, resp,
 			); retry {
@@ -792,7 +789,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// x-codex-beta-features：按真实 Codex 的会话级行为补注（在账号级覆写之后，
 	// 保证不被覆盖丢失）。
 	applyOpenAICodexBetaFeatures(c, account, req.Header)
-	req = req.WithContext(withCodexBorrowServiceTier(req.Context(), gjson.GetBytes(body, "service_tier").String()))
 	if err := s.finalizeCodexOutboundHeaders(req.Context(), c, account, req.Header, gjson.GetBytes(body, "model").String(), gjson.GetBytes(body, "service_tier").String()); err != nil {
 		return nil, err
 	}
@@ -2217,7 +2213,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamEventType := effectiveOpenAISSEEventType(rawDataBytes, pendingSSEEventType)
 			s.parseSSEUsageBytesWithType(rawDataBytes, upstreamEventType, usage)
 			if upstreamEventType == "response.failed" || upstreamEventType == "error" || (upstreamEventType == "response.done" && gjson.GetBytes(rawDataBytes, "response.status").String() == "failed") {
-
 				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, c, account, resp.StatusCode, resp.Header, rawDataBytes); ok {
 					// Classification must happen on the untouched event, before error
 					// rules, namespace restoration or the client stream see it. The
@@ -2267,7 +2262,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 			eventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
 			if eventType == "response.completed" || eventType == "response.done" {
-
 				// A response terminal supersedes a non-authoritative bare error.
 				sawBareError = false
 				bareErrorPayload = nil

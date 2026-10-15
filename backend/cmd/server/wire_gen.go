@@ -299,22 +299,16 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	auditLogService := service.ProvideAuditLogService(auditLogRepository, settingService)
 	auditLogHandler := admin.NewAuditLogHandler(auditLogService, totpService)
 	systemPromptHandler := admin.NewSystemPromptHandler(systemPromptService)
-	codexGatewayBorrowProbeUpstream := repository.NewCodexGatewayBorrowProbeUpstream(httpUpstream)
-	codexGatewayBorrowService, err := service.ProvideCodexGatewayBorrowService(settingRepository, accountRepository, openAIGatewayService, codexGatewayBorrowProbeUpstream, tlsFingerprintProfileService, proxyRepository)
-	if err != nil {
-		return nil, err
-	}
-	codexGatewayBorrowTestRepository := repository.NewCodexGatewayBorrowTestRepository(db)
-	codexGatewayBorrowTestRunner := service.ProvidePelicanTestRunner(codexGatewayBorrowTestRepository, codexGatewayBorrowService, accountRepository, accountTestService, gatewayService, geminiMessagesCompatService, concurrencyService)
-	codexGatewayBorrowPreviewService := service.NewCodexGatewayBorrowPreviewService(codexGatewayBorrowTestRepository)
-	codexGatewayBorrowHandler := admin.NewCodexGatewayBorrowHandler(codexGatewayBorrowService, codexGatewayBorrowTestRunner, codexGatewayBorrowPreviewService)
 	pelicanTestCatalog := service.NewPelicanTestCatalog(accountRepository)
-	pelicanTestHandler := admin.NewPelicanTestHandler(pelicanTestCatalog, codexGatewayBorrowTestRunner, codexGatewayBorrowPreviewService)
+	pelicanTestRepository := repository.NewPelicanTestRepository(db)
+	pelicanTestRunner := service.ProvidePelicanTestRunner(pelicanTestRepository, accountRepository, accountTestService, gatewayService, geminiMessagesCompatService, concurrencyService)
+	pelicanPreviewService := service.NewPelicanPreviewService(pelicanTestRepository)
+	pelicanTestHandler := admin.NewPelicanTestHandler(pelicanTestCatalog, pelicanTestRunner, pelicanPreviewService)
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	openCodeGoUsageService := service.ProvideOpenCodeGoUsageService(accountRepository, httpUpstream, settingService, leaderLockCache, db)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	claudeResetCreditService := service.ProvideClaudeResetCreditService(accountRepository, claudeTokenProvider, proxyRepository, settingService, idempotencyCoordinator, leaderLockCache)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, accountJobHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, systemPromptHandler, codexGatewayBorrowHandler, pelicanTestHandler, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, claudeResetCreditService)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, accountJobHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, systemPromptHandler, pelicanTestHandler, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, claudeResetCreditService)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
 	userMessageQueueService := service.ProvideUserMessageQueueService(userMsgQueueCache, rpmCache, configConfig)
@@ -382,7 +376,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
-	v := provideCleanup(client, redisClient, gatewayCache, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, codexClientIdentityBackfillService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, codexGatewayBorrowService, codexGatewayBorrowTestRunner, codexGatewayBorrowPreviewService, scheduledTestRunnerService, upstreamModelCatalogRefreshService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, accountJobRuntime, pluginManager)
+	v := provideCleanup(client, redisClient, gatewayCache, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, codexClientIdentityBackfillService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, pelicanTestRunner, pelicanPreviewService, scheduledTestRunnerService, upstreamModelCatalogRefreshService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, accountJobRuntime, pluginManager)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -468,9 +462,8 @@ func provideCleanup(
 	antigravityOAuth *service.AntigravityOAuthService,
 	grokOAuth *service.GrokOAuthService,
 	openAIGateway *service.OpenAIGatewayService,
-	codexGatewayBorrow *service.CodexGatewayBorrowService,
-	codexGatewayBorrowTests *service.CodexGatewayBorrowTestRunner,
-	codexGatewayBorrowPreview *service.CodexGatewayBorrowPreviewService,
+	pelicanTests *service.PelicanTestRunner,
+	pelicanPreview *service.PelicanPreviewService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	upstreamModelCatalogRefresh *service.UpstreamModelCatalogRefreshService,
 	backupSvc *service.BackupService,
@@ -497,15 +490,12 @@ func provideCleanup(
 		}
 
 		parallelSteps := []cleanupStep{
-			{"CodexGatewayBorrow", func() error {
-				if codexGatewayBorrow != nil {
-					codexGatewayBorrow.Stop()
+			{"PelicanTests", func() error {
+				if pelicanTests != nil {
+					pelicanTests.Stop()
 				}
-				if codexGatewayBorrowTests != nil {
-					codexGatewayBorrowTests.Stop()
-				}
-				if codexGatewayBorrowPreview != nil {
-					codexGatewayBorrowPreview.Stop()
+				if pelicanPreview != nil {
+					pelicanPreview.Stop()
 				}
 				return nil
 			}},

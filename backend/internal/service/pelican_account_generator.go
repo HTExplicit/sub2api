@@ -80,7 +80,6 @@ func PelicanFirstOutputStart(ctx context.Context, fallback time.Time) time.Time 
 type pelicanGenerationCapture struct {
 	account        *Account
 	concurrency    *ConcurrencyService
-	openaiGateway  *OpenAIGatewayService
 	ginContext     *gin.Context
 	fallbackModel  string
 	fallbackEffort string
@@ -116,8 +115,8 @@ func pelicanCaptureFromContext(ctx context.Context) *pelicanGenerationCapture {
 }
 
 // PreparePelicanHTTPRequest is the shared outbound boundary. Ordinary requests
-// retain their exact pointer and context. Borrow probes coordinate separately;
-// their old observation marker must never start the work-generation budget.
+// retain their exact pointer and context. Only selected-account Pelican sends
+// acquire the execution lease and start the generation budget.
 // The returned completion function owns the execution/account leases until the
 // response body closes, including error responses and same-account retries.
 func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcurrency int, transport string) (*http.Request, func(*http.Response, error) (*http.Response, error), error) {
@@ -126,50 +125,20 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 		return req, finish, nil
 	}
 	capture := pelicanCaptureFromContext(req.Context())
-	if capture == nil || capture.account.ID != accountID || IsCodexGatewayBorrowObservation(req.Context()) {
+	if capture == nil || capture.account.ID != accountID {
 		return req, finish, nil
 	}
-	var ctx context.Context
-	var release func()
-	for {
-		requestCtx := req.Context()
-		var acquireErr error
-		var releaseExecution func()
-		ctx, releaseExecution, acquireErr = AcquirePelicanExecution(requestCtx, accountID)
-		if acquireErr != nil {
-			return nil, finish, acquireErr
-		}
-		releaseAccount, acquireErr := acquirePelicanBusinessAccountSlot(ctx, capture.concurrency, accountID, accountConcurrency)
-		if acquireErr != nil {
-			releaseExecution()
-			return nil, finish, acquireErr
-		}
-		var releaseOnce sync.Once
-		release = func() { releaseOnce.Do(func() { releaseAccount(); releaseExecution() }) }
-		// Admission can outlast a borrowed cookie. Recheck the prepared cache
-		// binding after all waits, without a nested probe under this lease.
-		prepared, hasPreparation := requestCtx.Value(codexGatewayBorrowHTTPPreparationContextKey{}).(codexGatewayBorrowHTTPPreparation)
-		if hasPreparation && capture.openaiGateway != nil {
-			checked, prepareErr := capture.openaiGateway.applyCodexGatewayBorrowHTTP(req.WithContext(ctx), capture.account, prepared.model, prepared.proxy)
-			if prepareErr != nil {
-				release()
-				if prepared.application != nil && !time.Now().Before(prepared.application.ExpiresAt) &&
-					capture.openaiGateway.codexGatewayBorrowHTTPConfigured(capture.account, prepared.model) && errors.Is(prepareErr, ErrCodexGatewayBorrowChanged) {
-					// Refresh an expired route through the normal preparation path
-					// after releasing every account/global execution resource.
-					refreshed, _, refreshErr := capture.openaiGateway.prepareCodexGatewayBorrowHTTP(requestCtx, req.WithContext(requestCtx), capture.account, prepared.model, prepared.proxy)
-					if refreshErr != nil {
-						return nil, finish, refreshErr
-					}
-					req = refreshed
-					continue
-				}
-				return nil, finish, prepareErr
-			}
-			req = checked
-		}
-		break
+	ctx, releaseExecution, acquireErr := AcquirePelicanExecution(req.Context(), accountID)
+	if acquireErr != nil {
+		return nil, finish, acquireErr
 	}
+	releaseAccount, acquireErr := acquirePelicanBusinessAccountSlot(ctx, capture.concurrency, accountID, accountConcurrency)
+	if acquireErr != nil {
+		releaseExecution()
+		return nil, finish, acquireErr
+	}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { releaseAccount(); releaseExecution() }) }
 	req = req.WithContext(ctx)
 	fallbackModel := capture.fallbackModel
 	if capture.ginContext != nil {
@@ -190,9 +159,8 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	firstOutputPolicy, _ := ctx.Value(pelicanFirstOutputPolicyContextKey{}).(*pelicanFirstOutputPolicy)
 	ctx = firstOutputPolicy.arm(ctx)
 	req = req.WithContext(ctx)
-	borrowApplied := codexBorrowHTTPApplied(req)
 	invocation := PelicanInvocation{Platform: capture.account.Platform, Model: model, Effort: effort,
-		Endpoint: req.URL.Scheme + "://" + req.URL.Host + req.URL.EscapedPath(), Protocol: protocol, Transport: transport, BorrowApplied: borrowApplied}
+		Endpoint: req.URL.Scheme + "://" + req.URL.Host + req.URL.EscapedPath(), Protocol: protocol, Transport: transport}
 	RecordPelicanInvocation(ctx, invocation)
 	attempt := &pelicanHTTPAttempt{protocol: protocol, model: model, effort: effort, dispatched: true}
 	capture.mu.Lock()
@@ -215,13 +183,13 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 		// Gateway error readers can have a smaller diagnostic cap. Capture the
 		// actual error body first so the administrator keeps its complete text.
 		if resp.StatusCode >= http.StatusBadRequest {
-			raw, readErr := io.ReadAll(io.LimitReader(resp.Body, codexGatewayBorrowPelicanMaxBody+1))
+			raw, readErr := io.ReadAll(io.LimitReader(resp.Body, pelicanMaxBody+1))
 			_ = resp.Body.Close()
 			_, _ = attempt.raw.Write(raw)
 			attempt.err = readErr
 			release()
 			resp.Body = io.NopCloser(bytes.NewReader(raw))
-			if int64(len(raw)) > codexGatewayBorrowPelicanMaxBody {
+			if int64(len(raw)) > pelicanMaxBody {
 				attempt.err = errors.New("upstream response exceeds the pelican record size limit")
 			}
 			return resp, sendErr
@@ -259,7 +227,7 @@ func acquirePelicanBusinessAccountSlot(ctx context.Context, concurrency *Concurr
 // The WS sender calls this after normal route/socket preparation. Generation
 // starts separately, immediately before response.create, so a pool wait or
 // generate:false prewarm does not spend the work-generation budget.
-func preparePelicanWSSend(ctx context.Context, account *Account, endpoint string, payload map[string]any, borrowed bool) (context.Context, func([]byte) error, func(), error) {
+func preparePelicanWSSend(ctx context.Context, account *Account, endpoint string, payload map[string]any) (context.Context, func([]byte) error, func(), error) {
 	observe := func([]byte) error { return nil }
 	capture := pelicanCaptureFromContext(ctx)
 	if capture == nil || account == nil || capture.account.ID != account.ID {
@@ -279,7 +247,7 @@ func preparePelicanWSSend(ctx context.Context, account *Account, endpoint string
 	model := openAIWSPayloadString(payload, "model")
 	effort := gjson.GetBytes(payloadAsJSONBytes(payload), "reasoning.effort").String()
 	RecordPelicanInvocation(ctx, PelicanInvocation{Platform: account.Platform, Model: model, Effort: effort,
-		Endpoint: endpoint, Protocol: "responses", Transport: "websocket", BorrowApplied: borrowed})
+		Endpoint: endpoint, Protocol: "responses", Transport: "websocket"})
 	attempt := &pelicanHTTPAttempt{protocol: "responses", status: http.StatusOK, model: model, effort: effort, wsFrames: true}
 	capture.mu.Lock()
 	capture.attempts = append(capture.attempts, attempt)
@@ -287,7 +255,7 @@ func preparePelicanWSSend(ctx context.Context, account *Account, endpoint string
 	observe = func(message []byte) error {
 		attempt.mu.Lock()
 		defer attempt.mu.Unlock()
-		if attempt.raw.Len()+len(message)+1 > int(codexGatewayBorrowPelicanMaxBody) {
+		if attempt.raw.Len()+len(message)+1 > int(pelicanMaxBody) {
 			attempt.err = errors.New("upstream response exceeds the pelican record size limit")
 			return attempt.err
 		}
@@ -310,7 +278,7 @@ func (b *pelicanCapturingBody) Read(data []byte) (int, error) {
 	b.attempt.mu.Lock()
 	defer b.attempt.mu.Unlock()
 	if n > 0 {
-		if b.attempt.raw.Len()+n > int(codexGatewayBorrowPelicanMaxBody) {
+		if b.attempt.raw.Len()+n > int(pelicanMaxBody) {
 			b.attempt.err = errors.New("upstream response exceeds the pelican record size limit")
 			return 0, b.attempt.err
 		}
@@ -350,12 +318,12 @@ func pelicanFinalHTTPRequest(req *http.Request, fallbackModel, fallbackEffort st
 			}
 		}
 		{
-			raw, readErr := io.ReadAll(io.LimitReader(body, codexGatewayBorrowPelicanMaxBody+1))
+			raw, readErr := io.ReadAll(io.LimitReader(body, pelicanMaxBody+1))
 			_ = body.Close()
 			if readErr != nil {
 				return model, effort, protocol, readErr
 			}
-			if int64(len(raw)) > codexGatewayBorrowPelicanMaxBody {
+			if int64(len(raw)) > pelicanMaxBody {
 				return model, effort, protocol, errors.New("pelican request body exceeds its record size limit")
 			}
 			if req.GetBody == nil {
@@ -365,7 +333,7 @@ func pelicanFinalHTTPRequest(req *http.Request, fallbackModel, fallbackEffort st
 				req.Body = io.NopCloser(bytes.NewReader(raw))
 			}
 			if readErr == nil && strings.EqualFold(req.Header.Get("Content-Encoding"), "zstd") {
-				if decoder, decodeErr := zstd.NewReader(nil, zstd.WithDecoderMaxMemory(codexGatewayBorrowPelicanMaxBody)); decodeErr == nil {
+				if decoder, decodeErr := zstd.NewReader(nil, zstd.WithDecoderMaxMemory(pelicanMaxBody)); decodeErr == nil {
 					raw, readErr = decoder.DecodeAll(raw, nil)
 					decoder.Close()
 				}
@@ -402,8 +370,8 @@ func pelicanFinalHTTPRequest(req *http.Request, fallbackModel, fallbackEffort st
 // GeneratePelican sends the fixed题面 using the selected account's ordinary
 // business sender. Only that sender owns credential refresh and compatibility
 // retries. An UpstreamFailoverError is recorded here and never enters selection.
-func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int64, model, effort string) (*CodexGatewayBorrowPelicanResult, error) {
-	result := &CodexGatewayBorrowPelicanResult{ModelID: model, Effort: effort, Status: "failed"}
+func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int64, model, effort string) (*PelicanResult, error) {
+	result := &PelicanResult{ModelID: model, Effort: effort, Status: "failed"}
 	ctx = WithAccountObservation(ctx)
 	if pelicanExecutionFromContext(ctx) == nil {
 		state := newPelicanExecutionState(ctx, sharedPelicanExecution, time.Duration(PelicanDefaultGenerationTimeoutSeconds)*time.Second, time.Now)
@@ -438,7 +406,7 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	}
 	result.Effort = effort
 	capture := &pelicanGenerationCapture{account: account, concurrency: s.pelicanConcurrencyService,
-		openaiGateway: s.openaiGatewayService, fallbackModel: option.UpstreamModel, fallbackEffort: effort}
+		fallbackModel: option.UpstreamModel, fallbackEffort: effort}
 	ctx = context.WithValue(ctx, pelicanGenerationContextKey{}, capture)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -447,14 +415,7 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	// This represents the server's internal generation operation. No client
 	// UA, protocol handshake, API-key subject or group policy is synthesized.
 	sendErr := s.sendPelicanWithAccount(ctx, c, account, model, option.UpstreamModel, effort)
-	// The gateway keeps client-facing failover text generic, but records the
-	// complete local borrow cause on this invocation's Gin context. Preserve it
-	// in administrator task history even when no generation request was sent.
-	if sendErr != nil && IsCodexGatewayBorrowRequestFailure(sendErr) {
-		if detail := c.GetString(OpsUpstreamErrorDetailKey); detail != "" && !strings.Contains(sendErr.Error(), detail) {
-			sendErr = fmt.Errorf("%w\n%s", sendErr, detail)
-		}
-	}
+
 	last := snapshotPelicanAttempt(capture)
 	if last == nil {
 		result.RawResponse = w.Body.String()
@@ -534,7 +495,7 @@ func pelicanOutputBudget(account *Account, upstreamModel string) int64 {
 
 func pelicanMessagesBody(model, upstreamModel, effort string, budget int64) []byte {
 	payload := map[string]any{"model": model, "stream": true, "max_tokens": budget,
-		"messages": []map[string]any{{"role": "user", "content": CodexGatewayBorrowPelicanPrompt}}}
+		"messages": []map[string]any{{"role": "user", "content": PelicanPrompt}}}
 	if effort != "" {
 		payload["output_config"] = map[string]any{"effort": effort}
 		if claude.EffortUsesAdaptiveThinking(upstreamModel) {
@@ -549,7 +510,7 @@ func (s *AccountTestService) sendPelicanWithAccount(ctx context.Context, c *gin.
 	budget := pelicanOutputBudget(account, upstreamModel)
 	switch {
 	case account.IsGemini(), account.Platform == PlatformAntigravity && account.Type != AccountTypeUpstream && isAntigravityGeminiModel(upstreamModel):
-		payload := map[string]any{"contents": []map[string]any{{"role": "user", "parts": []map[string]any{{"text": CodexGatewayBorrowPelicanPrompt}}}},
+		payload := map[string]any{"contents": []map[string]any{{"role": "user", "parts": []map[string]any{{"text": PelicanPrompt}}}},
 			"generationConfig": map[string]any{"maxOutputTokens": budget}}
 		body, _ := json.Marshal(payload)
 		if account.IsGemini() {
@@ -586,7 +547,7 @@ func (s *AccountTestService) sendPelicanWithAccount(ctx context.Context, c *gin.
 			return errors.New("OpenAI-compatible account sender is unavailable")
 		}
 		payload := map[string]any{"model": model, "stream": true, "max_output_tokens": budget,
-			"input": []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": CodexGatewayBorrowPelicanPrompt}}}}}
+			"input": []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": PelicanPrompt}}}}}
 		if effort != "" {
 			payload["reasoning"] = map[string]any{"effort": effort}
 		}

@@ -11,11 +11,6 @@ const (
 	HTTPUpstreamProfileOpenAI     HTTPUpstreamProfile = "openai"
 	HTTPUpstreamProfileGrok       HTTPUpstreamProfile = "grok"
 	HTTPUpstreamProfileLongStream HTTPUpstreamProfile = "long_stream"
-	// The pinned upstream uses ordinary OpenAI for source acquisition and
-	// OpenAIHarvest for the two target probes. Keep aliases for local callers.
-	HTTPUpstreamProfileOpenAIHarvest     HTTPUpstreamProfile = "openai_harvest"
-	HTTPUpstreamProfileCodexBorrowSource                     = HTTPUpstreamProfileOpenAI
-	HTTPUpstreamProfileCodexBorrowTarget                     = HTTPUpstreamProfileOpenAIHarvest
 )
 
 type httpUpstreamProfileContextKey struct{}
@@ -43,8 +38,7 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 		return HTTPUpstreamProfileDefault
 	}
 	switch profile {
-	case HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileGrok, HTTPUpstreamProfileLongStream,
-		HTTPUpstreamProfileOpenAIHarvest:
+	case HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileGrok, HTTPUpstreamProfileLongStream:
 		return profile
 	default:
 		return HTTPUpstreamProfileDefault

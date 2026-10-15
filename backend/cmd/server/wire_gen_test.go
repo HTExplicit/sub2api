@@ -98,9 +98,8 @@ func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *serv
 		antigravityOAuthSvc,
 		nil, // grokOAuth
 		nil, // openAIGateway
-		nil, // codexGatewayBorrow
-		nil, // codexGatewayBorrowTests
-		nil, // codexGatewayBorrowPreview
+		nil, // pelicanTests
+		nil, // pelicanPreview
 		nil, // scheduledTestRunner
 		nil, // upstreamModelCatalogRefresh
 		nil, // backupSvc

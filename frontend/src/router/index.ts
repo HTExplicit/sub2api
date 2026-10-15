@@ -537,12 +537,7 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'admin.plugins.description'
     }
   },
-  {
-    path: '/admin/codex',
-    name: 'AdminCodex',
-    component: () => import('@/views/admin/CodexGatewayBorrowView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex', titleKey: 'nav.codex' }
-  },
+  { path: '/admin/codex', redirect: '/admin/codex/identity', meta: { requiresAuth: true, requiresAdmin: true } },
   {
     path: '/admin/codex/identity',
     name: 'AdminCodexIdentity',
@@ -557,8 +552,6 @@ const routes: RouteRecordRaw[] = [
   },
   { path: '/admin/codex-runtime', redirect: '/admin/codex/advanced', meta: { requiresAuth: true, requiresAdmin: true } },
   { path: '/admin/codex-fingerprint', redirect: '/admin/codex/identity', meta: { requiresAuth: true, requiresAdmin: true } },
-  { path: '/admin/codex-gateway-borrow', redirect: '/admin/codex', meta: { requiresAuth: true, requiresAdmin: true } },
-  { path: '/admin/codex-gateway-borrow/status', redirect: '/admin/codex#status', meta: { requiresAuth: true, requiresAdmin: true } },
   {
     path: '/admin/pelican-tests',
     name: 'AdminPelicanTests',
@@ -720,7 +713,6 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'admin.affiliates.transfersDescription'
     }
   },
-
 
   // ==================== Payment Admin Routes ====================
   {
@@ -948,7 +940,6 @@ router.beforeEach(async (to, _from, next) => {
       }
     }
   }
-
 
   // 公共设置可能尚未加载（App.vue 的 onMounted 异步拉取晚于首次导航，且纯静态部署
   // 无 __APP_CONFIG__ 注入）。此时 cachedPublicSettings 为空会把 payment/risk_control

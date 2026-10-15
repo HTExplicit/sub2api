@@ -224,8 +224,6 @@ export default {
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
     systemPrompts: 'System Prompts',
-    codexGatewayBorrow: 'Codex Borrowing',
-    codexGatewayBorrowStatus: 'Codex Borrow Status',
     codexPelicanComparison: 'Pelican Comparison',
     pelicanTests: 'Pelican Tests',
   },

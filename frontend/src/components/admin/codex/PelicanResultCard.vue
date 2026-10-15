@@ -6,13 +6,13 @@
     </div>
     <p class="text-xs font-medium" :class="['failed', 'incomplete'].includes(result.status) ? 'text-red-700 dark:text-red-300' : 'text-muted'">{{ stateLabel }}</p>
     <div class="aspect-[4/3] min-h-48 overflow-hidden rounded-lg border border-line bg-gray-50 dark:bg-dark-900">
-      <BorrowPelicanPreview v-if="detail?.preview_url && !expired" :preview-url="detail.preview_url" :title="title" />
+      <PelicanPreview v-if="detail?.preview_url && !expired" :preview-url="detail.preview_url" :title="title" />
       <div v-else class="flex h-full min-h-48 items-center justify-center p-5 text-center text-sm text-muted">{{ loading ? t('common.loading') : error || placeholder }}</div>
     </div>
     <p class="text-xs text-muted">{{ t('admin.pelicanTests.phases.queued') }} {{ duration(result.queue_duration_ms) }} · {{ t('admin.pelicanTests.phases.preparing') }} {{ duration(result.preparation_duration_ms) }} · {{ t('admin.pelicanTests.phases.generating') }} {{ duration(result.generation_duration_ms) }}</p>
     <div class="flex flex-wrap gap-2">
       <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || expired" @click="open(false)">{{ t('admin.pelicanTests.details') }}</button>
-      <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || expired || !result.has_preview" @click="open(true)">{{ t('admin.codexGatewayBorrow.enlarge') }}</button>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || expired || !result.has_preview" @click="open(true)">{{ t('admin.pelicanTests.enlarge') }}</button>
       <button v-if="error && !expired" type="button" class="btn btn-ghost btn-sm" @click="load">{{ text('重新读取', 'Reload') }}</button>
     </div>
   </article>
@@ -22,7 +22,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { pelicanTestsAPI, type PelicanResultSummary, type PelicanTestResult } from '@/api/admin/pelicanTests'
-import BorrowPelicanPreview from './BorrowPelicanPreview.vue'
+import PelicanPreview from './PelicanPreview.vue'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const props = defineProps<{ result: PelicanResultSummary; selected: boolean; selectionFull: boolean; now: number }>()
@@ -34,7 +34,7 @@ const detail = shallowRef<PelicanTestResult | null>(null), lifecycle = new Abort
 let observer: IntersectionObserver | undefined, pending: Promise<void> | undefined
 const expired = computed(() => Date.parse(props.result.expires_at) <= props.now)
 const title = computed(() => `${props.result.account_name} #${props.result.account_id} · ${props.result.model_id}`)
-const stateLabel = computed(() => expired.value ? text('记录已过期', 'Record expired') : props.result.interrupted ? text('服务中断，未自动重放', 'Interrupted; not replayed') : props.result.phase ? t(`admin.pelicanTests.phases.${props.result.phase}`) : props.result.status === 'complete' && !props.result.has_preview ? text('已完成 · 无法预览', 'Completed · No preview') : t(`admin.codexGatewayBorrow.states.${props.result.status}`))
+const stateLabel = computed(() => expired.value ? text('记录已过期', 'Record expired') : props.result.interrupted ? text('服务中断，未自动重放', 'Interrupted; not replayed') : props.result.phase ? t(`admin.pelicanTests.phases.${props.result.phase}`) : props.result.status === 'complete' && !props.result.has_preview ? text('已完成 · 无法预览', 'Completed · No preview') : t(`admin.pelicanTests.states.${props.result.status}`))
 const placeholder = computed(() => expired.value ? text('记录已过期', 'Record expired') : props.result.has_preview && !detail.value ? t('admin.pelicanTests.previewOnVisible') : props.result.status === 'complete' ? text('没有可预览的 HTML，可查看完整回答。', 'No previewable HTML; open the full response.') : ['pending', 'running'].includes(props.result.status) ? text('等待作品生成', 'Waiting for the work') : text('未生成可预览作品，请查看详情。', 'No previewable work; see details.'))
 const duration = (ms?: number) => `${((ms || 0) / 1000).toFixed(1)} s`
 function load(): Promise<void> {

@@ -14,14 +14,11 @@ const (
 	PelicanMinGenerationTimeoutSeconds     = 60
 	PelicanMaxGenerationTimeoutSeconds     = 1800
 	PelicanExecutionModeAccount            = "account"
-	PelicanExecutionModeLegacyCache        = "legacy_cache"
 )
 
 // Every manual Pelican runner in this process shares the same outbound capacity.
-// Preparation and generation acquire it while sending model requests. A target
-// STATE probe retains one lease across its two sequential shots, after source
-// preparation. No preparation retains a target permit while waiting for a source
-// account or the remaining global permits.
+// Selected-account requests acquire capacity after preparation and retain it
+// until their response is consumed or closed.
 var sharedPelicanExecution = newPelicanExecutionCoordinator(PelicanExecutionConcurrency)
 
 type pelicanExecutionContextKey struct{}
@@ -113,13 +110,12 @@ type pelicanExecutionLease struct {
 // PelicanInvocation records the resolved request at the actual sending boundary.
 // It deliberately contains no group/client simulation settings or credentials.
 type PelicanInvocation struct {
-	Platform      string
-	Model         string
-	Effort        string
-	Endpoint      string
-	Protocol      string
-	Transport     string
-	BorrowApplied bool
+	Platform  string
+	Model     string
+	Effort    string
+	Endpoint  string
+	Protocol  string
+	Transport string
 }
 
 type pelicanExecutionSnapshot struct {
@@ -176,8 +172,8 @@ func CancelPelicanExecution(ctx context.Context, cause error) {
 	}
 }
 
-// AcquirePelicanExecution coordinates an actual model request, including a
-// nested borrow source/target probe, with all other manual Pelican requests.
+// AcquirePelicanExecution coordinates an actual model request with all other
+// manual Pelican requests.
 // Call it after route preparation and retain its lease until the response body
 // has been consumed/closed. Nested wrappers for the same request/account reuse
 // the lease; a leased context must not be shared by parallel model requests.
@@ -256,8 +252,8 @@ func BeginPelicanQueueWait(ctx context.Context) func() {
 	}
 }
 
-// BeginPelicanPreparation marks account/credential/route preparation. Borrow
-// preparation keeps its own existing budgets; none of this starts generation.
+// BeginPelicanPreparation marks account and credential preparation without
+// starting the generation budget.
 func BeginPelicanPreparation(ctx context.Context) {
 	state := pelicanExecutionFromContext(ctx)
 	if state == nil {
@@ -371,7 +367,7 @@ func (s *pelicanExecutionState) finish() pelicanExecutionSnapshot {
 	return snapshot
 }
 
-func applyPelicanExecutionSnapshot(result *CodexGatewayBorrowTestResult, snapshot pelicanExecutionSnapshot) {
+func applyPelicanExecutionSnapshot(result *PelicanTestResult, snapshot pelicanExecutionSnapshot) {
 	if snapshot.invocation.Platform != "" {
 		result.Platform = snapshot.invocation.Platform
 	}
@@ -382,7 +378,7 @@ func applyPelicanExecutionSnapshot(result *CodexGatewayBorrowTestResult, snapsho
 	result.ActualEndpoint = snapshot.invocation.Endpoint
 	result.ActualProtocol = snapshot.invocation.Protocol
 	result.ActualTransport = snapshot.invocation.Transport
-	result.BorrowApplied = snapshot.invocation.BorrowApplied
+	result.BorrowApplied = false
 	result.GenerationStartedAt = snapshot.generationStartedAt
 	result.QueueDurationMS = snapshot.queueDurationMS
 	result.PreparationDurationMS = snapshot.preparationDurationMS

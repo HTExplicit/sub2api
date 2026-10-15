@@ -39,7 +39,6 @@ import (
 // 默认配置常量
 // 这些值在配置文件未指定时作为回退默认值使用
 const (
-	upstreamProtocolModeOpenAIH1NoReuse = "openai_h1_no_reuse"
 	// directProxyKey: 无代理时的缓存键标识
 	directProxyKey = "direct"
 	// defaultMaxIdleConns: 默认最大空闲连接总数
@@ -1077,9 +1076,6 @@ func (s *httpUpstreamService) resolveOpenAIHTTP2Settings() openAIHTTP2Settings {
 }
 
 func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamProfile, proxyKey string, parsedProxy *url.URL) string {
-	if profile == service.HTTPUpstreamProfileOpenAIHarvest {
-		return upstreamProtocolModeOpenAIH1NoReuse
-	}
 	if profile == service.HTTPUpstreamProfileLongStream {
 		return upstreamProtocolModeLongStreamH2
 	}
@@ -1414,13 +1410,6 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		transport.DisableCompression = true
 	}
 	switch protocolMode {
-	case upstreamProtocolModeOpenAIH1NoReuse:
-		// Fixed ranxi v2.10.3 harvest policy; each probe opens a fresh connection.
-		transport.ForceAttemptHTTP2 = false
-		transport.DisableKeepAlives = true
-		transport.MaxIdleConns = 0
-		transport.MaxIdleConnsPerHost = 0
-		transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	case upstreamProtocolModeLongStreamH2, upstreamProtocolModeOpenAIH2:
 		transport.ForceAttemptHTTP2 = true
 		// 显式配置 http2 并启用 PING 健康探测，剔除代理/NAT 静默掐断的死连接，

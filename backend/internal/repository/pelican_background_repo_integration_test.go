@@ -15,11 +15,11 @@ import (
 
 func TestPelicanBackgroundSummaryPaginationRetainsFullDetails(t *testing.T) {
 	ctx := context.Background()
-	db := codexGatewayBorrowPrivateIntegrationDB(t, ctx)
-	repo := NewCodexGatewayBorrowTestRepository(db)
+	db := pelicanPrivateIntegrationDB(t, ctx)
+	repo := NewPelicanTestRepository(db)
 	reader, ok := repo.(service.PelicanTaskReader)
 	require.True(t, ok)
-	task := codexGatewayBorrowIntegrationTask(t, 42)
+	task := pelicanIntegrationTask(t, 42)
 	first := task.Results[0]
 	for i := 2; i <= 3; i++ {
 		copy := *first
@@ -69,5 +69,5 @@ func TestPelicanBackgroundSummaryPaginationRetainsFullDetails(t *testing.T) {
 	_, err = db.ExecContext(ctx, "UPDATE codex_gateway_borrow_test_tasks SET created_at=$2::timestamptz - INTERVAL '24 hours',expires_at=$2::timestamptz WHERE id=$1", task.ID, time.Now().Add(-time.Second))
 	require.NoError(t, err)
 	_, err = reader.GetTaskSnapshot(ctx, task.ID)
-	require.ErrorIs(t, err, service.ErrCodexGatewayBorrowTestNotFound)
+	require.ErrorIs(t, err, service.ErrPelicanTestNotFound)
 }

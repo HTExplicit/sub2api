@@ -16,8 +16,8 @@ import (
 )
 
 func (h *PelicanTestHandler) StartTask(c *gin.Context) {
-	codexGatewayBorrowPrivateHeaders(c)
-	var request service.CodexGatewayBorrowTestRequest
+	pelicanPrivateHeaders(c)
+	var request service.PelicanTestRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -28,7 +28,7 @@ func (h *PelicanTestHandler) StartTask(c *gin.Context) {
 	}
 	task, err := h.runner.StartBackground(c.Request.Context(), createdBy, request, h.catalog)
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{"result": "pelican_background_test", "task_id": task.ID, "replayed": task.Replayed, "targets": task.Total})
@@ -36,7 +36,7 @@ func (h *PelicanTestHandler) StartTask(c *gin.Context) {
 }
 
 func pelicanTaskID(c *gin.Context) (string, bool) {
-	codexGatewayBorrowPrivateHeaders(c)
+	pelicanPrivateHeaders(c)
 	id, err := uuid.Parse(strings.TrimSpace(c.Param("id")))
 	if err != nil {
 		response.BadRequest(c, "task ID must be a UUID")
@@ -52,7 +52,7 @@ func (h *PelicanTestHandler) GetTask(c *gin.Context) {
 	}
 	task, err := h.runner.TaskSnapshot(c.Request.Context(), id)
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	response.Success(c, task)
@@ -67,7 +67,7 @@ func (h *PelicanTestHandler) GetTaskResults(c *gin.Context) {
 	accountID, _ := strconv.ParseInt(c.Query("account_id"), 10, 64)
 	result, err := h.runner.TaskResults(c.Request.Context(), id, service.PelicanResultFilter{Page: page, Size: size, AccountID: accountID, Model: c.Query("model"), Status: c.Query("status")})
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	response.Success(c, result)
@@ -85,7 +85,7 @@ func (h *PelicanTestHandler) GetTaskResult(c *gin.Context) {
 	}
 	result, err := h.runner.TaskResult(c.Request.Context(), id, resultID.String())
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	response.Success(c, h.preview.DecorateResult(result))
@@ -98,7 +98,7 @@ func (h *PelicanTestHandler) CancelTask(c *gin.Context) {
 	}
 	task, err := h.runner.CancelBackground(c.Request.Context(), id)
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{"result": "pelican_cancel_requested", "task_id": task.ID})
@@ -114,7 +114,7 @@ func (h *PelicanTestHandler) ObserveTask(c *gin.Context) {
 	}
 	task, err := h.runner.TaskSnapshot(c.Request.Context(), id)
 	if err != nil {
-		codexGatewayBorrowTestError(c, err)
+		pelicanTestError(c, err)
 		return
 	}
 	c.Header("Content-Type", "text/event-stream")
