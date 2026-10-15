@@ -267,6 +267,11 @@ class Capture:
             body = b'{"models":[]}'
         conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\nContent-Length: "
                      + str(len(body)).encode() + b"\r\n\r\n" + body)
+        try:
+            conn.settimeout(2)
+            conn.unwrap().close()
+        except (OSError, TimeoutError):
+            pass
 
     def http2(self, conn, record):
         h = h2.connection.H2Connection(config=h2.config.H2Configuration(client_side=False, header_encoding="utf-8"))
@@ -388,7 +393,8 @@ def main():
         scratch = pathlib.Path(temp)
         capture = Capture(scratch)
         modes = {}
-        for mode in ["http", "ws"]:
+        for mode in ["http", "http1", "ws"]:
+            capture.context.set_alpn_protocols(["http/1.1"] if mode=="http1" else ["h2","http/1.1"])
             print("capturing " + mode, flush=True)
             start = len(capture.records)
             try:
