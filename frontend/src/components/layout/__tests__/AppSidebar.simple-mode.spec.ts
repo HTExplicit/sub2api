@@ -109,6 +109,7 @@ describe('AppSidebar simple mode extensions', () => {
     const wrapper = await renderSidebar({ admin: true, simple })
 
     expect(extensionLinks(wrapper)).toEqual([
+      '/admin/login-protection',
       '/admin/system-prompts',
       '/admin/codex',
       '/admin/pelican-tests',

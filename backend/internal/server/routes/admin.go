@@ -649,6 +649,10 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.PUT("/openai-images-oauth-unavailable-cooldown", h.Admin.Setting.UpdateOpenAIImagesOAuthUnavailableCooldownSettings)
 		// 面板 API 限流配置
 		adminSettings.GET("/panel-rate-limit", h.Admin.Setting.GetPanelRateLimitSettings)
+		adminSettings.GET("/login-protection", h.Admin.Setting.GetLoginProtection)
+		adminSettings.PUT("/login-protection", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateLoginProtection)
+		adminSettings.GET("/login-protection/bans", h.Admin.Setting.ListLoginProtectionBans)
+		adminSettings.POST("/login-protection/unban", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UnbanLoginProtectionIP)
 		adminSettings.PUT("/panel-rate-limit", h.Admin.Setting.UpdatePanelRateLimitSettings)
 		// 流超时处理配置
 		adminSettings.GET("/stream-timeout", h.Admin.Setting.GetStreamTimeoutSettings)

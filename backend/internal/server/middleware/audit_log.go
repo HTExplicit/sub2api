@@ -54,6 +54,7 @@ func SkipAudit(c *gin.Context) {
 // are never accepted through this channel.
 var auditExtraAllowedKeys = map[string]struct{}{
 	"result": {}, "error_code": {}, "enabled": {}, "blocking_enabled": {},
+	"target_ip":      {},
 	"config_version": {}, "endpoint_count": {}, "scanner_count": {},
 	"all_groups": {}, "group_count": {}, "guard_endpoint_id": {},
 	"http_status": {}, "latency_ms": {}, "token_applied": {}, "retryable": {},
@@ -124,6 +125,8 @@ var auditSensitiveReads = map[string]string{
 
 // auditActionOverrides 变更类请求的动作名精确映射（未命中时自动推导）。
 var auditActionOverrides = map[string]string{
+	"PUT /api/v1/admin/settings/login-protection":             "admin.login_protection.update",
+	"POST /api/v1/admin/settings/login-protection/unban":      "admin.login_protection.unban",
 	"POST /api/v1/auth/login":                                 service.AuditActionLogin,
 	"POST /api/v1/auth/login/2fa":                             service.AuditActionLogin2FA,
 	"POST /api/v1/auth/passkey/login/finish":                  service.AuditActionLogin,

@@ -329,3 +329,39 @@ uses the OS UI font stack of `frontend/src/styles/theme.css`, as upstream does; 
 web fonts are shipped or loaded. Page files keep upstream class strings; after
 upstream merges, re-run the ops-repo de-sweep
 (`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling pages.
+
+## Login protection
+
+The administrator-only `/admin/login-protection` page lives in the Extensions
+sidebar section. `settings.login_protection_settings` defaults to enabled, a
+sliding five-minute window, five allowed failures, and a 24-hour IP ban starting
+on the sixth failure. Administrators can change integer window minutes (1–1440),
+allowed failures (1–1000), and ban hours (1–720). Settings writes refresh the local
+cache immediately; other instances refresh within 60 seconds.
+
+Password credential failures (including nonexistent emails), invalid login TOTP
+codes, and login TOTP attempt-limit rejections share a canonical source-IP
+counter across account names. Successful logins do not clear it. Malformed
+requests, human-verification failures, expired login sessions, and infrastructure
+errors do not count. Existing per-minute and TOTP guards remain in place.
+
+Redis-time Lua transitions own the sliding window, ban TTL, active-ban index and
+idempotent unban. App restarts retain Redis state. Banned requests do not extend
+expiry. Every new request reaching Sub2API is checked, including frontend
+fallback, model routes, and new WebSocket upgrades. Existing streams continue.
+No administrator, token or API key bypasses an active source-IP ban. Responses
+use HTTP 429, `LOGIN_IP_BANNED`, `Retry-After`, and expiry metadata; they are not
+cacheable. A bounded positive fallback preserves known unexpired bans during
+Redis failure; password/TOTP login fails with 503 while other traffic continues.
+
+`GET/PUT /api/v1/admin/settings/login-protection` reads/writes the four rule
+fields; `GET .../bans` uses normal pagination and returns full IPs with
+`blocked_at`/`expires_at`; `POST .../unban` takes `{ip}` and clears both the ban
+and failures. Writes use existing administrator audit/step-up policy. Automatic
+ban transitions produce one audit event; repeated blocked traffic does not add
+ban events. No new password or credential values are recorded.
+
+Disabling bypasses counting/enforcement without deleting still-expiring state;
+re-enabling restores unexpired bans. Rule changes do not alter existing ban
+expiry. Shared public-IP users share enforcement. Banned administrators must use
+another unbanned IP to manage recovery. No historical requests are replayed.

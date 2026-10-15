@@ -197,6 +197,7 @@ export default {
     promoCodes: 'Promo Codes',
     settings: 'Settings',
     myAccount: 'My Account',
+    loginProtection: 'Login Protection',
     extensions: 'Extensions',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
