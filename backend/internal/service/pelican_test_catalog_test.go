@@ -59,6 +59,29 @@ func TestPelicanTestCatalogReadsOnlyRequestedLocalAccountsAndRetainsStates(t *te
 	require.Equal(t, 1, reader.reads)
 }
 
+func TestPelicanTestCatalogPreferredDefaults(t *testing.T) {
+	for _, test := range []struct {
+		name, platform, expected string
+		mapping                  map[string]any
+	}{
+		{"gpt", PlatformOpenAI, "gpt-6.1-sol", nil},
+		{"claude", PlatformAnthropic, "claude-opus-5-5", nil},
+		{"gpt fallback", PlatformOpenAI, "gpt-6-astra", map[string]any{"gpt-6-astra": "gpt-6-astra", "gpt-image-2": "gpt-image-2"}},
+		{"claude fallback", PlatformAnthropic, "claude-sonnet-5-5", map[string]any{"claude-sonnet-5-5": "claude-sonnet-5-5"}},
+		{"unsupported preferred", PlatformOpenAI, "text-model", map[string]any{"gpt-6.1-sol": "gpt-image-2", "text-model": "text-model"}},
+		{"no text", PlatformOpenAI, "", map[string]any{"gpt-image-2": "gpt-image-2"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			account := &Account{Platform: test.platform, Type: AccountTypeAPIKey, Credentials: map[string]any{}}
+			if test.mapping != nil {
+				account.Credentials["model_mapping"] = test.mapping
+			}
+			option := pelicanTestAccountOptions(account)
+			require.Equal(t, test.expected, option.DefaultModelID)
+		})
+	}
+}
+
 func TestPelicanTestCatalogUsesMappingAndSourceBoundLocalMetadataWithoutMutation(t *testing.T) {
 	reasoning := true
 	account := &Account{ID: 5, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{

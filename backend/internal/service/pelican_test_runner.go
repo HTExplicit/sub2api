@@ -24,6 +24,8 @@ var (
 	ErrPelicanTestNotFound       = errors.New("pelican test not found or expired")
 	ErrPelicanTestReplayConflict = errors.New("client_task_id was reused with different test parameters")
 	ErrPelicanTestExpired        = errors.New("pelican test has expired")
+	ErrPelicanTestDeleted        = errors.New("pelican test was deleted")
+	ErrPelicanTestRunning        = errors.New("stop the pelican task and wait for it to finish before deleting")
 	ErrPelicanTestInvalidRequest = errors.New("invalid manual pelican test request")
 )
 
@@ -90,6 +92,7 @@ type PelicanTestTask struct {
 	Error                    string               `json:"error"`
 	Results                  []*PelicanTestResult `json:"results,omitempty"`
 	Replayed                 bool                 `json:"replayed"`
+	DeletedAt                *time.Time           `json:"-"`
 }
 
 type PelicanTestList struct {

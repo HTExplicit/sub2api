@@ -3,7 +3,7 @@
     <div class="mx-auto w-full max-w-[1920px] space-y-4" data-ui="pelican-tests">
       <header class="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
         <div><h1 class="text-xl font-semibold">{{ t('admin.pelicanTests.title') }}</h1><p class="mt-1 text-sm text-muted">{{ text('同一道题，按任务保存作品，比较完整结果。', 'One fixed prompt, saved tasks and complete works to compare.') }}</p></div>
-        <button type="button" class="btn btn-primary" :disabled="submitting || !!pendingRequest" data-test="pelican-new" @click="newTest"><Icon name="plus" size="sm" />{{ text('新建测试', 'New test') }}</button>
+        <button type="button" class="btn btn-primary" :disabled="operationBusy" data-test="pelican-new" @click="newTest"><Icon name="plus" size="sm" />{{ text('新建测试', 'New test') }}</button>
       </header>
       <p class="rounded-lg border border-line p-3 text-sm text-muted">{{ text('作品呈现只供观察。模型名称与完成状态分别记录，不据此判断真实模型身份或“满血／降智”。', 'Visual works are observations. Model labels and completion are recorded separately; they do not prove model identity or intelligence.') }}</p>
       <pre v-if="error" role="alert" class="pelican-error">{{ error }}</pre>
@@ -16,7 +16,7 @@
         <aside class="min-w-0 space-y-3" :class="mobilePane === 'tasks' ? '' : 'hidden lg:block'" :aria-label="text('测试任务', 'Test tasks')">
           <div class="flex items-center justify-between"><h2 class="font-semibold">{{ text('最近 24 小时任务', 'Tasks from the last 24 hours') }}</h2><button type="button" class="btn btn-ghost btn-sm" :disabled="historyLoading" data-test="pelican-refresh" @click="loadHistory">{{ t('admin.pelicanTests.refreshHistory') }}</button></div>
           <p v-if="historyLoading" class="text-sm text-muted">{{ t('common.loading') }}</p>
-          <button v-for="task in history.items" :key="task.id" type="button" class="block w-full rounded-lg border p-3 text-left" :class="activeTask?.id === task.id ? 'border-primary-500 bg-primary-50 dark:bg-primary-950' : 'border-line'" :aria-current="activeTask?.id === task.id ? 'true' : undefined" :data-test="`pelican-task-${task.id}`" @click="selectTask(task.id)">
+          <button v-for="task in history.items" :key="task.id" type="button" class="block w-full rounded-lg border p-3 text-left" :disabled="deleting" :class="activeTask?.id === task.id ? 'border-primary-500 bg-primary-50 dark:bg-primary-950' : 'border-line'" :aria-current="activeTask?.id === task.id ? 'true' : undefined" :data-test="`pelican-task-${task.id}`" @click="selectTask(task.id)">
             <span class="block text-sm font-medium">{{ formatTime(task.created_at) }}</span><span class="mt-1 block text-xs">{{ stateLabel(task.status) }} · {{ text('已处理', 'Processed') }} {{ task.completed }} / {{ task.total }}</span><span class="mt-1 block truncate text-xs text-muted">{{ task.id }}</span>
           </button>
           <p v-if="!historyLoading && !history.items.length" class="rounded-lg border border-dashed border-line p-5 text-sm text-muted">{{ t('admin.pelicanTests.noHistory') }}</p>
@@ -26,10 +26,11 @@
           <section v-if="comparison.length" class="card space-y-3 p-4" data-test="pelican-comparison-tray">
             <div class="flex flex-wrap items-center justify-between gap-2"><h2 class="font-semibold">{{ text('跨任务比较', 'Compare across tasks') }} {{ comparison.length }} / 4</h2><button type="button" class="btn btn-primary btn-sm" :disabled="comparison.length < 2 || comparisonBusy" data-test="pelican-compare" @click="openComparison">{{ text('并排查看', 'View side by side') }}</button></div>
             <ul class="flex flex-wrap gap-2"><li v-for="item in comparison" :key="item.id" class="min-w-0 rounded border border-line px-2 py-1 text-xs"><button type="button" class="max-w-full break-words text-left" :aria-label="`${text('移出比较', 'Remove from comparison')} ${item.account_name} ${item.model_id}`" @click="toggleCompare(item)">{{ item.account_name }} · {{ item.model_id }} ×</button></li></ul>
-            <button v-if="selectedFailures.length" type="button" class="btn btn-secondary btn-sm" @click="retrySelected">{{ text('重试选中失败项（新任务）', 'Retry selected failures (new task)') }} ({{ selectedFailures.length }})</button>
+            <button v-if="selectedFailures.length" type="button" class="btn btn-secondary btn-sm" :disabled="operationBusy" data-test="pelican-retry-selected" @click="retrySelected">{{ text('重试选中失败项（新任务）', 'Retry selected failures (new task)') }} ({{ selectedFailures.length }})</button>
           </section>
           <section v-if="activeTask" class="card space-y-4 p-4 sm:p-5" data-test="pelican-active-task">
-            <div class="flex flex-wrap items-start justify-between gap-3"><div class="min-w-0"><h2 class="font-semibold">{{ text('任务结果', 'Task results') }}</h2><p class="mt-1 break-all text-xs text-muted">{{ activeTask.id }} · {{ formatTime(activeTask.created_at) }}</p></div><div class="flex flex-wrap gap-2"><button type="button" class="btn btn-secondary btn-sm" :disabled="copying" @click="copyTask(false)">{{ text('复制参数', 'Copy parameters') }}</button><button type="button" class="btn btn-secondary btn-sm" :disabled="copying || !failedCount" data-test="pelican-retry-failed" @click="copyTask(true)">{{ text('重试全部失败项', 'Retry all failures') }} ({{ failedCount }})</button><button v-if="isRunning" type="button" class="btn btn-secondary btn-sm" :disabled="stopping" data-test="pelican-test-stop" @click="stopTask">{{ text('停止任务', 'Stop task') }}</button></div></div>
+            <div class="flex flex-wrap items-start justify-between gap-3"><div class="min-w-0"><h2 class="font-semibold">{{ text('任务结果', 'Task results') }}</h2><p class="mt-1 break-all text-xs text-muted">{{ activeTask.id }} · {{ formatTime(activeTask.created_at) }}</p></div><div class="flex flex-wrap gap-2"><button type="button" class="btn btn-secondary btn-sm" :disabled="operationBusy" @click="copyTask">{{ text('复制参数', 'Copy parameters') }}</button><button type="button" class="btn btn-secondary btn-sm" :disabled="operationBusy || taskUnfinished" data-test="pelican-retest-task" @click="retestTask(false)">{{ t('admin.pelicanTests.retestTask') }}</button><button type="button" class="btn btn-secondary btn-sm" :disabled="operationBusy || taskUnfinished || !failedCount" data-test="pelican-retry-failed" @click="retestTask(true)">{{ text('重试全部失败项', 'Retry all failures') }} ({{ failedCount }})</button><button type="button" class="btn btn-ghost btn-sm text-red-700 dark:text-red-300" :disabled="operationBusy || taskUnfinished || stopping" :title="taskUnfinished ? t('admin.pelicanTests.deleteWait') : undefined" data-test="pelican-delete-task" @click="requestDelete()">{{ t('admin.pelicanTests.deleteTask') }}</button><button v-if="isRunning" type="button" class="btn btn-secondary btn-sm" :disabled="stopping" data-test="pelican-test-stop" @click="stopTask">{{ text('停止任务', 'Stop task') }}</button></div></div>
+            <p v-if="taskUnfinished" class="text-xs text-muted">{{ t('admin.pelicanTests.deleteWait') }}</p>
             <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4" aria-live="polite"><div>{{ text('已完成', 'Completed') }}<strong class="mt-1 block text-xl">{{ activeTask.counts.complete || 0 }}</strong></div><div>{{ text('失败／中断', 'Failed / interrupted') }}<strong class="mt-1 block text-xl">{{ failedCount }}</strong></div><div>{{ text('取消', 'Cancelled') }}<strong class="mt-1 block text-xl">{{ activeTask.counts.cancelled || 0 }}</strong></div><div>{{ text('等待／进行中', 'Pending / running') }}<strong class="mt-1 block text-xl">{{ (activeTask.counts.pending || 0) + (activeTask.counts.running || 0) }}</strong></div></div>
             <p class="text-xs text-muted">{{ text('已处理', 'Processed') }} {{ activeTask.completed }} / {{ activeTask.total }} · {{ text('完成但不可预览', 'Completed without preview') }} {{ activeTask.counts.no_preview || 0 }} · {{ text('每项生成预算', 'Generation budget per item') }} {{ (activeTask.generation_timeout_seconds || 600) / 60 }} {{ t('admin.pelicanTests.minutes') }}</p>
             <p v-if="isRunning" role="status" class="text-sm" data-test="pelican-observer-state">{{ connection === 'retrying' ? text('观察连接中断，正在重连；后台任务继续。', 'Observation disconnected; reconnecting. The background task continues.') : text('后台任务运行中，离开页面不会取消。', 'Running in the background; leaving this page does not cancel it.') }}</p>
@@ -38,7 +39,7 @@
             <details class="rounded-lg border border-line p-3"><summary class="cursor-pointer text-sm">{{ t('admin.pelicanTests.viewPrompt') }}</summary><p class="mt-2 whitespace-pre-wrap text-sm">{{ activeTask.prompt || PELICAN_PROMPT }}</p></details>
             <div class="grid gap-3 sm:grid-cols-3"><label class="text-sm">{{ text('按账号 ID 筛选', 'Filter by account ID') }}<input v-model="resultAccount" type="number" min="1" class="input mt-1 w-full" /></label><label class="text-sm">{{ text('按模型筛选', 'Filter by model') }}<input v-model="resultModel" class="input mt-1 w-full" /></label><label class="text-sm">{{ text('结果状态', 'Result status') }}<select v-model="resultStatus" class="input mt-1 w-full" data-test="pelican-result-filter"><option value="">{{ text('全部', 'All') }}</option><option v-for="status in ['pending', 'running', 'complete', 'failed', 'incomplete', 'cancelled', 'skipped', 'no_preview']" :key="status" :value="status">{{ status === 'no_preview' ? text('不可预览', 'No preview') : stateLabel(status) }}</option></select></label></div>
           </section>
-          <div v-if="activeTask" class="grid min-w-0 gap-4 xl:grid-cols-2" data-test="pelican-results"><PelicanResultCard v-for="result in results.items" :key="result.id" :result="result" :now="now" :selected="comparison.some(item => item.id === result.id)" :selection-full="comparison.length >= 4" @select="toggleCompare" @open="detailResult = $event" @enlarge="enlarged = $event" /></div>
+          <div v-if="activeTask" class="grid min-w-0 gap-4 xl:grid-cols-2" data-test="pelican-results"><PelicanResultCard v-for="result in results.items" :key="result.id" :result="result" :now="now" :selected="comparison.some(item => item.id === result.id)" :selection-full="comparison.length >= 4" :can-delete="!taskUnfinished && !stopping" :busy="operationBusy" @select="toggleCompare" @open="detailResult = $event" @enlarge="enlarged = $event" @retest="retestResult" @delete="requestDelete" /></div>
           <p v-if="activeTask && !results.items.length" class="p-6 text-center text-sm text-muted">{{ text('当前筛选没有结果。', 'No results match these filters.') }}</p>
           <Pagination v-if="activeTask && results.total" v-model:page="resultPage" :total="results.total" :page-size="24" :show-page-size-selector="false" />
           <div v-if="!activeTask" class="card flex min-h-80 flex-col items-center justify-center gap-3 p-8 text-center"><h2 class="font-semibold">{{ text('选择任务查看作品，或新建一组测试', 'Select a task or create a new test') }}</h2><p class="max-w-lg text-sm text-muted">{{ text('查看历史、筛选、放大和比较都只读取结果，不会重新调用模型。', 'History, filters, enlargement and comparison only read saved results; they never generate again.') }}</p></div>
@@ -72,6 +73,11 @@
       <BaseDialog :show="!!enlarged" :title="enlarged ? previewTitle(enlarged) : t('admin.pelicanTests.enlarge')" width="extra-wide" @close="enlarged = null">
         <div v-if="enlarged?.preview_url" class="aspect-[4/3] max-h-[70vh] w-full" data-test="pelican-enlarged-content"><PelicanPreview :preview-url="enlarged.preview_url" :title="previewTitle(enlarged)" interactive /></div>
       </BaseDialog>
+      <BaseDialog :show="!!deleteTarget" :title="t(deleteTarget?.result ? 'admin.pelicanTests.deleteWork' : 'admin.pelicanTests.deleteTask')" width="narrow" @close="closeDelete">
+        <p class="break-words text-sm" data-test="pelican-delete-message">{{ deleteTarget?.result ? t('admin.pelicanTests.deleteWorkConfirm', { account: deleteTarget.result.account_name, model: deleteTarget.result.model_id }) : t('admin.pelicanTests.deleteTaskConfirm') }}</p>
+        <p class="mt-2 break-all text-xs text-muted">{{ deleteTarget?.taskId }}</p>
+        <template #footer><div class="flex justify-end gap-2"><button type="button" class="btn btn-secondary" :disabled="deleting" @click="closeDelete">{{ t('common.cancel') }}</button><button type="button" class="btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 dark:bg-red-600 dark:hover:bg-red-700" :disabled="deleting" data-test="pelican-confirm-delete" @click="confirmDelete">{{ deleting ? t('common.loading') : t('common.delete') }}</button></div></template>
+      </BaseDialog>
 
     </div>
   </AppLayout>
@@ -98,14 +104,17 @@ const activeTask = shallowRef<PelicanTaskSnapshot | null>(null), results = shall
 const history = shallowRef<PelicanTestHistory>({ items: [], total: 0, page: 1, size: 12 }), historyPage = ref(1), historyLoading = ref(false)
 const resultPage = ref(1), resultAccount = ref(''), resultModel = ref(''), resultStatus = ref('')
 const error = ref(''), connection = ref('idle'), stopping = ref(false), copying = ref(false), submitting = ref(false)
+const deleting = ref(false), deleteTarget = shallowRef<{ taskId: string; result?: PelicanResultSummary } | null>(null)
 const composerOpen = ref(false), draft = shallowRef<Omit<PelicanTestRequest, 'client_task_id'>>(), mobilePane = ref<'tasks' | 'works'>('works')
 const comparison = shallowRef<PelicanResultSummary[]>([]), comparisonDetails = shallowRef<PelicanTestResult[]>([]), comparisonOpen = ref(false), comparisonBusy = ref(false)
 const detailResult = shallowRef<PelicanTestResult | null>(null), enlarged = shallowRef<PelicanTestResult | null>(null)
 const pendingRequest = shallowRef<PelicanTestRequest | null>(readPending()), serverOffset = ref(0), clockKnown = ref(false), now = ref(Date.now())
 let resultQuery = '', resultsLoading = false
-let observer: AbortController | undefined, resultsController: AbortController | undefined, selectionSequence = 0, historySequence = 0
+let observer: AbortController | undefined, resultsController: AbortController | undefined, selectionSequence = 0, historySequence = 0, contentSequence = 0
 let clock: ReturnType<typeof setInterval> | undefined, filterTimer: ReturnType<typeof setTimeout> | undefined
 const isRunning = computed(() => !!activeTask.value && Date.parse(activeTask.value.expires_at) > now.value && connection.value !== 'unavailable' && ['pending', 'running'].includes(activeTask.value.status))
+const taskUnfinished = computed(() => !!activeTask.value && ['pending', 'running'].includes(activeTask.value.status))
+const operationBusy = computed(() => submitting.value || copying.value || deleting.value || !!pendingRequest.value)
 const failedCount = computed(() => (activeTask.value?.counts.failed || 0) + (activeTask.value?.counts.incomplete || 0) + (activeTask.value?.counts.skipped || 0))
 const selectedFailures = computed(() => comparison.value.filter(item => ['failed', 'incomplete', 'skipped'].includes(item.status)))
 function readPending(): PelicanTestRequest | null { try { return JSON.parse(sessionStorage.getItem('pelican.pending-task.v1') || 'null') } catch { return null } }
@@ -181,26 +190,28 @@ async function observe(id: string) {
 }
 function newTest() { draft.value = undefined; composerOpen.value = true; error.value = '' }
 async function startTask(parameters: Omit<PelicanTestRequest, 'client_task_id'>) {
-  if (!clockKnown.value) { error.value = t('admin.pelicanTests.clockUnavailable'); return }
-  await submitRequest({ ...parameters, client_task_id: createPelicanClientTaskId(serverOffset.value) })
+  if (!clockKnown.value) { error.value = t('admin.pelicanTests.clockUnavailable'); return false }
+  return submitRequest({ ...parameters, client_task_id: createPelicanClientTaskId(serverOffset.value) })
 }
 async function submitRequest(request: PelicanTestRequest) {
-  if (submitting.value) return
+  if (submitting.value) return false
   submitting.value = true; error.value = ''; storePending(request)
   try {
     const value = await pelicanTestsAPI.startTask(request, lifecycle.signal)
-    if (lifecycle.signal.aborted) return
+    if (lifecycle.signal.aborted) return false
     storePending(null); composerOpen.value = false; historyPage.value = 1
     await Promise.all([selectTask(value.id), loadHistory()])
+    return true
   } catch (value) {
     if (axios.isAxiosError(value) && value.response && value.response.status >= 400 && value.response.status < 500) storePending(null)
     report(value)
+    return false
   } finally { submitting.value = false }
 }
 async function recoverPending() {
   if (!pendingRequest.value || submitting.value) return
   try { const task = await pelicanTestsAPI.getTask(pendingRequest.value.client_task_id, lifecycle.signal); storePending(null); await selectTask(task.id); await loadHistory() }
-  catch (value) { report(value) }
+  catch (value) { if (axios.isAxiosError(value) && value.response?.status === 410) storePending(null); report(value) }
 }
 async function stopTask() {
   if (!activeTask.value || stopping.value) return
@@ -209,24 +220,102 @@ async function stopTask() {
 }
 function toggleCompare(item: PelicanResultSummary) { if (comparison.value.some(row => row.id === item.id)) comparison.value = comparison.value.filter(row => row.id !== item.id); else if (comparison.value.length < 4) comparison.value = [...comparison.value, item] }
 async function openComparison() {
+  const sequence = contentSequence
   comparisonBusy.value = true
-  try { comparisonDetails.value = await Promise.all(comparison.value.map(item => pelicanTestsAPI.getResult(item.task_id, item.id, lifecycle.signal))); comparisonOpen.value = true }
+  try { const details = await Promise.all(comparison.value.map(item => pelicanTestsAPI.getResult(item.task_id, item.id, lifecycle.signal))); if (sequence === contentSequence && !lifecycle.signal.aborted) { comparisonDetails.value = details; comparisonOpen.value = true } }
   catch (value) { report(value) } finally { comparisonBusy.value = false }
 }
-function retrySelected() { draft.value = { generation_timeout_seconds: activeTask.value?.generation_timeout_seconds || 600, targets: selectedFailures.value.map(item => ({ account_id: item.account_id, model_id: item.model_id, effort: item.effort })) }; composerOpen.value = true }
-async function copyTask(failedOnly: boolean) {
+async function readTaskItems(id: string, failedOnly = false) {
+  const items: PelicanResultSummary[] = []
+  for (let page = 1; !lifecycle.signal.aborted; page++) {
+    const result = await pelicanTestsAPI.getResults(id, { page, page_size: 50 }, lifecycle.signal)
+    items.push(...result.items.filter(item => !failedOnly || ['failed', 'incomplete', 'skipped'].includes(item.status)))
+    if (!result.items.length || page * 50 >= result.total) break
+  }
+  return items
+}
+function parameters(task: PelicanTaskSnapshot, items: PelicanResultSummary[]) { return { generation_timeout_seconds: task.generation_timeout_seconds || 600, targets: items.map(item => ({ account_id: item.account_id, model_id: item.model_id, effort: item.effort })) } }
+async function copyTask() {
   const task = activeTask.value; if (!task) return
+  if (operationBusy.value) return
   copying.value = true
   try {
-    const items: PelicanResultSummary[] = []
-    for (let page = 1; !lifecycle.signal.aborted; page++) {
-      const result = await pelicanTestsAPI.getResults(task.id, { page, page_size: 50 }, lifecycle.signal)
-      items.push(...result.items.filter(item => !failedOnly || ['failed', 'incomplete', 'skipped'].includes(item.status)))
-      if (!result.items.length || page * 50 >= result.total) break
-    }
+    const items = await readTaskItems(task.id)
     if (!items.length) return
-    draft.value = { generation_timeout_seconds: task.generation_timeout_seconds || 600, targets: items.map(item => ({ account_id: item.account_id, model_id: item.model_id, effort: item.effort })) }; composerOpen.value = true
+    draft.value = parameters(task, items); composerOpen.value = true
   } catch (value) { report(value) } finally { copying.value = false }
+}
+async function retestTask(failedOnly: boolean) {
+  const id = activeTask.value?.id; if (!id || operationBusy.value || taskUnfinished.value) return
+  copying.value = true
+  try {
+    const task = await pelicanTestsAPI.getTask(id, lifecycle.signal)
+    if (['pending', 'running'].includes(task.status)) throw new Error(t('admin.pelicanTests.retestWait'))
+    const items = await readTaskItems(id, failedOnly)
+    if (items.length && !lifecycle.signal.aborted) await startTask(parameters(task, items))
+  } catch (value) { report(value) } finally { copying.value = false }
+}
+async function retestResult(item: PelicanResultSummary) { await retestItems([item]) }
+async function retrySelected() { await retestItems([...selectedFailures.value]) }
+async function retestItems(items: PelicanResultSummary[]) {
+  if (operationBusy.value || !items.length) return
+  copying.value = true
+  try {
+    const groups = new Map<string, PelicanResultSummary[]>()
+    for (const item of items) groups.set(item.task_id, [...(groups.get(item.task_id) || []), item])
+    for (const [id, selected] of groups) {
+      const task = await pelicanTestsAPI.getTask(id, lifecycle.signal)
+      const available = selected.length === 1
+        ? (await pelicanTestsAPI.getResults(id, { page: 1, page_size: 50, account_id: selected[0].account_id, model: selected[0].model_id }, lifecycle.signal)).items
+        : await readTaskItems(id)
+      const current = selected.map(item => available.find(row => row.id === item.id))
+      if (current.some(item => !item)) throw new Error(t('admin.pelicanTests.retestMissing'))
+      const targets = current as PelicanResultSummary[]
+      if (targets.some(item => ['pending', 'running'].includes(item.status))) throw new Error(t('admin.pelicanTests.retestWait'))
+      if (lifecycle.signal.aborted || !await startTask(parameters(task, targets))) break
+    }
+  } catch (value) { report(value) } finally { copying.value = false }
+}
+function requestDelete(result?: PelicanResultSummary) {
+  if (!activeTask.value || operationBusy.value || taskUnfinished.value || stopping.value) return
+  deleteTarget.value = { taskId: activeTask.value.id, result }
+}
+function closeDelete() { if (!deleting.value) deleteTarget.value = null }
+async function confirmDelete() {
+  const target = deleteTarget.value; if (!target || deleting.value) return
+  deleting.value = true; error.value = ''
+  try {
+    if (target.result) await pelicanTestsAPI.deleteResult(target.taskId, target.result.id)
+    else await pelicanTestsAPI.deleteTask(target.taskId)
+    if (lifecycle.signal.aborted) return
+    deleteTarget.value = null; contentSequence++
+    const affected = (item: { id: string; task_id?: string } | null) => !!item && (target.result ? item.id === target.result.id : item.task_id === target.taskId)
+    comparison.value = comparison.value.filter(item => !affected(item))
+    comparisonDetails.value = comparisonDetails.value.filter(item => !affected(item))
+    if (comparisonDetails.value.length < 2) comparisonOpen.value = false
+    if (affected(detailResult.value)) detailResult.value = null
+    if (affected(enlarged.value)) enlarged.value = null
+    let removed = !target.result
+    if (activeTask.value?.id === target.taskId) {
+      selectionSequence++; observer?.abort(); resultsController?.abort()
+      if (target.result) {
+        try { activeTask.value = await pelicanTestsAPI.getTask(target.taskId, lifecycle.signal) }
+        catch (value) { if (axios.isAxiosError(value) && [404, 410].includes(value.response?.status || 0)) removed = true; else throw value }
+      }
+      if (removed) {
+        activeTask.value = null; results.value = { items: [], total: 0, page: 1, page_size: 24 }; connection.value = 'idle'
+        sessionStorage.removeItem('pelican.active-task.v1')
+      } else {
+        await loadResults()
+        const last = Math.max(1, Math.ceil(results.value.total / 24))
+        if (resultPage.value > last) { resultPage.value = last; await loadResults() }
+      }
+    }
+    await loadHistory()
+    const last = Math.max(1, Math.ceil(history.value.total / 12))
+    if (historyPage.value > last) { historyPage.value = last; await loadHistory() }
+    if (removed && !activeTask.value && history.value.items.length) await selectTask(history.value.items[0].id)
+  } catch (value) { report(value) } finally { deleting.value = false }
 }
 function download(content: string, filename: string, type: string) { const url = URL.createObjectURL(new Blob([content], { type })); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0) }
 function downloadHtml(result: PelicanTestResult) { download(result.raw_html || result.html, `${result.id}.html`, 'text/html;charset=utf-8') }

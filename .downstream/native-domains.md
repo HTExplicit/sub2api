@@ -111,9 +111,13 @@ handshake. Account mode edits invalidate only that account's subsequent connecti
 `/admin/pelican-tests` is a task/result workbench. The new-task composer loads
 accounts in pages of 50, retains selection across pages, and offers explicit
 current-page/all-matching scopes. Models use locally saved mappings and catalogs;
-valid backend defaults are respected and effort defaults to the model default.
+searchable dropdowns accept catalog choices only. Backend defaults prefer
+`gpt-6.1-sol` for OpenAI and `claude-opus-5-5` for Anthropic, falling back to the
+first text-capable local choice. Effort defaults to the model default.
 Known unsupported choices and duplicate account/model rows must be corrected or
-removed before submission; manual unverified models remain explicitly marked.
+removed before submission; an old choice missing from today's catalog must be
+reselected rather than silently replaced. Existing API consumers retain manual
+concrete-model compatibility.
 Bulk configuration preserves incompatible rows. Text capability and generation
 use the same local resolver, including the already integrated Cline/Command Code
 senders. No new provider protocol is introduced.
@@ -125,14 +129,17 @@ Only `POST /:id/cancel` cancels a background job. Disconnecting observers or
 closing the page leaves it running. Repeated client UUIDs with identical normalized
 parameters return the existing snapshot; conflicting parameters fail. Restart and
 shutdown preserve completed works, mark unfinished work interrupted, and never
-replay uncertain model calls. No schema migration is added.
+replay uncertain model calls. The existing task/result tables remain in place.
 
 The original `/tests` SSE endpoint retains request-bound cancellation and its
 request/response contract. Both APIs use the same runner, history and execution
 capacity. Summary SQL does not load raw responses, answers or HTML; details retain
 complete administrator evidence. The page supports 2–4 same/cross-task comparisons,
-filters, enlargement, downloads, parameter copying and failed-item retries into a
-new reviewed task. History, browsing, reconnecting and comparison are read-only.
+filters, enlargement, downloads and parameter copying. Whole-task, single-result
+and failed-item retests directly create a new task with original model/effort
+parameters and budget. Cross-task selected retries create one task per source,
+preserving each source budget. New submissions retain UUID replay protection;
+history, browsing, reconnecting and comparison are read-only.
 The fixed Pelican prompt is preserved. The actual sending path, credentials,
 identity, model mapping, proxy, TLS and protocol remain owned by each account. No API Key, group policy, model score or fallback account
 is manufactured for a test.
@@ -151,7 +158,15 @@ cannot dispatch again. Migration 275 owns the task/result tables; migration 276
 adds budgets, execution phases and actual invocation metadata in place, preserving
 old records and raw BYTEA output. Existing records retain their 90-second budget.
 Records expire 24 hours after task creation, immediately disappear from reads,
-and are removed by scoped minute cleanup. Output/errors retain original bytes;
+and are removed by scoped minute cleanup. Administrators can explicitly delete a
+finished task or one of its results through `DELETE /tasks/:id` and
+`DELETE /tasks/:id/results/:result_id`. Running parents return 409. Result deletes
+serialize on the parent and update remaining counts; deleting the last result
+also removes the empty task. Migration 279 adds `deleted_at` to the task table:
+deleted tasks keep their original submission identity/hash and expiry, but purge
+child output and task errors. Reads and submission replays return 410; old preview
+capabilities can no longer resolve removed results. Repeated deletes are
+idempotent. Output/errors of retained results preserve original bytes;
 binary upstream envelopes use lossless Base64. Truncated or incomplete output is
 recorded without another generation or automatic repair.
 

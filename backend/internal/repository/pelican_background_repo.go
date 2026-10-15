@@ -21,6 +21,9 @@ func (r *pelicanTestRepository) GetTaskSnapshot(ctx context.Context, id string) 
 	if err != nil {
 		return nil, err
 	}
+	if task.DeletedAt != nil {
+		return nil, service.ErrPelicanTestDeleted
+	}
 	snapshot := &service.PelicanTaskSnapshot{PelicanTestTask: task, Counts: make(map[string]int)}
 	rows, err := r.db.QueryContext(ctx, `SELECT status, COUNT(*), COUNT(*) FILTER (WHERE status='complete' AND octet_length(html)=0)
  FROM codex_gateway_borrow_test_results WHERE task_id=$1 GROUP BY status`, task.ID)
@@ -64,7 +67,7 @@ func (r *pelicanTestRepository) ListTaskResults(ctx context.Context, id string, 
 		filter.Size = 50
 	}
 	args := []any{id}
-	where := []string{"t.scope='manual_pelican'", "t.id=$1", "t.expires_at>CURRENT_TIMESTAMP"}
+	where := []string{"t.scope='manual_pelican'", "t.id=$1", "t.deleted_at IS NULL", "t.expires_at>CURRENT_TIMESTAMP"}
 	add := func(clause string, value any) {
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(clause, len(args)))

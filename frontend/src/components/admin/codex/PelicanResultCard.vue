@@ -13,6 +13,8 @@
     <div class="flex flex-wrap gap-2">
       <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || expired" @click="open(false)">{{ t('admin.pelicanTests.details') }}</button>
       <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || expired || !result.has_preview" @click="open(true)">{{ t('admin.pelicanTests.enlarge') }}</button>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="busy || expired || ['pending', 'running'].includes(result.status)" data-test="pelican-retest-result" @click="$emit('retest', result)">{{ t('admin.pelicanTests.retest') }}</button>
+      <button type="button" class="btn btn-ghost btn-sm text-red-700 dark:text-red-300" :disabled="busy || expired || !canDelete" :title="!canDelete ? t('admin.pelicanTests.deleteWait') : undefined" data-test="pelican-delete-result" @click="$emit('delete', result)">{{ t('admin.pelicanTests.deleteWork') }}</button>
       <button v-if="error && !expired" type="button" class="btn btn-ghost btn-sm" @click="load">{{ text('重新读取', 'Reload') }}</button>
     </div>
   </article>
@@ -25,8 +27,8 @@ import { pelicanTestsAPI, type PelicanResultSummary, type PelicanTestResult } fr
 import PelicanPreview from './PelicanPreview.vue'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
-const props = defineProps<{ result: PelicanResultSummary; selected: boolean; selectionFull: boolean; now: number }>()
-const emit = defineEmits<{ select: [PelicanResultSummary]; open: [PelicanTestResult]; enlarge: [PelicanTestResult] }>()
+const props = defineProps<{ result: PelicanResultSummary; selected: boolean; selectionFull: boolean; now: number; canDelete?: boolean; busy?: boolean }>()
+const emit = defineEmits<{ select: [PelicanResultSummary]; open: [PelicanTestResult]; enlarge: [PelicanTestResult]; retest: [PelicanResultSummary]; delete: [PelicanResultSummary] }>()
 const { t, locale } = useI18n()
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
 const element = ref<HTMLElement | null>(null), visible = ref(false), loading = ref(false), error = ref('')
@@ -43,7 +45,7 @@ function load(): Promise<void> {
   pending = pelicanTestsAPI.getResult(props.result.task_id, props.result.id, lifecycle.signal).then(result => { if (!lifecycle.signal.aborted) detail.value = result }).catch(value => { if (!lifecycle.signal.aborted) error.value = extractApiErrorMessage(value, text('读取作品失败', 'Could not load the work')) }).finally(() => { loading.value = false; pending = undefined })
   return pending
 }
-async function open(enlarge: boolean) { if (!detail.value || (detail.value.preview_expires_at && Date.parse(detail.value.preview_expires_at) <= props.now)) await load(); if (detail.value) { if (enlarge) emit('enlarge', detail.value); else emit('open', detail.value) } }
+async function open(enlarge: boolean) { if (!detail.value || (detail.value.preview_expires_at && Date.parse(detail.value.preview_expires_at) <= props.now)) await load(); if (!lifecycle.signal.aborted && detail.value) { if (enlarge) emit('enlarge', detail.value); else emit('open', detail.value) } }
 watch(() => [visible.value, props.result.has_preview, expired.value], () => { if (visible.value && props.result.has_preview && !expired.value && !detail.value && !error.value) void load() })
 onMounted(() => {
   if (typeof IntersectionObserver === 'undefined') { visible.value = true; return }

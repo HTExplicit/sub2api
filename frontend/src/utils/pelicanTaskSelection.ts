@@ -12,9 +12,9 @@ export function pelicanCombinationIssue(row: PelicanCombination, account?: Pelic
   if (!row.model_id.trim()) return 'model_required'
   const model = account.models.find(model => model.id === row.model_id.trim())
   if (model && !model.text_supported) return model.capability_reason || 'unsupported'
-  if (!model && !account.manual_model_allowed) return account.capability_reason || 'unsupported'
+  if (!model) return 'model_unavailable'
   if (row.effort && (!model || !model.reasoning_efforts.includes(row.effort))) return 'effort_unsupported'
-  // A platform without a sender cannot be enabled by manually entering a model.
+  // A platform without a sender cannot be enabled by selecting a model.
   if (account.capability_reason && !account.models.length) return account.capability_reason
   return ''
 }
