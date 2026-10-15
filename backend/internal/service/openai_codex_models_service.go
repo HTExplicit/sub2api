@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -1551,7 +1552,7 @@ func isRetryableCodexModelsManifestStatus(statusCode int, useAPIKeyUpstream bool
 }
 
 func isRetryableCodexModelsManifestTransportError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) {
+	if err == nil || errors.Is(err, context.Canceled) || codextransport.IsFailure(err) {
 		return false
 	}
 	if errors.Is(err, context.DeadlineExceeded) ||
@@ -1960,10 +1961,24 @@ func (s *OpenAIGatewayService) fetchOpenAIModelsUpstream(ctx context.Context, re
 		req.Header.Set("If-None-Match", ifNoneMatch)
 	}
 
+	req, err = bindCodexTransport(req, request.credentialAccount, currentCodexFingerprintPolicyForAccount(request.credentialAccount), "http")
+	if err != nil {
+		return nil, err
+	}
+
 	var resp *http.Response
 	if request.useAPIKeyUpstream {
 		if s.httpUpstream == nil {
 			return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_UPSTREAM_NOT_CONFIGURED", "Codex models upstream HTTP client is not configured")
+		}
+		req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+		resp, err = s.httpUpstream.Do(req, request.proxyURL, request.accountID, request.accountConcurrency)
+	} else if request.credentialAccount != nil && request.credentialAccount.IsOpenAIOAuthLike() && currentCodexFingerprintPolicyForAccount(request.credentialAccount).enabled {
+		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(request.credentialAccount) {
+			return nil, codexStrictClientError(fmt.Errorf("third-party model transport cannot attest the verified Codex profile"))
+		}
+		if s.httpUpstream == nil {
+			return nil, fmt.Errorf("strict Codex models transport is not configured")
 		}
 		req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 		resp, err = s.httpUpstream.Do(req, request.proxyURL, request.accountID, request.accountConcurrency)

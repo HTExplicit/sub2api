@@ -1,0 +1,51 @@
+name: Codex transport samples
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            digest: 86f268d81b898f3e144c5ecff2ad2fda2c5802e042d6195b72538fe0fa125057
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            digest: b293a0fcdd871900a44c0a4f40a1aa401b31e02854f790ebdb8bd5d1177fd1fe
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            digest: d68e39d8f62639f33f7d00656554cb9c3ef7809e664a3827e62ab3ace3c21b21
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc.exe
+            digest: a97c427a033b08d58902af3e52e8586ad2013267212112d306100223e2b12ec7
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install cryptography==48.0.1 h2==4.3.0
+      - name: Download fixed official binary and verify archive
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          EXPECTED: ${{ matrix.digest }}
+        run: |
+          curl --fail --location --retry 2 "https://github.com/openai/codex/releases/download/rust-v0.162.1/codex-${TARGET}.tar.gz" -o codex.tar.gz
+          python -c 'import hashlib,os,pathlib; assert hashlib.sha256(pathlib.Path("codex.tar.gz").read_bytes()).hexdigest()==os.environ["EXPECTED"]'
+          mkdir official
+          tar -xzf codex.tar.gz -C official
+      - name: Capture loopback HTTP and WS only
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: python .github/scripts/capture_codex_transport.py --binary "official/codex-${TARGET}" --output "capture-${TARGET}.json"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: codex-transport-${{ matrix.target }}
+          path: capture-*.json

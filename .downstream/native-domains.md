@@ -50,28 +50,61 @@ General account edits preserve the latest stored mode when it is omitted.
 Existing seeds and persisted TUI identities are retained, and new accounts still
 default to `device`.
 
-Enabled simulation applies a fixed account TUI identity to HTTP, passthrough,
-WS, account tests and credential refresh. Disabled simulation preserves caller
-identity and identifiers, filling only missing protocol identity headers.
-Mode `off` preserves device/session identifiers while simulation stays enabled;
-`device` changes only device identifiers; `session` keeps separate real threads
-and maps their parent references; `full` combines threads and removes self-parent
-references. Real turn IDs, parent/root turn IDs, window indices and timestamps
-are retained. Sandbox `none`, `external`, permission modes and unknown tags are
-preserved; known platform backends are aligned without inventing a sandbox for
-an absent tag. Explicit custom cache keys are not rewritten.
+Enabled simulation uses one fixed credential-source TUI device with independent
+real conversations. Stored `session` / `full` values and API inputs remain
+compatible but have effective mode `device`; the UI offers only `off` and
+fixed-device/multiple-conversation mode. Their stored raw values are not migrated.
+Every enabled mode scopes session/thread/parent/window identities one-to-one by
+credential source and API key, preserving UUIDv7 timestamps and real root/child/fork
+relationships. Explicit custom cache keys remain untouched; default session cache
+keys follow the same mapping. Real turns, timestamps, permission and sandbox
+metadata are retained. Calls without a client conversation get one synthetic UUIDv7
+root per logical request (shared by its attempts), never a permanent account root.
 
-The built-in protocol/version baseline is official Codex `rust-v0.161.0`.
-The existing six-hour stable-version sync and manual-version precedence remain.
-Successful saves publish an immutable policy; failed saves retain the old one.
-Each attempt shares it across headers/body. WS reuse includes identity and
-policy revision. Setting changes let the current turn finish, then request a
-retryable reconnect before another turn is sent through an old handshake.
-Account mode changes invalidate only that account's next handshake.
+The valid embedded body turn metadata is canonical; flat fields and bounded
+HTTP/WS headers are compatibility projections. Malformed core metadata returns a
+request-scoped 400. Unknown metadata, including large JSON numbers, is retained.
+Original field conflicts are recorded when canonical projection resolves them.
+Ordinary/compaction account tests use the same projection and synthetic root
+lifecycle, including credential shadows; wire status distinguishes configured
+policy, actually sent identity and negotiated TLS/ALPN.
 
-Account connection tests exclude and reject `ultra` across every capability
-source before dispatch; stale UI selections reset to default. Codex client
-orchestration catalogs retain their existing capabilities.
+The verified client baseline is official Codex `rust-v0.162.1`, commit
+`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`. The transport reference in
+`backend/internal/pkg/codextransport/reference.json` records fixed official-release archive
+digests, binary/capture digests and loopback sample runs for Windows x86_64,
+Linux x86_64 and macOS arm64/x86_64. These captures use an isolated custom CA
+configuration; verification is for that official-client transport variant, not
+an assertion that every native trust-store configuration is identical. TLS
+extensions are permuted as observed. HTTP/2 settings/flow/pseudo-header order,
+HTTP/1 header order/spelling and WebSocket offers are verified against actual
+wire captures. Native reconnect samples did not resume TLS sessions; the current
+profile therefore uses fresh TLS handshakes and does not share session tickets.
+
+Strict transport applies to enabled simulation: an unavailable profile or failed
+transport does not fall back to the generic Go client or replay an uncertain POST.
+Existing explicit upstream protocol-error recovery remains separate. Third-party
+plugins that own transmission cannot be used under strict simulation without a
+matching attested profile; their configuration is retained and a clear error is
+returned. API-key/other-provider paths and master-off behavior retain their clients.
+Codex HTTP, WS, refresh and model-list clients isolate their pools by credential
+source, proxy and profile. The Codex-only WebSocket adapter retains upstream
+coder/websocket v1.8.14 and its license, adding actual bounded deflate-window support;
+other services use the original dependency.
+
+Version discovery still runs every six hours. Automatic effective identity advances
+only within the shipped verified profile set; newly discovered unsupported releases
+are visible as pending validation. Saving an unsupported manual version returns an
+error. Settings reads add verified/pending/strict-profile details without changing
+the four-field write payload. Existing device seeds and persisted hardware identities
+are retained; their supported platform/architecture classes match the verified set.
+
+One immutable policy/identity selection is shared by each attempt's headers, body
+and transport. New requests freeze the compression choice too. WS pool compatibility
+includes actual header and body device/session/thread/window identity even for
+`device` / `off`, plus client and policy revision. Changed identity is applied after
+the current turn by requiring a new handshake, never by reusing an old conversation's
+handshake. Account mode edits invalidate only that account's subsequent connections.
 
 ## Independent Pelican tests
 

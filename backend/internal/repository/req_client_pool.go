@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,10 +16,11 @@ import (
 
 // reqClientOptions 定义 req 客户端的构建参数
 type reqClientOptions struct {
-	ProxyURL    string        // 代理 URL（支持 http/https/socks5）
-	Timeout     time.Duration // 请求超时时间
-	Impersonate bool          // 是否模拟浏览器指纹（当前为 Firefox，Chrome 伪装会被 chatgpt.com 的 Cloudflare 质询）
-	ForceHTTP2  bool          // 是否强制使用 HTTP/2
+	CodexProfile *codextransport.Binding
+	ProxyURL     string        // 代理 URL（支持 http/https/socks5）
+	Timeout      time.Duration // 请求超时时间
+	Impersonate  bool          // 是否模拟浏览器指纹（当前为 Firefox，Chrome 伪装会被 chatgpt.com 的 Cloudflare 质询）
+	ForceHTTP2   bool          // 是否强制使用 HTTP/2
 }
 
 // sharedReqClients 存储按配置参数缓存的 req 客户端实例
@@ -46,6 +48,19 @@ func getSharedReqClient(opts reqClientOptions) (*req.Client, error) {
 	}
 
 	client := req.C().SetTimeout(opts.Timeout)
+	if opts.CodexProfile != nil {
+		_, parsed, err := normalizeProxyURL(opts.ProxyURL)
+		if err != nil {
+			return nil, err
+		}
+		rt, err := codextransport.New(*opts.CodexProfile, codextransport.Options{ProxyURL: parsed, MaxIdleConns: 32, MaxIdleConnsPerHost: 8, IdleConnTimeout: 90 * time.Second})
+		if err != nil {
+			return nil, err
+		}
+		client.Transport = rt
+		client.GetClient().Transport = rt
+	}
+
 	if opts.ForceHTTP2 {
 		client = client.EnableForceHTTP2()
 	}
@@ -85,12 +100,16 @@ func instrumentReqClient(client *req.Client) *req.Client {
 }
 
 func buildReqClientKey(opts reqClientOptions) string {
-	return fmt.Sprintf("%s|%s|%t|%t",
+	key := fmt.Sprintf("%s|%s|%t|%t",
 		strings.TrimSpace(opts.ProxyURL),
 		opts.Timeout.String(),
 		opts.Impersonate,
 		opts.ForceHTTP2,
 	)
+	if opts.CodexProfile != nil {
+		key += "|codex:" + opts.CodexProfile.Key()
+	}
+	return key
 }
 
 // CreatePrivacyReqClient creates an HTTP client for OpenAI privacy settings API

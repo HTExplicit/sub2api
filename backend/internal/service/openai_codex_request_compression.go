@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"io"
 	"log/slog"
 	"net/http"
@@ -85,7 +86,14 @@ func isCodexStreamingResponsesRequest(req *http.Request) bool {
 // 重新填充。读取失败时绝不把已读出的前缀当作完整请求发送：可重放请求退回原请求明文发送，
 // 不可重放请求显式返回错误（该请求本就无法完整发出）。编码失败一律退回明文。
 func prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.Request, error) {
-	if !codexRequestZstd.Load() || account == nil || !account.IsOpenAIOAuthLike() {
+	if req == nil {
+		return nil, nil
+	}
+	enabled := codexRequestZstd.Load()
+	if binding, ok := codextransport.FromContext(req.Context()); ok {
+		enabled = binding.RequestZstd
+	}
+	if !enabled || account == nil || !account.IsOpenAIOAuthLike() {
 		return req, nil
 	}
 	if !isCodexStreamingResponsesRequest(req) || req.Body == nil || req.Body == http.NoBody {
@@ -144,6 +152,11 @@ func prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.R
 // doOpenAICodexUpstream 是 OpenAI 网关所有 Responses 端点 POST 的统一发送入口：先按上述
 // 规则生成线上请求（满足条件时压缩），再交给 httpUpstream。读取失败作为传输错误返回。
 func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account *Account, proxyURL string) (*http.Response, error) {
+	var bindErr error
+	req, bindErr = bindCodexTransport(req, account, currentCodexFingerprintPolicyForAccount(account), "http")
+	if bindErr != nil {
+		return nil, bindErr
+	}
 	wire, err := prepareOpenAICodexWireRequest(req, account)
 	if err != nil {
 		return nil, err

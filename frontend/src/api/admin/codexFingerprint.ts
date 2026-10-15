@@ -10,6 +10,9 @@ export interface CodexFingerprintSettings {
 }
 
 export interface CodexFingerprintSettingsView extends CodexFingerprintSettings {
+  verified_version?: string
+  version_pending_validation?: boolean
+  transport_policy?: 'strict'
   synced_version: string
   effective_version: string
   effective_user_agent: string
@@ -28,6 +31,8 @@ export interface CodexFingerprintAccountView {
     fingerprint_mode_configured: string
     fingerprint_mode_effective: CodexFingerprintMode
     fingerprint_reason: string
+    transport_profile?: { profile_id: string; version: string; source_commit: string; system: string; arch: string; strict: boolean; validated: boolean; plane: string }
+    transport_profile_error?: string
   }
   device_identity: {
     v: number

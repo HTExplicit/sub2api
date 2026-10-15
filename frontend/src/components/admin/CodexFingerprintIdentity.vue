@@ -9,7 +9,7 @@
       <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
         <div v-for="field in deviceFields" :key="field.label"><dt class="text-muted">{{ field.label }}</dt><dd class="break-words font-mono text-ink">{{ field.value }}</dd></div>
       </dl>
-      <p class="text-xs text-muted">{{ text('平台沙箱标签用于指纹兼容映射；实际权限与沙箱状态由请求决定。', 'The platform sandbox label is used for fingerprint compatibility mapping; actual permissions and sandbox state come from the request.') }}</p>
+      <p class="text-xs text-muted">{{ text('设备平台标签仅供参考；真实权限与 sandbox 诊断来自请求，转发时保留。', 'Device platform labels are descriptive. Actual permissions and sandbox diagnostics come from the request and are preserved.') }}</p>
     </section>
 
     <section class="space-y-3 border-t border-line pt-4">
@@ -28,6 +28,19 @@
         </template>
         <div class="sm:col-span-2 xl:col-span-4"><dt class="text-muted">{{ view.simulation_enabled ? text('当前策略 UA', 'Current policy UA') : text('缺失身份头的协议兜底 UA', 'Protocol fallback UA for missing identity headers') }}</dt><dd class="break-words font-mono text-ink" data-test="fingerprint-policy-ua">{{ view.identity.user_agent }}</dd></div>
       </dl>
+    </section>
+
+    <section v-if="view.simulation_enabled" class="space-y-3 border-t border-line pt-4" data-test="fingerprint-transport">
+      <h3 class="font-semibold text-ink">{{ text('严格传输档案', 'Strict transport profile') }}</h3>
+      <p v-if="view.identity.transport_profile_error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ view.identity.transport_profile_error }}</p>
+      <dl v-if="view.identity.transport_profile" class="grid gap-3 text-sm sm:grid-cols-2">
+        <div><dt class="text-muted">{{ text('档案', 'Profile') }}</dt><dd class="break-all font-mono">{{ view.identity.transport_profile.profile_id }}</dd></div>
+        <div><dt class="text-muted">{{ text('已验证客户端', 'Verified client') }}</dt><dd class="font-mono">{{ view.identity.transport_profile.version }}</dd></div>
+        <div><dt class="text-muted">{{ text('平台', 'Platform') }}</dt><dd>{{ view.identity.transport_profile.system }} / {{ view.identity.transport_profile.arch }}</dd></div>
+        <div><dt class="text-muted">{{ text('失败策略', 'Failure policy') }}</dt><dd>{{ text('严格：报错，不回退', 'Strict: fail without fallback') }}</dd></div>
+        <div class="sm:col-span-2"><dt class="text-muted">{{ text('官方源码', 'Official source') }}</dt><dd class="break-all font-mono">{{ view.identity.transport_profile.source_commit }}</dd></div>
+      </dl>
+      <p class="text-xs text-muted">{{ text('这里展示档案验证状态；账号测试另列实际发送标识和连接协商结果。', 'This describes profile validation. Account tests separately report sent identifiers and connection negotiation.') }}</p>
     </section>
 
     <section class="space-y-3 border-t border-line pt-4">
@@ -78,13 +91,13 @@ const effectiveFields = computed(() => {
     { label: text('UA 声明的系统版本', 'OS version declared by UA'), value: device?.os_version ?? unknown },
     { label: text('UA 声明的架构', 'Architecture declared by UA'), value: device?.arch ?? unknown },
     { label: text('UA 声明的终端', 'Terminal declared by UA'), value: device?.terminal ?? unknown },
-    { label: text('沙箱兼容映射目标', 'Sandbox compatibility mapping target'), value: device?.platform_sandbox ?? unknown }
+    { label: text('设备平台参考标签', 'Device platform reference label'), value: device?.platform_sandbox ?? unknown }
   ]
 })
 const identitySource = computed(() => ({ account: text('账号固定 TUI', 'Fixed account TUI'), override_ua: text('账号自定义 UA', 'Account UA override'), canonical: text('全局默认', 'Global default'), protocol_fallback: text('协议兜底', 'Protocol fallback') })[props.view.identity.identity_source] || props.view.identity.identity_source)
-const reason = computed(() => ({ ok: text('按当前策略生效', 'Active under the current policy'), seed_missing: text('身份种子缺失，未收敛', 'Missing identity seed; no convergence'), explicit_off: text('保留设备／会话标识；身份模拟仍由总开关控制', 'Preserve device/session identifiers; identity simulation follows the master switch'), simulation_disabled: text('总开关关闭，保留客户端身份与标识', 'Master switch off; retain client identity and identifiers'), non_oauth: text('该账号类型不适用', 'Not applicable to this account type') })[props.view.identity.fingerprint_reason] || props.view.identity.fingerprint_reason)
+const reason = computed(() => ({ legacy_mode_normalized: text('旧模式已兼容为固定设备、多独立对话', 'Legacy mode normalized to a fixed device with independent conversations'), ok: text('按当前策略生效', 'Active under the current policy'), seed_missing: text('身份种子缺失，未收敛', 'Missing identity seed; no convergence'), explicit_off: text('保留设备／会话标识；身份模拟仍由总开关控制', 'Preserve device/session identifiers; identity simulation follows the master switch'), simulation_disabled: text('总开关关闭，保留客户端身份与标识', 'Master switch off; retain client identity and identifiers'), non_oauth: text('该账号类型不适用', 'Not applicable to this account type') })[props.view.identity.fingerprint_reason] || props.view.identity.fingerprint_reason)
 function modeLabel(mode: CodexFingerprintMode): string {
-  return { off: text('保留设备／会话标识', 'Preserve device/session identifiers'), device: text('仅设备', 'Device only'), session: text('设备＋会话', 'Device + session'), full: text('设备＋会话＋线程', 'Device + session + thread') }[mode] || mode
+  return { off: text('保留设备／会话标识', 'Preserve device/session identifiers'), device: text('固定设备，多独立对话', 'Fixed device, independent conversations'), session: text('旧 session（兼容为固定设备多对话）', 'Legacy session (fixed device, independent conversations)'), full: text('旧 full（兼容为固定设备多对话）', 'Legacy full (fixed device, independent conversations)') }[mode] || mode
 }
 const identifierFields = computed(() => [
   { key: 'installation_id', label: text('设备标识', 'Device identifier') },
@@ -97,6 +110,10 @@ function ruleLabel(rule: string): string {
   const labels: Record<string, string> = {
     preserve_client: text('保留客户端原值', 'Preserve the client value'),
     account_device: text('使用账号固定设备标识；写入请求元数据', 'Use the fixed account device identifier in request metadata'),
+    scoped_real_session: text('按真实根会话一一映射，不合并独立对话', 'Map each real root session without merging conversations'),
+    scoped_real_thread: text('按真实线程一一映射，保留 UUIDv7 时间位', 'Map each real thread and preserve UUIDv7 timestamps'),
+    scoped_real_parent: text('与线程使用同一映射，保留真实父子关系', 'Use the thread mapping and preserve real parent relationships'),
+    scoped_real_window: text('映射真实线程前缀，保留窗口序号', 'Map the real thread prefix and preserve the window index'),
     account_session: text('使用账号固定会话标识', 'Use the fixed account session identifier'),
     mapped_thread: text('按真实线程确定性映射；缺失线程时采用请求会话来源', 'Map each real thread deterministically; use the request session source when no thread is present'),
     account_thread: text('合并为账号固定线程标识', 'Merge into the fixed account thread identifier'),

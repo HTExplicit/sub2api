@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +30,7 @@ const codexAccountIdentitySourceContextKey = "openai_codex_account_identity_sour
 // point overwrites the staged source before projecting outbound identity.
 func (s *OpenAIGatewayService) prepareCodexAccountIdentitySource(ctx context.Context, c *gin.Context, account *Account) (*Account, error) {
 	stageCodexFingerprintPolicy(c, account)
+	recordCodexMetadataConflicts(c, nil)
 	source := account
 	if account != nil && account.IsShadow() {
 		resolved, err := resolveCredentialAccount(ctx, s.accountRepo, account)
@@ -175,9 +178,7 @@ func codexAccountIdentityProjectionFields(account *Account, policy *codexFingerp
 	if account == nil || !policy.enabled || account.GetCodexFingerprintMode() == codexFingerprintOff {
 		return nil
 	}
-	if account.GetCodexFingerprintMode() == codexFingerprintDevice {
-		return []string{"installation_id", "x-codex-installation-id"}
-	}
+
 	return codexAccountIdentityFields
 }
 
@@ -193,6 +194,9 @@ func applyCodexAccountIdentityFields(values map[string]any, account *Account, ap
 			continue
 		}
 		next := scopeCodexAccountIdentityValue(account, apiKeyID, raw)
+		if name == "window_id" || name == "x-codex-window-id" {
+			next = scopeCodexWindowIdentity(account, apiKeyID, raw)
+		}
 		if next != raw {
 			values[name] = next
 			changed = true
@@ -207,7 +211,7 @@ func applyCodexAccountIdentityEmbeddedMetadata(values map[string]any, account *A
 		return false
 	}
 	metadata := map[string]any{}
-	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
+	if err := decodeCodexMetadataObject([]byte(raw), &metadata); err != nil || metadata == nil {
 		return false
 	}
 	if !applyCodexAccountIdentityFields(metadata, account, apiKeyID, policies...) {
@@ -228,6 +232,9 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 	}
 	changed := false
 	clientMetadata, _ := requestBody["client_metadata"].(map[string]any)
+	if clientMetadata != nil {
+		_, _ = normalizeCodexMetadataProjection(clientMetadata)
+	}
 	originalSessionID := stringMetadataValue(clientMetadata, "session_id")
 	if clientMetadata != nil {
 		if applyCodexAccountIdentityFields(clientMetadata, account, apiKeyID, policy) {
@@ -237,7 +244,7 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 			changed = true
 		}
 	}
-	if raw, ok := requestBody["prompt_cache_key"].(string); ok && raw != "" && raw == originalSessionID && (account.GetCodexFingerprintMode() == codexFingerprintSession || account.GetCodexFingerprintMode() == codexFingerprintFull) {
+	if raw, ok := requestBody["prompt_cache_key"].(string); ok && raw != "" && raw == originalSessionID && account.GetCodexFingerprintMode() != codexFingerprintOff {
 		next := scopeCodexAccountIdentityValue(account, apiKeyID, raw)
 		if next != raw {
 			requestBody["prompt_cache_key"] = next
@@ -251,7 +258,9 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 // subobjects with gjson/sjson. The passthrough hot path never unmarshals the
 // potentially multi-megabyte request body.
 func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, apiKeyID int64, policies ...*codexFingerprintPolicy) ([]byte, bool, error) {
-	policy := selectCodexFingerprintPolicy(policies)
+	return applyCodexAccountIdentityRawWithDiagnostics(body, account, apiKeyID, selectCodexFingerprintPolicy(policies), nil)
+}
+func applyCodexAccountIdentityRawWithDiagnostics(body []byte, account *Account, apiKeyID int64, policy *codexFingerprintPolicy, diagnostic func([]string)) ([]byte, bool, error) {
 	if len(body) == 0 || !policy.enabled || codexAccountIdentityNamespace(account) == "" {
 		return body, false, nil
 	}
@@ -262,11 +271,24 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 
 	next := body
 	changed := false
+	defaultSession := ""
+	cmValue := gjson.GetBytes(body, "client_metadata")
+	if cmValue.Exists() && !cmValue.IsObject() {
+		return body, false, codexMetadataClientError(fmt.Errorf("client_metadata must be an object"))
+	}
 	if cm := gjson.GetBytes(body, "client_metadata"); cm.IsObject() {
 		clientMetadata := map[string]any{}
-		if err := json.Unmarshal([]byte(cm.Raw), &clientMetadata); err != nil {
+		if err := decodeCodexMetadataObject([]byte(cm.Raw), &clientMetadata); err != nil {
 			return body, false, fmt.Errorf("decode client_metadata for account identity: %w", err)
 		}
+		conflicts, err := normalizeCodexMetadataProjection(clientMetadata)
+		if err != nil {
+			return body, false, codexMetadataClientError(err)
+		}
+		if diagnostic != nil {
+			diagnostic(conflicts)
+		}
+		defaultSession = stringMetadataValue(clientMetadata, "session_id")
 		metadataChanged := applyCodexAccountIdentityFields(clientMetadata, account, apiKeyID, policy)
 		if applyCodexAccountIdentityEmbeddedMetadata(clientMetadata, account, apiKeyID, policy) {
 			metadataChanged = true
@@ -284,7 +306,7 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 			changed = true
 		}
 	}
-	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && promptCacheKey.String() != "" && promptCacheKey.String() == gjson.GetBytes(body, "client_metadata.session_id").String() && (account.GetCodexFingerprintMode() == codexFingerprintSession || account.GetCodexFingerprintMode() == codexFingerprintFull) {
+	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && promptCacheKey.String() != "" && promptCacheKey.String() == defaultSession && account.GetCodexFingerprintMode() != codexFingerprintOff {
 		raw := promptCacheKey.String()
 		scoped := scopeCodexAccountIdentityValue(account, apiKeyID, raw)
 		if scoped != raw {
@@ -318,12 +340,16 @@ func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, api
 		}
 		raw := strings.TrimSpace(headers.Get(name))
 		if raw != "" {
-			headers.Set(name, scopeCodexAccountIdentityValue(account, apiKeyID, raw))
+			next := scopeCodexAccountIdentityValue(account, apiKeyID, raw)
+			if name == "window_id" || name == "x-codex-window-id" {
+				next = scopeCodexWindowIdentity(account, apiKeyID, raw)
+			}
+			headers.Set(name, next)
 		}
 	}
 	if raw := strings.TrimSpace(headers.Get(openAIWSTurnMetadataHeader)); raw != "" {
 		metadata := map[string]any{}
-		if err := json.Unmarshal([]byte(raw), &metadata); err == nil && metadata != nil && applyCodexAccountIdentityFields(metadata, account, apiKeyID, policy) {
+		if err := decodeCodexMetadataObject([]byte(raw), &metadata); err == nil && metadata != nil && applyCodexAccountIdentityFields(metadata, account, apiKeyID, policy) {
 			if rebuilt, err := marshalCodexTurnMetadata(metadata); err == nil {
 				headers.Set(openAIWSTurnMetadataHeader, string(rebuilt))
 			}
@@ -367,4 +393,52 @@ func ensureCodexSessionIdentityHeaders(h http.Header, sessionID string) {
 			h.Set("x-client-request-id", current)
 		}
 	}
+}
+
+// The routed account owns the mode; the credential source owns identity and seed.
+func codexAccountProjectionSource(c *gin.Context, routed *Account) *Account {
+	source := codexAccountIdentitySource(c, routed)
+	if source == nil || routed == nil {
+		return source
+	}
+	account := *source
+	account.Extra = maps.Clone(source.Extra)
+	if account.Extra == nil {
+		account.Extra = map[string]any{}
+	}
+	account.Extra[codexFingerprintModeExtraKey] = string(routed.GetCodexFingerprintMode())
+	return &account
+}
+func (s *OpenAIGatewayService) scopeCodexRequestMetadataRaw(c *gin.Context, routed *Account, body []byte) ([]byte, bool, error) {
+	recordCodexMetadataConflicts(c, nil)
+	return applyCodexAccountIdentityRawWithDiagnostics(body, codexAccountProjectionSource(c, routed), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, routed), func(conflicts []string) { recordCodexMetadataConflicts(c, conflicts) })
+}
+
+func scopeCodexWindowIdentity(account *Account, apiKeyID int64, raw string) string {
+	if index := strings.LastIndexByte(raw, ':'); index > 0 && index < len(raw)-1 {
+		if _, err := strconv.ParseUint(raw[index+1:], 10, 64); err == nil {
+			return scopeCodexAccountIdentityValue(account, apiKeyID, raw[:index]) + raw[index:]
+		}
+	}
+	return scopeCodexAccountIdentityValue(account, apiKeyID, raw)
+}
+
+func (s *OpenAIGatewayService) scopeCodexRequestMetadataMap(c *gin.Context, routed *Account, body map[string]any) (bool, error) {
+	source := codexAccountProjectionSource(c, routed)
+	policy := codexFingerprintPolicyForContext(c, routed)
+	if source == nil || !source.IsOpenAIOAuthLike() || !policy.enabled {
+		return false, nil
+	}
+	if value, exists := body["client_metadata"]; exists && value != nil {
+		metadata, ok := value.(map[string]any)
+		if !ok {
+			return false, codexMetadataClientError(fmt.Errorf("client_metadata must be an object"))
+		}
+		conflicts, err := normalizeCodexMetadataProjection(metadata)
+		if err != nil {
+			return false, codexMetadataClientError(err)
+		}
+		recordCodexMetadataConflicts(c, conflicts)
+	}
+	return applyCodexAccountIdentityClientMetadataMap(body, source, getAPIKeyIDFromContext(c), policy), nil
 }

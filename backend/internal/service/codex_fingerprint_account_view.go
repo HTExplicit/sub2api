@@ -45,7 +45,7 @@ func DescribeCodexFingerprintAccount(routed, source *Account) CodexFingerprintAc
 	}
 	policy := currentCodexFingerprintPolicy()
 	view := CodexFingerprintAccountView{
-		Mode:              string(routed.GetCodexFingerprintMode()),
+		Mode:              string(codexFingerprintModeFromExtra(routed.Extra)),
 		Identity:          resolveCodexIdentitySnapshot(routed, source, codexAccountIdentityOverrideUA(source), policy),
 		SimulationEnabled: policy.enabled,
 	}
@@ -109,18 +109,9 @@ func describeCodexFingerprintIdentifierPolicy(source *Account, effectiveMode str
 		return result
 	}
 	result.InstallationID = CodexFingerprintIdentifierRule{Behavior: "fixed", Rule: "account_device", Value: codexFingerprintOptionalString(resolveConvergedInstallationID(source, seed))}
-	if mode == codexFingerprintDevice {
-		return result
-	}
-	sessionID := resolveConvergedSessionID(seed)
-	result.SessionID = CodexFingerprintIdentifierRule{Behavior: "fixed", Rule: "account_session", Value: &sessionID}
-	result.ThreadID = CodexFingerprintIdentifierRule{Behavior: "request_derived", Rule: "mapped_thread"}
-	result.ParentThreadID = CodexFingerprintIdentifierRule{Behavior: "request_derived", Rule: "mapped_parent_thread"}
-	result.WindowID = CodexFingerprintIdentifierRule{Behavior: "request_derived", Rule: "mapped_window"}
-	if mode == codexFingerprintFull {
-		result.ThreadID = CodexFingerprintIdentifierRule{Behavior: "fixed", Rule: "account_thread", Value: &sessionID}
-		result.ParentThreadID.Rule = "remove_parent_self_reference"
-		result.WindowID.Rule = "merged_window"
-	}
+	result.SessionID = CodexFingerprintIdentifierRule{Behavior: "request_derived", Rule: "scoped_real_session"}
+	result.ThreadID = CodexFingerprintIdentifierRule{Behavior: "request_derived", Rule: "scoped_real_thread"}
+	result.ParentThreadID = CodexFingerprintIdentifierRule{Behavior: "request_derived", Rule: "scoped_real_parent"}
+	result.WindowID = CodexFingerprintIdentifierRule{Behavior: "request_derived", Rule: "scoped_real_window"}
 	return result
 }

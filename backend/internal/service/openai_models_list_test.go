@@ -60,7 +60,7 @@ func TestFetchOpenAIModelsListUsesStandardRequestAndIsolatesCodexCache(t *testin
 
 func TestFetchOpenAIModelsListOAuthSharesManifestCache(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"special-oauth-model","display_name":"Special OAuth Model","description":"manifest only"},{"slug":"gpt-image-1"}]}`)
-	s := &OpenAIGatewayService{}
+	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	account := newCodexModelsTestAccount()
 	response, err := s.FetchOpenAIModelsList(context.Background(), account)
 	require.NoError(t, err)
@@ -235,7 +235,10 @@ func TestFetchOpenAIModelsListEmptyAndMalformedResponses(t *testing.T) {
 func TestPinnedOpenAIModelsListMixedAccountsShareColdCacheAcrossGroups(t *testing.T) {
 	_, oauthCalls := newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"shared-model"},{"slug":"oauth-special"}]}`)
 	var apiCalls atomic.Int32
-	s := newCodexModelsAPIKeyTestService(&codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	s := newCodexModelsAPIKeyTestService(&codexModelsHTTPUpstreamStub{do: func(req *http.Request, proxy string, accountID int64, concurrency int) (*http.Response, error) {
+		if accountID == 1 {
+			return newCodexModelsLoopbackUpstream().Do(req, proxy, accountID, concurrency)
+		}
 		apiCalls.Add(1)
 		return ordinaryModelsUpstreamResponse(`{"data":[{"id":"shared-model","owned_by":"api-provider"},{"id":"api-special"}]}`), nil
 	}})
@@ -297,7 +300,7 @@ func TestFetchOpenAIModelsListResolvesShadowOAuthCredentials(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"parent-model"}]}`)
 	parent := newCodexModelsTestAccount()
 	shadow := &Account{ID: 9, Platform: PlatformOpenAI, Type: AccountTypeOAuth, ParentAccountID: &parent.ID}
-	s := &OpenAIGatewayService{accountRepo: newStubCredRepo(parent)}
+	s := &OpenAIGatewayService{accountRepo: newStubCredRepo(parent), httpUpstream: newCodexModelsLoopbackUpstream()}
 	response, err := s.FetchOpenAIModelsList(context.Background(), shadow)
 	require.NoError(t, err)
 	require.Contains(t, string(response.Body), `"id":"parent-model"`)
