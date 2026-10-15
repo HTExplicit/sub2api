@@ -498,8 +498,8 @@ type OpsUpstreamErrorEvent struct {
 	// Signature recovery evidence is bounded and contains fingerprints only;
 	// bookkeeping must not replace the corresponding upstream failure.
 	SignatureRecovery *ClaudeSignatureRecoveryDiagnostic `json:"signature_recovery,omitempty"`
-	// Probe evidence belongs to preparation, not to the business upstream status.
-	BorrowQualification *CodexGatewayBorrowFailureEvidence `json:"borrow_qualification,omitempty"`
+	// Preserve the raw historical preparation evidence; new attempts never set it.
+	BorrowQualification json.RawMessage `json:"borrow_qualification,omitempty"`
 
 	// SkipMonitoring is request-local rule state. It is intentionally excluded
 	// from persisted attempt JSON. The logger consults it only when this event is

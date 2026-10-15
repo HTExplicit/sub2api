@@ -29,7 +29,7 @@ async function make() {
     AppLayout: { template: '<div><slot /></div>' },
     BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /></div>' },
     PelicanTaskComposer: { props: ['initial', 'submitting'], emits: ['submit'], template: '<div data-test="composer-stub" />' },
-    BorrowPelicanPreview: true
+    PelicanPreview: true
   } } }); wrappers.push(wrapper); await flushPromises(); return wrapper
 }
 describe('Pelican background workbench', () => {

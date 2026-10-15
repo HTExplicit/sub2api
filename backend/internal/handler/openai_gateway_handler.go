@@ -114,9 +114,6 @@ func openAIWSPostOutputCyberClose(err error) (*service.OpenAIWSClientCloseError,
 }
 
 func shouldReportOpenAIWSProxyAccountFailure(err error) bool {
-	if service.IsCodexGatewayBorrowRequestFailure(err) {
-		return false
-	}
 	if _, postOutputCyber := openAIWSPostOutputCyberClose(err); postOutputCyber {
 		return false
 	}
@@ -916,7 +913,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			})
 		}
 		if err != nil {
-
 			if result != nil && result.ClientDisconnect {
 				reqLog.Info("openai.client_disconnected",
 					zap.Int64("account_id", account.ID),
@@ -940,7 +936,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Error(err),
 				)
 			} else {
-
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if failoverClientGone(c) {

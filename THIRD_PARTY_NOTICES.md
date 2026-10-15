@@ -41,3 +41,37 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Pelican previews and HTML extraction
+
+The Pelican HTML/SVG extraction and isolated preview components retain adaptations
+from ranxi2001/sub2api, commit `5ca3cca21eeaf4ca8a694a7f2f8f0ecd9575c549`,
+under the repository's LGPL-3.0 license. The retained files are
+`backend/internal/service/pelican_preview.go` and
+`frontend/src/components/admin/codex/PelicanPreview.vue`.
+
+HTML fence selection also references `web/src/lib/render.ts` from
+iwyxdxl/gpttesticu, commit `1b3e237c15dcdf89c4aa66d3521f8d6485d6da4a`,
+under the following MIT license.
+
+MIT License
+
+Copyright (c) 2026 iwyxdxl
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

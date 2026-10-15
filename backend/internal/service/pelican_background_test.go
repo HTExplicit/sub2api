@@ -15,28 +15,28 @@ import (
 )
 
 type pelicanBackgroundRepo struct {
-	CodexGatewayBorrowTestRepository
+	PelicanTestRepository
 	mu        sync.Mutex
-	tasks     map[string]*CodexGatewayBorrowTestTask
+	tasks     map[string]*PelicanTestTask
 	fullReads int
 }
 
-func clonePelicanTestTask(task *CodexGatewayBorrowTestTask) *CodexGatewayBorrowTestTask {
+func clonePelicanTestTask(task *PelicanTestTask) *PelicanTestTask {
 	copy := *task
-	copy.Results = make([]*CodexGatewayBorrowTestResult, 0, len(task.Results))
+	copy.Results = make([]*PelicanTestResult, 0, len(task.Results))
 	for _, row := range task.Results {
 		item := *row
 		copy.Results = append(copy.Results, &item)
 	}
 	return &copy
 }
-func (r *pelicanBackgroundRepo) Create(_ context.Context, task *CodexGatewayBorrowTestTask) (*CodexGatewayBorrowTestTask, bool, error) {
+func (r *pelicanBackgroundRepo) Create(_ context.Context, task *PelicanTestTask) (*PelicanTestTask, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, old := range r.tasks {
 		if old.ClientTaskID == task.ClientTaskID {
 			if old.RequestHash != task.RequestHash {
-				return nil, true, ErrCodexGatewayBorrowTestReplayConflict
+				return nil, true, ErrPelicanTestReplayConflict
 			}
 			return clonePelicanTestTask(old), true, nil
 		}
@@ -44,16 +44,16 @@ func (r *pelicanBackgroundRepo) Create(_ context.Context, task *CodexGatewayBorr
 	r.tasks[task.ID] = clonePelicanTestTask(task)
 	return clonePelicanTestTask(task), false, nil
 }
-func (r *pelicanBackgroundRepo) Get(_ context.Context, id string) (*CodexGatewayBorrowTestTask, error) {
+func (r *pelicanBackgroundRepo) Get(_ context.Context, id string) (*PelicanTestTask, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.fullReads++
 	if task := r.tasks[id]; task != nil {
 		return clonePelicanTestTask(task), nil
 	}
-	return nil, ErrCodexGatewayBorrowTestNotFound
+	return nil, ErrPelicanTestNotFound
 }
-func (r *pelicanBackgroundRepo) GetResult(_ context.Context, id string) (*CodexGatewayBorrowTestResult, error) {
+func (r *pelicanBackgroundRepo) GetResult(_ context.Context, id string) (*PelicanTestResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, task := range r.tasks {
@@ -64,7 +64,7 @@ func (r *pelicanBackgroundRepo) GetResult(_ context.Context, id string) (*CodexG
 			}
 		}
 	}
-	return nil, ErrCodexGatewayBorrowTestNotFound
+	return nil, ErrPelicanTestNotFound
 }
 func (r *pelicanBackgroundRepo) StartTask(_ context.Context, id string, now time.Time) error {
 	r.mu.Lock()
@@ -73,7 +73,7 @@ func (r *pelicanBackgroundRepo) StartTask(_ context.Context, id string, now time
 	r.tasks[id].StartedAt = &now
 	return nil
 }
-func (r *pelicanBackgroundRepo) SaveResult(_ context.Context, item *CodexGatewayBorrowTestResult) error {
+func (r *pelicanBackgroundRepo) SaveResult(_ context.Context, item *PelicanTestResult) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	task := r.tasks[item.TaskID]
@@ -128,10 +128,10 @@ func (r *pelicanBackgroundRepo) GetTaskSnapshot(_ context.Context, id string) (*
 					counts["no_preview"]++
 				}
 			}
-			return &PelicanTaskSnapshot{CodexGatewayBorrowTestTask: &copy, Counts: counts}, nil
+			return &PelicanTaskSnapshot{PelicanTestTask: &copy, Counts: counts}, nil
 		}
 	}
-	return nil, ErrCodexGatewayBorrowTestNotFound
+	return nil, ErrPelicanTestNotFound
 }
 func (r *pelicanBackgroundRepo) ListTaskResults(_ context.Context, id string, filter PelicanResultFilter) (*PelicanResultPage, error) {
 	r.mu.Lock()
@@ -144,20 +144,20 @@ func (r *pelicanBackgroundRepo) ListTaskResults(_ context.Context, id string, fi
 	return page, nil
 }
 
-func newPelicanBackgroundFixture(t *testing.T, generate func(context.Context, int64, string, string) (*CodexGatewayBorrowPelicanResult, error)) (*CodexGatewayBorrowTestRunner, *pelicanBackgroundRepo, *PelicanTestCatalog) {
+func newPelicanBackgroundFixture(t *testing.T, generate func(context.Context, int64, string, string) (*PelicanResult, error)) (*PelicanTestRunner, *pelicanBackgroundRepo, *PelicanTestCatalog) {
 	t.Helper()
-	repo := &pelicanBackgroundRepo{tasks: map[string]*CodexGatewayBorrowTestTask{}}
-	runner := newCodexGatewayBorrowTestRunner(repo, nil, nil)
-	runner.SetStandaloneGenerator(codexGatewayBorrowFakeGenerator{generate: generate})
+	repo := &pelicanBackgroundRepo{tasks: map[string]*PelicanTestTask{}}
+	runner := newPelicanTestRunner(repo, nil, nil)
+	runner.generator = pelicanFakeGenerator{generate: generate}
 	t.Cleanup(runner.Stop)
-	catalog := &PelicanTestCatalog{now: time.Now, accounts: &pelicanTestCatalogReaderStub{accounts: []*Account{borrowCoreAccount(1)}}}
+	catalog := &PelicanTestCatalog{now: time.Now, accounts: &pelicanTestCatalogReaderStub{accounts: []*Account{pelicanFixtureAccount(1)}}}
 	return runner, repo, catalog
 }
 
 func TestPelicanBackgroundSurvivesCallerAndReplaysOnlySnapshot(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
-	runner, repo, catalog := newPelicanBackgroundFixture(t, func(ctx context.Context, _ int64, _ string, effort string) (*CodexGatewayBorrowPelicanResult, error) {
+	runner, repo, catalog := newPelicanBackgroundFixture(t, func(ctx context.Context, _ int64, _ string, effort string) (*PelicanResult, error) {
 		require.Empty(t, effort)
 		calls.Add(1)
 		close(entered)
@@ -166,10 +166,10 @@ func TestPelicanBackgroundSurvivesCallerAndReplaysOnlySnapshot(t *testing.T) {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
-		return &CodexGatewayBorrowPelicanResult{Status: "complete", RawAnswer: "<svg><text>saved work</text></svg>", RawResponse: "complete raw response"}, nil
+		return &PelicanResult{Status: "complete", RawAnswer: "<svg><text>saved work</text></svg>", RawResponse: "complete raw response"}, nil
 	})
 	caller, cancel := context.WithCancel(context.Background())
-	request := CodexGatewayBorrowTestRequest{ClientTaskID: codexGatewayBorrowV7(t), Targets: []CodexGatewayBorrowTestTarget{{AccountID: 1, ModelID: "gpt-6-astra"}}}
+	request := PelicanTestRequest{ClientTaskID: pelicanV7(t), Targets: []PelicanTestTarget{{AccountID: 1, ModelID: "gpt-6-astra"}}}
 	task, err := runner.StartBackground(caller, 7, request, catalog)
 	require.NoError(t, err)
 	<-entered
@@ -181,7 +181,7 @@ func TestPelicanBackgroundSurvivesCallerAndReplaysOnlySnapshot(t *testing.T) {
 	require.EqualValues(t, 1, calls.Load())
 	request.GenerationTimeoutSeconds = 900
 	_, err = runner.StartBackground(context.Background(), 7, request, catalog)
-	require.ErrorIs(t, err, ErrCodexGatewayBorrowTestReplayConflict)
+	require.ErrorIs(t, err, ErrPelicanTestReplayConflict)
 	page, err := runner.TaskResults(context.Background(), task.ID, PelicanResultFilter{})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
@@ -207,12 +207,12 @@ func TestPelicanBackgroundExplicitCancelAndShutdownInterrupt(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "explicit_cancel", true: "shutdown"}[shutdown], func(t *testing.T) {
 			entered := make(chan struct{})
-			runner, _, catalog := newPelicanBackgroundFixture(t, func(ctx context.Context, _ int64, _ string, _ string) (*CodexGatewayBorrowPelicanResult, error) {
+			runner, _, catalog := newPelicanBackgroundFixture(t, func(ctx context.Context, _ int64, _ string, _ string) (*PelicanResult, error) {
 				close(entered)
 				<-ctx.Done()
-				return &CodexGatewayBorrowPelicanResult{RawAnswer: "partial work", RawResponse: "partial response"}, ctx.Err()
+				return &PelicanResult{RawAnswer: "partial work", RawResponse: "partial response"}, ctx.Err()
 			})
-			task, err := runner.StartBackground(context.Background(), 7, CodexGatewayBorrowTestRequest{ClientTaskID: codexGatewayBorrowV7(t), Targets: []CodexGatewayBorrowTestTarget{{AccountID: 1, ModelID: "gpt-6-astra"}}}, catalog)
+			task, err := runner.StartBackground(context.Background(), 7, PelicanTestRequest{ClientTaskID: pelicanV7(t), Targets: []PelicanTestTarget{{AccountID: 1, ModelID: "gpt-6-astra"}}}, catalog)
 			require.NoError(t, err)
 			<-entered
 			expected := "cancelled"
@@ -240,16 +240,16 @@ func TestPelicanBackgroundExplicitCancelAndShutdownInterrupt(t *testing.T) {
 }
 
 func TestPelicanBackgroundRejectsDuplicateAndUnsupportedBeforeCreating(t *testing.T) {
-	runner, repo, catalog := newPelicanBackgroundFixture(t, func(context.Context, int64, string, string) (*CodexGatewayBorrowPelicanResult, error) {
+	runner, repo, catalog := newPelicanBackgroundFixture(t, func(context.Context, int64, string, string) (*PelicanResult, error) {
 		t.Error("must not generate")
 		return nil, errors.New("unexpected")
 	})
-	for _, targets := range [][]CodexGatewayBorrowTestTarget{
+	for _, targets := range [][]PelicanTestTarget{
 		{{AccountID: 1, ModelID: "gpt-6-astra", Effort: "low"}, {AccountID: 1, ModelID: "gpt-6-astra", Effort: "high"}},
 		{{AccountID: 1, ModelID: "codex-auto-review"}},
 	} {
-		_, err := runner.StartBackground(context.Background(), 7, CodexGatewayBorrowTestRequest{ClientTaskID: codexGatewayBorrowV7(t), Targets: targets}, catalog)
-		require.ErrorIs(t, err, ErrCodexGatewayBorrowTestInvalidRequest)
+		_, err := runner.StartBackground(context.Background(), 7, PelicanTestRequest{ClientTaskID: pelicanV7(t), Targets: targets}, catalog)
+		require.ErrorIs(t, err, ErrPelicanTestInvalidRequest)
 	}
 	require.Empty(t, repo.tasks)
 }

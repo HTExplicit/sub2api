@@ -9,7 +9,7 @@
         <label class="text-sm">{{ t('admin.pelicanTests.searchAccounts') }}<input v-model="search" type="search" class="input mt-1 w-full" data-test="pelican-account-search" /></label>
         <label class="text-sm">{{ t('admin.pelicanTests.platform') }}<select v-model="platform" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.allPlatforms') }}</option><option v-for="option in CONCRETE_PLATFORM_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
         <label class="text-sm">{{ text('分组', 'Group') }}<select v-model="group" class="input mt-1 w-full"><option value="">{{ text('全部分组', 'All groups') }}</option><option v-for="item in groups" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
-        <label class="text-sm">{{ text('状态', 'Status') }}<select v-model="status" class="input mt-1 w-full"><option value="">{{ text('所有状态', 'All statuses') }}</option><option v-for="state in ['active', 'inactive', 'error', 'disabled']" :key="state" :value="state">{{ t(`admin.codexGatewayBorrow.states.${state}`) }}</option></select></label>
+        <label class="text-sm">{{ text('状态', 'Status') }}<select v-model="status" class="input mt-1 w-full"><option value="">{{ text('所有状态', 'All statuses') }}</option><option v-for="state in ['active', 'inactive', 'error', 'disabled']" :key="state" :value="state">{{ t(`admin.pelicanTests.states.${state}`) }}</option></select></label>
       </div>
       <div class="flex flex-wrap items-center gap-2 text-sm">
         <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="selectPage">{{ text('选择当前页', 'Select this page') }} ({{ accounts.length }})</button>
@@ -32,7 +32,7 @@
       <div v-if="step === 2" class="space-y-4">
         <div class="flex flex-wrap items-end gap-2 rounded-lg border border-line p-3">
           <label class="min-w-40 flex-1 text-sm">{{ text('批量模型（留空保留各自模型）', 'Bulk model (blank keeps each model)') }}<input v-model="bulkModel" class="input mt-1 w-full" /></label>
-          <label class="text-sm">{{ t('admin.codexGatewayBorrow.effort') }}<select v-model="bulkEffort" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in effortLevels" :key="effort" :value="effort">{{ effort }}</option></select></label>
+          <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="bulkEffort" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in effortLevels" :key="effort" :value="effort">{{ effort }}</option></select></label>
           <button type="button" class="btn btn-secondary" @click="applyBulk">{{ text('批量设置兼容组合', 'Apply to compatible combinations') }}</button>
         </div>
         <p v-if="bulkMessage" role="status" class="text-sm">{{ bulkMessage }}</p>
@@ -42,7 +42,7 @@
           <div v-for="row in rows.filter(item => item.account_id === id)" :key="row.key" class="space-y-1">
             <div class="flex flex-wrap items-end gap-2">
               <label class="min-w-36 flex-1 text-sm">{{ t('admin.pelicanTests.model') }}<input v-model="row.model_id" :list="`pelican-models-${id}`" class="input mt-1 w-full" :data-test="`pelican-model-${row.key}`" @input="row.effort = ''" /></label>
-              <label class="text-sm">{{ t('admin.codexGatewayBorrow.effort') }}<select v-model="row.effort" class="input mt-1" :data-test="`pelican-effort-${row.key}`"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in modelOption(row)?.reasoning_efforts || []" :key="effort" :value="effort">{{ effort }}</option></select></label>
+              <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="row.effort" class="input mt-1" :data-test="`pelican-effort-${row.key}`"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in modelOption(row)?.reasoning_efforts || []" :key="effort" :value="effort">{{ effort }}</option></select></label>
               <button type="button" class="btn btn-ghost btn-sm" :aria-label="`${t('admin.pelicanTests.removeModel')} ${row.model_id} #${id}`" @click="removeRow(row.key)">{{ text('移除', 'Remove') }}</button>
             </div>
             <p v-if="issue(row)" role="alert" class="text-xs text-red-700 dark:text-red-300">{{ issue(row) }}</p>

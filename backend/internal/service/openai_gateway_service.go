@@ -475,7 +475,6 @@ type OpenAIGatewayService struct {
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	systemPrompts         *SystemPromptService
-	gatewayBorrow         *CodexGatewayBorrowService
 	usageCache            *UsageCache
 	usageCommitObserver   UsageCommitObserver
 	liveAttestation       liveattestation.Provider
@@ -1102,7 +1101,7 @@ func (s *OpenAIGatewayService) detectCodexClientRestriction(c *gin.Context, acco
 	// A trusted administrator operation has no downstream client to admit.
 	// Its purpose is installed internally; upstream identity/authentication and
 	// every account/global sending policy still use the ordinary gateway path.
-	if c != nil && c.Request != nil && IsPelicanGeneration(c.Request.Context()) && !IsCodexGatewayBorrowObservation(c.Request.Context()) {
+	if c != nil && c.Request != nil && IsPelicanGeneration(c.Request.Context()) {
 		return CodexClientRestrictionDetectionResult{Reason: CodexClientRestrictionReasonDisabled}
 	}
 	// 安全默认：即便缺 settingService（仅测试/误配可达）也保持指纹门为默认种子，

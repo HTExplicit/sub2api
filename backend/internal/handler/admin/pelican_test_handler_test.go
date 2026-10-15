@@ -22,13 +22,13 @@ type pelicanTestHandlerLocalAccountReader struct {
 }
 
 type pelicanTestHandlerReplayCaptureRepo struct {
-	*codexGatewayBorrowHandlerTestRepo
-	incoming *service.CodexGatewayBorrowTestTask
+	*pelicanHandlerTestRepo
+	incoming *service.PelicanTestTask
 }
 
-func (r *pelicanTestHandlerReplayCaptureRepo) Create(ctx context.Context, task *service.CodexGatewayBorrowTestTask) (*service.CodexGatewayBorrowTestTask, bool, error) {
+func (r *pelicanTestHandlerReplayCaptureRepo) Create(ctx context.Context, task *service.PelicanTestTask) (*service.PelicanTestTask, bool, error) {
 	r.incoming = task
-	return r.codexGatewayBorrowHandlerTestRepo.Create(ctx, task)
+	return r.pelicanHandlerTestRepo.Create(ctx, task)
 }
 
 func (r *pelicanTestHandlerLocalAccountReader) GetByIDs(_ context.Context, _ []int64) ([]*service.Account, error) {
@@ -78,7 +78,7 @@ func TestPelicanTestHandlerOptionsDefaultsAndSelectedLocalModels(t *testing.T) {
 
 func TestPelicanTestHandlerSSEReplayAndHistoryNeverGenerateAndPreserveRawContent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	legacy, repo := newCodexGatewayBorrowHandlerFixture(t)
+	legacy, repo := newPelicanHandlerFixture(t)
 	h := NewPelicanTestHandler(service.NewPelicanTestCatalog(nil), legacy.runner, legacy.preview)
 	router := gin.New()
 	router.GET("/tests/:id", h.GetTest)
@@ -89,7 +89,7 @@ func TestPelicanTestHandlerSSEReplayAndHistoryNeverGenerateAndPreserveRawContent
 	router.ServeHTTP(history, httptest.NewRequest(http.MethodGet, "/tests/last", nil))
 	require.Equal(t, http.StatusOK, history.Code)
 	var envelope struct {
-		Data service.CodexGatewayBorrowTestTask `json:"data"`
+		Data service.PelicanTestTask `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(history.Body.Bytes(), &envelope))
 	require.Equal(t, repo.result.Error, envelope.Data.Results[0].Error)
@@ -99,7 +99,7 @@ func TestPelicanTestHandlerSSEReplayAndHistoryNeverGenerateAndPreserveRawContent
 	router.ServeHTTP(preview, httptest.NewRequest(http.MethodGet, envelope.Data.Results[0].PreviewURL, nil))
 	require.Equal(t, http.StatusOK, preview.Code)
 	require.Equal(t, repo.result.HTML, preview.Body.String())
-	require.Equal(t, service.CodexGatewayBorrowPreviewCSP, preview.Header().Get("Content-Security-Policy"))
+	require.Equal(t, service.PelicanPreviewCSP, preview.Header().Get("Content-Security-Policy"))
 	stream := httptest.NewRecorder()
 	body := fmt.Sprintf(`{"client_task_id":%q,"generation_timeout_seconds":600,"targets":[{"account_id":42,"model_id":"gpt-6-astra"}]}`, repo.task.ClientTaskID)
 	request := httptest.NewRequest(http.MethodPost, "/tests", strings.NewReader(body))
@@ -117,10 +117,10 @@ func TestPelicanTestHandlerSSEReplayAndHistoryNeverGenerateAndPreserveRawContent
 
 func TestPelicanTestHandlerForcesAccountModeAndFixedPromptBeforeReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	_, existing := newCodexGatewayBorrowHandlerFixture(t)
-	repo := &pelicanTestHandlerReplayCaptureRepo{codexGatewayBorrowHandlerTestRepo: existing}
-	runner := service.NewCodexGatewayBorrowTestRunner(repo, nil, nil)
-	preview := service.NewCodexGatewayBorrowPreviewService(repo)
+	_, existing := newPelicanHandlerFixture(t)
+	repo := &pelicanTestHandlerReplayCaptureRepo{pelicanHandlerTestRepo: existing}
+	runner := service.NewPelicanTestRunner(repo, nil, nil)
+	preview := service.NewPelicanPreviewService(repo)
 	t.Cleanup(runner.Stop)
 	t.Cleanup(preview.Stop)
 	h := NewPelicanTestHandler(service.NewPelicanTestCatalog(nil), runner, preview)
@@ -134,7 +134,7 @@ func TestPelicanTestHandlerForcesAccountModeAndFixedPromptBeforeReplay(t *testin
 	require.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, repo.incoming)
 	require.Equal(t, service.PelicanExecutionModeAccount, repo.incoming.ExecutionMode)
-	require.Equal(t, service.CodexGatewayBorrowPelicanPrompt, repo.incoming.Prompt)
+	require.Equal(t, service.PelicanPrompt, repo.incoming.Prompt)
 	require.Equal(t, 600, repo.incoming.GenerationTimeoutSeconds)
 	require.Equal(t, int64(42), repo.incoming.Results[0].AccountID)
 	require.Empty(t, repo.incoming.Results[0].Effort, "the generator applies only the selected model's supported default")
@@ -143,7 +143,7 @@ func TestPelicanTestHandlerForcesAccountModeAndFixedPromptBeforeReplay(t *testin
 
 func TestPelicanTestHandlerRejectsGenerationBudgetBeforeCreate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	legacy, repo := newCodexGatewayBorrowHandlerFixture(t)
+	legacy, repo := newPelicanHandlerFixture(t)
 	h := NewPelicanTestHandler(service.NewPelicanTestCatalog(nil), legacy.runner, legacy.preview)
 	router := gin.New()
 	router.POST("/tests", h.StartTests)

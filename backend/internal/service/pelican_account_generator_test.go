@@ -171,38 +171,12 @@ func TestPelicanAccountGeneratorSharedOpenAISettings(t *testing.T) {
 			require.Equal(t, []string{"saved-identity"}, upstream.requests[0].Header[resolveWireCasing("x-account-identity")])
 			require.Equal(t, target, gjson.GetBytes(upstream.bodies[0], "model").String())
 			require.False(t, gjson.GetBytes(upstream.bodies[0], "reasoning.effort").Exists(), "omitted effort preserves the model default")
-			require.Contains(t, string(upstream.bodies[0]), CodexGatewayBorrowPelicanPrompt)
+			require.Contains(t, string(upstream.bodies[0]), PelicanPrompt)
 			require.Contains(t, string(upstream.bodies[0]), "saved site instructions")
 			require.Greater(t, gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Int(), int64(1024))
 			require.True(t, IsAccountObservation(upstream.requests[0].Context()))
 		})
 	}
-}
-
-func TestPelicanAccountGeneratorKeepsBorrowPreparationCause(t *testing.T) {
-	account := borrowCoreAccount(2)
-	upstream := &pelicanGeneratorUpstream{}
-	svc, _ := newPelicanGeneratorForTest(account, upstream)
-	shots := 0
-	borrow := newBorrowCoreTest(t, func(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
-		shots++
-		state := "first"
-		if req.Header.Get("X-Codex-Turn-State") != "" {
-			state = "changed"
-		}
-		return borrowCoreResponse("gpt-6-astra", "OK", state), nil
-	}, account)
-	borrowCoreCandidate(borrow, time.Now().Add(codexGatewayBorrowTTL))
-	svc.openaiGatewayService.SetCodexGatewayBorrowService(borrow)
-	result, err := svc.GeneratePelican(context.Background(), account.ID, "gpt-6-astra", "low")
-	require.Error(t, err)
-	require.True(t, IsCodexGatewayBorrowRequestFailure(err))
-	require.Contains(t, result.Error, "target_validation/target_state_changed")
-	require.Contains(t, result.Error, "CODEX_GATEWAY_BORROW_UNAVAILABLE")
-	require.Equal(t, "failed", result.Status)
-	require.Empty(t, result.RawAnswer)
-	require.Empty(t, upstream.requests, "a rejected qualification never reaches generation")
-	require.Equal(t, 2, shots)
 }
 
 func TestPelicanAccountGeneratorHTTPFailureKeepsSelectedAccountAndRawBody(t *testing.T) {
@@ -280,7 +254,7 @@ func TestPelicanAccountGeneratorNativeTextDispatch(t *testing.T) {
 			require.Equal(t, "<html>work</html>", result.RawAnswer)
 			require.Len(t, upstream.requests, 1)
 			require.Contains(t, upstream.requests[0].URL.Path, scenario.path)
-			require.Contains(t, string(upstream.bodies[0]), CodexGatewayBorrowPelicanPrompt)
+			require.Contains(t, string(upstream.bodies[0]), PelicanPrompt)
 		})
 	}
 }
@@ -299,7 +273,7 @@ func TestPelicanParsersKeepJSONDataURLsAndPrettyWSFrames(t *testing.T) {
 	require.Equal(t, "<html>whole</html>", text)
 }
 
-func TestPelicanHTTPRequestOrdinaryAndPreparationPurposeAreNoops(t *testing.T) {
+func TestPelicanHTTPRequestOrdinaryRequestsAreNoops(t *testing.T) {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://fake.example/responses", strings.NewReader(`{}`))
 	require.NoError(t, err)
 	prepared, finish, err := PreparePelicanHTTPRequest(req, 17, 1, "http")
@@ -309,18 +283,7 @@ func TestPelicanHTTPRequestOrdinaryAndPreparationPurposeAreNoops(t *testing.T) {
 	actual, err := finish(resp, nil)
 	require.NoError(t, err)
 	require.Same(t, resp, actual)
-	capture := &pelicanGenerationCapture{account: &Account{ID: 17}}
-	state := newPelicanExecutionState(context.Background(), newPelicanExecutionCoordinator(1), time.Minute, time.Now)
-	defer state.finish()
-	ctx := context.WithValue(state.parent, pelicanExecutionContextKey{}, state)
-	ctx = context.WithValue(ctx, pelicanGenerationContextKey{}, capture)
-	ctx = WithCodexGatewayBorrowObservation(ctx)
-	req = req.WithContext(ctx)
-	prepared, _, err = PreparePelicanHTTPRequest(req, 17, 1, "http")
-	require.NoError(t, err)
-	require.Same(t, req, prepared)
-	require.True(t, state.generationAt.IsZero(), "borrow preparation must keep its own clock")
-	require.Empty(t, capture.attempts)
+
 }
 
 func TestPelicanFirstOutputPolicyStartsAfterQueueAndPreservesNilReplay(t *testing.T) {

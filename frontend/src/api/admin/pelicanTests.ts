@@ -1,8 +1,58 @@
 import { apiClient, buildApiUrl } from '../client'
 import { ADMIN_UI_REQUEST_HEADER } from '../adminUIRequest'
-import type { BorrowTestResult, BorrowTestTask } from './codexGatewayBorrow'
 
-export { createBorrowClientTaskId as createPelicanClientTaskId, PELICAN_BORROW_PROMPT as PELICAN_PROMPT } from './codexGatewayBorrow'
+export interface PelicanResultBase {
+  id: string
+  account_id: number
+  account_name: string
+  model_id: string
+  upstream_model?: string
+  effort: string
+  status: 'pending' | 'running' | 'complete' | 'failed' | 'incomplete' | 'cancelled' | 'skipped'
+  raw_answer: string
+  raw_response: string
+  raw_html: string
+  html: string
+  error: string
+  started_at?: string
+  finished_at?: string
+  duration_ms?: number
+  preview_url?: string
+  preview_expires_at?: string
+  preview_unavailable?: string
+}
+
+export interface PelicanTaskBase {
+  id: string
+  client_task_id: string
+  status: string
+  created_at: string
+  expires_at: string
+  started_at?: string
+  finished_at?: string
+  total: number
+  completed: number
+  results?: PelicanResultBase[]
+  error?: string
+  replayed?: boolean
+}
+
+export const PELICAN_PROMPT = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试'
+
+export function createPelicanClientTaskId(serverOffsetMs = 0): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  // The server rejects every future timestamp. Leave one second for clock
+  // precision and response transit while retaining the one-submit identity.
+  let timestamp = Math.floor(Date.now() + serverOffsetMs - 1000)
+  for (let index = 5; index >= 0; index--) {
+    bytes[index] = timestamp % 256
+    timestamp = Math.floor(timestamp / 256)
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x70
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
 export interface PelicanModelOption {
   id: string
@@ -45,7 +95,7 @@ export interface PelicanOptions {
 
 export type PelicanPhase = 'queued' | 'preparing' | 'generating'
 
-export interface PelicanTestResult extends BorrowTestResult {
+export interface PelicanTestResult extends PelicanResultBase {
   platform?: string
   actual_endpoint?: string
   actual_protocol?: string
@@ -58,7 +108,7 @@ export interface PelicanTestResult extends BorrowTestResult {
   phase?: PelicanPhase
 }
 
-export interface PelicanTestTask extends Omit<BorrowTestTask, 'results'> {
+export interface PelicanTestTask extends Omit<PelicanTaskBase, 'results'> {
   generation_timeout_seconds?: number
   execution_mode?: string
   results?: PelicanTestResult[]

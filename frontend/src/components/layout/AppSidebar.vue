@@ -503,7 +503,7 @@ const PluginIcon = {
   render: () => h(Icon, { name: 'cube' })
 }
 
-const GatewayBorrowIcon = {
+const CodexIcon = {
   render: () => h(Icon, { name: 'link', 'aria-hidden': 'true' })
 }
 
@@ -692,7 +692,6 @@ const ShieldIcon = {
     )
 }
 
-
 const PriceTagIcon = {
   render: () =>
     h(
@@ -817,8 +816,8 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 
 const adminExtensionNavItems = computed((): NavItem[] => [
   { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon },
-  { path: '/admin/codex', label: 'Codex', icon: GatewayBorrowIcon },
-  { path: '/admin/pelican-tests', label: t('nav.pelicanTests'), icon: GatewayBorrowIcon },
+  { path: '/admin/codex', label: 'Codex', icon: CodexIcon },
+  { path: '/admin/pelican-tests', label: t('nav.pelicanTests'), icon: CodexIcon },
 ])
 
 // Custom menu items filtered by visibility

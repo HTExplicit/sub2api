@@ -14,22 +14,22 @@ import (
 )
 
 type pelicanSummaryHandlerRepo struct {
-	*codexGatewayBorrowHandlerTestRepo
+	*pelicanHandlerTestRepo
 }
 
 func (r *pelicanSummaryHandlerRepo) GetTaskSnapshot(context.Context, string) (*service.PelicanTaskSnapshot, error) {
 	copy := *r.task
 	copy.Results = nil
-	return &service.PelicanTaskSnapshot{CodexGatewayBorrowTestTask: &copy, Counts: map[string]int{"complete": 1}}, nil
+	return &service.PelicanTaskSnapshot{PelicanTestTask: &copy, Counts: map[string]int{"complete": 1}}, nil
 }
 func (r *pelicanSummaryHandlerRepo) ListTaskResults(context.Context, string, service.PelicanResultFilter) (*service.PelicanResultPage, error) {
 	return &service.PelicanResultPage{Items: []*service.PelicanResultSummary{{ID: r.result.ID, TaskID: r.task.ID, Status: "complete", HasPreview: true}}, Total: 1, Page: 1, PageSize: 24}, nil
 }
 func TestPelicanBackgroundReadEndpointsNeverGenerateOrSendRawInProgress(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	legacy, base := newCodexGatewayBorrowHandlerFixture(t)
+	legacy, base := newPelicanHandlerFixture(t)
 	repo := &pelicanSummaryHandlerRepo{base}
-	runner := service.NewCodexGatewayBorrowTestRunner(repo, nil, nil)
+	runner := service.NewPelicanTestRunner(repo, nil, nil)
 	t.Cleanup(runner.Stop)
 	h := NewPelicanTestHandler(nil, runner, legacy.preview)
 	router := gin.New()

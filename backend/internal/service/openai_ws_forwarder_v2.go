@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -37,7 +36,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	attempt int,
 	lastFailureReason string,
 	agentTaskRecoveryTried *bool,
-) (borrowResult *OpenAIForwardResult, borrowErr error) {
+) (*OpenAIForwardResult, error) {
 	if s == nil || account == nil {
 		return nil, wrapOpenAIWSFallback("invalid_state", errors.New("service or account is nil"))
 	}
@@ -175,7 +174,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	storeDisabledConnMode := s.openAIWSStoreDisabledConnMode()
 	forceNewConnByPolicy := shouldForceNewConnOnStoreDisabled(storeDisabledConnMode, lastFailureReason)
 	forceNewConn := forceNewConnByPolicy && storeDisabled && previousResponseID == "" && sessionHash != "" && preferredConnID == ""
-	ctx = withCodexBorrowServiceTier(ctx, openAIWSPayloadString(payload, "service_tier"))
 	wsHeaders, sessionResolution, buildHdrErr := s.buildOpenAIWSHeaders(
 		ctx,
 		c,
@@ -196,27 +194,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
-	}
-	borrowTurn, borrowPrepareErr := s.prepareCodexGatewayBorrowWSTurn(ctx, c, account, wsURL, wsHeaders,
-		payloadAsJSONBytes(reqBody), openAIWSPayloadString(payload, "model"), previousResponseID, proxyURL, executionScope)
-	if borrowPrepareErr != nil {
-		return nil, codexGatewayBorrowWSPreparationError(c, account, borrowPrepareErr)
-	}
-	defer func() {
-		if borrowTurn != nil && borrowTurn.previousID != "" && borrowErr != nil {
-			var fallback *openAIWSFallbackError
-			if errors.As(borrowErr, &fallback) {
-				// A borrowed continuation can never fall back or redial after its
-				// original upstream socket has become unavailable.
-				borrowErr = NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
-			}
-		}
-		borrowTurn.finish(s.getOpenAIWSConnPool(), borrowResult, borrowErr)
-	}()
-	if borrowTurn != nil {
-		wsHeaders = cloneHeader(borrowTurn.headers)
-		preferredConnID = borrowTurn.connID
-		forceNewConn = borrowTurn.previousID == ""
 	}
 	turnState = strings.TrimSpace(wsHeaders.Get(openAIWSTurnStateHeader))
 	logOpenAIWSModeDebug(
@@ -266,7 +243,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		ForceNewConn:    forceNewConn,
 		ProxyURL:        proxyURL,
 	}
-	borrowTurn.applyToAcquire(&acquireReq)
 	lease, err := s.getOpenAIWSConnPool().Acquire(acquireCtx, acquireReq)
 	if err != nil {
 		var agentDialErr *openAIWSDialError
@@ -310,15 +286,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	// 释放租约，避免等待中的业务请求取得它后又被借用清理关闭。
 	cleanExit := false
 	defer func() {
-		if !cleanExit || (borrowTurn != nil && borrowTurn.pelicanOneShot) {
+		if !cleanExit {
 			lease.MarkBroken()
 		}
 		lease.Release()
 	}()
 	connID := strings.TrimSpace(lease.ConnID())
-	if borrowBindErr := borrowTurn.bindLease(lease); borrowBindErr != nil {
-		return nil, borrowBindErr
-	}
+
 	logOpenAIWSModeDebug(
 		"connected account_id=%d account_type=%s transport=%s conn_id=%s conn_reused=%v conn_idle_ms=%d conn_age_ms=%d upstream_pings=%d conn_pick_ms=%d queue_wait_ms=%d has_previous_response_id=%v",
 		account.ID,
@@ -393,35 +367,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 	var observePelicanFrame func([]byte) error
 	var releasePelican func()
-	pelicanPreparationCtx := ctx
-	ctx, observePelicanFrame, releasePelican, err = preparePelicanWSSend(ctx, account, wsURL, payload, borrowTurn.borrowed())
+	ctx, observePelicanFrame, releasePelican, err = preparePelicanWSSend(ctx, account, wsURL, payload)
 	if err != nil {
 		return nil, err
 	}
 	defer releasePelican()
-	if IsPelicanGeneration(ctx) && borrowTurn != nil && !borrowTurn.diagnostic && !time.Now().Before(borrowTurn.expires) {
-		// No prompt has been written. Release the expired route and all execution
-		// resources, then perform the ordinary preparation on this same account.
-		releasePelican()
-		lease.MarkBroken()
-		lease.Release()
-		borrowTurn.finish(s.getOpenAIWSConnPool(), nil, ErrCodexGatewayBorrowChanged)
-		return s.forwardOpenAIWSV2(pelicanPreparationCtx, c, account, reqBody, clientPromptCacheKey, executionScope, token, decision,
-			isCodexCLI, reqStream, originalModel, mappedModel, startTime, attempt, lastFailureReason, agentTaskRecoveryTried)
-	}
-	if IsPelicanGeneration(ctx) && borrowTurn != nil && !borrowTurn.diagnostic {
-		prepared, prepareErr := codexGatewayBorrowWSRequest(ctx, wsURL, wsHeaders)
-		if prepareErr != nil {
-			return nil, codexGatewayBorrowWSPreparationError(c, account, prepareErr)
-		}
-		borrowed, application, applyErr := s.gatewayBorrow.Apply(prepared, account, openAIWSPayloadString(payload, "model"), proxyURL, nil, true)
-		if applyErr != nil {
-			return nil, codexGatewayBorrowWSPreparationError(c, account, applyErr)
-		}
-		if application == nil || !application.Applied || !application.ExpiresAt.Equal(borrowTurn.expires) || !slices.Equal(prepared.Header.Values("Cookie"), borrowed.Header.Values("Cookie")) {
-			return nil, codexGatewayBorrowWSPreparationError(c, account, ErrCodexGatewayBorrowChanged)
-		}
-	}
 	if err := s.performOpenAIWSGeneratePrewarm(
 		ctx,
 		lease,
@@ -442,9 +392,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 
-	if err := consumeBorrowDiagnosticRequest(ctx); err != nil {
-		return nil, err
-	}
 	if capture := pelicanCaptureFromContext(ctx); capture != nil {
 		capture.mu.Lock()
 		if len(capture.attempts) > 0 {
@@ -455,12 +402,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		capture.mu.Unlock()
 	}
-	usageContext := ctx
-	if borrowTurn != nil && borrowTurn.usage != nil {
-		usageContext = context.WithValue(ctx, codexBorrowUsageContextKey{}, borrowTurn.usage)
-	}
-	usageTracker := s.gatewayBorrow.beginUsage(usageContext, account.ID, mappedModel, "ws", borrowTurn.borrowed())
-	defer func() { usageTracker.finish(borrowErr) }()
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()
 		logOpenAIWSModeInfo(
@@ -686,7 +627,6 @@ readLoop:
 			}
 			message, readErr = lease.ReadMessageWithContextTimeout(upstreamReadCtx, currentReadTimeout)
 			if readErr == nil {
-				usageTracker.observe(message)
 				if observeErr := observePelicanFrame(message); observeErr != nil {
 					lease.MarkBroken()
 					return nil, observeErr
@@ -794,7 +734,6 @@ readLoop:
 			continue
 		}
 		responseModelObserver.ObserveOpenAI(message, eventType)
-		borrowTurn.observe(message)
 		eventCount++
 		if firstEventType == "" {
 			firstEventType = eventType

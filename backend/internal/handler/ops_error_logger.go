@@ -1804,7 +1804,7 @@ func applyOpsUpstreamErrorEvents(entry *service.OpsInsertErrorLogInput, events [
 	entry.UpstreamStatusCode = nil
 	entry.UpstreamErrorMessage = nil
 	entry.UpstreamErrorDetail = nil
-	if last.Stage == string(service.GatewayFailureStageAccountAuth) || last.Kind == string(service.CodexGatewayBorrowPreparationFailureReason) {
+	if last.Stage == string(service.GatewayFailureStageAccountAuth) {
 		code := 0
 		entry.UpstreamStatusCode = &code
 	} else if last.UpstreamStatusCode > 0 {

@@ -387,7 +387,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
 		}
 	}
-	resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL, upstreamModel)
+	resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 	if err != nil {
 		cancelUpstream()
 
@@ -950,7 +950,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	}
 
 	processDataLine := func(payload string) bool {
-
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())
@@ -1228,7 +1227,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 	}
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
-
 		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
 	processFrame := func(frame openAICompatSSEFrame) bool {
