@@ -2364,6 +2364,35 @@ func normalizeOpenAIWSAcquireCompatibility(req openAIWSAcquireRequest) openAIWSH
 	return key
 }
 
+func (key openAIWSHandshakeCompatibilityKey) changedFields(next openAIWSHandshakeCompatibilityKey) string {
+	fields := []struct {
+		name    string
+		changed bool
+	}{
+		{"body", key.bodyIdentityKey != next.bodyIdentityKey},
+		{"policy", key.codexPolicyRevision != next.codexPolicyRevision},
+		{"mode", key.codexMode != next.codexMode},
+		{"user_agent", key.userAgent != next.userAgent},
+		{"originator", key.originator != next.originator},
+		{"version", key.version != next.version},
+		{"anchor", key.anchorScope != next.anchorScope},
+		{"beta_features", key.betaFeatures != next.betaFeatures},
+		{"installation", key.codexInstallationID != next.codexInstallationID},
+		{"session", key.sessionIDHyphen != next.sessionIDHyphen},
+		{"session_alias", key.sessionIDUnderscore != next.sessionIDUnderscore},
+		{"thread", key.threadID != next.threadID},
+		{"client_request", key.clientRequestID != next.clientRequestID},
+		{"window", key.codexWindowID != next.codexWindowID},
+	}
+	changed := []string{}
+	for _, field := range fields {
+		if field.changed {
+			changed = append(changed, field.name)
+		}
+	}
+	return strings.Join(changed, ",")
+}
+
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 	features := make(map[string]struct{})
 	for name, values := range headers {

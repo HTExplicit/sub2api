@@ -125,11 +125,14 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 	completed := func(id string) []byte {
 		return []byte(`{"type":"response.completed","response":{"id":"` + id + `","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`)
 	}
-	captureConn := &openAIWSCaptureConn{events: [][]byte{completed("resp_a"), completed("resp_b"), completed("resp_c")}}
 	handshake := http.Header{}
 	handshake.Set(openAIWSTurnStateHeader, "turn-state-from-upstream")
 	pool := newOpenAIWSConnPool(cfg)
-	pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn, handshake: handshake})
+	pool.setClientDialerForTest(&openAIWSQueueDialer{handshake: handshake, conns: []openAIWSClientConn{
+		&openAIWSCaptureConn{events: [][]byte{completed("resp_a")}},
+		&openAIWSCaptureConn{events: [][]byte{completed("resp_b")}},
+		&openAIWSCaptureConn{events: [][]byte{completed("resp_c")}},
+	}})
 	defer pool.Close()
 
 	stateStore := NewOpenAIWSStateStore(nil)

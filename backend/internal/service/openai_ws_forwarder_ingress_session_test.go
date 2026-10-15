@@ -963,6 +963,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
 	msgType, message, err = clientConn.Read(readCtx)
 	cancelRead()
+	if err != nil {
+		select {
+		case serverErr := <-serverErrCh:
+			t.Logf("websocket server returned: %v", serverErr)
+		default:
+		}
+	}
 	require.NoError(t, err)
 	require.Equal(t, coderws.MessageText, msgType)
 	require.Equal(t, "resp_codex_image_lite", gjson.GetBytes(message, "response.id").String())
@@ -996,6 +1003,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	}
 
 	require.Len(t, captureConn.writes, 3)
+	require.Equal(t, 1, captureDialer.DialCount(), "同一会话的可选元数据变化不得触发设备重握手")
 	nonLitePayload := requestToJSONString(captureConn.writes[0])
 	require.True(t, gjson.Get(nonLitePayload, `tools.#(type=="image_generation")`).Exists())
 	require.Equal(t, "png", gjson.Get(nonLitePayload, `tools.#(type=="image_generation").output_format`).String())
@@ -1023,15 +1031,15 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	require.False(t, gjson.Get(functionPayload, "tool_choice").Exists())
 	require.NotContains(t, gjson.Get(functionPayload, "instructions").String(), codexImageGenerationBridgeMarker)
 
-	// 原生 ctx_pool 入口：默认 device 收敛在首帧与后续帧都落地，sandbox 跟随账号身份（Mac→seatbelt），
-	// workspaces 不改写。
+	// Native ctx_pool keeps the same device across turns while retaining actual
+	// sandbox diagnostics and workspaces.
 	expectedInstallation := resolveConvergedInstallationID(account, fingerprintSeed)
 	require.Equal(t, expectedInstallation, gjson.Get(nonLitePayload, "client_metadata.x-codex-installation-id").String(), "首帧 installation 收敛为账号级设备")
 	require.Equal(t, expectedInstallation, gjson.Get(functionPayload, "client_metadata.x-codex-installation-id").String(), "后续帧同一设备")
 	require.Equal(t, expectedInstallation, gjson.Get(gjson.Get(nonLitePayload, "client_metadata.x-codex-turn-metadata").String(), "installation_id").String())
 	require.Equal(t, expectedInstallation, gjson.Get(gjson.Get(functionPayload, "client_metadata.x-codex-turn-metadata").String(), "installation_id").String())
-	require.Equal(t, codexClientSandboxMac, gjson.Get(gjson.Get(nonLitePayload, "client_metadata.x-codex-turn-metadata").String(), "sandbox").String(), "首帧 sandbox 跟随最终 UA 的系统")
-	require.Equal(t, codexClientSandboxMac, gjson.Get(gjson.Get(functionPayload, "client_metadata.x-codex-turn-metadata").String(), "sandbox").String(), "后续帧 sandbox 同样改写")
+	require.Equal(t, "seccomp", gjson.Get(gjson.Get(nonLitePayload, "client_metadata.x-codex-turn-metadata").String(), "sandbox").String(), "保留首帧实际 sandbox")
+	require.Equal(t, "seccomp", gjson.Get(gjson.Get(functionPayload, "client_metadata.x-codex-turn-metadata").String(), "sandbox").String(), "保留后续帧实际 sandbox")
 	require.False(t, gjson.Get(nonLitePayload, "client_metadata.workspaces").Exists(), "workspaces 保持原样（本例未提供）")
 }
 
@@ -1516,7 +1524,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 		req.Header = req.Header.Clone()
 		req.Header.Set("User-Agent", "codex_cli_rs/0.98.0")
 		req.Header.Set(openAIWSTurnStateHeader, "turn-state-1")
-		req.Header.Set(openAIWSTurnMetadataHeader, "turn-meta-1")
+		req.Header.Set(openAIWSTurnMetadataHeader, `{"turn_id":"turn-meta-1"}`)
 		ginCtx.Request = req
 
 		readCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -1592,17 +1600,17 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 	}
 
 	require.Empty(t, captureDialer.lastHeaders.Get("session_id"), "真实 Codex 不发下划线 session_id")
-	require.Equal(t, "pcache_passthrough", captureDialer.lastHeaders.Get("session-id"), "设备模式保留客户端会话标识")
+	require.NotEmpty(t, captureDialer.lastHeaders.Get("session-id"))
 	require.Empty(t, captureDialer.lastHeaders.Get(openAIWSTurnStateHeader), "client turn state without account provenance must fail closed")
-	// 握手 turn metadata 经指纹层重建：非 JSON 的客户端值被替换为最小合法 metadata，
-	// installation 收敛为账号级设备，sandbox 跟随最终 UA 的系统。
+	// 合法输入保留真实 turn；installation 取账号设备，缺失 sandbox 不伪造。
 	handshakeTurnMetadata := captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader)
 	require.True(t, gjson.Valid(handshakeTurnMetadata), handshakeTurnMetadata)
 	require.Equal(t, resolveConvergedInstallationID(account, "5d2e8c1a-7b4f-4e3d-9a6c-0f1e2d3c4b5a"), gjson.Get(handshakeTurnMetadata, "installation_id").String())
 	require.False(t, gjson.Get(handshakeTurnMetadata, "sandbox").Exists(), "未提供实际沙箱时不生成 OS 推断值")
 	require.Len(t, upstreamConn.writes, 2)
 	forwarded := requestToJSONString(upstreamConn.writes[0])
-	require.Equal(t, gjson.Get(forwarded, "prompt_cache_key").String(), captureDialer.lastHeaders.Get("session-id"), "握手回退与首帧 prompt_cache_key 同源")
+	require.Equal(t, "pcache_passthrough", gjson.Get(forwarded, "prompt_cache_key").String(), "保留显式自定义缓存键")
+	require.Equal(t, gjson.Get(forwarded, "client_metadata.session_id").String(), captureDialer.lastHeaders.Get("session-id"), "握手与 body 根会话同源")
 	require.Equal(t, resolveConvergedInstallationID(account, "5d2e8c1a-7b4f-4e3d-9a6c-0f1e2d3c4b5a"), gjson.Get(forwarded, "client_metadata.x-codex-installation-id").String(), "passthrough 首帧默认 device 收敛")
 	require.Equal(t, gjson.Get(forwarded, "client_metadata.x-codex-installation-id").String(), gjson.Get(requestToJSONString(upstreamConn.writes[1]), "client_metadata.x-codex-installation-id").String(), "passthrough 后续帧与首帧同一设备")
 	require.False(t, gjson.Get(forwarded, `tools.#(type=="namespace")`).Exists())
@@ -4864,6 +4872,7 @@ type openAIWSQueueDialer struct {
 	mu        sync.Mutex
 	conns     []openAIWSClientConn
 	dialCount int
+	handshake http.Header
 }
 
 func (d *openAIWSQueueDialer) Dial(
@@ -4886,7 +4895,7 @@ func (d *openAIWSQueueDialer) Dial(
 	if len(d.conns) > 1 {
 		d.conns = d.conns[1:]
 	}
-	return conn, 0, nil, nil
+	return conn, 0, cloneHeader(d.handshake), nil
 }
 
 func (d *openAIWSQueueDialer) DialCount() int {

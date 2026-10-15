@@ -1806,9 +1806,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		baseAcquireReq.Headers = finalHeaders
 		baseAcquireReq.BodyIdentityKey = codexWSBodyIdentityKey(wirePayload)
 		if sessionLease != nil && !sessionLease.conn.matchesHandshakeCompatibility(normalizeOpenAIWSAcquireCompatibility(baseAcquireReq)) {
+			changedFields := sessionLease.conn.handshakeCompatibility.changedFields(normalizeOpenAIWSAcquireCompatibility(baseAcquireReq))
 			resetSessionLease(false)
 			return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, openAIWSNonInitialTurnRetryCloseReason,
-				errors.New("codex conversation identity changed; a new handshake is required"))
+				fmt.Errorf("codex conversation identity changed (%s); a new handshake is required", changedFields))
 		}
 
 		forcePreferredConn := isStrictAffinityTurn(currentPayload) && strings.TrimSpace(preferredConnID) != ""

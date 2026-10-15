@@ -552,7 +552,7 @@ func resolveCodexFingerprintIDsWithSource(routed, source *Account, headers http.
 
 func (ids *codexFingerprintIDs) rewriteHeaderTurnMetadata(headers http.Header) {
 	raw := headers.Get("x-codex-turn-metadata")
-	if raw == "" && len(ids.logicalMetadata) == 0 {
+	if raw == "" && len(ids.logicalMetadata) == 0 && ids.installationID == "" && ids.sessionID == "" && ids.threadID == "" {
 		return
 	}
 	var metadata map[string]any

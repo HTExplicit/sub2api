@@ -220,7 +220,7 @@ func TestCodexDirectImagesAccountTestAndWhitelist(t *testing.T) {
 	require.Equal(t, "/backend-api/codex/images/generations", upstream.lastReq.URL.Path)
 	require.Contains(t, rec.Body.String(), `"success":true`)
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-5.6-luna"}]}`)
-	svc.openaiGatewayService = &OpenAIGatewayService{}
+	svc.openaiGatewayService = &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
 	account := newCodexModelsTestAccount()
 	account.Credentials["model_mapping"] = map[string]any{"gpt-image-2.5-flare": "gpt-image-2.5-flare"}
 	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)

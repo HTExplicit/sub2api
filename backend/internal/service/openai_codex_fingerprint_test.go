@@ -131,8 +131,7 @@ func TestResolveCodexFingerprintIDsFromRequest_ExplicitOff(t *testing.T) {
 	assert.Nil(t, ids, "显式 off 模式应返回 nil")
 }
 
-// 未显式配置的存量账号不得被收敛（#5610）：默认返回 nil，出站身份保持
-// v0.1.175 之前的客户端原值。
+// Seeded accounts use fixed-device mode by default.
 func TestResolveCodexFingerprintIDsFromRequest_DefaultIsDevice(t *testing.T) {
 	account := newTestOAuthAccount(1, nil)
 	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
@@ -141,14 +140,15 @@ func TestResolveCodexFingerprintIDsFromRequest_DefaultIsDevice(t *testing.T) {
 	assert.NotEmpty(t, ids.installationID)
 }
 
-// 管理员显式 opt-in 的账号行为不变。
+// Historical enabled modes retain their stored input and normalize to device.
 func TestResolveCodexFingerprintIDsFromRequest_ExplicitOptInHonored(t *testing.T) {
 	for _, mode := range []string{"device", "session", "full"} {
 		t.Run(mode, func(t *testing.T) {
 			account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: mode})
 			ids := resolveCodexFingerprintIDsFromRequest(account, nil)
 			require.NotNil(t, ids, "显式配置必须生效")
-			assert.Equal(t, codexFingerprintMode(mode), ids.mode)
+			assert.Equal(t, codexFingerprintDevice, ids.mode)
+			assert.Equal(t, mode, account.Extra[codexFingerprintModeExtraKey], "保留历史配置输入")
 			assert.NotEmpty(t, ids.installationID)
 		})
 	}

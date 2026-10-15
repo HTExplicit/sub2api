@@ -1607,9 +1607,9 @@ func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string 
 	return codexAccountIdentityOverrideUA(account)
 }
 
-// resolveStagedCodexFingerprintIDs 解析本次请求的收敛 ID，并让 turn metadata 的 sandbox 跟随
-// 最终出站 UA：UA 来源与构造器/收口点一致——影子账号取 staged 的父账号身份，账号显式 UA
-// 按 ForceCodexCLI 策略生效——否则父/子系统不同或显式 UA 覆盖时 sandbox 会与 UA 分裂。
+// resolveStagedCodexFingerprintIDs uses the staged credential source and policy.
+// Missing conversation IDs receive one real temporary root per logical request;
+// the device label never changes actual sandbox or permission diagnostics.
 func (s *OpenAIGatewayService) resolveStagedCodexFingerprintIDs(c *gin.Context, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
 	policy := codexFingerprintPolicyForContext(c, account)
 	source := codexAccountProjectionSource(c, account)
@@ -1696,10 +1696,9 @@ func (s *OpenAIGatewayService) effectiveCodexOutboundUserAgent(c *gin.Context, a
 	return resolveCodexOutboundIdentity("").userAgent
 }
 
-// stageCodexFingerprintForWSFrame 为原生 WS 入口的每一帧解析、暂存并应用收敛 ID：原生
-// Proxy 不经过 HTTP Forward，握手头（buildOpenAIWSHeaders → applyStagedCodexFingerprintHeaders）
-// 与帧体 client_metadata 由此共用同一份 IDs；每帧重算使 session/full 模式的 turn_id 逐轮更新，
-// device 模式只收敛 installation 与 sandbox。返回改写后的帧（未变化时原样返回）。
+// stageCodexFingerprintForWSFrame shares each frame's final device and graph
+// snapshot with its handshake. Legacy enabled modes use the same independent
+// conversation mapping; genuine turn and execution diagnostics stay intact.
 func (s *OpenAIGatewayService) stageCodexFingerprintForWSFrame(c *gin.Context, account *Account, frame []byte) ([]byte, error) {
 	var clientHeaders http.Header
 	if c != nil && c.Request != nil {

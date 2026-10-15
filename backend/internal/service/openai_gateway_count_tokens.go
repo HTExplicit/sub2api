@@ -494,7 +494,10 @@ func (s *OpenAIGatewayService) buildInputTokensUpstreamRequest(
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
 
-	return req, nil
+	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
+		return nil, err
+	}
+	return bindCodexAttemptRequest(c, req, account)
 }
 
 func writeAnthropicCountTokensError(c *gin.Context, status int, errType, message string) {

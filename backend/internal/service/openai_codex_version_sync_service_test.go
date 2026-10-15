@@ -303,9 +303,9 @@ func TestGetOpenAICodexClientVersionPriority(t *testing.T) {
 		want     string
 	}{
 		{name: "面板覆写优先", override: "0.150.0", synced: "0.146.0", want: "0.150.0"},
-		{name: "覆写为空时用同步值", synced: "0.146.0", want: "0.146.0"},
+		{name: "未验证同步值保持待支持", synced: "0.146.0", want: codexCLIVersion},
 		{name: "两者皆空时用内置常量", want: codexCLIVersion},
-		{name: "非法覆写回退同步值", override: "latest", synced: "0.146.0", want: "0.146.0"},
+		{name: "非法覆写且同步未验证时用已验证版本", override: "latest", synced: "0.146.0", want: codexCLIVersion},
 		{name: "非法同步值回退内置常量", synced: "not-a-version", want: codexCLIVersion},
 	}
 
@@ -334,7 +334,7 @@ func TestGetOpenAICodexCanonicalUserAgentBuildsFromVersion(t *testing.T) {
 	}}, nil)
 
 	require.Equal(t,
-		"codex-tui/0.200.1"+codexCLIUserAgentSuffix,
+		"codex-tui/"+codexCLIVersion+codexCLIUserAgentSuffix,
 		svc.GetOpenAICodexCanonicalUserAgent(context.Background()),
 	)
 }
@@ -351,7 +351,7 @@ func TestGetOpenAICodexCanonicalUserAgentRebuildsPanelUAVersion(t *testing.T) {
 		}}, nil)
 
 		require.Equal(t,
-			"codex_cli_rs/0.200.1 (Ubuntu 22.4.0; x86_64) xterm-256color",
+			"codex_cli_rs/"+codexCLIVersion+" (Ubuntu 22.4.0; x86_64) xterm-256color",
 			svc.GetOpenAICodexCanonicalUserAgent(context.Background()),
 		)
 	})
@@ -363,7 +363,7 @@ func TestGetOpenAICodexCanonicalUserAgentRebuildsPanelUAVersion(t *testing.T) {
 		}}, nil)
 
 		require.Equal(t,
-			"codex_cli_rs/0.200.1 (Mac OS X 15.1.0; arm64) iTerm.app",
+			"codex_cli_rs/"+codexCLIVersion+" (Mac OS X 15.1.0; arm64) iTerm.app",
 			svc.GetOpenAICodexCanonicalUserAgent(context.Background()),
 		)
 	})
@@ -375,7 +375,7 @@ func TestGetOpenAICodexCanonicalUserAgentRebuildsPanelUAVersion(t *testing.T) {
 		}}, nil)
 
 		require.Equal(t,
-			"codex-tui/0.200.1 (Ubuntu 22.4.0; x86_64) WindowsTerminal (codex-tui; 0.200.1)",
+			"codex-tui/"+codexCLIVersion+" (Ubuntu 22.4.0; x86_64) WindowsTerminal (codex-tui; "+codexCLIVersion+")",
 			svc.GetOpenAICodexCanonicalUserAgent(context.Background()),
 		)
 	})
@@ -489,8 +489,8 @@ func TestGetOpenAICodexCanonicalUserAgentOutboundIdentity(t *testing.T) {
 		name, manual, synced, want string
 	}{
 		{"manual", "0.154.0", "0.155.1", "0.154.0"},
-		{"synced", "", "0.155.1", "0.155.1"},
-		{"invalid_manual", "latest", "0.155.1", "0.155.1"},
+		{"synced", "", "0.155.1", codexCLIVersion},
+		{"invalid_manual", "latest", "0.155.1", codexCLIVersion},
 		{"default", "", "", codexCLIVersion},
 		{"invalid_versions", "latest", "invalid", codexCLIVersion},
 	} {
