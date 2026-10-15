@@ -250,6 +250,13 @@ class Capture:
                         ws_send(conn, event)
                     if value.get("generate") is not False:
                         ws_send(conn, b"\x03\xe8", 8)
+                        # Let the peer consume the completed response and close
+                        # frame before the TLS socket is destroyed.
+                        try:
+                            conn.settimeout(2)
+                            conn.unwrap().close()
+                        except (OSError, TimeoutError):
+                            pass
                         return
             return
         if "content-length" in lower:
@@ -283,9 +290,9 @@ class Capture:
                                     for v in events(len(self.records)))
                     h.send_headers(event.stream_id, [(":status", "200"), ("content-type", "text/event-stream")])
                     h.send_data(event.stream_id, body, end_stream=True)
-                    h.close_connection(last_stream_id=event.stream_id)
                     conn.sendall(h.data_to_send())
-                    return
+                    # Keep the H2 session alive. Closing immediately after
+                    # END_STREAM can reset unread control frames on Linux.
             conn.sendall(h.data_to_send())
 
 
