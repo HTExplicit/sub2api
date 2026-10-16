@@ -75,6 +75,7 @@ func ProvideOpenAIGatewayService(
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	systemPrompts *SystemPromptService,
+	deepseekReasoning *DeepSeekReasoningService,
 ) *OpenAIGatewayService {
 	svc := NewOpenAIGatewayService(
 		accountRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo,
@@ -84,6 +85,7 @@ func ProvideOpenAIGatewayService(
 		channelService, balanceNotifyService, settingService, userPlatformQuotaRepo,
 	)
 	svc.SetSystemPromptService(systemPrompts)
+	svc.SetDeepSeekReasoningService(deepseekReasoning)
 	return svc
 }
 
@@ -117,9 +119,11 @@ func ProvideGatewayService(
 	balanceNotifyService *BalanceNotifyService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	systemPrompts *SystemPromptService,
+	deepseekReasoning *DeepSeekReasoningService,
 ) *GatewayService {
 	svc := NewGatewayService(accountRepo, groupRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo, userGroupRateRepo, cache, cfg, schedulerSnapshot, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, claudeTokenProvider, sessionLimitCache, rpmCache, digestStore, settingService, tlsFPProfileService, channelService, resolver, compositeResolver, balanceNotifyService, userPlatformQuotaRepo)
 	svc.SetSystemPromptService(systemPrompts)
+	svc.SetDeepSeekReasoningService(deepseekReasoning)
 	return svc
 }
 
@@ -1025,6 +1029,7 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	ProvideGatewayService,
 	ProvideSystemPromptService,
+	ProvideDeepSeekReasoningService,
 	ProvidePelicanTestRunner,
 	NewPelicanPreviewService,
 	NewPelicanTestCatalog,

@@ -25,7 +25,7 @@ import (
 // to OpenAI Responses API format, forwards to the OpenAI upstream, and converts
 // the response back to Anthropic Messages format. This enables Claude Code
 // clients to access OpenAI models through the standard /v1/messages endpoint.
-func (s *OpenAIGatewayService) ForwardAsAnthropic(
+func (s *OpenAIGatewayService) forwardAsAnthropic(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
@@ -175,6 +175,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	responsesReq.Model = upstreamModel
 	if responsesReq.Reasoning != nil {
 		responsesReq.Reasoning.Effort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, responsesReq.Reasoning.Effort)
+		if deepSeekReasoningWasDefaulted(ctx) && anthropicReq.OutputConfig != nil {
+			responsesReq.Reasoning.Effort = anthropicReq.OutputConfig.Effort
+		}
 	}
 	if previousResponseID != "" {
 		responsesReq.PreviousResponseID = previousResponseID

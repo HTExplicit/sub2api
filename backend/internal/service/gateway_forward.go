@@ -104,6 +104,21 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			validationModel = account.GetMappedModel(validationModel)
 		}
 	}
+	defaultBody, defaulted, _, defaultErr := s.deepseekReasoning.prepare(c, account, parsed.Body.Bytes(), validationModel, APIProtocolAnthropic)
+	if defaultErr != nil {
+		return nil, defaultErr
+	}
+	if defaulted {
+		if err := parsed.ReplaceBody(defaultBody); err != nil {
+			return nil, err
+		}
+		defer func() {
+			if result != nil {
+				result.ReasoningEffortDefaulted = true
+				result.ReasoningEffort = NormalizeClaudeOutputEffort(parsed.OutputEffort)
+			}
+		}()
+	}
 	if account != nil && account.Platform == PlatformAnthropic {
 		if err := validateClaude55Request(parsed.Body.Bytes(), validationModel); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"type": "error", "error": gin.H{"type": "invalid_request_error", "message": err.Error()}})

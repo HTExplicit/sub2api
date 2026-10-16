@@ -19,17 +19,26 @@ import (
 )
 
 // Forward forwards request to OpenAI API
-func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
+func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (result *OpenAIForwardResult, forwardErr error) {
 	diagnosticIncomingBody := body
 	// Snapshot the client body for the request integrity check before any
 	// rewrite; re-staged on every entry so a failover never reuses a stale copy.
 	s.stageRequestIntegrityOriginal(c, account, "responses", body)
+	body, defaulted, defaultReplay, defaultErr := s.deepseekReasoning.prepare(c, account, body, resolveMappedUpstreamModel(account, body, ""), APIProtocolResponses)
+	if defaultErr != nil {
+		return nil, defaultErr
+	}
+	defer func() {
+		if result != nil && defaulted {
+			result.ReasoningEffortDefaulted = true
+		}
+	}()
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	// Capture the continuation requirement before any compatibility transform.
 	// Its absence after normalization cannot prove this was a stateless request.
 	requestedPreviousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
-	var integrityEffortPolicy func([]byte) ([]byte, error)
+	integrityEffortPolicy := defaultReplay
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
 		candidates := []string{account.GetMappedModel(requestedModel)}
@@ -48,6 +57,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// The request integrity check replays this exact policy (same candidates)
 		// on the client snapshot so governed effort values are not differences.
 		integrityEffortPolicy = func(raw []byte) ([]byte, error) {
+			raw, replayErr := defaultReplay(raw)
+			if replayErr != nil {
+				return nil, replayErr
+			}
 			governed, _, policyErr := materializeOpenAIForwardReasoningEffort(ctx, raw, candidates...)
 			return governed, policyErr
 		}

@@ -49,6 +49,7 @@ func ProvideAdminHandlers(
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
 	systemPromptHandler *admin.SystemPromptHandler,
+	deepseekReasoningHandler *admin.DeepSeekReasoningHandler,
 	pelicanTestHandler *admin.PelicanTestHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
@@ -98,6 +99,7 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
 		SystemPrompt:           systemPromptHandler,
+		DeepSeekReasoning:      deepseekReasoningHandler,
 		PelicanTest:            pelicanTestHandler,
 	}
 }
@@ -301,6 +303,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
 	admin.NewSystemPromptHandler,
+	admin.NewDeepSeekReasoningHandler,
 	admin.NewPelicanTestHandler,
 	ProvideAccountJobRuntime,
 

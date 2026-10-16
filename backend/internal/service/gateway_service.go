@@ -674,6 +674,7 @@ type ForwardResult struct {
 	ClientDisconnect            bool // 客户端是否在流式传输过程中断开
 	ReasoningEffort             *string
 	// RequestedReasoningEffort is the client-requested effort before mapping.
+	ReasoningEffortDefaulted bool
 	RequestedReasoningEffort *string
 	// ServiceTier records the billable request tier. OpenAI uses service_tier;
 	// Anthropic speed=fast is normalized to "fast". Usage recording lowers it
@@ -817,6 +818,7 @@ func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accou
 
 // GatewayService handles API gateway operations
 type GatewayService struct {
+	deepseekReasoning     *DeepSeekReasoningService
 	systemPrompts         *SystemPromptService
 	accountRepo           AccountRepository
 	groupRepo             GroupRepository

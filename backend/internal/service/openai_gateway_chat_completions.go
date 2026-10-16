@@ -61,7 +61,19 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
+	protocol := APIProtocolChatCompletions
+	if !gjson.GetBytes(body, "messages").Exists() && gjson.GetBytes(body, "input").Exists() {
+		protocol = APIProtocolResponses
+	}
+	body, defaulted, _, err := s.deepseekReasoning.prepare(c, account, body, resolveMappedUpstreamModel(account, body, defaultMappedModel), protocol)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
+	if result != nil && defaulted {
+		result.ReasoningEffortDefaulted = true
+	}
+	return result, err
 }
 
 func (s *OpenAIGatewayService) forwardAsChatCompletions(

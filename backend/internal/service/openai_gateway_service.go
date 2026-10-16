@@ -274,6 +274,7 @@ type OpenAIForwardResult struct {
 	ReasoningEffort *string
 	// RequestedReasoningEffort is the client-requested effort before mapping.
 	// Empty/nil means it should fall back to ReasoningEffort at persistence.
+	ReasoningEffortDefaulted bool
 	RequestedReasoningEffort *string
 	Stream                   bool
 	OpenAIWSMode             bool
@@ -475,6 +476,7 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	deepseekReasoning     *DeepSeekReasoningService
 	systemPrompts         *SystemPromptService
 	usageCache            *UsageCache
 	usageCommitObserver   UsageCommitObserver

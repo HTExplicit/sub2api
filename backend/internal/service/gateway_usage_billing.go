@@ -1341,7 +1341,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		UpstreamModelMismatch:    upstreamModelMismatch(sentModel, result.UpstreamResponseModel),
 		ServiceTier:              result.ServiceTier,
 		ReasoningEffort:          result.ReasoningEffort,
-		RequestedReasoningEffort: coalesceRequestedReasoningEffort(result.RequestedReasoningEffort, result.ReasoningEffort),
+		RequestedReasoningEffort: requestedEffortForPersistence(result.RequestedReasoningEffort, result.ReasoningEffort, result.ReasoningEffortDefaulted),
 		InboundEndpoint:          optionalTrimmedStringPtr(input.InboundEndpoint),
 		UpstreamEndpoint:         optionalTrimmedStringPtr(input.UpstreamEndpoint),
 		InputTokens:              result.Usage.InputTokens,

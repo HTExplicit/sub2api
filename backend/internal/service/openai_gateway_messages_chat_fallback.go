@@ -74,6 +74,9 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	}
 	chatReq.Model = upstreamModel
 	chatReq.ReasoningEffort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, chatReq.ReasoningEffort)
+	if deepSeekReasoningWasDefaulted(ctx) && anthropicReq.OutputConfig != nil {
+		chatReq.ReasoningEffort = anthropicReq.OutputConfig.Effort
+	}
 	chatReq.Stream = clientStream
 	if clientStream {
 		chatReq.StreamOptions = &apicompat.ChatStreamOptions{IncludeUsage: true}

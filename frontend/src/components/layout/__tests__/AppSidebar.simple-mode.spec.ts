@@ -110,6 +110,7 @@ describe('AppSidebar simple mode extensions', () => {
 
     expect(extensionLinks(wrapper)).toEqual([
       '/admin/login-protection',
+      '/admin/deepseek-reasoning',
       '/admin/system-prompts',
       '/admin/codex',
       '/admin/pelican-tests',

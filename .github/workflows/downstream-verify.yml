@@ -44,6 +44,9 @@ jobs:
       - name: Service tests
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|AlphaSearch|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|AccountTaxonomyRules|AccountTestReasoningValidated|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+      - name: DeepSeek default reasoning contracts
+        working-directory: backend
+        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/server/routes -run '^TestDeepSeekDefault' -count=1
       - name: Claude stream failure and signature recovery contracts
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service ./internal/handler -run '^TestClaude(ClassifyStreamError|ThinkingSignatureError|Prelude_|Signature|StreamError|StreamFailureStatus|OpsErrorLogger)|^TestGatewayService_Forward_(PreOutputSSE|PostOutputSSE)' -count=1
@@ -126,6 +129,7 @@ jobs:
             src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.testPlan.spec.ts \
             src/components/keys/__tests__/UseKeyModal.spec.ts \
+            src/views/admin/__tests__/DeepSeekReasoningView.spec.ts \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
             src/components/common/__tests__/BaseDialog.spec.ts \

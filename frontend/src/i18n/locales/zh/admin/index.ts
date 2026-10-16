@@ -8,6 +8,7 @@ import settings from './settings'
 import audit from './audit'
 import promptAudit from './promptAudit'
 import systemPrompts from './systemPrompts'
+import deepseekReasoning from './deepseekReasoning'
 import pelicanTests from './pelicanTests'
 import accountTasks from './accountTasks'
 import plugins from './plugins'
@@ -23,6 +24,7 @@ export default {
   ...audit,
   ...promptAudit,
   ...systemPrompts,
+  ...deepseekReasoning,
   ...pelicanTests,
   ...accountTasks,
   ...plugins,

@@ -127,7 +127,7 @@ func stampOpenAIRequestedReasoningEffort(result *service.OpenAIForwardResult, c 
 }
 
 func stampForwardRequestedReasoningEffort(result *service.ForwardResult, requested *string) {
-	if result == nil || result.RequestedReasoningEffort != nil {
+	if result == nil || result.RequestedReasoningEffort != nil || result.ReasoningEffortDefaulted {
 		return
 	}
 	result.RequestedReasoningEffort = requested
