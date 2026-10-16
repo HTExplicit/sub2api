@@ -5,7 +5,7 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 ## Source baseline
 
 - Integrated official baseline: the release recorded in `.downstream/upstream-base`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.16.md).
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.17.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
 ## Settings and account operations
@@ -172,8 +172,8 @@ signature recovery is independent and remains available.
 Cline and Command Code share the existing system-prompt insertion points.
 Connection-test reasoning options require declared model support and a wire
 path that retains the chosen effort; unsupported and `ultra` options remain
-unavailable. The compact account filters retain multi-selection, tags, proxy,
-plan and count controls; hiding additional filters never resets their values.
+unavailable. The inline account filters retain multi-selection, tags, proxy,
+plan and count controls in both console-theme modes.
 
 Official migration 242 removes platform CHECK constraints. Immutable downstream
 251, 260 and 265 restore the quota constraint during a fresh installation, so
@@ -186,11 +186,19 @@ Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
 
-`.downstream/upstream-risk.json` records the v0.2.15-to-v0.2.16 integration against
-downstream commit `157836bdc12424a71f1d0bd30a37fcca38842fc9`. The risk gate
-recomputes those exact inputs. `initial_conflict_files` records the 17 resolved
+`.downstream/upstream-risk.json` records the v0.2.16-to-v0.2.17 integration against
+downstream commit `4ebe80cf5c69408fbc6b43a86c730e44f2f03f66`. The risk gate
+recomputes those exact inputs. `initial_conflict_files` records 21 resolved
 conflicts; `merge_conflicts: []` records that none remain. The candidate requires
 a completed review and the `upstream-reviewed` label before promotion.
+
+Gemini 4 Argon, thinking summaries, Vertex error handling, payment fixes and
+workspace-aware Codex imports follow v0.2.17. GPT-5.5 retirement applies to
+ChatGPT subscription upstream targets; API keys and explicit replacement mappings
+remain supported. Account filters are inline in both console-theme modes, retaining
+downstream multi-selection and taxonomy. `gateway.min_output_tokens` defaults to
+128, with a minimum of 16. Antigravity capacity observations use the shared
+source-bound evidence resolver, including provider-specific `maxTokens`.
 
 Gemini explicit caches follow the official account/key binding, storage billing,
 mutation lease and recovery rules. Vertex API-key authentication and service-account
