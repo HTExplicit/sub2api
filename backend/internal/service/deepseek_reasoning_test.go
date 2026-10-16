@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 import (
@@ -155,15 +157,20 @@ func TestDeepSeekDefaultSnapshotFailoverAndIntegrity(t *testing.T) {
 // Exercise real dispatch and conversion, capture the body at the HTTP boundary,
 // and supply a completed synthetic response. No provider or model is contacted.
 func TestDeepSeekDefaultForwardProtocols(t *testing.T) {
-	for _, inbound := range []string{APIProtocolResponses, APIProtocolChatCompletions, APIProtocolAnthropic} {
+	for _, inbound := range []string{APIProtocolResponses, APIProtocolChatCompletions, APIProtocolAnthropic, "responses_shaped_chat"} {
 		for _, outbound := range []string{APIProtocolResponses, APIProtocolChatCompletions, APIProtocolAnthropic} {
 			t.Run(inbound+"_to_"+outbound, func(t *testing.T) {
 				body := []byte(`{"model":"alias","input":"hi"}`)
-				if inbound != APIProtocolResponses {
+				if inbound != APIProtocolResponses && inbound != "responses_shaped_chat" {
 					body = []byte(`{"model":"alias","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`)
 				}
 				c := newDeepSeekChatFallbackContext(t, body)
 				account := &Account{ID: 18, Platform: PlatformDeepseek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test", "api_protocol": outbound, "model_mapping": map[string]any{"alias": "deepseek-flash"}}, Status: StatusActive, Schedulable: true}
+				if inbound == "responses_shaped_chat" {
+					account.Platform = PlatformCommandCode
+					account.Credentials["base_url"] = "https://relay.example"
+					account.Credentials["protocol_rules"] = []any{map[string]any{"pattern": "*", "protocol": outbound}}
+				}
 				response := `{"id":"resp_test","object":"response","status":"completed","model":"deepseek-flash","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":3,"output_tokens":2}}`
 				contentType := "application/json"
 				if outbound == APIProtocolChatCompletions {
@@ -188,7 +195,7 @@ func TestDeepSeekDefaultForwardProtocols(t *testing.T) {
 				switch inbound {
 				case APIProtocolResponses:
 					result, err = svc.Forward(context.Background(), c, account, body)
-				case APIProtocolChatCompletions:
+				case APIProtocolChatCompletions, "responses_shaped_chat":
 					result, err = svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
 				case APIProtocolAnthropic:
 					result, err = svc.ForwardAsAnthropic(context.Background(), c, account, body, "", "")
@@ -233,4 +240,71 @@ func TestDeepSeekDefaultDeclaredCapabilities(t *testing.T) {
 	_, changed, err := applyDeepSeekDefault(body, account, "deepseek-flash", APIProtocolResponses, DeepSeekReasoningConfig{Enabled: true, Effort: "max"}, nil)
 	require.NoError(t, err)
 	require.False(t, changed)
+}
+
+func TestDeepSeekDefaultAnthropicRelay(t *testing.T) {
+	for _, inbound := range []string{APIProtocolResponses, APIProtocolChatCompletions, APIProtocolAnthropic} {
+		t.Run(inbound, func(t *testing.T) {
+			body := []byte(`{"model":"alias","input":"hi"}`)
+			if inbound != APIProtocolResponses {
+				body = []byte(`{"model":"alias","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`)
+			}
+			c := newDeepSeekChatFallbackContext(t, body)
+			upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(namespaceToolAnthropicStream()))}}
+			if inbound == APIProtocolAnthropic {
+				upstream.resp.Body = io.NopCloser(strings.NewReader(`{"id":"msg_test","type":"message","role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}`))
+			}
+			svc := &GatewayService{cfg: deepSeekChatFallbackTestConfig(), httpUpstream: upstream, deepseekReasoning: enabledDeepSeekReasoning()}
+			account := &Account{ID: 18, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test", "base_url": "https://relay.example", "model_mapping": map[string]any{"alias": "deepseek-flash"}}}
+			var result *ForwardResult
+			var err error
+			switch inbound {
+			case APIProtocolResponses:
+				result, err = svc.ForwardAsResponses(context.Background(), c, account, body, nil)
+			case APIProtocolChatCompletions:
+				result, err = svc.ForwardAsChatCompletions(context.Background(), c, account, body, nil)
+			case APIProtocolAnthropic:
+				var parsed *ParsedRequest
+				parsed, err = ParseGatewayRequest(NewRequestBodyRef(body), APIProtocolAnthropic)
+				require.NoError(t, err)
+				result, err = svc.Forward(context.Background(), c, account, parsed)
+			}
+			require.NoError(t, err)
+			require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "output_config.effort").String(), string(upstream.lastBody))
+			require.NotNil(t, result)
+			require.True(t, result.ReasoningEffortDefaulted)
+			require.Equal(t, "max", optionalStringValue(result.ReasoningEffort))
+		})
+	}
+}
+
+func TestDeepSeekDefaultSkipsCompact(t *testing.T) {
+	body := []byte(`{"model":"deepseek-flash","input":"hi"}`)
+	c := newDeepSeekChatFallbackContext(t, body)
+	c.Request.URL.Path = "/v1/responses/compact"
+	out, changed, _, err := enabledDeepSeekReasoning().prepare(c, nil, body, "deepseek-flash", APIProtocolResponses)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, string(body), string(out))
+}
+
+func TestDeepSeekDefaultDeclaredMaxBridge(t *testing.T) {
+	for _, outbound := range []string{APIProtocolResponses, APIProtocolChatCompletions} {
+		t.Run(outbound, func(t *testing.T) {
+			body := []byte(`{"model":"deepseek-future","messages":[{"role":"user","content":"hi"}],"max_tokens":100}`)
+			c := newDeepSeekChatFallbackContext(t, body)
+			account := &Account{ID: 18, Platform: PlatformDeepseek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test", "api_protocol": outbound}}
+			account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"deepseek-future": {ID: "deepseek-future", SupportedReasoningLevels: []string{"low", "high", "max"}}}})
+			upstream := &httpUpstreamRecorder{err: errors.New("synthetic stop after capture")}
+			svc := &OpenAIGatewayService{cfg: deepSeekChatFallbackTestConfig(), httpUpstream: upstream, deepseekReasoning: enabledDeepSeekReasoning()}
+			_, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "", "")
+			require.Error(t, err)
+			require.NotNil(t, upstream.lastReq)
+			path := "reasoning.effort"
+			if outbound == APIProtocolChatCompletions {
+				path = "reasoning_effort"
+			}
+			require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, path).String(), string(upstream.lastBody))
+		})
+	}
 }

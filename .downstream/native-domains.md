@@ -44,7 +44,9 @@ carry the value in their native effort field. Requests retain other reasoning
 fields and request-integrity comparisons replay the same default and policy.
 Usage records keep the actual forwarded effort while an internal defaulted
 flag preserves absent client effort instead of inventing an explicit request.
-Turning the setting off restores the original omitted-effort behavior.
+Responses-shaped bodies on the Chat Completions URL use their Responses field.
+Compact and count-tokens operations retain their existing behavior. Turning the
+setting off restores the original omitted-effort behavior.
 
 ## Codex fingerprint simulation
 

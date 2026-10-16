@@ -21,6 +21,13 @@ import (
 const SettingKeyDeepSeekReasoning = "deepseek_reasoning_config"
 const deepSeekReasoningSnapshotKey = "deepseek_reasoning_snapshot"
 
+type deepSeekReasoningDefaultContextKey struct{}
+
+func deepSeekReasoningWasDefaulted(ctx context.Context) bool {
+	value, _ := ctx.Value(deepSeekReasoningDefaultContextKey{}).(bool)
+	return value
+}
+
 type DeepSeekReasoningConfig struct {
 	Enabled bool   `json:"enabled"`
 	Effort  string `json:"effort"`
@@ -210,6 +217,10 @@ func applyDeepSeekDefault(body []byte, account *Account, model, protocol string,
 
 func (s *DeepSeekReasoningService) prepare(c *gin.Context, account *Account, body []byte, model, protocol string) ([]byte, bool, func([]byte) ([]byte, error), error) {
 	config := s.requestConfig(c)
+	// Compact is a separate, non-generation operation with its own model mapping.
+	if c != nil && isOpenAIResponsesCompactPath(c) {
+		config.Enabled = false
+	}
 	var group *Group
 	if c != nil {
 		if key := getAPIKeyFromContext(c); key != nil && key.Group != nil {
@@ -255,6 +266,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(ctx context.Context, c *gin.Co
 	body, defaulted, _, err := s.deepseekReasoning.prepare(c, account, body, resolveMappedUpstreamModel(account, body, defaultMappedModel), APIProtocolAnthropic)
 	if err != nil {
 		return nil, err
+	}
+	if defaulted {
+		ctx = context.WithValue(ctx, deepSeekReasoningDefaultContextKey{}, true)
 	}
 	result, err := s.forwardAsAnthropic(ctx, c, account, body, promptCacheKey, defaultMappedModel)
 	if result != nil && defaulted {

@@ -165,6 +165,9 @@ func (s *OpenAIGatewayService) forwardAsAnthropic(
 	responsesReq.Model = upstreamModel
 	if responsesReq.Reasoning != nil {
 		responsesReq.Reasoning.Effort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, responsesReq.Reasoning.Effort)
+		if deepSeekReasoningWasDefaulted(ctx) && anthropicReq.OutputConfig != nil {
+			responsesReq.Reasoning.Effort = anthropicReq.OutputConfig.Effort
+		}
 	}
 	if previousResponseID != "" {
 		responsesReq.PreviousResponseID = previousResponseID
