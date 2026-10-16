@@ -12,7 +12,7 @@ import (
 func TestCodexCatalogUsesAntigravityCapabilitiesInGeminiMixedGroup(t *testing.T) {
 	const groupID int64 = 93
 	account := Account{
-		ID: 25, Platform: PlatformAntigravity, Type: AccountTypeOAuth,
+		ID: 25, Platform: PlatformAntigravity, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
 		Extra: map[string]any{"mixed_scheduling": true},
 		Credentials: map[string]any{"model_mapping": map[string]any{
 			"gemini-custom": "gemini-3.8-flash-high",
@@ -20,6 +20,7 @@ func TestCodexCatalogUsesAntigravityCapabilitiesInGeminiMixedGroup(t *testing.T)
 	}
 	reasoning := true
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
+		Source: "upstream", SourceIdentity: UpstreamModelMetadataSourceIdentity(&account),
 		Models: map[string]UpstreamModelMetadata{"gemini-3.8-flash-high": {
 			ID: "gemini-3.8-flash-high", Reasoning: &reasoning,
 			DefaultReasoningLevel: "high", SupportedReasoningLevels: []string{"high"},
@@ -47,10 +48,11 @@ func TestCodexCatalogUsesAntigravityCapabilitiesInGeminiMixedGroup(t *testing.T)
 func TestCodexCatalogGeminiCapabilitiesExcludeNonMixedAntigravityAccounts(t *testing.T) {
 	const groupID int64 = 94
 	reasoning := true
-	native := Account{ID: 1, Platform: PlatformGemini, Type: AccountTypeAPIKey,
+	native := Account{ID: 1, Platform: PlatformGemini, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
 		Credentials: map[string]any{"model_mapping": map[string]any{"gemini-custom": "gemini-3.8-flash-high"}},
 	}
 	native.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
+		Source: "upstream", SourceIdentity: UpstreamModelMetadataSourceIdentity(&native),
 		Models: map[string]UpstreamModelMetadata{"gemini-3.8-flash-high": {
 			ID: "gemini-3.8-flash-high", Reasoning: &reasoning,
 			SupportedReasoningLevels: []string{"high"}, InputModalities: []string{"text", "image"},
@@ -59,7 +61,7 @@ func TestCodexCatalogGeminiCapabilitiesExcludeNonMixedAntigravityAccounts(t *tes
 	})
 	for _, extra := range []map[string]any{nil, {"mixed_scheduling": false}} {
 		// A peer lacking capabilities would narrow the catalog if included.
-		peer := Account{ID: 2, Platform: PlatformAntigravity, Type: AccountTypeOAuth,
+		peer := Account{ID: 2, Platform: PlatformAntigravity, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
 			Extra: extra, Credentials: native.Credentials}
 		svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{
 			byGroup: map[int64][]Account{groupID: {native, peer}},

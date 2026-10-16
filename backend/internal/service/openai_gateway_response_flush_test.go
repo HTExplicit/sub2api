@@ -148,7 +148,7 @@ func (r *openAIResponseFlushReadError) Read(data []byte) (int, error) {
 func (r *openAIResponseFlushReadError) Close() error { return nil }
 
 func openAIResponseFlushCompletedData(text string) string {
-	return `data: {"type":"response.completed","response":{"id":"resp_flush","status":"completed","output":[{"type":"message","id":"msg_flush","role":"assistant","status":"completed","content":[{"type":"output_text","text":` + strconv.Quote(text) + `}]}],"usage":{"input_tokens":9,"output_tokens":3}}}`
+	return `data: {"type":"response.completed","response":{"id":"resp_flush","created_at":1700000000,"status":"completed","output":[{"type":"message","id":"msg_flush","role":"assistant","status":"completed","content":[{"type":"output_text","text":` + strconv.Quote(text) + `}]}],"usage":{"input_tokens":9,"output_tokens":3}}}`
 }
 
 func TestOpenAIResponseFlush_SlowEventsFlushOnceAtBoundaries(t *testing.T) {

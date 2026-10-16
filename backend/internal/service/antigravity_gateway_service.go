@@ -404,7 +404,7 @@ func (s *AntigravityGatewayService) TestConnectionWithPrompt(ctx context.Context
 	// 构建请求体
 	var requestBody []byte
 	if shouldUseAntigravityGeminiTestRequest(modelID, mappedModel) {
-		requestBody, err = s.buildGeminiTestRequestWithPrompt(projectID, mappedModel, prompt)
+		requestBody, err = s.buildGeminiTestRequest(projectID, mappedModel, prompt)
 	} else {
 		requestBody, err = s.buildClaudeTestRequest(projectID, mappedModel, prompts...)
 	}
