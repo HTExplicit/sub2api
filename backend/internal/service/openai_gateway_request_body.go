@@ -1512,7 +1512,7 @@ func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error)
 }
 
 func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Account, responsesLite bool) ([]byte, bool, error) {
-	return normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{ResponsesLite: responsesLite})
+	return normalizeOpenAIResponsesWebSocketCompatibilityBodyWithConfig(nil, body, account, responsesLite)
 }
 
 func normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body []byte, account *Account, responsesLite bool, resolvedModel string, configs ...*config.Config) ([]byte, bool, error) {
