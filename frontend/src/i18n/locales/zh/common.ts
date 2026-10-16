@@ -224,6 +224,7 @@ export default {
     contentModeration: '内容审计',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+    deepseekReasoning: 'DeepSeek 默认推理强度',
     systemPrompts: '系统提示词',
     codexPelicanComparison: '鹈鹕对比',
     pelicanTests: '鹈鹕测试',

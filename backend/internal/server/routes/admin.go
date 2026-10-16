@@ -129,6 +129,7 @@ func RegisterAdminRoutes(
 
 		// 独立业务 System Prompt 管理
 		registerSystemPromptRoutes(admin, h)
+		registerDeepSeekReasoningRoutes(admin, h)
 
 		// 推理恢复全局开关
 		registerPelicanTestRoutes(admin, h)
@@ -959,4 +960,12 @@ func channelMonitorModeV2Guard(settingService *service.SettingService) gin.Handl
 		}
 		c.Next()
 	}
+}
+
+func registerDeepSeekReasoningRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h.Admin.DeepSeekReasoning == nil {
+		return
+	}
+	admin.GET("/deepseek-reasoning", h.Admin.DeepSeekReasoning.Get)
+	admin.PUT("/deepseek-reasoning", h.Admin.DeepSeekReasoning.Save)
 }

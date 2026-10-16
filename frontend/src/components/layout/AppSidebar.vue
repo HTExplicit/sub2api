@@ -816,6 +816,7 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 
 const adminExtensionNavItems = computed((): NavItem[] => [
   { path: '/admin/login-protection', label: t('nav.loginProtection'), icon: ShieldIcon },
+  { path: '/admin/deepseek-reasoning', label: t('nav.deepseekReasoning'), icon: DocumentIcon },
   { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon },
   { path: '/admin/codex', label: 'Codex', icon: CodexIcon },
   { path: '/admin/pelican-tests', label: t('nav.pelicanTests'), icon: CodexIcon },

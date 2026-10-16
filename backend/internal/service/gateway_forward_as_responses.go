@@ -28,7 +28,7 @@ import (
 //
 // The method follows the same pattern as OpenAIGatewayService.ForwardAsAnthropic
 // but in reverse direction: Responses → Anthropic upstream → Responses.
-func (s *GatewayService) ForwardAsResponses(
+func (s *GatewayService) forwardAsResponses(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,

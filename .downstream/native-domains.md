@@ -17,6 +17,35 @@ other key or a non-boolean value (including `null`), returns HTTP 400 and stores
 nothing. While no Codex runtime row is stored,
 `gateway.openai_codex_request_zstd` decides the compression switch.
 
+## DeepSeek default reasoning effort
+
+Extensions exposes `/admin/deepseek-reasoning`. Administrator-only
+`GET/PUT /api/v1/admin/deepseek-reasoning` uses the standard response envelope
+and audit middleware. The complete configuration is
+`{"enabled":false,"effort":"max"}`, stored as one JSON `settings` row named
+`deepseek_reasoning_config`; effort accepts `low`, `high` or `max`. No stored
+row means disabled with Max selected. Saving updates the local snapshot
+immediately; other processes refresh in the background within one minute.
+Forwarding reads memory only and freezes the configuration per request.
+An initial read failure leaves requests unchanged; refresh failures retain the
+last valid snapshot. No schema migration or historical usage rewrite is needed.
+
+After channel/account mapping, DeepSeek Flash and V4 model families receive
+the configured effort only when it is absent, null or empty. Namespaced model
+IDs are recognized. Other DeepSeek models require model-catalog support for
+the selected effort. Explicit effort, unknown nonempty values, malformed
+fields, disabled thinking and existing effort aliases retain existing behavior.
+The new value passes through group mappings, ceilings and deny rules once.
+Every attempt uses its clean request, so failover to a different model does
+not inherit an injected effort.
+
+Responses, Chat Completions and Messages, including the existing bridges,
+carry the value in their native effort field. Requests retain other reasoning
+fields and request-integrity comparisons replay the same default and policy.
+Usage records keep the actual forwarded effort while an internal defaulted
+flag preserves absent client effort instead of inventing an explicit request.
+Turning the setting off restores the original omitted-effort behavior.
+
 ## Codex fingerprint simulation
 
 The Extensions sidebar owns one Codex entry. `/admin/codex` redirects to

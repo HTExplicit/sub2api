@@ -224,6 +224,7 @@ export default {
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
+    deepseekReasoning: 'DeepSeek Default Reasoning Effort',
     systemPrompts: 'System Prompts',
     codexPelicanComparison: 'Pelican Comparison',
     pelicanTests: 'Pelican Tests',
