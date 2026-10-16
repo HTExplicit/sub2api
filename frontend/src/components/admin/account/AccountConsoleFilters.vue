@@ -3,82 +3,18 @@
     <slot v-if="part !== 'search'" name="leading" />
     <div v-if="part !== 'filters'" class="flex min-w-0 flex-wrap items-center gap-2">
       <SearchInput :model-value="modelValue.search" :placeholder="t('admin.accounts.searchAccounts')" data-ui="account-search" class="min-w-0 w-full sm:w-56" @update:model-value="updateSearch" @search="emit('change')" />
-      <div v-for="menu in primaryMenus" :key="menu.key" class="relative">
-        <button
-          type="button"
-          class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
-          :aria-expanded="openMenu === menu.key"
-          :data-test="`account-filter-${menu.key}`"
-          data-ui="filter-pill"
-          @click.stop="toggleMenu(menu.key)"
-        >
-          <span>{{ menu.label }}</span>
-          <span
-            v-if="selectedValues(menu.key).length"
-            class="min-w-5 rounded-full bg-primary-100 px-1.5 text-center text-xs font-semibold text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
-            data-ui="filter-count"
-          >
-            {{ selectedValues(menu.key).length }}
-          </span>
-          <Icon name="chevronDown" size="xs" class="text-gray-400" />
-        </button>
-
-        <div
-          v-if="openMenu === menu.key"
-          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
-          data-ui="menu"
-          @click.stop
-        >
-          <div class="max-h-72 overflow-y-auto p-1.5">
-            <label
-              v-for="option in menu.options"
-              :key="String(option.value)"
-              class="flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
-              data-ui="menu-item"
-              :data-selected="selectedValues(menu.key).includes(String(option.value)) ? 'true' : undefined"
-            >
-              <input
-                type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                :checked="selectedValues(menu.key).includes(String(option.value))"
-                @change="toggleOption(menu.key, String(option.value))"
-              />
-              <span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">{{ option.label }}</span>
-              <span class="text-xs tabular-nums text-gray-400 dark:text-dark-400" data-ui="account-filter-option-count">{{ option.count }}</span>
-            </label>
-            <div v-if="menu.options.length === 0" class="px-3 py-5 text-center text-sm text-gray-400">
-              {{ t('common.noData') }}
-            </div>
-          </div>
-          <div v-if="selectedValues(menu.key).length" class="border-t border-gray-100 p-1.5 dark:border-dark-700">
-            <button
-              type="button"
-              class="w-full rounded px-2.5 py-1.5 text-left text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-700"
-              data-ui="menu-item"
-              @click="clearMenu(menu.key)"
-            >
-              {{ t('common.clear') }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <button type="button" class="btn btn-secondary h-8" data-test="account-more-filters" :aria-expanded="moreExpanded" :aria-controls="resolvedPanelId" @click="toggleMore">
-        {{ t('admin.accounts.moreFilters') }}
-        <span v-if="secondaryCount" class="rounded-full px-1.5 text-xs tabular-nums" data-test="account-more-filters-count">{{ secondaryCount }}</span>
-      </button>
     </div>
-    <div v-if="part !== 'search'" v-show="moreExpanded" :id="resolvedPanelId" class="flex min-w-0 flex-wrap items-center gap-2">
-      <div v-for="menu in secondaryMenus" :key="menu.key" class="relative">
+    <div v-if="part !== 'search'" class="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" data-ui="account-inline-filters">
+      <div v-for="menu in menus" :key="menu.key" class="relative min-w-0">
         <button
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
+          class="inline-flex h-8 w-full sm:w-auto items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
           :aria-expanded="openMenu === menu.key"
           :data-test="`account-filter-${menu.key}`"
           data-ui="filter-pill"
           @click.stop="toggleMenu(menu.key)"
         >
-          <span>{{ menu.label }}</span>
+          <span class="min-w-0 truncate">{{ menu.label }}</span>
           <span
             v-if="selectedValues(menu.key).length"
             class="min-w-5 rounded-full bg-primary-100 px-1.5 text-center text-xs font-semibold text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
@@ -91,7 +27,7 @@
 
         <div
           v-if="openMenu === menu.key"
-          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
+          class="absolute left-0 z-50 mt-1 w-full sm:w-64 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
           data-ui="menu"
           @click.stop
         >
@@ -130,7 +66,7 @@
       </div>
       <select
         :value="modelValue.group_id"
-        class="input h-8 w-44 py-1 text-sm"
+        class="input h-8 min-w-0 w-full sm:w-44 py-1 text-sm"
         :aria-label="t('admin.accounts.columns.groups')"
         @change="updateGroup(($event.target as HTMLSelectElement).value)"
       >
@@ -139,6 +75,13 @@
         <option v-for="group in groups" :key="group.id" :value="String(group.id)">{{ group.name }}</option>
       </select>
 
+      <select :value="modelValue.privacy_mode" class="input h-8 min-w-0 w-full sm:w-48 py-1 text-sm" :aria-label="t('admin.accounts.allPrivacyModes')" @change="withUpdate({ privacy_mode: ($event.target as HTMLSelectElement).value })">
+        <option value="">{{ t('admin.accounts.allPrivacyModes') }}</option>
+        <option value="__unset__">{{ t('admin.accounts.privacyUnset') }}</option>
+        <option value="training_off">Privacy</option>
+        <option value="training_set_cf_blocked">CF</option>
+        <option value="training_set_failed">Fail</option>
+      </select>
     </div>
     <div v-if="part !== 'search' && activeChips.length" class="flex min-w-0 flex-wrap items-center gap-1.5">
       <button
@@ -168,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useId } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SearchInput from '@/components/common/SearchInput.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -190,33 +133,16 @@ const props = withDefaults(defineProps<{
   // (row 1) and 'filters' (row 2: an optional leading slot, the filter pills, the group select, the active
   // filter chips and a summary slot, all on one wrapping line). 'all' is the single block used with the theme off.
   part?: 'all' | 'search' | 'filters'
-  expanded?: boolean | null
-  panelId?: string
-}>(), { part: 'all', expanded: null })
+}>(), { part: 'all' })
 
 const emit = defineEmits<{
   'update:modelValue': [value: AccountConsoleFilterState]
   change: []
-  'update:expanded': [value: boolean]
 }>()
 
 const { t } = useI18n()
 const rootRef = ref<HTMLElement | null>(null)
 const openMenu = ref<MenuKey | null>(null)
-
-const localExpanded = ref(false)
-const ownPanelId = useId()
-const resolvedPanelId = computed(() => props.panelId || ownPanelId)
-const moreExpanded = computed(() => props.expanded ?? localExpanded.value)
-const toggleMore = () => {
-  const value = !moreExpanded.value
-  localExpanded.value = value
-  openMenu.value = null
-  emit('update:expanded', value)
-}
-const primaryMenus = computed(() => menus.value.filter(menu => menu.key === 'platforms' || menu.key === 'statuses'))
-const secondaryMenus = computed(() => menus.value.filter(menu => menu.key !== 'platforms' && menu.key !== 'statuses'))
-const secondaryCount = computed(() => secondaryMenus.value.filter(menu => selectedValues(menu.key).length > 0).length + (props.modelValue.group_id ? 1 : 0))
 
 const typeLabel = (value: string) => {
   const labels: Record<string, string> = {
@@ -291,7 +217,9 @@ const clearMenu = (key: MenuKey) => {
   else withUpdate({ [key]: [] } as Partial<AccountConsoleFilterState>)
 }
 
-type FilterChip = { key: string; menu: MenuKey | 'group' | 'account_ids'; value: string; label: string }
+type FilterChip = { key: string; menu: MenuKey | 'group' | 'privacy' | 'account_ids'; value: string; label: string }
+
+const privacyLabels: Record<string, string> = { training_off: 'Privacy', training_set_cf_blocked: 'CF', training_set_failed: 'Fail' }
 
 const activeChips = computed<FilterChip[]>(() => {
   const chips: FilterChip[] = []
@@ -307,6 +235,9 @@ const activeChips = computed<FilterChip[]>(() => {
       : props.groups.find((group) => String(group.id) === props.modelValue.group_id)?.name || props.modelValue.group_id
     chips.push({ key: `group_id:${props.modelValue.group_id}`, menu: 'group', value: props.modelValue.group_id, label: groupLabel })
   }
+  if (props.modelValue.privacy_mode) {
+    chips.push({ key: 'privacy_mode', menu: 'privacy', value: props.modelValue.privacy_mode, label: props.modelValue.privacy_mode === '__unset__' ? t('admin.accounts.privacyUnset') : (privacyLabels[props.modelValue.privacy_mode] || props.modelValue.privacy_mode) })
+  }
   if (props.modelValue.account_ids.length) {
     chips.push({
       key: 'account_ids:import', menu: 'account_ids', value: '',
@@ -317,6 +248,10 @@ const activeChips = computed<FilterChip[]>(() => {
 })
 
 const removeChip = (chip: FilterChip) => {
+  if (chip.menu === 'privacy') {
+    withUpdate({ privacy_mode: '' })
+    return
+  }
   if (chip.menu === 'group') {
     withUpdate({ group_id: '' })
     return

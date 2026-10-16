@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
@@ -1511,14 +1512,23 @@ func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error)
 }
 
 func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Account, responsesLite bool) ([]byte, bool, error) {
-	return normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{ResponsesLite: responsesLite})
+	return normalizeOpenAIResponsesWebSocketCompatibilityBodyWithConfig(nil, body, account, responsesLite)
 }
 
-func normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body []byte, account *Account, responsesLite bool, resolvedModel string) ([]byte, bool, error) {
-	return normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{ResponsesLite: responsesLite, ResolvedModel: resolvedModel})
+func normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body []byte, account *Account, responsesLite bool, resolvedModel string, configs ...*config.Config) ([]byte, bool, error) {
+	var cfg *config.Config
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	return normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{Config: cfg, ResponsesLite: responsesLite, ResolvedModel: resolvedModel})
+}
+
+func normalizeOpenAIResponsesWebSocketCompatibilityBodyWithConfig(cfg *config.Config, body []byte, account *Account, responsesLite bool) ([]byte, bool, error) {
+	return normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{Config: cfg, ResponsesLite: responsesLite})
 }
 
 type openAIResponsesCompatibilityOptions struct {
+	Config        *config.Config
 	ResolvedModel string
 	ResponsesLite bool
 	// Compact marks the /responses/compact wire shape, which is left as-is
@@ -1539,7 +1549,7 @@ func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *
 	changed := false
 	if account.IsOpenAIOAuthLike() {
 		var err error
-		normalized, changed, err = normalizeOpenAIResponsesLegacyIngress(body)
+		normalized, changed, err = normalizeOpenAIResponsesLegacyIngressWithConfig(opts.Config, body)
 		if err != nil {
 			return body, false, err
 		}
