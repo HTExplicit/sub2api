@@ -69,6 +69,10 @@ func (r *pinnedModelsRoutesRepository) ListModelAvailabilityCandidates(ctx conte
 	return nil, nil
 }
 
+func (r *pinnedModelsRoutesRepository) ListSchedulableByGroupID(context.Context, int64) ([]service.Account, error) {
+	return []service.Account{r.account}, nil
+}
+
 type pinnedModelsRoutesUpstream struct {
 	service.HTTPUpstream
 	ordinaryCalls atomic.Int32

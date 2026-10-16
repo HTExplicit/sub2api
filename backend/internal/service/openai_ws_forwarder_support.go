@@ -798,7 +798,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 		return policyMiss()
 	}
-	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
+	if requestedModel != "" && !supportsOpenAIRequestModel(account, requestedModel, requireCompact) {
 		return policyMiss()
 	}
 	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {

@@ -26,6 +26,9 @@ type ModelAvailabilityDiagnosis struct {
 	// currently carries the exact model_not_supported cooldown for this
 	// request's canonical wire model.
 	ModelNotSupportedCooldownExhausted bool
+	// HasRetiredSubscriptionModel records a ChatGPT upstream blocked by model
+	// retirement, so an unsupported request can include migration guidance.
+	HasRetiredSubscriptionModel bool
 }
 
 // ModelAvailabilityDiagnoser is implemented by gateway services that can

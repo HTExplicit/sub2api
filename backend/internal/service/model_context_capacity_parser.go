@@ -68,6 +68,11 @@ func ParseUpstreamModelContextCapacity(raw json.RawMessage, platform string) Mod
 		MaxOutputTokens: first("max_output_tokens", "maxOutputTokens", "max_completion_tokens", "top_provider.max_completion_tokens",
 			"output_token_limit", "outputTokenLimit"),
 	}
+	// Antigravity's generation catalog uses maxTokens for the context window.
+	// Keep that provider-specific meaning out of unrelated compatible catalogs.
+	if platform == PlatformAntigravity && value.ContextWindow == 0 {
+		value.ContextWindow = first("maxTokens")
+	}
 	var limits map[string]json.RawMessage
 	if json.Unmarshal(fields["limit"], &limits) == nil {
 		if value.ContextWindow == 0 {
