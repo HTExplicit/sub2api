@@ -42,9 +42,10 @@ motion：按时间顺序比较多帧，脚随踏板协调运动、车轮转动�
 {"checks":{"pelican":true,"bicycle":true,"riding":true,"motion":true}}`
 
 type PelicanTestConfig struct {
-	RetestKey string   `json:"retest_key,omitempty"`
-	TestItems []string `json:"test_items,omitempty"`
-	Scene     string   `json:"scene,omitempty"`
+	RepeatCount *int     `json:"repeat_count,omitempty"`
+	RetestKey   string   `json:"retest_key,omitempty"`
+	TestItems   []string `json:"test_items,omitempty"`
+	Scene       string   `json:"scene,omitempty"`
 }
 
 type PelicanEvaluation struct {
@@ -97,7 +98,19 @@ func clonePelicanEvaluation(value *PelicanEvaluation) *PelicanEvaluation {
 	return &copy
 }
 
+func (c PelicanTestConfig) repetitions() int {
+	if c.RepeatCount == nil {
+		return 1
+	}
+	return *c.RepeatCount
+}
+
 func normalizePelicanConfig(c PelicanTestConfig) (PelicanTestConfig, error) {
+	count := c.repetitions()
+	if count < 1 || count > pelicanTestMaxTargets {
+		return c, fmt.Errorf("%w: repeat_count must be between 1 and %d", ErrPelicanTestInvalidRequest, pelicanTestMaxTargets)
+	}
+	c.RepeatCount = &count
 	if len(c.TestItems) == 0 {
 		return c, nil
 	} // Original /tests contract.

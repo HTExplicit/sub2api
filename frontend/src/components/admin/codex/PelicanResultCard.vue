@@ -12,6 +12,7 @@
         <p class="break-words">{{ text('账号', 'Account') }}：{{ result.account_name }} #{{ result.account_id }}</p>
         <p v-if="result.evaluation?.test_items.includes('pelican')">{{ text('场景', 'Scene') }}：{{ result.evaluation.scene }}</p>
         <p class="break-words">{{ result.model_id }} · {{ result.effort || t('admin.pelicanTests.normalDefault') }} · {{ (result.duration_ms / 1000).toFixed(1) }}s</p>
+        <p data-test="pelican-repeat-label">{{ repeatLabel }}</p>
         <p>{{ text('手动检测', 'Manual test') }}<template v-if="result.evaluation?.checks"> · {{ text('校验码', 'Verification code') }} {{ result.evaluation.checks.nonce ? text('一致', 'Matched') : text('未通过', 'Not matched') }}</template></p>
       </div>
       <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs">
@@ -29,10 +30,11 @@ import { useI18n } from 'vue-i18n'
 import type { PelicanResultSummary } from '@/api/admin/pelicanTests'
 import PelicanPreview from './PelicanPreview.vue'
 import PelicanEvaluationBadges from './PelicanEvaluationBadges.vue'
-import { pelicanLabel, pelicanTone } from '@/utils/pelicanDisplay'
+import { pelicanLabel, pelicanTone, pelicanRepeatLabel } from '@/utils/pelicanDisplay'
 const props = defineProps<{ result: PelicanResultSummary; selected: boolean; selectionFull: boolean; now: number; canDelete?: boolean; busy?: boolean }>()
 defineEmits<{ select: [PelicanResultSummary]; open: [PelicanResultSummary]; enlarge: [PelicanResultSummary]; retest: [PelicanResultSummary]; delete: [PelicanResultSummary] }>()
 const { t, locale } = useI18n()
+const repeatLabel = computed(() => pelicanRepeatLabel(props.result, locale.value))
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
 const expired = computed(() => Date.parse(props.result.expires_at) <= props.now)
 const unfinished = computed(() => ['pending', 'running'].includes(props.result.status))

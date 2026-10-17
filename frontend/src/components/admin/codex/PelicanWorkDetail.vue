@@ -3,6 +3,7 @@
     <div v-if="result.preview_url" class="aspect-[3/2] max-h-[60vh] w-full overflow-hidden rounded-lg border border-line"><PelicanPreview :preview-url="result.preview_url" :title="title" interactive /></div>
     <PelicanEvaluationBadges :evaluation="result.evaluation" :status="result.status" />
     <dl class="grid gap-3 sm:grid-cols-2">
+      <div data-test="pelican-repeat-detail"><dt class="text-xs text-muted">{{ text('测试次数', 'Test run') }}</dt><dd>{{ repeatLabel }}</dd></div>
       <div><dt class="text-xs text-muted">{{ text('账号与模型', 'Account and model') }}</dt><dd class="break-words">{{ title }} · {{ result.effort || text('模型默认', 'Model default') }}</dd></div>
       <div><dt class="text-xs text-muted">{{ text('耗时', 'Duration') }}</dt><dd>{{ ((result.duration_ms || 0) / 1000).toFixed(1) }}s · {{ result.started_at ? new Date(result.started_at).toLocaleString() : '—' }}</dd></div>
       <div class="sm:col-span-2">{{ text('排队', 'Queue') }} {{ ((result.queue_duration_ms || 0) / 1000).toFixed(1) }}s · {{ text('准备', 'Preparation') }} {{ ((result.preparation_duration_ms || 0) / 1000).toFixed(1) }}s · {{ text('模型调用', 'Model calls') }} {{ ((result.generation_duration_ms || 0) / 1000).toFixed(1) }}s</div>
@@ -36,11 +37,12 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PelicanTestResult } from '@/api/admin/pelicanTests'
-import { decodePelicanEvidence, pelicanLabel } from '@/utils/pelicanDisplay'
+import { decodePelicanEvidence, pelicanLabel, pelicanRepeatLabel } from '@/utils/pelicanDisplay'
 import PelicanPreview from './PelicanPreview.vue'
 import PelicanEvaluationBadges from './PelicanEvaluationBadges.vue'
 const props = defineProps<{ result: PelicanTestResult }>()
 const { locale } = useI18n()
+const repeatLabel = computed(() => pelicanRepeatLabel(props.result, locale.value))
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
 const label = (value: string) => pelicanLabel(value, locale.value)
 const source = computed(() => props.result.raw_svg || props.result.raw_html || props.result.html)

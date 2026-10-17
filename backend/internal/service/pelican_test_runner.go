@@ -37,7 +37,13 @@ type PelicanTestTarget struct {
 	Effort    string `json:"effort"`
 }
 
+type pelicanTestSample struct {
+	PelicanTestTarget
+	RepeatIndex int
+}
+
 type PelicanTestRequest struct {
+	samples []pelicanTestSample
 	PelicanTestConfig
 	ClientTaskID             string              `json:"client_task_id"`
 	GenerationTimeoutSeconds int                 `json:"generation_timeout_seconds"`
@@ -45,6 +51,8 @@ type PelicanTestRequest struct {
 }
 
 type PelicanTestResult struct {
+	RepeatIndex           int                              `json:"repeat_index"`
+	RepeatCount           int                              `json:"repeat_count"`
 	Evaluation            *PelicanEvaluation               `json:"evaluation,omitempty"`
 	Evidence              map[string]*PelicanStageEvidence `json:"evidence,omitempty"`
 	SVG                   string                           `json:"raw_svg,omitempty"`
@@ -134,7 +142,7 @@ type pelicanAccountReader interface {
 }
 
 // All account-test batches share ten outbound execution slots.
-// Account leases surround actual requests rather than preparation.
+// Model turns cover whole flows; outbound leases cover only actual requests.
 type PelicanTestRunner struct {
 	renderer          pelicanFrameRenderer
 	submissionMu      sync.Mutex
@@ -270,19 +278,30 @@ func normalizePelicanTestRequest(request PelicanTestRequest, now time.Time) (Pel
 	if len(targets) == 0 || len(targets) > pelicanTestMaxTargets {
 		return request, fmt.Errorf("%w: targets must contain 1 to %d unique account/model pairs", ErrPelicanTestInvalidRequest, pelicanTestMaxTargets)
 	}
+	if len(request.samples) == 0 && request.repetitions() > pelicanTestMaxTargets/len(targets) {
+		return request, fmt.Errorf("%w: repeat_count allows at most %d for these combinations (5000 total tests)", ErrPelicanTestInvalidRequest, pelicanTestMaxTargets/len(targets))
+	}
+	if len(request.samples) > pelicanTestMaxTargets {
+		return request, ErrPelicanTestInvalidRequest
+	}
 	request.Targets = targets
 	return request, nil
 }
 
 func pelicanTestRequestHash(request PelicanTestRequest) string {
+	repeatCount := request.repetitions()
+	if repeatCount == 1 {
+		repeatCount = 0
+	} // Keep existing single-run request hashes valid.
 	raw, _ := json.Marshal(struct {
+		RepeatCount              int                 `json:"repeat_count,omitempty"`
 		Targets                  []PelicanTestTarget `json:"targets"`
 		GenerationTimeoutSeconds int                 `json:"generation_timeout_seconds"`
 		ExecutionMode            string              `json:"execution_mode"`
 		TestItems                []string            `json:"test_items,omitempty"`
 		Scene                    string              `json:"scene,omitempty"`
 		RetestKey                string              `json:"retest_key,omitempty"`
-	}{request.Targets, request.GenerationTimeoutSeconds, PelicanExecutionModeAccount, request.TestItems, request.Scene, request.RetestKey})
+	}{repeatCount, request.Targets, request.GenerationTimeoutSeconds, PelicanExecutionModeAccount, request.TestItems, request.Scene, request.RetestKey})
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }
@@ -297,15 +316,23 @@ func (r *PelicanTestRunner) Create(ctx context.Context, createdBy int64, request
 	if err = r.initialize(ctx); err != nil {
 		return nil, false, err
 	}
+	samples := request.samples
+	if len(samples) == 0 {
+		for _, target := range request.Targets {
+			for index := 1; index <= request.repetitions(); index++ {
+				samples = append(samples, pelicanTestSample{PelicanTestTarget: target, RepeatIndex: index})
+			}
+		}
+	}
 	now := r.now().UTC()
 	task := &PelicanTestTask{ID: uuid.NewString(), ClientTaskID: request.ClientTaskID,
 		TestConfig: request.PelicanTestConfig,
 		CreatedBy:  createdBy, RequestHash: pelicanTestRequestHash(request), Status: "pending",
 		GenerationTimeoutSeconds: request.GenerationTimeoutSeconds, ExecutionMode: PelicanExecutionModeAccount,
 		Prompt: PelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(PelicanTestTTL),
-		Total: len(request.Targets), Results: make([]*PelicanTestResult, 0, len(request.Targets))}
+		Total: len(samples), Results: make([]*PelicanTestResult, 0, len(samples))}
 	accountInfo := make(map[int64]*Account)
-	for i, target := range request.Targets {
+	for i, target := range samples {
 		account, found := accountInfo[target.AccountID]
 		if !found && r.accounts != nil {
 			if read, readErr := r.accounts.GetByID(ctx, target.AccountID); readErr == nil {
@@ -318,11 +345,11 @@ func (r *PelicanTestRunner) Create(ctx context.Context, createdBy int64, request
 			name, platform = account.Name, account.Platform
 		}
 		task.Results = append(task.Results, &PelicanTestResult{ID: uuid.NewString(), TaskID: task.ID,
-			Ordinal: i + 1, AccountID: target.AccountID, AccountName: name, Platform: platform, ModelID: target.ModelID,
+			Ordinal: i + 1, RepeatIndex: target.RepeatIndex, RepeatCount: request.repetitions(), AccountID: target.AccountID, AccountName: name, Platform: platform, ModelID: target.ModelID,
 			Effort: target.Effort, Status: "pending", ExpiresAt: task.ExpiresAt,
 			PreviewUnavailable: "test has not completed"})
 		if len(request.TestItems) > 0 {
-			evaluation, evaluationErr := newPelicanEvaluation(request.PelicanTestConfig, target)
+			evaluation, evaluationErr := newPelicanEvaluation(request.PelicanTestConfig, target.PelicanTestTarget)
 			if evaluationErr != nil {
 				return nil, false, evaluationErr
 			}
@@ -414,72 +441,95 @@ func (r *PelicanTestRunner) Run(parent context.Context, task *PelicanTestTask, e
 	var wg sync.WaitGroup
 	var errorsMu sync.Mutex
 	var persistenceErrors []string
-	for _, result := range task.Results {
-		result := result
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if result.Evaluation != nil {
-				r.runEvaluation(ctx, result, time.Duration(task.GenerationTimeoutSeconds)*time.Second, emit)
-				if r.stopCtx.Err() != nil && result.Status != "complete" {
-					result.Status = "incomplete"
-					result.Error = pelicanInterruptedMessage + "\n" + result.Error
-				}
-				writeCtx, cancelWrite := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
-				defer cancelWrite()
-				if err := r.repo.SaveResult(writeCtx, result); err != nil {
-					errorsMu.Lock()
-					persistenceErrors = append(persistenceErrors, err.Error())
-					errorsMu.Unlock()
-				}
-				if emit != nil {
-					emit(PelicanTestEvent{Type: "result_complete", TaskID: task.ID, Result: result})
-				}
-				return
-			}
-			budget := task.GenerationTimeoutSeconds
-			if budget == 0 {
-				budget = PelicanDefaultGenerationTimeoutSeconds
-			}
-			state := newPelicanExecutionState(ctx, r.coordinator, time.Duration(budget)*time.Second, r.now)
-			state.withTimeout = r.generationContext
-			state.onPhase = func(phase string, snapshot pelicanExecutionSnapshot) {
-				if emit != nil {
-					copy := *result
-					applyPelicanExecutionSnapshot(&copy, snapshot)
-					emit(PelicanTestEvent{Type: "result_phase", Phase: phase, TaskID: task.ID, Result: &copy})
-				}
-			}
-			testCtx := context.WithValue(state.parent, pelicanExecutionContextKey{}, state)
-			if emit != nil {
-				copy := *result
-				emit(PelicanTestEvent{Type: "result_phase", Phase: "queued", TaskID: task.ID, Result: &copy})
-			}
-			r.runOne(testCtx, result, r.generator, emit)
-			snapshot := state.finish()
-			applyPelicanExecutionSnapshot(result, snapshot)
-			if snapshot.generationTimedOut && ctx.Err() == nil && result.Status != "skipped" {
-				result.Status = "incomplete"
-				result.PreviewUnavailable = "test incomplete"
-				if result.Error != "" {
-					result.Error += "\n"
-				}
-				result.Error += "generation budget exhausted"
-			}
+	runResult := func(result *PelicanTestResult) {
+		modelQueueMS := nonnegativePelicanDuration(r.now().Sub(started)).Milliseconds()
+		result.QueueDurationMS = modelQueueMS
+		if result.Evaluation != nil {
+			r.runEvaluation(ctx, result, time.Duration(task.GenerationTimeoutSeconds)*time.Second, emit)
 			if r.stopCtx.Err() != nil && result.Status != "complete" {
-				result.Status, result.Error, result.PreviewUnavailable = "incomplete", pelicanInterruptedMessage+"\n"+result.Error, "test interrupted"
+				result.Status = "incomplete"
+				result.Error = pelicanInterruptedMessage + "\n" + result.Error
 			}
-			writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
-			writeErr := r.repo.SaveResult(writeCtx, result)
-			writeCancel()
-			if writeErr != nil {
+			writeCtx, cancelWrite := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
+			defer cancelWrite()
+			if err := r.repo.SaveResult(writeCtx, result); err != nil {
 				errorsMu.Lock()
-				persistenceErrors = append(persistenceErrors, writeErr.Error())
+				persistenceErrors = append(persistenceErrors, err.Error())
 				errorsMu.Unlock()
-				cancel()
 			}
 			if emit != nil {
 				emit(PelicanTestEvent{Type: "result_complete", TaskID: task.ID, Result: result})
+			}
+			return
+		}
+		budget := task.GenerationTimeoutSeconds
+		if budget == 0 {
+			budget = PelicanDefaultGenerationTimeoutSeconds
+		}
+		state := newPelicanExecutionState(ctx, r.coordinator, time.Duration(budget)*time.Second, r.now)
+		state.withTimeout = r.generationContext
+		state.onPhase = func(phase string, snapshot pelicanExecutionSnapshot) {
+			if emit != nil {
+				copy := *result
+				applyPelicanExecutionSnapshot(&copy, snapshot)
+				emit(PelicanTestEvent{Type: "result_phase", Phase: phase, TaskID: task.ID, Result: &copy})
+			}
+		}
+		testCtx := context.WithValue(state.parent, pelicanExecutionContextKey{}, state)
+		if emit != nil {
+			copy := *result
+			emit(PelicanTestEvent{Type: "result_phase", Phase: "queued", TaskID: task.ID, Result: &copy})
+		}
+		r.runOne(testCtx, result, r.generator, emit)
+		snapshot := state.finish()
+		applyPelicanExecutionSnapshot(result, snapshot)
+		result.QueueDurationMS += modelQueueMS
+		if snapshot.generationTimedOut && ctx.Err() == nil && result.Status != "skipped" {
+			result.Status = "incomplete"
+			result.PreviewUnavailable = "test incomplete"
+			if result.Error != "" {
+				result.Error += "\n"
+			}
+			result.Error += "generation budget exhausted"
+		}
+		if r.stopCtx.Err() != nil && result.Status != "complete" {
+			result.Status, result.Error, result.PreviewUnavailable = "incomplete", pelicanInterruptedMessage+"\n"+result.Error, "test interrupted"
+		}
+		writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
+		writeErr := r.repo.SaveResult(writeCtx, result)
+		writeCancel()
+		if writeErr != nil {
+			errorsMu.Lock()
+			persistenceErrors = append(persistenceErrors, writeErr.Error())
+			errorsMu.Unlock()
+			cancel()
+		}
+		if emit != nil {
+			emit(PelicanTestEvent{Type: "result_complete", TaskID: task.ID, Result: result})
+		}
+	}
+	groups := make(map[pelicanModelKey][]*PelicanTestResult)
+	var order []pelicanModelKey
+	for _, result := range task.Results {
+		key := pelicanModelKey{result.AccountID, result.ModelID}
+		if _, exists := groups[key]; !exists {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], result)
+	}
+	for _, key := range order {
+		results := groups[key]
+		slices.SortStableFunc(results, func(a, b *PelicanTestResult) int { return a.RepeatIndex - b.RepeatIndex })
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			release, err := r.coordinator.acquireModel(ctx, key.accountID, key.modelID)
+			if err == nil {
+				defer release()
+			}
+			// Cancelled groups still persist every pending sample without dispatching.
+			for _, result := range results {
+				runResult(result)
 			}
 		}()
 	}

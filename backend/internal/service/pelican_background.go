@@ -11,6 +11,8 @@ import (
 )
 
 type PelicanResultSummary struct {
+	RepeatIndex           int                `json:"repeat_index"`
+	RepeatCount           int                `json:"repeat_count"`
 	Evaluation            *PelicanEvaluation `json:"evaluation,omitempty"`
 	PreviewURL            string             `json:"preview_url,omitempty"`
 	ID                    string             `json:"id"`
@@ -97,7 +99,7 @@ type pelicanBackgroundTask struct {
 const pelicanInterruptedMessage = "process stopped before the test finished; this task will not be replayed"
 
 func pelicanResultSummary(result *PelicanTestResult, phase string) *PelicanResultSummary {
-	return &PelicanResultSummary{ID: result.ID, TaskID: result.TaskID, Ordinal: result.Ordinal,
+	return &PelicanResultSummary{ID: result.ID, TaskID: result.TaskID, Ordinal: result.Ordinal, RepeatIndex: result.RepeatIndex, RepeatCount: result.RepeatCount,
 		Evaluation: clonePelicanEvaluation(result.Evaluation),
 		AccountID:  result.AccountID, AccountName: result.AccountName, Platform: result.Platform,
 		ModelID: result.ModelID, Effort: result.Effort, Status: result.Status, Phase: phase,

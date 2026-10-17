@@ -92,3 +92,20 @@ describe('Pelican gallery workbench', () => {
     expect(mocks.retestTask).not.toHaveBeenCalled()
   })
 })
+
+it('copies each model once with its configured repeat count and displays sample numbers', async () => {
+  const source = task(); source.test_config = { test_items: ['pelican', 'candy'], repeat_count: 3 }
+  mocks.getTask.mockResolvedValue(source)
+  const second = { ...result('r2'), repeat_index: 2, repeat_count: 3 }
+  mocks.gallery.mockResolvedValue({ items: [second], total: 1, page: 1, page_size: 24 })
+  mocks.getResults.mockResolvedValue({ items: [result('r1'), second, { ...result('r3'), model_id: 'gpt-6-astra' }], total: 3, page: 1, page_size: 50 })
+  mocks.getResult.mockResolvedValue({ ...second, raw_answer: '', raw_response: '', raw_html: '', html: '', error: '', preview_unavailable: '' })
+  const wrapper = await make(); await selectTask(wrapper)
+  expect(wrapper.get('[data-test="pelican-repeat-label"]').text()).toBe('第 2 / 3 次')
+  await wrapper.get('[data-test="pelican-result-r2"] button').trigger('click'); await flushPromises()
+  expect(wrapper.get('[data-test="pelican-repeat-detail"]').text()).toContain('第 2 / 3 次')
+  const copy = wrapper.findAll('button').find(button => button.text() === '复制参数')!
+  await copy.trigger('click'); await flushPromises()
+  expect(wrapper.getComponent('[data-test="composer-stub"]').props('initial')).toEqual(expect.objectContaining({ repeat_count: 3, targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: 'medium' }, { account_id: 1, model_id: 'gpt-6-astra', effort: 'medium' }] }))
+  expect(mocks.startTask).not.toHaveBeenCalled()
+})

@@ -25,45 +25,68 @@ type pelicanExecutionContextKey struct{}
 type pelicanExecutionLeaseContextKey struct{}
 
 type pelicanExecutionWaiter struct {
+	ready   chan struct{}
+	granted bool
+}
+
+type pelicanModelKey struct {
 	accountID int64
-	ready     chan struct{}
-	granted   bool
+	modelID   string
 }
 
 type pelicanExecutionCoordinator struct {
-	mu       sync.Mutex
-	limit    int
-	active   int
-	accounts map[int64]bool
-	waiting  []*pelicanExecutionWaiter
+	mu      sync.Mutex
+	limit   int
+	active  int
+	waiting []*pelicanExecutionWaiter
+	models  map[pelicanModelKey]chan struct{}
 }
 
 func newPelicanExecutionCoordinator(limit int) *pelicanExecutionCoordinator {
-	return &pelicanExecutionCoordinator{limit: limit, accounts: make(map[int64]bool)}
+	return &pelicanExecutionCoordinator{limit: limit, models: make(map[pelicanModelKey]chan struct{})}
 }
 
-// scheduleLocked grants account and global capacity atomically. No waiter holds
-// one resource while waiting for the other, and each account keeps FIFO order.
-func (c *pelicanExecutionCoordinator) scheduleLocked() {
-	for i := 0; i < len(c.waiting) && c.active < c.limit; {
-		waiter := c.waiting[i]
-		if c.accounts[waiter.accountID] {
-			i++
-			continue
+// A model group owns its turn across the entire selected test flow. It never
+// holds outbound capacity while waiting, rendering, or between requests.
+func (c *pelicanExecutionCoordinator) acquireModel(ctx context.Context, accountID int64, modelID string) (func(), error) {
+	key := pelicanModelKey{accountID, modelID}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		c.waiting = append(c.waiting[:i], c.waiting[i+1:]...)
-		c.accounts[waiter.accountID] = true
+		c.mu.Lock()
+		previous, busy := c.models[key]
+		if !busy {
+			done := make(chan struct{})
+			c.models[key] = done
+			c.mu.Unlock()
+			var once sync.Once
+			return func() { once.Do(func() { c.mu.Lock(); delete(c.models, key); close(done); c.mu.Unlock() }) }, nil
+		}
+		c.mu.Unlock()
+		select {
+		case <-previous:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (c *pelicanExecutionCoordinator) scheduleLocked() {
+	for len(c.waiting) > 0 && c.active < c.limit {
+		waiter := c.waiting[0]
+		c.waiting = c.waiting[1:]
 		c.active++
 		waiter.granted = true
 		close(waiter.ready)
 	}
 }
 
-func (c *pelicanExecutionCoordinator) acquire(ctx context.Context, accountID int64) (func(), error) {
+func (c *pelicanExecutionCoordinator) acquire(ctx context.Context, _ int64) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	waiter := &pelicanExecutionWaiter{accountID: accountID, ready: make(chan struct{})}
+	waiter := &pelicanExecutionWaiter{ready: make(chan struct{})}
 	c.mu.Lock()
 	c.waiting = append(c.waiting, waiter)
 	c.scheduleLocked()
@@ -75,7 +98,6 @@ func (c *pelicanExecutionCoordinator) acquire(ctx context.Context, accountID int
 	c.mu.Lock()
 	if err := ctx.Err(); err != nil {
 		if waiter.granted {
-			delete(c.accounts, accountID)
 			c.active--
 		} else {
 			for i, pending := range c.waiting {
@@ -91,15 +113,7 @@ func (c *pelicanExecutionCoordinator) acquire(ctx context.Context, accountID int
 	}
 	c.mu.Unlock()
 	var once sync.Once
-	return func() {
-		once.Do(func() {
-			c.mu.Lock()
-			delete(c.accounts, accountID)
-			c.active--
-			c.scheduleLocked()
-			c.mu.Unlock()
-		})
-	}, nil
+	return func() { once.Do(func() { c.mu.Lock(); c.active--; c.scheduleLocked(); c.mu.Unlock() }) }, nil
 }
 
 type pelicanExecutionLease struct {

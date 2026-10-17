@@ -176,15 +176,15 @@ func TestPelicanRunnerRejectsExpiredV7AfterRowsAreGone(t *testing.T) {
 	require.ErrorIs(t, err, ErrPelicanTestInvalidRequest)
 }
 
-func TestPelicanRunnerSharesTenSlotsAndSerializesAccountsAcrossBatches(t *testing.T) {
+func TestPelicanRunnerSharesTenSlotsAndSerializesModelsAcrossBatches(t *testing.T) {
 	repo := newPelicanMemoryTestRepo()
 	var mu sync.Mutex
 	active, maxActive, calls := 0, 0, 0
-	accountActive := map[int64]int{}
-	maxAccountActive := map[int64]int{}
+	accountActive := map[pelicanModelKey]int{}
+	maxAccountActive := map[pelicanModelKey]int{}
 	started := make(chan struct{}, 16)
 	gate := make(chan struct{})
-	gen := pelicanFakeGenerator{generate: func(ctx context.Context, id int64, _, effort string) (*PelicanResult, error) {
+	gen := pelicanFakeGenerator{generate: func(ctx context.Context, id int64, model, effort string) (*PelicanResult, error) {
 		ctx, release, acquireErr := AcquirePelicanExecution(ctx, id)
 		if acquireErr != nil {
 			return nil, acquireErr
@@ -194,12 +194,12 @@ func TestPelicanRunnerSharesTenSlotsAndSerializesAccountsAcrossBatches(t *testin
 		mu.Lock()
 		calls++
 		active++
-		accountActive[id]++
+		accountActive[pelicanModelKey{id, model}]++
 		if active > maxActive {
 			maxActive = active
 		}
-		if accountActive[id] > maxAccountActive[id] {
-			maxAccountActive[id] = accountActive[id]
+		if accountActive[pelicanModelKey{id, model}] > maxAccountActive[pelicanModelKey{id, model}] {
+			maxAccountActive[pelicanModelKey{id, model}] = accountActive[pelicanModelKey{id, model}]
 		}
 		mu.Unlock()
 		started <- struct{}{}
@@ -209,7 +209,7 @@ func TestPelicanRunnerSharesTenSlotsAndSerializesAccountsAcrossBatches(t *testin
 		}
 		mu.Lock()
 		active--
-		accountActive[id]--
+		accountActive[pelicanModelKey{id, model}]--
 		mu.Unlock()
 		return &PelicanResult{Status: "skipped", Effort: effort, Error: "selected account unavailable"}, nil
 	}}
@@ -221,6 +221,7 @@ func TestPelicanRunnerSharesTenSlotsAndSerializesAccountsAcrossBatches(t *testin
 		secondTargets[i] = PelicanTestTarget{AccountID: int64(i + 7), ModelID: "gpt-6.1-sol"}
 	}
 	secondTargets[0].AccountID = 1
+	secondTargets[1] = PelicanTestTarget{AccountID: 2, ModelID: "gpt-6-astra"}
 	first, _, err := runner.Create(context.Background(), 1, PelicanTestRequest{ClientTaskID: pelicanV7(t), Targets: firstTargets})
 	require.NoError(t, err)
 	second, _, err := runner.Create(context.Background(), 1, PelicanTestRequest{ClientTaskID: pelicanV7(t), Targets: secondTargets})
@@ -450,7 +451,7 @@ func TestPelicanExecutionIsScopedAndRejectsIncorrectCrossAccountNesting(t *testi
 	release()
 	coordinator.mu.Lock()
 	require.Zero(t, coordinator.active)
-	require.Empty(t, coordinator.accounts)
+	require.Empty(t, coordinator.models)
 	require.Empty(t, coordinator.waiting)
 	coordinator.mu.Unlock()
 	state.finish()

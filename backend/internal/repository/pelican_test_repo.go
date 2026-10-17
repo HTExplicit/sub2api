@@ -23,7 +23,7 @@ const pelicanTestResultColumns = `r.id, r.task_id, r.ordinal, r.account_id, r.ac
     r.upstream_model, r.effort, r.status, r.raw_answer, r.raw_response, r.raw_html, r.html, r.error,
     r.started_at, r.finished_at, r.duration_ms, t.expires_at, r.platform, r.actual_endpoint, r.actual_protocol,
     r.actual_transport, r.borrow_applied, r.queue_duration_ms, r.preparation_duration_ms, r.generation_duration_ms, r.generation_started_at,
-    r.evaluation,r.evidence,r.raw_svg,r.review_image`
+    r.evaluation,r.evidence,r.raw_svg,r.review_image,r.repeat_index,COALESCE((t.test_config->>'repeat_count')::integer,1)`
 
 type pelicanTestScanner interface{ Scan(...any) error }
 
@@ -61,7 +61,7 @@ func scanPelicanTestResult(row pelicanTestScanner) (*service.PelicanTestResult, 
 		&result.UpstreamModel, &result.Effort, &result.Status, &answer, &rawResponse, &rawHTML, &html, &rawError,
 		&started, &finished, &result.DurationMS, &result.ExpiresAt, &result.Platform, &result.ActualEndpoint, &result.ActualProtocol,
 		&result.ActualTransport, &result.BorrowApplied, &result.QueueDurationMS, &result.PreparationDurationMS, &result.GenerationDurationMS, &generationStarted,
-		&evaluation, &evidence, &svg, &result.ReviewImage); err != nil {
+		&evaluation, &evidence, &svg, &result.ReviewImage, &result.RepeatIndex, &result.RepeatCount); err != nil {
 		return nil, err
 	}
 	result.RawAnswer, result.RawResponse, result.RawHTML, result.HTML, result.Error = string(answer), string(rawResponse), string(rawHTML), string(html), string(rawError)
@@ -135,13 +135,20 @@ func (r *pelicanTestRepository) Create(ctx context.Context, task *service.Pelica
 		return nil, false, err
 	}
 	for _, result := range task.Results {
+		if result.RepeatIndex == 0 {
+			result.RepeatIndex = 1
+		}
+		result.RepeatCount = 1
+		if task.TestConfig.RepeatCount != nil {
+			result.RepeatCount = *task.TestConfig.RepeatCount
+		}
 		evaluation, marshalErr := json.Marshal(result.Evaluation)
 		if marshalErr != nil {
 			return nil, false, marshalErr
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO codex_gateway_borrow_test_results
-            (id,task_id,ordinal,account_id,account_name,model_id,effort,status,platform,evaluation)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9)`, result.ID, stored.ID, result.Ordinal, result.AccountID, result.AccountName, result.ModelID, result.Effort, result.Platform, evaluation); err != nil {
+            (id,task_id,ordinal,account_id,account_name,model_id,effort,status,platform,evaluation,repeat_index)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,$10)`, result.ID, stored.ID, result.Ordinal, result.AccountID, result.AccountName, result.ModelID, result.Effort, result.Platform, evaluation, result.RepeatIndex); err != nil {
 			return nil, false, err
 		}
 	}
