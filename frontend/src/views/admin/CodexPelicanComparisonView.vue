@@ -12,7 +12,7 @@
           <label class="min-w-52 flex-1 text-xs text-muted">{{ text('任务', 'Task') }}<select v-model="taskId" class="input mt-1 w-full" data-test="pelican-task-select" @change="selectTask"><option value="">{{ text('最近 24 小时全部作品', 'All works from the last 24 hours') }}</option><option v-for="task in history.items" :key="task.id" :value="task.id">{{ formatTime(task.created_at) }} · {{ label(task.status) }} · {{ task.total }}</option></select></label>
           <div class="flex items-center gap-2 text-xs"><button type="button" class="btn btn-ghost btn-sm" :disabled="historyPage <= 1" @click="historyPage--; loadHistory()">←</button><span>{{ text('任务页', 'Task page') }} {{ historyPage }}</span><button type="button" class="btn btn-ghost btn-sm" :disabled="historyPage * 12 >= history.total" @click="historyPage++; loadHistory()">→</button></div>
         </div>
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <div class="grid grid-cols-2 gap-3 xl:grid-cols-6">
           <label class="text-xs text-muted">{{ text('账号 ID', 'Account ID') }}<input v-model="filters.account" type="number" min="1" class="input mt-1 w-full" /></label>
           <label class="text-xs text-muted">{{ text('模型', 'Model') }}<input v-model="filters.model" class="input mt-1 w-full" /></label>
           <label class="text-xs text-muted">{{ text('思考强度', 'Reasoning') }}<select v-model="filters.effort" class="input mt-1 w-full"><option value="">{{ text('全部', 'All') }}</option><option v-for="effort in efforts" :key="effort" :value="effort">{{ effort }}</option></select></label>
@@ -89,7 +89,7 @@ async function loadGallery() {
   } catch (value) { if (!controller.signal.aborted) report(value) }
   finally { if (galleryController === controller) loading.value = false }
 }
-async function refresh() { await Promise.all([loadHistory(), loadGallery()]) }
+async function refresh() { error.value = ''; await Promise.all([loadHistory(), loadGallery()]) }
 async function selectTask() {
   const version = ++selection; observer?.abort(); activeTask.value = null; connection.value = 'idle'; stopping.value = false; page.value = 1
   if (taskId.value) {

@@ -440,6 +440,9 @@ func (r *PelicanTestRunner) runEvaluation(ctx context.Context, result *PelicanTe
 					for _, frame := range frames {
 						e.FrameTimes = append(e.FrameTimes, frame.Time)
 					}
+					if !persist("reviewing") {
+						return
+					}
 					out := call("reviewing", PelicanModelInput{Text: PelicanReviewPrompt, Images: frames, MaxOutputTokens: 8000}, 180*time.Second)
 					e.Review = "error"
 					if out != nil && out.Status == "complete" {
