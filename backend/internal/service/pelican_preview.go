@@ -158,7 +158,7 @@ func (p *PelicanPreviewService) pruneLocked(now time.Time) {
 func (p *PelicanPreviewService) DecorateResult(result *PelicanTestResult) *PelicanTestResult {
 	decorated := *result
 	decorated.PreviewURL, decorated.PreviewExpiresAt = "", nil
-	if decorated.Status != "complete" {
+	if decorated.Status != "complete" && decorated.SVG == "" {
 		decorated.PreviewUnavailable = "test " + decorated.Status
 		return &decorated
 	}
@@ -196,7 +196,11 @@ func (p *PelicanPreviewService) DecorateResult(result *PelicanTestResult) *Pelic
 	}
 	p.capabilities[token] = pelicanPreviewCapability{ResultID: decorated.ID, ExpiresAt: expires}
 	p.mu.Unlock()
-	decorated.PreviewURL = "/api/v1/pelican-tests/preview/" + token + "/index.html"
+	asset := "index.html"
+	if decorated.SVG != "" {
+		asset = "scene.svg"
+	}
+	decorated.PreviewURL = "/api/v1/pelican-tests/preview/" + token + "/" + asset
 	decorated.PreviewExpiresAt, decorated.PreviewUnavailable = &expires, ""
 	return &decorated
 }
@@ -227,13 +231,50 @@ func (p *PelicanPreviewService) Resolve(ctx context.Context, token string) (stri
 		return "", ErrPelicanPreviewUnavailable
 	}
 	p.mu.Unlock()
-	result, err := p.repo.GetResult(ctx, capability.ResultID)
+	var result *PelicanTestResult
+	var err error
+	if reader, ok := p.repo.(interface {
+		GetPreviewResult(context.Context, string) (*PelicanTestResult, error)
+	}); ok {
+		result, err = reader.GetPreviewResult(ctx, capability.ResultID)
+	} else {
+		result, err = p.repo.GetResult(ctx, capability.ResultID)
+	}
 	finishedRead := p.now().UTC()
-	if err != nil || result == nil || result.ID != capability.ResultID || result.Status != "complete" || result.HTML == "" || !result.ExpiresAt.After(finishedRead) || !capability.ExpiresAt.After(finishedRead) {
+	if err != nil || result == nil || result.ID != capability.ResultID || (result.Status != "complete" && result.SVG == "") || result.HTML == "" || !result.ExpiresAt.After(finishedRead) || !capability.ExpiresAt.After(finishedRead) {
 		p.mu.Lock()
 		delete(p.capabilities, token)
 		p.mu.Unlock()
 		return "", ErrPelicanPreviewUnavailable
 	}
 	return result.HTML, nil
+}
+
+func (p *PelicanPreviewService) DecorateSummary(summary *PelicanResultSummary) {
+	if !summary.HasPreview {
+		return
+	}
+	// Metadata is enough to issue a capability; no original answer is loaded.
+	result := &PelicanTestResult{ID: summary.ID, Status: "complete", HTML: "preview", ExpiresAt: summary.ExpiresAt}
+	if summary.Evaluation != nil {
+		result.SVG = "svg"
+	}
+	summary.PreviewURL = p.DecorateResult(result).PreviewURL
+}
+
+func (p *PelicanPreviewService) ResolveSVG(ctx context.Context, token string) (string, error) {
+	html, err := p.Resolve(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	raw, _ := ExtractPelicanHTML(html)
+	start := pelicanSVGTag.FindStringIndex(raw)
+	if start == nil {
+		return "", ErrPelicanPreviewUnavailable
+	}
+	end := strings.LastIndex(strings.ToLower(raw), "</svg>")
+	if end < start[0] {
+		return "", ErrPelicanPreviewUnavailable
+	}
+	return raw[start[0] : end+6], nil
 }

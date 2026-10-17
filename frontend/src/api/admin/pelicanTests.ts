@@ -2,6 +2,10 @@ import { apiClient, buildApiUrl } from '../client'
 import { ADMIN_UI_REQUEST_HEADER } from '../adminUIRequest'
 
 export interface PelicanResultBase {
+	 evaluation?: PelicanEvaluation
+	 evidence?: Record<string, PelicanStageEvidence>
+	 raw_svg?: string
+	 review_image?: string
   id: string
   account_id: number
   account_name: string
@@ -37,7 +41,7 @@ export interface PelicanTaskBase {
   replayed?: boolean
 }
 
-export const PELICAN_PROMPT = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试'
+export const PELICAN_PROMPT = '创建独立的 SVG 鹈鹕骑自行车 2D 循环动画：橙色大嘴、蹼足踩踏板、翅膀保持平衡、车轮转动。按所选场景独立构图，在右下角显示本轮随机校验码。只返回 SVG，使用内联 CSS 或 SMIL，不使用脚本和外部资源。实际场景、校验码及完整题面保存在检测详情中。'
 
 export function createPelicanClientTaskId(serverOffsetMs = 0): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
@@ -93,7 +97,13 @@ export interface PelicanOptions {
   accounts: PelicanAccountOption[]
 }
 
-export type PelicanPhase = 'queued' | 'preparing' | 'generating'
+export type PelicanPhase = 'queued' | 'preparing' | 'generating' | 'candy' | 'rendering' | 'reviewing'
+
+export const PELICAN_SCENES = ['海边木栈道', '秋日林道', '春日草坡', '雨后湿地', '黄昏公路', '湖畔风车', '热带海岛', '雪山谷地']
+export interface PelicanTestConfig { test_items?: string[]; scene?: string }
+export interface PelicanEvaluation { test_items: string[]; scene: string; nonce: string; generation: string; candy: string; review: string; verdict: string; checks?: Record<string, boolean>; review_checks?: Record<string, boolean | null>; frame_times?: number[] }
+export interface PelicanStageEvidence { prompt: string; raw_answer: string; raw_response: string; error: string; status: string; duration_ms: number; invocation: Record<string, unknown> }
+export interface PelicanRetestRequest { client_task_id: string; result_ids?: string[]; failed_only?: boolean }
 
 export interface PelicanTestResult extends PelicanResultBase {
   task_id?: string
@@ -110,15 +120,16 @@ export interface PelicanTestResult extends PelicanResultBase {
 }
 
 export interface PelicanTestTask extends Omit<PelicanTaskBase, 'results'> {
+	 test_config?: PelicanTestConfig
   generation_timeout_seconds?: number
   execution_mode?: string
   results?: PelicanTestResult[]
 }
 
-export interface PelicanTestRequest {
+export interface PelicanTestRequest extends PelicanTestConfig {
   client_task_id: string
   generation_timeout_seconds: number
-  targets: Array<{ account_id: number; model_id: string; effort: string }>
+  targets: Array<{ account_id: number; model_id: string; effort: string; scene?: string }>
 }
 
 export type PelicanTestEvent =
@@ -204,15 +215,16 @@ export async function streamPelicanTests(
 }
 
 export interface PelicanResultSummary {
+  evaluation?: PelicanEvaluation; preview_url?: string
   id: string; task_id: string; ordinal: number; account_id: number; account_name: string
   platform: string; model_id: string; effort: string; status: string; phase?: PelicanPhase
   has_preview: boolean; interrupted: boolean; started_at?: string; finished_at?: string
   generation_started_at?: string; duration_ms: number; queue_duration_ms: number
   preparation_duration_ms: number; generation_duration_ms: number; expires_at: string
 }
-export interface PelicanTaskSnapshot extends PelicanTestTask { prompt: string; counts: Record<string, number> }
+export interface PelicanTaskSnapshot extends PelicanTestTask { prompt: string; counts: Record<string, number>; failed_count?: number }
 export interface PelicanResultPage { items: PelicanResultSummary[]; total: number; page: number; page_size: number }
-export interface PelicanResultFilter { page?: number; page_size?: number; account_id?: number; model?: string; status?: string }
+export interface PelicanResultFilter { page?: number; page_size?: number; task_id?: string; account_id?: number; model?: string; status?: string; effort?: string; scene?: string; verdict?: string }
 export interface PelicanTaskEvent { type: 'snapshot' | 'task_complete'; task: PelicanTaskSnapshot }
 
 export async function observePelicanTask(id: string, onEvent: (event: PelicanTaskEvent) => void, signal: AbortSignal): Promise<void> {
@@ -254,6 +266,8 @@ export async function observePelicanTask(id: string, onEvent: (event: PelicanTas
 }
 
 export const pelicanTestsAPI = {
+  gallery: async (filters: PelicanResultFilter = {}, signal?: AbortSignal) => (await apiClient.get<PelicanResultPage>(`${basePath}/results`, { params: { page: 1, page_size: 24, ...filters }, signal })).data,
+  retestTask: async (id: string, request: PelicanRetestRequest, signal?: AbortSignal) => (await apiClient.post<PelicanTaskSnapshot>(`${basePath}/tasks/${encodeURIComponent(id)}/retest`, request, { signal })).data,
   startTask: async (request: PelicanTestRequest, signal?: AbortSignal) => (await apiClient.post<PelicanTaskSnapshot>(`${basePath}/tasks`, request, { signal })).data,
   listTasks: async (page = 1, signal?: AbortSignal) => (await apiClient.get<PelicanTestHistory>(`${basePath}/tasks`, { params: { page, page_size: 12 }, signal })).data,
   getTask: async (id: string, signal?: AbortSignal) => (await apiClient.get<PelicanTaskSnapshot>(`${basePath}/tasks/${encodeURIComponent(id)}`, { signal })).data,

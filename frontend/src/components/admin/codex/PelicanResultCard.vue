@@ -1,56 +1,54 @@
 <template>
-  <article ref="element" class="min-w-0 space-y-3 rounded-xl border border-line p-3" :data-test="`pelican-result-${result.id}`">
-    <div class="flex items-start justify-between gap-2">
-      <div class="min-w-0"><h3 class="break-words text-sm font-semibold">{{ result.account_name }} #{{ result.account_id }}</h3><p class="break-words text-xs text-muted">{{ result.model_id }} · {{ result.effort || t('admin.pelicanTests.normalDefault') }}</p></div>
-      <label class="flex shrink-0 items-center gap-1 text-xs"><input type="checkbox" :checked="selected" :disabled="(selectionFull || expired) && !selected" @change="$emit('select', result)" />{{ text('比较', 'Compare') }}</label>
-    </div>
-    <p class="text-xs font-medium" :class="['failed', 'incomplete'].includes(result.status) ? 'text-red-700 dark:text-red-300' : 'text-muted'">{{ stateLabel }}</p>
-    <div class="aspect-[4/3] min-h-48 overflow-hidden rounded-lg border border-line bg-gray-50 dark:bg-dark-900">
-      <PelicanPreview v-if="detail?.preview_url && !expired" :preview-url="detail.preview_url" :title="title" />
-      <div v-else class="flex h-full min-h-48 items-center justify-center p-5 text-center text-sm text-muted">{{ loading ? t('common.loading') : error || placeholder }}</div>
-    </div>
-    <p class="text-xs text-muted">{{ t('admin.pelicanTests.phases.queued') }} {{ duration(result.queue_duration_ms) }} · {{ t('admin.pelicanTests.phases.preparing') }} {{ duration(result.preparation_duration_ms) }} · {{ t('admin.pelicanTests.phases.generating') }} {{ duration(result.generation_duration_ms) }}</p>
-    <div class="flex flex-wrap gap-2">
-      <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || expired" @click="open(false)">{{ t('admin.pelicanTests.details') }}</button>
-      <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || expired || !result.has_preview" @click="open(true)">{{ t('admin.pelicanTests.enlarge') }}</button>
-      <button type="button" class="btn btn-secondary btn-sm" :disabled="busy || expired || ['pending', 'running'].includes(result.status)" data-test="pelican-retest-result" @click="$emit('retest', result)">{{ t('admin.pelicanTests.retest') }}</button>
-      <button type="button" class="btn btn-ghost btn-sm text-red-700 dark:text-red-300" :disabled="busy || expired || !canDelete" :title="!canDelete ? t('admin.pelicanTests.deleteWait') : undefined" data-test="pelican-delete-result" @click="$emit('delete', result)">{{ t('admin.pelicanTests.deleteWork') }}</button>
-      <button v-if="error && !expired" type="button" class="btn btn-ghost btn-sm" @click="load">{{ text('重新读取', 'Reload') }}</button>
+  <article class="min-w-0 overflow-hidden rounded-xl border border-line bg-white shadow-sm dark:bg-dark-900" :data-test="`pelican-result-${result.id}`">
+    <button type="button" class="relative block aspect-[3/2] w-full overflow-hidden bg-gray-50 text-left focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-dark-800" :disabled="expired" :aria-label="`${text('查看详情', 'View details')} ${title}`" @click="$emit('open', result)">
+      <PelicanPreview v-if="result.preview_url && !expired" :preview-url="result.preview_url" :title="title" />
+      <span v-else class="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-sm text-muted"><span class="text-2xl" aria-hidden="true">{{ unfinished ? '◌' : result.evaluation?.test_items.includes('pelican') === false ? '21' : '↯' }}</span>{{ placeholder }}</span>
+      <span class="absolute bottom-3 right-3 rounded-md border border-white/70 bg-white/95 px-2.5 py-1.5 text-xs text-gray-700 shadow-sm dark:border-line dark:bg-dark-900/95 dark:text-gray-100">{{ text('查看详情 ↗', 'View details ↗') }}</span>
+    </button>
+    <div class="space-y-3 p-4">
+      <div class="flex items-center justify-between gap-2"><time class="text-xs tabular-nums text-muted">{{ date }}</time><span class="rounded px-2 py-1 text-xs" :class="pelicanTone(verdict)">{{ verdictLabel }}</span></div>
+      <PelicanEvaluationBadges :evaluation="result.evaluation" :status="result.status" />
+      <div class="space-y-1.5 text-xs leading-relaxed text-muted">
+        <p class="break-words">{{ text('账号', 'Account') }}：{{ result.account_name }} #{{ result.account_id }}</p>
+        <p v-if="result.evaluation?.test_items.includes('pelican')">{{ text('场景', 'Scene') }}：{{ result.evaluation.scene }}</p>
+        <p class="break-words">{{ result.model_id }} · {{ result.effort || t('admin.pelicanTests.normalDefault') }} · {{ (result.duration_ms / 1000).toFixed(1) }}s</p>
+        <p>{{ text('手动检测', 'Manual test') }}<template v-if="result.evaluation?.checks"> · {{ text('校验码', 'Verification code') }} {{ result.evaluation.checks.nonce ? text('一致', 'Matched') : text('未通过', 'Not matched') }}</template></p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs">
+        <label class="mr-auto flex items-center gap-1.5"><input type="checkbox" :checked="selected" :disabled="(selectionFull || expired) && !selected" @change="$emit('select', result)" />{{ text('比较', 'Compare') }}</label>
+        <button type="button" class="rounded px-1 py-1.5 hover:bg-gray-50 dark:hover:bg-dark-800" :disabled="expired || !result.has_preview" @click="$emit('enlarge', result)">{{ text('放大', 'Enlarge') }}</button>
+        <button type="button" class="rounded px-1 py-1.5 hover:bg-gray-50 dark:hover:bg-dark-800" :disabled="busy || expired || unfinished" data-test="pelican-retest-result" @click="$emit('retest', result)">{{ text('重测', 'Retest') }}</button>
+        <button type="button" class="rounded px-1 py-1.5 text-red-700 dark:text-red-300" :disabled="busy || expired || !canDelete || unfinished" data-test="pelican-delete-result" @click="$emit('delete', result)">{{ text('删除', 'Delete') }}</button>
+      </div>
     </div>
   </article>
 </template>
-
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { pelicanTestsAPI, type PelicanResultSummary, type PelicanTestResult } from '@/api/admin/pelicanTests'
+import type { PelicanResultSummary } from '@/api/admin/pelicanTests'
 import PelicanPreview from './PelicanPreview.vue'
-import { extractApiErrorMessage } from '@/utils/apiError'
-
+import PelicanEvaluationBadges from './PelicanEvaluationBadges.vue'
+import { pelicanLabel, pelicanTone } from '@/utils/pelicanDisplay'
 const props = defineProps<{ result: PelicanResultSummary; selected: boolean; selectionFull: boolean; now: number; canDelete?: boolean; busy?: boolean }>()
-const emit = defineEmits<{ select: [PelicanResultSummary]; open: [PelicanTestResult]; enlarge: [PelicanTestResult]; retest: [PelicanResultSummary]; delete: [PelicanResultSummary] }>()
+defineEmits<{ select: [PelicanResultSummary]; open: [PelicanResultSummary]; enlarge: [PelicanResultSummary]; retest: [PelicanResultSummary]; delete: [PelicanResultSummary] }>()
 const { t, locale } = useI18n()
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
-const element = ref<HTMLElement | null>(null), visible = ref(false), loading = ref(false), error = ref('')
-const detail = shallowRef<PelicanTestResult | null>(null), lifecycle = new AbortController()
-let observer: IntersectionObserver | undefined, pending: Promise<void> | undefined
 const expired = computed(() => Date.parse(props.result.expires_at) <= props.now)
-const title = computed(() => `${props.result.account_name} #${props.result.account_id} · ${props.result.model_id}`)
-const stateLabel = computed(() => expired.value ? text('记录已过期', 'Record expired') : props.result.interrupted ? text('服务中断，未自动重放', 'Interrupted; not replayed') : props.result.phase ? t(`admin.pelicanTests.phases.${props.result.phase}`) : props.result.status === 'complete' && !props.result.has_preview ? text('已完成 · 无法预览', 'Completed · No preview') : t(`admin.pelicanTests.states.${props.result.status}`))
-const placeholder = computed(() => expired.value ? text('记录已过期', 'Record expired') : props.result.has_preview && !detail.value ? t('admin.pelicanTests.previewOnVisible') : props.result.status === 'complete' ? text('没有可预览的 HTML，可查看完整回答。', 'No previewable HTML; open the full response.') : ['pending', 'running'].includes(props.result.status) ? text('等待作品生成', 'Waiting for the work') : text('未生成可预览作品，请查看详情。', 'No previewable work; see details.'))
-const duration = (ms?: number) => `${((ms || 0) / 1000).toFixed(1)} s`
-function load(): Promise<void> {
-  if (pending) return pending
-  loading.value = true; error.value = ''
-  pending = pelicanTestsAPI.getResult(props.result.task_id, props.result.id, lifecycle.signal).then(result => { if (!lifecycle.signal.aborted) detail.value = result }).catch(value => { if (!lifecycle.signal.aborted) error.value = extractApiErrorMessage(value, text('读取作品失败', 'Could not load the work')) }).finally(() => { loading.value = false; pending = undefined })
-  return pending
-}
-async function open(enlarge: boolean) { if (!detail.value || (detail.value.preview_expires_at && Date.parse(detail.value.preview_expires_at) <= props.now)) await load(); if (!lifecycle.signal.aborted && detail.value) { if (enlarge) emit('enlarge', detail.value); else emit('open', detail.value) } }
-watch(() => [visible.value, props.result.has_preview, expired.value], () => { if (visible.value && props.result.has_preview && !expired.value && !detail.value && !error.value) void load() })
-onMounted(() => {
-  if (typeof IntersectionObserver === 'undefined') { visible.value = true; return }
-  observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { visible.value = true; observer?.disconnect() } }, { rootMargin: '100px' })
-  if (element.value) observer.observe(element.value)
+const unfinished = computed(() => ['pending', 'running'].includes(props.result.status))
+const title = computed(() => `${props.result.account_name} · ${props.result.model_id}`)
+const date = computed(() => props.result.started_at ? new Date(props.result.started_at).toLocaleString(locale.value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '—')
+const verdict = computed(() => expired.value || props.result.interrupted ? 'incomplete' : unfinished.value ? props.result.phase || props.result.status : props.result.evaluation?.verdict || props.result.status)
+const verdictLabel = computed(() => {
+  if (expired.value) return text('记录已过期', 'Expired')
+  if (props.result.interrupted) return text('服务中断', 'Interrupted')
+  const e = props.result.evaluation
+  if (verdict.value === 'passed' && e?.test_items.length === 2) return text('双项通过', 'Both passed')
+  if (e && ['invalid', 'error'].includes(verdict.value)) {
+    const stage = e.generation === verdict.value ? text('生成校验', 'Generation') : e.candy === verdict.value ? text('糖果', 'Candy') : text('视觉审核', 'Visual review')
+    return `${stage}${locale.value.startsWith('zh') ? '' : ' · '}${pelicanLabel(verdict.value, locale.value)}`
+  }
+  return pelicanLabel(verdict.value, locale.value)
 })
-onBeforeUnmount(() => { lifecycle.abort(); observer?.disconnect() })
+const placeholder = computed(() => expired.value ? text('记录已过期', 'Expired') : unfinished.value ? pelicanLabel(verdict.value, locale.value) : props.result.evaluation?.test_items.includes('pelican') === false ? text('糖果推理检测', 'Candy reasoning test') : text('本轮未生成可展示动画', 'No animation available'))
 </script>

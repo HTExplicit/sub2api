@@ -9,6 +9,13 @@ const previewUrl = `/api/v1/pelican-tests/preview/${'a'.repeat(43)}/index.html`
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('Pelican isolated preview', () => {
+  it('plays a new SVG capability as an image without an executable iframe', () => {
+    const svgUrl = previewUrl.replace('index.html', 'scene.svg')
+    const wrapper = mount(PelicanPreview, { props: { previewUrl: svgUrl, title: 'SVG work' } })
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.get('img').attributes('src')).toBe(new URL(svgUrl, window.location.origin).href)
+    wrapper.unmount()
+  })
   it('accepts the independent pelican capability route with the same opaque sandbox', () => {
     const standaloneUrl = `/api/v1/pelican-tests/preview/${'b'.repeat(43)}/index.html`
     const wrapper = mount(PelicanPreview, { props: { previewUrl: standaloneUrl, title: 'Standalone output' } })

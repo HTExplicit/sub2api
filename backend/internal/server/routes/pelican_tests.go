@@ -10,6 +10,8 @@ func registerPelicanTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	pelican.GET("/options", h.Admin.PelicanTest.GetOptions)
 	pelican.POST("/options", h.Admin.PelicanTest.GetAccountOptions)
 	pelican.POST("/tasks", h.Admin.PelicanTest.StartTask)
+	pelican.GET("/results", h.Admin.PelicanTest.Gallery)
+	pelican.POST("/tasks/:id/retest", h.Admin.PelicanTest.Retest)
 	pelican.GET("/tasks", h.Admin.PelicanTest.ListTests)
 	pelican.GET("/tasks/:id", h.Admin.PelicanTest.GetTask)
 	pelican.GET("/tasks/:id/results", h.Admin.PelicanTest.GetTaskResults)

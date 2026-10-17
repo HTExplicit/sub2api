@@ -122,6 +122,7 @@ LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
+    chromium \
     su-exec \
     libpq \
     zstd-libs \
@@ -148,6 +149,7 @@ WORKDIR /app
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 COPY --chown=sub2api:sub2api THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
+COPY --chown=sub2api:sub2api third_party/manxue-ai.LICENSE /app/third_party/manxue-ai.LICENSE
 
 # Create the writable paired registry directory used by the runtime snapshot.
 RUN mkdir -p /app/data && \

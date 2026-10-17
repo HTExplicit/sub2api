@@ -40,7 +40,7 @@ describe('Pelican three-step composer', () => {
     expect(wrapper.findAll<HTMLSelectElement>('[data-test^="pelican-effort-"]').every(effort => effort.element.value === '')).toBe(true)
     await wrapper.get('[data-test="pelican-next"]').trigger('click')
     await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
-    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ generation_timeout_seconds: 600, targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '' }, { account_id: 51, model_id: 'gpt-6.1-sol', effort: '' }] })
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ generation_timeout_seconds: 600, test_items: ['pelican', 'candy'], scene: '', targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '' }, { account_id: 51, model_id: 'gpt-6.1-sol', effort: '' }] })
   })
   it('requires correction of unsupported and duplicate combinations instead of dropping them', async () => {
     const wrapper = await make({ initial: { generation_timeout_seconds: 600, targets: [{ account_id: 1, model_id: 'codex-auto-review', effort: '' }] } })
