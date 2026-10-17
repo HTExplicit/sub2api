@@ -11,31 +11,34 @@ import (
 )
 
 type PelicanResultSummary struct {
-	ID                    string     `json:"id"`
-	TaskID                string     `json:"task_id"`
-	Ordinal               int        `json:"ordinal"`
-	AccountID             int64      `json:"account_id"`
-	AccountName           string     `json:"account_name"`
-	Platform              string     `json:"platform"`
-	ModelID               string     `json:"model_id"`
-	Effort                string     `json:"effort"`
-	Status                string     `json:"status"`
-	Phase                 string     `json:"phase,omitempty"`
-	HasPreview            bool       `json:"has_preview"`
-	Interrupted           bool       `json:"interrupted"`
-	StartedAt             *time.Time `json:"started_at,omitempty"`
-	FinishedAt            *time.Time `json:"finished_at,omitempty"`
-	GenerationStartedAt   *time.Time `json:"generation_started_at,omitempty"`
-	DurationMS            int64      `json:"duration_ms"`
-	QueueDurationMS       int64      `json:"queue_duration_ms"`
-	PreparationDurationMS int64      `json:"preparation_duration_ms"`
-	GenerationDurationMS  int64      `json:"generation_duration_ms"`
-	ExpiresAt             time.Time  `json:"expires_at"`
+	Evaluation            *PelicanEvaluation `json:"evaluation,omitempty"`
+	PreviewURL            string             `json:"preview_url,omitempty"`
+	ID                    string             `json:"id"`
+	TaskID                string             `json:"task_id"`
+	Ordinal               int                `json:"ordinal"`
+	AccountID             int64              `json:"account_id"`
+	AccountName           string             `json:"account_name"`
+	Platform              string             `json:"platform"`
+	ModelID               string             `json:"model_id"`
+	Effort                string             `json:"effort"`
+	Status                string             `json:"status"`
+	Phase                 string             `json:"phase,omitempty"`
+	HasPreview            bool               `json:"has_preview"`
+	Interrupted           bool               `json:"interrupted"`
+	StartedAt             *time.Time         `json:"started_at,omitempty"`
+	FinishedAt            *time.Time         `json:"finished_at,omitempty"`
+	GenerationStartedAt   *time.Time         `json:"generation_started_at,omitempty"`
+	DurationMS            int64              `json:"duration_ms"`
+	QueueDurationMS       int64              `json:"queue_duration_ms"`
+	PreparationDurationMS int64              `json:"preparation_duration_ms"`
+	GenerationDurationMS  int64              `json:"generation_duration_ms"`
+	ExpiresAt             time.Time          `json:"expires_at"`
 }
 
 type PelicanTaskSnapshot struct {
 	*PelicanTestTask
-	Counts map[string]int `json:"counts"`
+	Counts      map[string]int `json:"counts"`
+	FailedCount int            `json:"failed_count"`
 }
 
 type PelicanResultPage struct {
@@ -46,9 +49,10 @@ type PelicanResultPage struct {
 }
 
 type PelicanResultFilter struct {
-	Page, Size    int
-	AccountID     int64
-	Model, Status string
+	TaskID, Effort, Scene, Verdict string
+	Page, Size                     int
+	AccountID                      int64
+	Model, Status                  string
 }
 
 // Production reads select metadata explicitly. They never load all raw works
@@ -94,9 +98,10 @@ const pelicanInterruptedMessage = "process stopped before the test finished; thi
 
 func pelicanResultSummary(result *PelicanTestResult, phase string) *PelicanResultSummary {
 	return &PelicanResultSummary{ID: result.ID, TaskID: result.TaskID, Ordinal: result.Ordinal,
-		AccountID: result.AccountID, AccountName: result.AccountName, Platform: result.Platform,
+		Evaluation: clonePelicanEvaluation(result.Evaluation),
+		AccountID:  result.AccountID, AccountName: result.AccountName, Platform: result.Platform,
 		ModelID: result.ModelID, Effort: result.Effort, Status: result.Status, Phase: phase,
-		HasPreview: result.Status == "complete" && result.HTML != "", Interrupted: strings.Contains(result.Error, pelicanInterruptedMessage),
+		HasPreview: result.SVG != "" || result.Status == "complete" && result.HTML != "", Interrupted: strings.Contains(result.Error, pelicanInterruptedMessage),
 		StartedAt: result.StartedAt, FinishedAt: result.FinishedAt, GenerationStartedAt: result.GenerationStartedAt,
 		DurationMS: result.DurationMS, QueueDurationMS: result.QueueDurationMS,
 		PreparationDurationMS: result.PreparationDurationMS, GenerationDurationMS: result.GenerationDurationMS, ExpiresAt: result.ExpiresAt}

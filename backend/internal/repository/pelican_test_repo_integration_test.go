@@ -109,6 +109,10 @@ func pelicanPrivateIntegrationDB(t *testing.T, ctx context.Context) *sql.DB {
 		_, err = privateDB.ExecContext(ctx, string(deletion))
 		require.NoError(t, err)
 	}
+	evaluationDDL, err := migrations.FS.ReadFile("280_pelican_evaluation.sql")
+	require.NoError(t, err)
+	_, err = privateDB.ExecContext(ctx, string(evaluationDDL))
+	require.NoError(t, err)
 	var executionMode string
 	var timeout int
 	var retention int64

@@ -23,6 +23,7 @@ func RegisterAdminRoutes(
 	// 插件 UI 使用短时能力 URL，仅提供经过安装校验的静态资源。
 	v1.GET("/plugin-ui/:token/*path", h.Admin.Plugin.ServeUIAsset)
 	v1.GET("/pelican-tests/preview/:cap/index.html", h.Admin.PelicanTest.ServePreview)
+	v1.GET("/pelican-tests/preview/:cap/scene.svg", h.Admin.PelicanTest.ServeSVG)
 
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))

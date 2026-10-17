@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,51 +31,58 @@ var (
 )
 
 type PelicanTestTarget struct {
+	Scene     string `json:"scene,omitempty"`
 	AccountID int64  `json:"account_id"`
 	ModelID   string `json:"model_id"`
 	Effort    string `json:"effort"`
 }
 
 type PelicanTestRequest struct {
+	PelicanTestConfig
 	ClientTaskID             string              `json:"client_task_id"`
 	GenerationTimeoutSeconds int                 `json:"generation_timeout_seconds"`
 	Targets                  []PelicanTestTarget `json:"targets"`
 }
 
 type PelicanTestResult struct {
-	ID                    string     `json:"id"`
-	TaskID                string     `json:"task_id"`
-	Ordinal               int        `json:"ordinal"`
-	AccountID             int64      `json:"account_id"`
-	AccountName           string     `json:"account_name"`
-	Platform              string     `json:"platform"`
-	ModelID               string     `json:"model_id"`
-	UpstreamModel         string     `json:"upstream_model"`
-	Effort                string     `json:"effort"`
-	Status                string     `json:"status"`
-	RawAnswer             string     `json:"raw_answer"`
-	RawResponse           string     `json:"raw_response"`
-	RawHTML               string     `json:"raw_html"`
-	HTML                  string     `json:"html"`
-	Error                 string     `json:"error"`
-	StartedAt             *time.Time `json:"started_at,omitempty"`
-	FinishedAt            *time.Time `json:"finished_at,omitempty"`
-	DurationMS            int64      `json:"duration_ms"`
-	GenerationStartedAt   *time.Time `json:"generation_started_at,omitempty"`
-	QueueDurationMS       int64      `json:"queue_duration_ms"`
-	PreparationDurationMS int64      `json:"preparation_duration_ms"`
-	GenerationDurationMS  int64      `json:"generation_duration_ms"`
-	ActualEndpoint        string     `json:"actual_endpoint"`
-	ActualProtocol        string     `json:"actual_protocol"`
-	ActualTransport       string     `json:"actual_transport"`
-	BorrowApplied         bool       `json:"borrow_applied"`
-	ExpiresAt             time.Time  `json:"expires_at"`
-	PreviewURL            string     `json:"preview_url,omitempty"`
-	PreviewExpiresAt      *time.Time `json:"preview_expires_at,omitempty"`
-	PreviewUnavailable    string     `json:"preview_unavailable"`
+	Evaluation            *PelicanEvaluation               `json:"evaluation,omitempty"`
+	Evidence              map[string]*PelicanStageEvidence `json:"evidence,omitempty"`
+	SVG                   string                           `json:"raw_svg,omitempty"`
+	ReviewImage           []byte                           `json:"review_image,omitempty"`
+	ID                    string                           `json:"id"`
+	TaskID                string                           `json:"task_id"`
+	Ordinal               int                              `json:"ordinal"`
+	AccountID             int64                            `json:"account_id"`
+	AccountName           string                           `json:"account_name"`
+	Platform              string                           `json:"platform"`
+	ModelID               string                           `json:"model_id"`
+	UpstreamModel         string                           `json:"upstream_model"`
+	Effort                string                           `json:"effort"`
+	Status                string                           `json:"status"`
+	RawAnswer             string                           `json:"raw_answer"`
+	RawResponse           string                           `json:"raw_response"`
+	RawHTML               string                           `json:"raw_html"`
+	HTML                  string                           `json:"html"`
+	Error                 string                           `json:"error"`
+	StartedAt             *time.Time                       `json:"started_at,omitempty"`
+	FinishedAt            *time.Time                       `json:"finished_at,omitempty"`
+	DurationMS            int64                            `json:"duration_ms"`
+	GenerationStartedAt   *time.Time                       `json:"generation_started_at,omitempty"`
+	QueueDurationMS       int64                            `json:"queue_duration_ms"`
+	PreparationDurationMS int64                            `json:"preparation_duration_ms"`
+	GenerationDurationMS  int64                            `json:"generation_duration_ms"`
+	ActualEndpoint        string                           `json:"actual_endpoint"`
+	ActualProtocol        string                           `json:"actual_protocol"`
+	ActualTransport       string                           `json:"actual_transport"`
+	BorrowApplied         bool                             `json:"borrow_applied"`
+	ExpiresAt             time.Time                        `json:"expires_at"`
+	PreviewURL            string                           `json:"preview_url,omitempty"`
+	PreviewExpiresAt      *time.Time                       `json:"preview_expires_at,omitempty"`
+	PreviewUnavailable    string                           `json:"preview_unavailable"`
 }
 
 type PelicanTestTask struct {
+	TestConfig               PelicanTestConfig    `json:"test_config"`
 	ID                       string               `json:"id"`
 	ClientTaskID             string               `json:"client_task_id"`
 	CreatedBy                int64                `json:"created_by"`
@@ -128,6 +136,7 @@ type pelicanAccountReader interface {
 // All account-test batches share ten outbound execution slots.
 // Account leases surround actual requests rather than preparation.
 type PelicanTestRunner struct {
+	renderer          pelicanFrameRenderer
 	submissionMu      sync.Mutex
 	backgroundMu      sync.Mutex
 	background        map[string]*pelicanBackgroundTask
@@ -158,6 +167,7 @@ func NewPelicanTestRunner(repo PelicanTestRepository, generator pelicanGenerator
 func newPelicanTestRunner(repo PelicanTestRepository, generator pelicanGenerator, accounts pelicanAccountReader) *PelicanTestRunner {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &PelicanTestRunner{repo: repo, generator: generator, accounts: accounts,
+		renderer:    &pelicanChromiumRenderer{},
 		coordinator: sharedPelicanExecution, activeTasks: make(map[string]bool),
 		stopCtx: ctx, stop: cancel, cleanupDone: make(chan struct{}), now: time.Now, generationContext: context.WithTimeout}
 	go r.cleanupLoop()
@@ -208,6 +218,11 @@ func (r *PelicanTestRunner) initialize(ctx context.Context) error {
 }
 
 func normalizePelicanTestRequest(request PelicanTestRequest, now time.Time) (PelicanTestRequest, error) {
+	config, configErr := normalizePelicanConfig(request.PelicanTestConfig)
+	if configErr != nil {
+		return request, configErr
+	}
+	request.PelicanTestConfig = config
 	id, err := uuid.Parse(strings.TrimSpace(request.ClientTaskID))
 	if err != nil || id.Version() != 7 {
 		return request, fmt.Errorf("%w: client_task_id must be a UUIDv7", ErrPelicanTestInvalidRequest)
@@ -231,6 +246,9 @@ func normalizePelicanTestRequest(request PelicanTestRequest, now time.Time) (Pel
 	targets := make([]PelicanTestTarget, 0, len(request.Targets))
 	seen := make(map[string]bool, len(request.Targets))
 	for _, target := range request.Targets {
+		if target.Scene != "" && !slices.Contains(PelicanScenes, target.Scene) {
+			return request, fmt.Errorf("%w: unknown target scene", ErrPelicanTestInvalidRequest)
+		}
 		target.ModelID = strings.TrimSpace(target.ModelID)
 		target.Effort = strings.ToLower(strings.TrimSpace(target.Effort))
 
@@ -261,7 +279,10 @@ func pelicanTestRequestHash(request PelicanTestRequest) string {
 		Targets                  []PelicanTestTarget `json:"targets"`
 		GenerationTimeoutSeconds int                 `json:"generation_timeout_seconds"`
 		ExecutionMode            string              `json:"execution_mode"`
-	}{request.Targets, request.GenerationTimeoutSeconds, PelicanExecutionModeAccount})
+		TestItems                []string            `json:"test_items,omitempty"`
+		Scene                    string              `json:"scene,omitempty"`
+		RetestKey                string              `json:"retest_key,omitempty"`
+	}{request.Targets, request.GenerationTimeoutSeconds, PelicanExecutionModeAccount, request.TestItems, request.Scene, request.RetestKey})
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }
@@ -278,7 +299,8 @@ func (r *PelicanTestRunner) Create(ctx context.Context, createdBy int64, request
 	}
 	now := r.now().UTC()
 	task := &PelicanTestTask{ID: uuid.NewString(), ClientTaskID: request.ClientTaskID,
-		CreatedBy: createdBy, RequestHash: pelicanTestRequestHash(request), Status: "pending",
+		TestConfig: request.PelicanTestConfig,
+		CreatedBy:  createdBy, RequestHash: pelicanTestRequestHash(request), Status: "pending",
 		GenerationTimeoutSeconds: request.GenerationTimeoutSeconds, ExecutionMode: PelicanExecutionModeAccount,
 		Prompt: PelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(PelicanTestTTL),
 		Total: len(request.Targets), Results: make([]*PelicanTestResult, 0, len(request.Targets))}
@@ -299,6 +321,14 @@ func (r *PelicanTestRunner) Create(ctx context.Context, createdBy int64, request
 			Ordinal: i + 1, AccountID: target.AccountID, AccountName: name, Platform: platform, ModelID: target.ModelID,
 			Effort: target.Effort, Status: "pending", ExpiresAt: task.ExpiresAt,
 			PreviewUnavailable: "test has not completed"})
+		if len(request.TestItems) > 0 {
+			evaluation, evaluationErr := newPelicanEvaluation(request.PelicanTestConfig, target)
+			if evaluationErr != nil {
+				return nil, false, evaluationErr
+			}
+			task.Results[len(task.Results)-1].Evaluation = evaluation
+			task.Prompt = PelicanScenePrompt
+		}
 	}
 	stored, replayed, err := r.repo.Create(ctx, task)
 	if stored != nil {
@@ -389,6 +419,24 @@ func (r *PelicanTestRunner) Run(parent context.Context, task *PelicanTestTask, e
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if result.Evaluation != nil {
+				r.runEvaluation(ctx, result, time.Duration(task.GenerationTimeoutSeconds)*time.Second, emit)
+				if r.stopCtx.Err() != nil && result.Status != "complete" {
+					result.Status = "incomplete"
+					result.Error = pelicanInterruptedMessage + "\n" + result.Error
+				}
+				writeCtx, cancelWrite := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
+				defer cancelWrite()
+				if err := r.repo.SaveResult(writeCtx, result); err != nil {
+					errorsMu.Lock()
+					persistenceErrors = append(persistenceErrors, err.Error())
+					errorsMu.Unlock()
+				}
+				if emit != nil {
+					emit(PelicanTestEvent{Type: "result_complete", TaskID: task.ID, Result: result})
+				}
+				return
+			}
 			budget := task.GenerationTimeoutSeconds
 			if budget == 0 {
 				budget = PelicanDefaultGenerationTimeoutSeconds

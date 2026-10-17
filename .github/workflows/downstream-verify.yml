@@ -214,7 +214,10 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64
           push: false
-          outputs: type=oci,dest=/tmp/sub2api-candidate.tar
+          tags: sub2api-pelican-candidate:check
+          outputs: |
+            type=oci,dest=/tmp/sub2api-candidate.tar
+            type=docker,name=sub2api-pelican-candidate:check
           build-args: |
             VERSION=0.0.0-candidate
             COMMIT=${{ github.sha }}
@@ -222,6 +225,20 @@ jobs:
             GOSUMDB=sum.golang.org
           cache-from: type=gha,scope=sub2api-candidate-amd64
           cache-to: type=gha,mode=max,scope=sub2api-candidate-amd64
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Verify four-frame rendering inside the candidate runtime
+        working-directory: backend
+        run: |
+          CGO_ENABLED=0 go test -c -tags unit -o "$RUNNER_TEMP/pelican-render.test" ./internal/service
+          docker run --rm --init --network none --memory 768m --user 1000:1000 \
+            --mount "type=bind,src=$RUNNER_TEMP/pelican-render.test,dst=/tmp/pelican-render.test,readonly" \
+            -e PELICAN_RENDER_TEST=1 --entrypoint /tmp/pelican-render.test \
+            sub2api-pelican-candidate:check -test.run '^TestPelicanChromiumRenderer$' -test.v
       - name: Upload candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

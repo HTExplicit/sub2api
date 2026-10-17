@@ -1,7 +1,8 @@
 <template>
   <div ref="container" class="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-white" data-testid="pelican-preview">
+    <img v-if="safeUrl.endsWith('/scene.svg')" :src="safeUrl" :alt="title" class="absolute inset-0 h-full w-full object-contain" loading="lazy" referrerpolicy="no-referrer" />
     <iframe
-      v-if="safeUrl"
+      v-else-if="safeUrl"
       :src="safeUrl"
       :title="title"
       class="absolute block border-0"
@@ -33,7 +34,7 @@ const safeUrl = computed(() => {
       .map(path => new URL(buildApiUrl(path), window.location.origin).pathname.replace(/\/+$/, ''))
     if (url.origin !== api.origin || url.search || url.hash || url.username || url.password) return ''
     const prefix = prefixes.find(value => url.pathname.startsWith(`${value}/`))
-    if (!prefix || !/^[a-zA-Z0-9_-]{43}\/index\.html$/.test(url.pathname.slice(prefix.length + 1))) return ''
+    if (!prefix || !/^[a-zA-Z0-9_-]{43}\/(?:index\.html|scene\.svg)$/.test(url.pathname.slice(prefix.length + 1))) return ''
     return url.href
   } catch {
     return ''

@@ -82,3 +82,13 @@ SOFTWARE.
 under the MIT license; its original license is retained in `LICENSE.txt`.
 Local changes add opt-in client compression-window negotiation using the already
 locked klauspost/compress dependency. Other service paths retain the original module.
+
+## Pelican scenes, candy test and visual review
+
+The SVG scene prompt, eight scene names, candy problem, visual-review criteria
+and animation frame sampling are adapted from w1196396546/manxue-ai at
+commit 5da79674417dd0748682f09b7b7467efd1968ea8 (Apache License 2.0).
+Source: https://github.com/w1196396546/manxue-ai
+The retained Apache license is in third_party/manxue-ai.LICENSE.
+The Go implementation and Vue gallery integrate these ideas with Sub2API's
+existing account senders, background observations and isolated previews.

@@ -139,7 +139,9 @@ handshake. Account mode edits invalidate only that account's subsequent connecti
 
 ## Independent Pelican tests
 
-`/admin/pelican-tests` is a task/result workbench. The new-task composer loads
+`/admin/pelican-tests` opens a paginated gallery of all observations from the last
+24 hours, with task/account/model/effort/scene/execution/verdict filters. Wide
+screens show four cards, medium screens two, and phones one. The new-task composer loads
 accounts in pages of 50, retains selection across pages, and offers explicit
 current-page/all-matching scopes. Models use locally saved mappings and catalogs;
 searchable dropdowns accept catalog choices only. Backend defaults prefer
@@ -171,9 +173,20 @@ and failed-item retests directly create a new task with original model/effort
 parameters and budget. Cross-task selected retries create one task per source,
 preserving each source budget. New submissions retain UUID replay protection;
 history, browsing, reconnecting and comparison are read-only.
-The fixed Pelican prompt is preserved. The actual sending path, credentials,
+New manual tasks select Pelican and/or candy (the UI defaults to both). Each
+result saves its chosen scene and a fresh visible verification code. The fixed
+legacy prompt remains exclusive to the old `/tests` contract. The actual sending path, credentials,
 identity, model mapping, proxy, TLS and protocol remain owned by each account. No API Key, group policy, model score or fallback account
 is manufactured for a test.
+
+Candy (90 seconds), SVG generation (the saved generation budget), rendering
+(30 seconds after renderer admission), and same-model visual review (180 seconds)
+run as distinct stages. Candy failure does not prevent generation. Review uses
+four 960x640 frames at 0/0.23/0.51/0.79 of the sampled animation cycle, checks
+pelican/bicycle/riding/motion, and keeps true/false/null judgments. Unsupported
+image input is unreviewed. Only all selected checks passing gives a passed verdict;
+execution status is independent. Stage evidence retains raw bytes as Base64 in
+detail JSON. A single on-demand Chromium process renders network-blocked SVGs.
 
 All batches share ten model execution slots, with one request per account.
 Ordinary selected-account sends participate in normal business
@@ -184,7 +197,7 @@ renew every 30 seconds; lost capacity cancels the operation. Existing credential
 refresh remains available, while account health, quota, scheduling, affinity,
 usage and billing writes are suppressed, including background callbacks.
 
-Task IDs are timestamped UUIDv7 values. Expired/future IDs are rejected and replay
+Submission IDs are timestamped UUIDv7 values. Expired/future IDs are rejected and replay
 cannot dispatch again. Migration 275 owns the task/result tables; migration 276
 adds budgets, execution phases and actual invocation metadata in place, preserving
 old records and raw BYTEA output. Existing records retain their 90-second budget.
@@ -201,7 +214,18 @@ idempotent. Output/errors of retained results preserve original bytes;
 binary upstream envelopes use lossless Base64. Truncated or incomplete output is
 recorded without another generation or automatic repair.
 
-Result previews use short random capability URLs under
+`GET /admin/pelican-tests/results` reads only gallery summaries.
+`POST /admin/pelican-tests/tasks/:id/retest` accepts a new client UUID, optional
+result IDs or failed-only selection, preserves source configuration/scenes and
+budget, and creates fresh verification codes. Replays compare the retest source
+and selection before consulting source records. Migration 280 adds task config,
+small evaluation metadata and byte-backed evidence/SVG/review image in place.
+Old records remain unscored and are never automatically re-executed.
+
+New SVG previews use `scene.svg` image capabilities and a no-script CSP.
+Gallery and preview SQL do not read original answers, upstream envelopes or review
+images. An already generated SVG remains viewable after candy/review failure.
+Legacy HTML result previews use short random capability URLs under
 `/pelican-tests/preview/` only,
 expire within 30 minutes and the task's remaining lifetime, and use an opaque
 script-enabled sandbox and their own

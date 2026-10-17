@@ -259,6 +259,34 @@ func TestPelicanAccountGeneratorNativeTextDispatch(t *testing.T) {
 	}
 }
 
+func TestPelicanAccountGeneratorNativeImageDispatch(t *testing.T) {
+	claudeSSE := "data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"review\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"
+	chatSSE := "data: {\"model\":\"text-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"review\"},\"finish_reason\":\"stop\"}]}\n\n"
+	geminiSSE := "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"review\"}]},\"finishReason\":\"STOP\"}]}\n\n"
+	for _, tc := range []struct{ name, platform, model, protocol, response, imageMarker string }{
+		{"responses", PlatformOpenAI, "gpt-6.1-sol", "", pelicanResponsesSSE("gpt-6.1-sol", "completed", "</html>"), "input_image"},
+		{"chat", PlatformZhipu, "text-model", APIProtocolChatCompletions, chatSSE, "image_url"},
+		{"messages", PlatformAnthropic, "text-model", "", claudeSSE, "base64"},
+		{"cn-messages", PlatformMiniMax, "text-model", APIProtocolAnthropic, claudeSSE, "base64"},
+		{"gemini", PlatformGemini, "gemini-3.1-pro", "", geminiSSE, "inlineData"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			account := &Account{ID: 44, Platform: tc.platform, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "synthetic-key", "base_url": "http://fake.example", "api_protocol": tc.protocol}}
+			upstream := &pelicanGeneratorUpstream{body: tc.response}
+			svc, _ := newPelicanGeneratorForTest(account, upstream)
+			input := PelicanModelInput{Text: "REVIEW-PROMPT", Images: []PelicanImage{{PNG: []byte("synthetic-png"), Time: .46}}, MaxOutputTokens: 8000}
+			result, err := svc.GeneratePelicanInput(context.Background(), account.ID, tc.model, "", input)
+			require.NoError(t, err)
+			require.Equal(t, "complete", result.Status, result.Error)
+			require.Len(t, upstream.bodies, 1)
+			require.Contains(t, string(upstream.bodies[0]), "REVIEW-PROMPT")
+			require.Contains(t, string(upstream.bodies[0]), tc.imageMarker)
+			require.Contains(t, string(upstream.bodies[0]), "c3ludGhldGljLXBuZw==")
+			require.True(t, IsAccountObservation(upstream.requests[0].Context()))
+		})
+	}
+}
+
 func TestPelicanParsersKeepJSONDataURLsAndPrettyWSFrames(t *testing.T) {
 	jsonReply := `{"model":"text-model","choices":[{"index":0,"message":{"content":"<img src='data:image/png;base64,x'>"},"finish_reason":"stop"}]}`
 	text, limited, _, err := parsePelicanTextResponse("chat", jsonReply)

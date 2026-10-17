@@ -371,6 +371,27 @@ func pelicanFinalHTTPRequest(req *http.Request, fallbackModel, fallbackEffort st
 // business sender. Only that sender owns credential refresh and compatibility
 // retries. An UpstreamFailoverError is recorded here and never enters selection.
 func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int64, model, effort string) (*PelicanResult, error) {
+	return s.GeneratePelicanInput(ctx, accountID, model, effort, PelicanModelInput{Text: PelicanPrompt})
+}
+
+func (s *AccountTestService) PelicanImageCapability(ctx context.Context, accountID int64, model string) (bool, error) {
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return false, err
+	}
+	mapped, _ := pelicanTestUpstreamModel(account, model)
+	if metadata, known := pelicanTestLocalMetadata(account, mapped); known && len(metadata.InputModalities) > 0 {
+		return slices.Contains(metadata.InputModalities, "image"), nil
+	}
+	// Only affirmative native/catalog evidence admits an image request.
+	if account.Platform == PlatformAnthropic || account.IsGemini() || account.Platform == PlatformAntigravity && account.Type != AccountTypeUpstream {
+		return true, nil
+	}
+	descriptor := newConfiguredCodexModelDescriptorForAccount(mapped, account)
+	return slices.Contains(descriptor.InputModalities, "image"), nil
+}
+
+func (s *AccountTestService) GeneratePelicanInput(ctx context.Context, accountID int64, model, effort string, input PelicanModelInput) (*PelicanResult, error) {
 	result := &PelicanResult{ModelID: model, Effort: effort, Status: "failed"}
 	ctx = WithAccountObservation(ctx)
 	if pelicanExecutionFromContext(ctx) == nil {
@@ -414,7 +435,7 @@ func (s *AccountTestService) GeneratePelican(ctx context.Context, accountID int6
 	c.Request = httptest.NewRequest(http.MethodPost, "/internal/admin/pelican-tests", nil).WithContext(ctx)
 	// This represents the server's internal generation operation. No client
 	// UA, protocol handshake, API-key subject or group policy is synthesized.
-	sendErr := s.sendPelicanWithAccount(ctx, c, account, model, option.UpstreamModel, effort)
+	sendErr := s.sendPelicanInputWithAccount(ctx, c, account, model, option.UpstreamModel, effort, input)
 
 	last := snapshotPelicanAttempt(capture)
 	if last == nil {
@@ -493,9 +514,16 @@ func pelicanOutputBudget(account *Account, upstreamModel string) int64 {
 	return 64000
 }
 
-func pelicanMessagesBody(model, upstreamModel, effort string, budget int64) []byte {
+func pelicanMessagesInputBody(model, upstreamModel, effort string, budget int64, input PelicanModelInput) []byte {
+	content := []map[string]any{{"type": "text", "text": input.Text}}
+	for _, image := range input.Images {
+		content = append(content, map[string]any{"type": "text", "text": fmt.Sprintf("待审核画面，时间 %.3f 秒", image.Time)}, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": base64.StdEncoding.EncodeToString(image.PNG)}})
+	}
 	payload := map[string]any{"model": model, "stream": true, "max_tokens": budget,
-		"messages": []map[string]any{{"role": "user", "content": PelicanPrompt}}}
+		"messages": []map[string]any{{"role": "user", "content": content}}}
+	if len(input.Images) == 0 {
+		payload["messages"] = []map[string]any{{"role": "user", "content": input.Text}}
+	}
 	if effort != "" {
 		payload["output_config"] = map[string]any{"effort": effort}
 		if claude.EffortUsesAdaptiveThinking(upstreamModel) {
@@ -506,11 +534,18 @@ func pelicanMessagesBody(model, upstreamModel, effort string, budget int64) []by
 	return body
 }
 
-func (s *AccountTestService) sendPelicanWithAccount(ctx context.Context, c *gin.Context, account *Account, model, upstreamModel, effort string) error {
+func (s *AccountTestService) sendPelicanInputWithAccount(ctx context.Context, c *gin.Context, account *Account, model, upstreamModel, effort string, input PelicanModelInput) error {
 	budget := pelicanOutputBudget(account, upstreamModel)
+	if input.MaxOutputTokens > 0 && input.MaxOutputTokens < budget {
+		budget = input.MaxOutputTokens
+	}
+	parts := []map[string]any{{"text": input.Text}}
+	for _, image := range input.Images {
+		parts = append(parts, map[string]any{"text": fmt.Sprintf("待审核画面，时间 %.3f 秒", image.Time)}, map[string]any{"inlineData": map[string]any{"mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(image.PNG)}})
+	}
 	switch {
 	case account.IsGemini(), account.Platform == PlatformAntigravity && account.Type != AccountTypeUpstream && isAntigravityGeminiModel(upstreamModel):
-		payload := map[string]any{"contents": []map[string]any{{"role": "user", "parts": []map[string]any{{"text": PelicanPrompt}}}},
+		payload := map[string]any{"contents": []map[string]any{{"role": "user", "parts": parts}},
 			"generationConfig": map[string]any{"maxOutputTokens": budget}}
 		body, _ := json.Marshal(payload)
 		if account.IsGemini() {
@@ -529,7 +564,7 @@ func (s *AccountTestService) sendPelicanWithAccount(ctx context.Context, c *gin.
 		if s.pelicanGatewayService == nil {
 			return errors.New("anthropic account sender is unavailable")
 		}
-		body := pelicanMessagesBody(model, upstreamModel, effort, budget)
+		body := pelicanMessagesInputBody(model, upstreamModel, effort, budget, input)
 		parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), PlatformAnthropic)
 		if err != nil {
 			return err
@@ -540,14 +575,18 @@ func (s *AccountTestService) sendPelicanWithAccount(ctx context.Context, c *gin.
 		if s.antigravityGatewayService == nil {
 			return errors.New("antigravity account sender is unavailable")
 		}
-		_, err := s.antigravityGatewayService.Forward(ctx, c, account, pelicanMessagesBody(model, upstreamModel, effort, budget), false)
+		_, err := s.antigravityGatewayService.Forward(ctx, c, account, pelicanMessagesInputBody(model, upstreamModel, effort, budget, input), false)
 		return err
 	case account.IsOpenAICompatible():
 		if s.openaiGatewayService == nil {
 			return errors.New("OpenAI-compatible account sender is unavailable")
 		}
+		content := []map[string]any{{"type": "input_text", "text": input.Text}}
+		for _, image := range input.Images {
+			content = append(content, map[string]any{"type": "input_text", "text": fmt.Sprintf("待审核画面，时间 %.3f 秒", image.Time)}, map[string]any{"type": "input_image", "image_url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(image.PNG), "detail": "high"})
+		}
 		payload := map[string]any{"model": model, "stream": true, "max_output_tokens": budget,
-			"input": []map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": PelicanPrompt}}}}}
+			"input": []map[string]any{{"role": "user", "content": content}}}
 		if effort != "" {
 			payload["reasoning"] = map[string]any{"effort": effort}
 		}
