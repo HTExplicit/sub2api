@@ -7,7 +7,7 @@
     </button>
     <div class="space-y-3 p-4">
       <div class="flex items-center justify-between gap-2"><time class="text-xs tabular-nums text-muted">{{ date }}</time><span class="rounded px-2 py-1 text-xs" :class="pelicanTone(verdict)">{{ verdictLabel }}</span></div>
-      <PelicanEvaluationBadges :evaluation="result.evaluation" />
+      <PelicanEvaluationBadges :evaluation="result.evaluation" :status="result.status" />
       <div class="space-y-1.5 text-xs leading-relaxed text-muted">
         <p class="break-words">{{ text('账号', 'Account') }}：{{ result.account_name }} #{{ result.account_id }}</p>
         <p v-if="result.evaluation?.test_items.includes('pelican')">{{ text('场景', 'Scene') }}：{{ result.evaluation.scene }}</p>
@@ -38,9 +38,10 @@ const expired = computed(() => Date.parse(props.result.expires_at) <= props.now)
 const unfinished = computed(() => ['pending', 'running'].includes(props.result.status))
 const title = computed(() => `${props.result.account_name} · ${props.result.model_id}`)
 const date = computed(() => props.result.started_at ? new Date(props.result.started_at).toLocaleString(locale.value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '—')
-const verdict = computed(() => expired.value ? 'incomplete' : unfinished.value ? props.result.phase || props.result.status : props.result.evaluation?.verdict || props.result.status)
+const verdict = computed(() => expired.value || props.result.interrupted ? 'incomplete' : unfinished.value ? props.result.phase || props.result.status : props.result.evaluation?.verdict || props.result.status)
 const verdictLabel = computed(() => {
   if (expired.value) return text('记录已过期', 'Expired')
+  if (props.result.interrupted) return text('服务中断', 'Interrupted')
   const e = props.result.evaluation
   if (verdict.value === 'passed' && e?.test_items.length === 2) return text('双项通过', 'Both passed')
   if (e && ['invalid', 'error'].includes(verdict.value)) {

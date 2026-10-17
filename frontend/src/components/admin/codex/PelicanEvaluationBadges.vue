@@ -8,7 +8,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PelicanEvaluation } from '@/api/admin/pelicanTests'
 import { pelicanLabel, pelicanTone } from '@/utils/pelicanDisplay'
-const props = defineProps<{ evaluation?: PelicanEvaluation }>()
+const props = defineProps<{ evaluation?: PelicanEvaluation; status?: string }>()
 const { locale } = useI18n()
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
 const label = (value: string) => pelicanLabel(value, locale.value)
@@ -17,5 +17,5 @@ const items = computed(() => [
   { key: 'pelican', label: text('鹈鹕生成', 'Pelican'), state: props.evaluation?.generation || '' },
   { key: 'candy', label: text('糖果', 'Candy'), state: props.evaluation?.candy || '' },
   { key: 'review', label: text('视觉审核', 'Visual review'), state: props.evaluation?.review || '' }
-].filter(item => item.state && item.state !== 'not_selected'))
+].filter(item => item.state && item.state !== 'not_selected').map(item => ({ ...item, state: ['pending', 'running'].includes(item.state) && ['incomplete', 'cancelled'].includes(props.status || '') ? props.status! : item.state })))
 </script>

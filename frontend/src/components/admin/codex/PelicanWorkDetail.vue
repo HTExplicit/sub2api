@@ -1,7 +1,7 @@
 <template>
   <div class="min-w-0 space-y-4 text-sm" data-test="pelican-detail-content">
     <div v-if="result.preview_url" class="aspect-[3/2] max-h-[60vh] w-full overflow-hidden rounded-lg border border-line"><PelicanPreview :preview-url="result.preview_url" :title="title" interactive /></div>
-    <PelicanEvaluationBadges :evaluation="result.evaluation" />
+    <PelicanEvaluationBadges :evaluation="result.evaluation" :status="result.status" />
     <dl class="grid gap-3 sm:grid-cols-2">
       <div><dt class="text-xs text-muted">{{ text('账号与模型', 'Account and model') }}</dt><dd class="break-words">{{ title }} · {{ result.effort || text('模型默认', 'Model default') }}</dd></div>
       <div><dt class="text-xs text-muted">{{ text('耗时', 'Duration') }}</dt><dd>{{ ((result.duration_ms || 0) / 1000).toFixed(1) }}s · {{ result.started_at ? new Date(result.started_at).toLocaleString() : '—' }}</dd></div>

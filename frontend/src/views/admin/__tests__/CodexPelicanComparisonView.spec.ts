@@ -84,4 +84,11 @@ describe('Pelican gallery workbench', () => {
     const value = result(); value.has_preview = false; value.preview_url = undefined; value.evaluation = { ...value.evaluation!, test_items: ['candy'], generation: 'not_selected', review: 'not_selected', verdict: 'passed' }
     mocks.gallery.mockResolvedValue({ items: [value], total: 1, page: 1, page_size: 24 }); const wrapper = await make(); expect(wrapper.text()).toContain('糖果推理检测'); expect(wrapper.find('img').exists()).toBe(false)
   })
+  it('shows a restarted partial work as interrupted while retaining its preview', async () => {
+    const value = result(); value.status = 'incomplete'; value.interrupted = true; value.evaluation = { ...value.evaluation!, review: 'running', verdict: 'running' }
+    mocks.gallery.mockResolvedValue({ items: [value], total: 1, page: 1, page_size: 24 })
+    const wrapper = await make(); expect(wrapper.text()).toContain('服务中断'); expect(wrapper.text()).toContain('视觉审核 · 未完成'); expect(wrapper.text()).not.toContain('视觉审核 · 进行中')
+    expect(wrapper.findComponent({ name: 'PelicanPreview' }).exists()).toBe(true)
+    expect(mocks.retestTask).not.toHaveBeenCalled()
+  })
 })
