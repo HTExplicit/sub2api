@@ -40,7 +40,7 @@ describe('Pelican three-step composer', () => {
     expect(wrapper.findAll<HTMLSelectElement>('[data-test^="pelican-effort-"]').every(effort => effort.element.value === '')).toBe(true)
     await wrapper.get('[data-test="pelican-next"]').trigger('click')
     await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
-    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ generation_timeout_seconds: 600, test_items: ['pelican', 'candy'], scene: '', targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '' }, { account_id: 51, model_id: 'gpt-6.1-sol', effort: '' }] })
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ repeat_count: 1, generation_timeout_seconds: 600, test_items: ['pelican', 'candy'], scene: '', targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '' }, { account_id: 51, model_id: 'gpt-6.1-sol', effort: '' }] })
   })
   it('requires correction of unsupported and duplicate combinations instead of dropping them', async () => {
     const wrapper = await make({ initial: { generation_timeout_seconds: 600, targets: [{ account_id: 1, model_id: 'codex-auto-review', effort: '' }] } })
@@ -77,4 +77,24 @@ describe('Pelican three-step composer', () => {
     expect(wrapper.get<HTMLButtonElement>('[data-test="pelican-next"]').element.disabled).toBe(true)
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
+})
+
+it('validates uniform repeats and previews the expanded total for multiple models', async () => {
+  const wrapper = await make({ initial: { repeat_count: 3, generation_timeout_seconds: 600, targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: 'high' }, { account_id: 1, model_id: 'gpt-6-astra', effort: '' }] } })
+  const count = wrapper.get<HTMLInputElement>('[data-test="pelican-repeat-count"]')
+  expect(count.element.value).toBe('3')
+  expect(count.attributes('max')).toBe('2500')
+  for (const invalid of [0, -1, 1.5, 2501]) {
+    await count.setValue(invalid)
+    expect(count.attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get<HTMLButtonElement>('[data-test="pelican-next"]').element.disabled).toBe(true)
+  }
+  await count.setValue(2500)
+  expect(wrapper.get<HTMLButtonElement>('[data-test="pelican-next"]').element.disabled).toBe(false)
+  await count.setValue(3)
+  await wrapper.get('[data-test="pelican-next"]').trigger('click')
+  expect(wrapper.get('[data-test="pelican-total-tests"]').text()).toContain('2 个账号／模型组合 × 3 次 = 6 条测试')
+  expect(wrapper.text()).toContain('同账号不同模型可并行')
+  await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
+  expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual(expect.objectContaining({ repeat_count: 3, targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: 'high' }, { account_id: 1, model_id: 'gpt-6-astra', effort: '' }] }))
 })

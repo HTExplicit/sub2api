@@ -18,3 +18,8 @@ export function pelicanTone(value: string) {
 }
 export function pelicanFailed(item: PelicanResultSummary) { return ['failed', 'incomplete', 'skipped'].includes(item.status) || !!item.evaluation && ['invalid', 'error'].includes(item.evaluation.verdict) }
 export function decodePelicanEvidence(value?: string) { if (!value) return ''; return new TextDecoder().decode(Uint8Array.from(atob(value), c => c.charCodeAt(0))) }
+
+export function pelicanRepeatLabel(result: { repeat_index?: number; repeat_count?: number }, locale: string): string {
+  const index = result.repeat_index || 1, count = result.repeat_count || 1
+  return locale.startsWith('zh') ? `第 ${index} / ${count} 次` : `Run ${index} / ${count}`
+}

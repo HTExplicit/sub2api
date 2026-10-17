@@ -156,6 +156,10 @@ use the same local resolver, including the already integrated Cline/Command Code
 senders. No new provider protocol is introduced.
 
 `POST /admin/pelican-tests/tasks` returns 202 and starts a server-owned job.
+Optional `repeat_count` defaults to one; each unique account/model target produces
+that many independent results. A task permits at most 5000 expanded results.
+The composer shows combinations x repeats and preserves one effort per model.
+Each result carries `repeat_index` and `repeat_count` in summaries and details.
 The GET list, snapshot (`/:id`), paginated summaries (`/:id/results`), full single
 result (`/:id/results/:result_id`), and SSE (`/:id/events`) never start generation.
 Only `POST /:id/cancel` cancels a background job. Disconnecting observers or
@@ -171,7 +175,10 @@ complete administrator evidence. The page supports 2–4 same/cross-task compari
 filters, enlargement, downloads and parameter copying. Whole-task, single-result
 and failed-item retests directly create a new task with original model/effort
 parameters and budget. Cross-task selected retries create one task per source,
-preserving each source budget. New submissions retain UUID replay protection;
+preserving each source budget. Retests copy each selected result once, preserving
+its sample index and scene, with a fresh verification code; they never multiply
+by the task repeat count again. Parameter copying merges repeated model rows
+and restores the saved repeat count. New submissions retain UUID replay protection;
 history, browsing, reconnecting and comparison are read-only.
 New manual tasks select Pelican and/or candy (the UI defaults to both). Each
 result saves its chosen scene and a fresh visible verification code. The fixed
@@ -188,9 +195,12 @@ image input is unreviewed. Only all selected checks passing gives a passed verdi
 execution status is independent. Stage evidence retains raw bytes as Base64 in
 detail JSON. A single on-demand Chromium process renders network-blocked SVGs.
 
-All batches share ten model execution slots, with one request per account.
-Ordinary selected-account sends participate in normal business
-account capacity. Generation starts after preparation and admission; its default
+All batches share ten model request execution slots. Different models on one
+account may run concurrently, subject to the unchanged business account capacity.
+A process-wide account/model turn serializes the entire selected test flow,
+including repeats in sample order and matching models in other tasks. Waiting
+for a model turn, account capacity, or rendering holds no outbound execution slot.
+If account admission fails, its global slot is released before retrying admission. Generation starts after preparation and admission; its default
 budget is 600 seconds, configurable from 60 to 1800 seconds. Queue, preparation
 and generation durations are recorded separately. Observed business account slots
 renew every 30 seconds; lost capacity cancels the operation. Existing credential
@@ -200,7 +210,10 @@ usage and billing writes are suppressed, including background callbacks.
 Submission IDs are timestamped UUIDv7 values. Expired/future IDs are rejected and replay
 cannot dispatch again. Migration 275 owns the task/result tables; migration 276
 adds budgets, execution phases and actual invocation metadata in place, preserving
-old records and raw BYTEA output. Existing records retain their 90-second budget.
+old records and raw BYTEA output. Migration 281 adds sample indexes, defaults
+existing rows to one, and replaces the account/model unique key with a sample key.
+Single-run hashes remain compatible with existing submissions; omitted and
+explicit one-repeat requests are equivalent. Existing records retain their 90-second budget.
 Records expire 24 hours after task creation, immediately disappear from reads,
 and are removed by scoped minute cleanup. Administrators can explicitly delete a
 finished task or one of its results through `DELETE /tasks/:id` and

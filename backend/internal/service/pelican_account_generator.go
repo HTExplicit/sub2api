@@ -128,17 +128,10 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	if capture == nil || capture.account.ID != accountID {
 		return req, finish, nil
 	}
-	ctx, releaseExecution, acquireErr := AcquirePelicanExecution(req.Context(), accountID)
+	ctx, release, acquireErr := acquirePelicanRequestSlots(req.Context(), capture.concurrency, accountID, accountConcurrency)
 	if acquireErr != nil {
 		return nil, finish, acquireErr
 	}
-	releaseAccount, acquireErr := acquirePelicanBusinessAccountSlot(ctx, capture.concurrency, accountID, accountConcurrency)
-	if acquireErr != nil {
-		releaseExecution()
-		return nil, finish, acquireErr
-	}
-	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { releaseAccount(); releaseExecution() }) }
 	req = req.WithContext(ctx)
 	fallbackModel := capture.fallbackModel
 	if capture.ginContext != nil {
@@ -200,27 +193,39 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	return req, finish, nil
 }
 
-func acquirePelicanBusinessAccountSlot(ctx context.Context, concurrency *ConcurrencyService, accountID int64, limit int) (func(), error) {
-	if concurrency == nil || limit <= 0 {
-		return func() {}, nil
-	}
-	finishQueueWait := BeginPelicanQueueWait(ctx)
-	defer finishQueueWait()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+// Failed account admission releases global capacity before waiting. This keeps
+// one saturated account from occupying all ten outbound slots.
+func acquirePelicanRequestSlots(ctx context.Context, concurrency *ConcurrencyService, accountID int64, limit int) (context.Context, func(), error) {
 	for {
-		lease, acquired, err := concurrency.AcquireObservedAccountLease(ctx, accountID, limit, func(cause error) { CancelPelicanExecution(ctx, cause) })
+		leaseCtx, releaseExecution, err := AcquirePelicanExecution(ctx, accountID)
 		if err != nil {
-			return nil, fmt.Errorf("acquire account concurrency capacity: %w", err)
+			return ctx, nil, err
+		}
+		if concurrency == nil || limit <= 0 {
+			return leaseCtx, releaseExecution, nil
+		}
+		finishWait := BeginPelicanQueueWait(ctx)
+		lease, acquired, err := concurrency.AcquireObservedAccountLease(leaseCtx, accountID, limit, func(cause error) { CancelPelicanExecution(leaseCtx, cause) })
+		finishWait()
+		if err != nil {
+			releaseExecution()
+			return ctx, nil, fmt.Errorf("acquire account concurrency capacity: %w", err)
 		}
 		if acquired {
-			return lease.Release, nil
+			var once sync.Once
+			return leaseCtx, func() { once.Do(func() { lease.Release(); releaseExecution() }) }, nil
 		}
+		releaseExecution()
+		finishWait = BeginPelicanQueueWait(ctx)
+		timer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
+			timer.Stop()
+			finishWait()
+			return ctx, nil, ctx.Err()
+		case <-timer.C:
 		}
+		finishWait()
 	}
 }
 
@@ -233,17 +238,10 @@ func preparePelicanWSSend(ctx context.Context, account *Account, endpoint string
 	if capture == nil || account == nil || capture.account.ID != account.ID {
 		return ctx, observe, func() {}, nil
 	}
-	ctx, releaseExecution, err := AcquirePelicanExecution(ctx, account.ID)
+	ctx, release, err := acquirePelicanRequestSlots(ctx, capture.concurrency, account.ID, account.Concurrency)
 	if err != nil {
 		return ctx, observe, func() {}, err
 	}
-	releaseAccount, err := acquirePelicanBusinessAccountSlot(ctx, capture.concurrency, account.ID, account.Concurrency)
-	if err != nil {
-		releaseExecution()
-		return ctx, observe, func() {}, err
-	}
-	var once sync.Once
-	release := func() { once.Do(func() { releaseAccount(); releaseExecution() }) }
 	model := openAIWSPayloadString(payload, "model")
 	effort := gjson.GetBytes(payloadAsJSONBytes(payload), "reasoning.effort").String()
 	RecordPelicanInvocation(ctx, PelicanInvocation{Platform: account.Platform, Model: model, Effort: effort,

@@ -100,12 +100,18 @@ export interface PelicanOptions {
 export type PelicanPhase = 'queued' | 'preparing' | 'generating' | 'candy' | 'rendering' | 'reviewing'
 
 export const PELICAN_SCENES = ['海边木栈道', '秋日林道', '春日草坡', '雨后湿地', '黄昏公路', '湖畔风车', '热带海岛', '雪山谷地']
-export interface PelicanTestConfig { test_items?: string[]; scene?: string }
+export interface PelicanTestConfig {
+  repeat_count?: number
+  test_items?: string[]
+  scene?: string
+}
 export interface PelicanEvaluation { test_items: string[]; scene: string; nonce: string; generation: string; candy: string; review: string; verdict: string; checks?: Record<string, boolean>; review_checks?: Record<string, boolean | null>; frame_times?: number[] }
 export interface PelicanStageEvidence { prompt: string; raw_answer: string; raw_response: string; error: string; status: string; duration_ms: number; invocation: Record<string, unknown> }
 export interface PelicanRetestRequest { client_task_id: string; result_ids?: string[]; failed_only?: boolean }
 
 export interface PelicanTestResult extends PelicanResultBase {
+  repeat_index?: number
+  repeat_count?: number
   task_id?: string
   platform?: string
   actual_endpoint?: string
@@ -215,6 +221,7 @@ export async function streamPelicanTests(
 }
 
 export interface PelicanResultSummary {
+  repeat_index?: number; repeat_count?: number
   evaluation?: PelicanEvaluation; preview_url?: string
   id: string; task_id: string; ordinal: number; account_id: number; account_name: string
   platform: string; model_id: string; effort: string; status: string; phase?: PelicanPhase

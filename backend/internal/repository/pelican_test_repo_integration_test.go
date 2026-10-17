@@ -113,6 +113,13 @@ func pelicanPrivateIntegrationDB(t *testing.T, ctx context.Context) *sql.DB {
 	require.NoError(t, err)
 	_, err = privateDB.ExecContext(ctx, string(evaluationDDL))
 	require.NoError(t, err)
+	repeatDDL, err := migrations.FS.ReadFile("281_pelican_repeat_samples.sql")
+	require.NoError(t, err)
+	_, err = privateDB.ExecContext(ctx, string(repeatDDL))
+	require.NoError(t, err)
+	var legacyIndex int
+	require.NoError(t, privateDB.QueryRowContext(ctx, "SELECT repeat_index FROM codex_gateway_borrow_test_results WHERE id=$1", legacyResult).Scan(&legacyIndex))
+	require.Equal(t, 1, legacyIndex)
 	var executionMode string
 	var timeout int
 	var retention int64

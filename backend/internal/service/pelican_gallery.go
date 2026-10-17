@@ -65,6 +65,7 @@ func (r *PelicanTestRunner) Retest(ctx context.Context, createdBy int64, id stri
 	if len(parameters.TestItems) == 0 {
 		parameters.TestItems = []string{"pelican"}
 	}
+	seenModels := make(map[pelicanModelKey]bool)
 	for page := 1; ; page++ {
 		rows, readErr := r.TaskResults(ctx, id, PelicanResultFilter{Page: page, Size: 50})
 		if readErr != nil {
@@ -85,13 +86,22 @@ func (r *PelicanTestRunner) Retest(ctx context.Context, createdBy int64, id stri
 			if row.Evaluation != nil {
 				target.Scene = row.Evaluation.Scene
 			}
-			parameters.Targets = append(parameters.Targets, target)
+			key := pelicanModelKey{row.AccountID, row.ModelID}
+			if !seenModels[key] {
+				parameters.Targets = append(parameters.Targets, target)
+				seenModels[key] = true
+			}
+			index := row.RepeatIndex
+			if index == 0 {
+				index = 1
+			}
+			parameters.samples = append(parameters.samples, pelicanTestSample{PelicanTestTarget: target, RepeatIndex: index})
 		}
 		if page*50 >= int(rows.Total) {
 			break
 		}
 	}
-	if len(request.ResultIDs) > 0 && len(parameters.Targets) != len(request.ResultIDs) {
+	if len(request.ResultIDs) > 0 && len(parameters.samples) != len(request.ResultIDs) {
 		return nil, ErrPelicanTestInvalidRequest
 	}
 	return r.StartBackground(ctx, createdBy, parameters, catalog)

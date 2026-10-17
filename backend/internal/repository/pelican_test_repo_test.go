@@ -29,9 +29,9 @@ func pelicanTaskTestRows(task *service.PelicanTestTask) *sqlmock.Rows {
 }
 
 func pelicanResultTestRows(result *service.PelicanTestResult) *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "task_id", "ordinal", "account_id", "account_name", "model_id", "upstream_model", "effort", "status", "raw_answer", "raw_response", "raw_html", "html", "error", "started_at", "finished_at", "duration_ms", "expires_at", "platform", "actual_endpoint", "actual_protocol", "actual_transport", "borrow_applied", "queue_duration_ms", "preparation_duration_ms", "generation_duration_ms", "generation_started_at", "evaluation", "evidence", "raw_svg", "review_image"}).AddRow(
+	return sqlmock.NewRows([]string{"id", "task_id", "ordinal", "account_id", "account_name", "model_id", "upstream_model", "effort", "status", "raw_answer", "raw_response", "raw_html", "html", "error", "started_at", "finished_at", "duration_ms", "expires_at", "platform", "actual_endpoint", "actual_protocol", "actual_transport", "borrow_applied", "queue_duration_ms", "preparation_duration_ms", "generation_duration_ms", "generation_started_at", "evaluation", "evidence", "raw_svg", "review_image", "repeat_index", "repeat_count"}).AddRow(
 		result.ID, result.TaskID, result.Ordinal, result.AccountID, result.AccountName, result.ModelID, result.UpstreamModel, result.Effort, result.Status, []byte(result.RawAnswer), []byte(result.RawResponse), []byte(result.RawHTML), []byte(result.HTML), []byte(result.Error), result.StartedAt, result.FinishedAt, result.DurationMS, result.ExpiresAt,
-		result.Platform, result.ActualEndpoint, result.ActualProtocol, result.ActualTransport, result.BorrowApplied, result.QueueDurationMS, result.PreparationDurationMS, result.GenerationDurationMS, result.GenerationStartedAt, nil, []byte{}, []byte{}, []byte{})
+		result.Platform, result.ActualEndpoint, result.ActualProtocol, result.ActualTransport, result.BorrowApplied, result.QueueDurationMS, result.PreparationDurationMS, result.GenerationDurationMS, result.GenerationStartedAt, nil, []byte{}, []byte{}, []byte{}, result.RepeatIndex, result.RepeatCount)
 }
 
 func pelicanRepoFixture(t *testing.T) *service.PelicanTestTask {
@@ -41,7 +41,7 @@ func pelicanRepoFixture(t *testing.T) *service.PelicanTestTask {
 	require.NoError(t, err)
 	task := &service.PelicanTestTask{ID: uuid.NewString(), ClientTaskID: clientID.String(), CreatedBy: 7, RequestHash: "hash", Status: "pending", Prompt: service.PelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(service.PelicanTestTTL), Total: 1,
 		GenerationTimeoutSeconds: service.PelicanDefaultGenerationTimeoutSeconds, ExecutionMode: service.PelicanExecutionModeAccount}
-	task.Results = []*service.PelicanTestResult{{ID: uuid.NewString(), TaskID: task.ID, Ordinal: 1, AccountID: 42, AccountName: "paused target", Platform: "openai", ModelID: "gpt-6-astra", Effort: "high", Status: "pending", ExpiresAt: task.ExpiresAt, ReviewImage: []byte{}}}
+	task.Results = []*service.PelicanTestResult{{ID: uuid.NewString(), TaskID: task.ID, Ordinal: 1, RepeatIndex: 1, RepeatCount: 1, AccountID: 42, AccountName: "paused target", Platform: "openai", ModelID: "gpt-6-astra", Effort: "high", Status: "pending", ExpiresAt: task.ExpiresAt, ReviewImage: []byte{}}}
 	return task
 }
 
@@ -51,7 +51,7 @@ func TestPelicanTestRepositoryCreateAtomicAndReplayReadsWithoutWrites(t *testing
 	mock.ExpectBegin()
 	mock.ExpectQuery("INSERT INTO codex_gateway_borrow_test_tasks").WithArgs(task.ID, task.ClientTaskID, task.CreatedBy, task.RequestHash, task.Prompt, task.Total, task.CreatedAt, task.ExpiresAt, task.GenerationTimeoutSeconds, task.ExecutionMode, []byte("{}")).WillReturnRows(pelicanTaskTestRows(task))
 	result := task.Results[0]
-	mock.ExpectExec("INSERT INTO codex_gateway_borrow_test_results").WithArgs(result.ID, task.ID, 1, result.AccountID, result.AccountName, result.ModelID, result.Effort, result.Platform, []byte("null")).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO codex_gateway_borrow_test_results").WithArgs(result.ID, task.ID, 1, result.AccountID, result.AccountName, result.ModelID, result.Effort, result.Platform, []byte("null"), 1).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	stored, replayed, err := repo.Create(context.Background(), task)
 	require.NoError(t, err)

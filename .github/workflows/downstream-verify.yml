@@ -55,10 +55,10 @@ jobs:
         run: |
           python3 ../.github/scripts/prepare_test_images.py
           go test -p=1 -tags unit ./internal/service ./internal/repository ./internal/handler ./internal/handler/admin ./internal/server/routes -run '^Test(Pelican|AccountObservation|ObservedAccountLease)' -count=1
-          go test -p=1 -tags integration ./internal/repository -run '^TestPelican(TestRepositoryIntegrationLifecycle|DeletionIntegration)$' -count=1
+          go test -p=1 -tags integration ./internal/repository -run '^TestPelican(TestRepositoryIntegrationLifecycle|DeletionIntegration|RepeatSamplesIntegration)$' -count=1
       - name: Pelican cancellation race test
         working-directory: backend
-        run: go test -p=1 -race -tags unit ./internal/service -run '^TestPelicanRunnerCancellationStopsQueuedAndInflightAndRetainsRawOutput$' -count=1
+        run: go test -p=1 -race -tags unit ./internal/service -run '^TestPelican(RunnerCancellationStopsQueuedAndInflightAndRetainsRawOutput|RepeatModel.*|AccountWaitReleases.*)$' -count=1
       - name: Account test keepalive lifecycle race tests
         working-directory: backend
         run: go test -p=1 -race -tags unit ./internal/service -run '^TestAccountTestKeepalive' -count=1
