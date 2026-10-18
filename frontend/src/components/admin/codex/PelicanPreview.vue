@@ -1,9 +1,9 @@
 <template>
   <div ref="container" class="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-white" data-testid="pelican-preview">
-    <img v-if="safeUrl.endsWith('/scene.svg')" :src="safeUrl" :alt="title" class="absolute inset-0 h-full w-full object-contain" loading="lazy" referrerpolicy="no-referrer" />
+    <img v-if="displayUrl.endsWith('/scene.svg')" :src="displayUrl" :alt="title" class="absolute inset-0 h-full w-full object-contain" loading="lazy" referrerpolicy="no-referrer" />
     <iframe
-      v-else-if="safeUrl"
-      :src="safeUrl"
+      v-else-if="displayUrl"
+      :src="displayUrl"
       :title="title"
       class="absolute block border-0"
       :style="frameStyle"
@@ -16,10 +16,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { buildApiUrl } from '@/api/client'
 
-const props = withDefaults(defineProps<{ previewUrl: string; title: string; interactive?: boolean }>(), { interactive: false })
+const props = withDefaults(defineProps<{ previewUrl: string; title: string; resultId?: string; interactive?: boolean }>(), { interactive: false })
 const container = ref<HTMLElement | null>(null)
 const available = ref({ width: 0, height: 0 })
 let observer: ResizeObserver | undefined
@@ -40,6 +40,13 @@ const safeUrl = computed(() => {
     return ''
   }
 })
+
+// Capabilities rotate on summary reads, but each result's saved work is immutable.
+// Keep a mounted animation playing; a newly mounted preview uses the latest URL.
+const displayUrl = ref('')
+watch([safeUrl, () => props.resultId], ([url, id], [, previousId]) => {
+  if (!id || id !== previousId || !url || !displayUrl.value || url.endsWith('/scene.svg') !== displayUrl.value.endsWith('/scene.svg')) displayUrl.value = url
+}, { immediate: true })
 
 // Keep the authored viewport stable in thumbnails and enlarged previews. The
 // containing 4:3 surface scales the whole document without changing its layout.

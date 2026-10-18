@@ -179,7 +179,10 @@ preserving each source budget. Retests copy each selected result once, preservin
 its sample index and count, using the original fixed prompt; they never multiply
 by the task repeat count again. Parameter copying merges repeated model rows
 and restores the saved repeat count. New submissions retain UUID replay protection;
-history, browsing, reconnecting and comparison are read-only.
+history, browsing, reconnecting and comparison are read-only. Background task
+snapshots update gallery metadata quietly. Mounted previews retain their document
+for the same result when read capabilities rotate, preserving animation playback;
+switching results or reopening a preview uses the current capability.
 New manual tasks select Pelican and/or candy (the UI defaults to both). Every
 generation, including repeats and retests, sends the original prompt verbatim:
 `创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试`.

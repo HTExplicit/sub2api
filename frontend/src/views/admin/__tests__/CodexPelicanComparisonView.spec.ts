@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CodexPelicanComparisonView from '../CodexPelicanComparisonView.vue'
-import type { PelicanResultSummary, PelicanTaskSnapshot } from '@/api/admin/pelicanTests'
+import type { PelicanResultPage, PelicanResultSummary, PelicanTaskEvent, PelicanTaskSnapshot } from '@/api/admin/pelicanTests'
 
 const mocks = vi.hoisted(() => ({ gallery: vi.fn(), getOptions: vi.fn(), listTasks: vi.fn(), getTask: vi.fn(), getResults: vi.fn(), getResult: vi.fn(), startTask: vi.fn(), retestTask: vi.fn(), cancelTask: vi.fn(), deleteTask: vi.fn(), deleteResult: vi.fn(), observeTask: vi.fn(), locale: { value: 'zh' } }))
 vi.mock('@/api/admin/pelicanTests', async original => ({ ...(await original<typeof import('@/api/admin/pelicanTests')>()), pelicanTestsAPI: mocks }))
@@ -22,7 +22,7 @@ beforeEach(() => {
   mocks.deleteTask.mockResolvedValue({ deleted: true }); mocks.deleteResult.mockResolvedValue({ deleted: true })
 })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers(); vi.unstubAllGlobals() })
-async function make() { const wrapper = mount(CodexPelicanComparisonView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }, PelicanTaskComposer: { props: ['initial', 'submitting'], emits: ['submit'], template: '<div data-test="composer-stub" />' }, PelicanPreview: true } } }); wrappers.push(wrapper); await flushPromises(); return wrapper }
+async function make(realPreview = false) { const wrapper = mount(CodexPelicanComparisonView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }, PelicanTaskComposer: { props: ['initial', 'submitting'], emits: ['submit'], template: '<div data-test="composer-stub" />' }, PelicanPreview: !realPreview } } }); wrappers.push(wrapper); await flushPromises(); return wrapper }
 async function selectTask(wrapper: ReturnType<typeof mount>) { await wrapper.get('[data-test="pelican-task-select"]').setValue('task-1'); await flushPromises() }
 
 describe('Pelican gallery workbench', () => {
@@ -124,4 +124,33 @@ it('keeps original-mode HTML works previewable without empty scene or nonce labe
   const content = wrapper.get('[data-test="pelican-detail-content"]')
   expect(content.text()).not.toContain('场景：'); expect(content.text()).not.toContain('校验码：')
   expect(content.text()).toContain('作品格式'); expect(content.text()).toContain('Review error')
+})
+
+
+it('updates task progress quietly without restarting the displayed HTML animation', async () => {
+  let onEvent!: (event: PelicanTaskEvent) => void
+  mocks.observeTask.mockImplementation((_id: string, callback: typeof onEvent, signal: AbortSignal) => {
+    onEvent = callback
+    return new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+  })
+  mocks.getTask.mockResolvedValue(task('task-1', 'running'))
+  const value = result()
+  value.preview_url = value.preview_url!.replace('scene.svg', 'index.html')
+  mocks.gallery.mockResolvedValue({ items: [value], total: 1, page: 1, page_size: 24 })
+  const wrapper = await make(true); await selectTask(wrapper)
+  const animation = wrapper.get('iframe').element
+  const source = wrapper.get('iframe').attributes('src')
+  let completeRead!: (page: PelicanResultPage) => void
+  mocks.gallery.mockImplementationOnce(() => new Promise(resolve => { completeRead = resolve }))
+  const progress = { ...task('task-1', 'running'), completed: 2 }
+  onEvent({ type: 'snapshot', task: progress }); await wrapper.vm.$nextTick()
+  expect(wrapper.get('[data-test="pelican-active-task"]').text()).toContain('已处理 2 / 3')
+  expect(wrapper.text()).not.toContain('读取中…')
+  expect((wrapper.get('[data-test="pelican-refresh"]').element as HTMLButtonElement).disabled).toBe(false)
+  completeRead({ items: [{ ...value, preview_url: value.preview_url!.replace('a'.repeat(43), 'b'.repeat(43)), evaluation: { ...value.evaluation!, review: 'passed', verdict: 'passed' } }], total: 1, page: 1, page_size: 24 })
+  await flushPromises()
+  expect(wrapper.get('iframe').element).toBe(animation)
+  expect(wrapper.get('iframe').attributes('src')).toBe(source)
+  expect(wrapper.get('[data-test="pelican-result-r1"]').text()).toContain('视觉审核 · 通过')
+  expect(mocks.startTask).not.toHaveBeenCalled(); expect(mocks.retestTask).not.toHaveBeenCalled(); expect(mocks.cancelTask).not.toHaveBeenCalled()
 })

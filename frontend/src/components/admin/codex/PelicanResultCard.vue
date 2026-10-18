@@ -1,7 +1,7 @@
 <template>
   <article class="min-w-0 overflow-hidden rounded-xl border border-line bg-white shadow-sm dark:bg-dark-900" :data-test="`pelican-result-${result.id}`">
     <button type="button" class="relative block aspect-[3/2] w-full overflow-hidden bg-gray-50 text-left focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-dark-800" :disabled="expired" :aria-label="`${text('查看详情', 'View details')} ${title}`" @click="$emit('open', result)">
-      <PelicanPreview v-if="result.preview_url && !expired" :preview-url="result.preview_url" :title="title" />
+      <PelicanPreview v-if="result.preview_url && !expired" :preview-url="result.preview_url" :result-id="result.id" :title="title" />
       <span v-else class="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-sm text-muted"><span class="text-2xl" aria-hidden="true">{{ unfinished ? '◌' : result.evaluation?.test_items.includes('pelican') === false ? '21' : '↯' }}</span>{{ placeholder }}</span>
       <span class="absolute bottom-3 right-3 rounded-md border border-white/70 bg-white/95 px-2.5 py-1.5 text-xs text-gray-700 shadow-sm dark:border-line dark:bg-dark-900/95 dark:text-gray-100">{{ text('查看详情 ↗', 'View details ↗') }}</span>
     </button>
