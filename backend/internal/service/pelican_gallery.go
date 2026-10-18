@@ -62,6 +62,7 @@ func (r *PelicanTestRunner) Retest(ctx context.Context, createdBy int64, id stri
 	}
 	parameters := PelicanTestRequest{ClientTaskID: request.ClientTaskID, GenerationTimeoutSeconds: task.GenerationTimeoutSeconds, PelicanTestConfig: task.TestConfig}
 	parameters.RetestKey = key
+	parameters.Scene = ""
 	if len(parameters.TestItems) == 0 {
 		parameters.TestItems = []string{"pelican"}
 	}
@@ -83,9 +84,6 @@ func (r *PelicanTestRunner) Retest(ctx context.Context, createdBy int64, id stri
 				continue
 			}
 			target := PelicanTestTarget{AccountID: row.AccountID, ModelID: row.ModelID, Effort: row.Effort}
-			if row.Evaluation != nil {
-				target.Scene = row.Evaluation.Scene
-			}
 			key := pelicanModelKey{row.AccountID, row.ModelID}
 			if !seenModels[key] {
 				parameters.Targets = append(parameters.Targets, target)

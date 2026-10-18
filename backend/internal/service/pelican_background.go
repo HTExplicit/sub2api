@@ -11,6 +11,7 @@ import (
 )
 
 type PelicanResultSummary struct {
+	SVGPreview            bool               `json:"-"`
 	RepeatIndex           int                `json:"repeat_index"`
 	RepeatCount           int                `json:"repeat_count"`
 	Evaluation            *PelicanEvaluation `json:"evaluation,omitempty"`
@@ -103,7 +104,7 @@ func pelicanResultSummary(result *PelicanTestResult, phase string) *PelicanResul
 		Evaluation: clonePelicanEvaluation(result.Evaluation),
 		AccountID:  result.AccountID, AccountName: result.AccountName, Platform: result.Platform,
 		ModelID: result.ModelID, Effort: result.Effort, Status: result.Status, Phase: phase,
-		HasPreview: result.SVG != "" || result.Status == "complete" && result.HTML != "", Interrupted: strings.Contains(result.Error, pelicanInterruptedMessage),
+		HasPreview: PelicanResultHasPreview(result), SVGPreview: result.SVG != "", Interrupted: strings.Contains(result.Error, pelicanInterruptedMessage),
 		StartedAt: result.StartedAt, FinishedAt: result.FinishedAt, GenerationStartedAt: result.GenerationStartedAt,
 		DurationMS: result.DurationMS, QueueDurationMS: result.QueueDurationMS,
 		PreparationDurationMS: result.PreparationDurationMS, GenerationDurationMS: result.GenerationDurationMS, ExpiresAt: result.ExpiresAt}

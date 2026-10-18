@@ -68,3 +68,36 @@ func TestPelicanGalleryIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.Total)
 }
+
+func TestPelicanOriginalHTMLGalleryIntegration(t *testing.T) {
+	ctx := context.Background()
+	db := pelicanPrivateIntegrationDB(t, ctx)
+	repo := &pelicanTestRepository{db: db}
+	task := pelicanIntegrationTask(t, 42)
+	_, _, err := repo.Create(ctx, task)
+	require.NoError(t, err)
+	row := task.Results[0]
+	row.Status = "failed"
+	row.RawResponse = "GEN-RAW-CANARY"
+	row.HTML = "<html><body><svg/><script>animate()</script></body></html>"
+	row.Evaluation = &service.PelicanEvaluation{TestItems: []string{"pelican", "candy"}, Generation: "passed", Candy: "passed", Review: "error", Verdict: "error", Checks: map[string]bool{"document": true}}
+	require.NoError(t, repo.SaveResult(ctx, row))
+	page, err := repo.ListTaskResults(ctx, task.ID, service.PelicanResultFilter{})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	require.True(t, page.Items[0].HasPreview)
+	require.False(t, page.Items[0].SVGPreview)
+	encoded, err := json.Marshal(page)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "CANARY")
+	require.NotContains(t, string(encoded), "<script>")
+	preview, err := repo.GetPreviewResult(ctx, row.ID)
+	require.NoError(t, err)
+	require.True(t, service.PelicanResultHasPreview(preview))
+	require.Equal(t, row.HTML, preview.HTML)
+	require.Empty(t, preview.RawResponse)
+	require.NoError(t, repo.FinishTask(ctx, task.ID, "failed", "", time.Now()))
+	require.NoError(t, repo.DeleteTask(ctx, task.ID))
+	_, err = repo.GetPreviewResult(ctx, row.ID)
+	require.Error(t, err)
+}

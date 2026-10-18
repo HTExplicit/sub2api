@@ -109,3 +109,19 @@ it('copies each model once with its configured repeat count and displays sample 
   expect(wrapper.getComponent('[data-test="composer-stub"]').props('initial')).toEqual(expect.objectContaining({ repeat_count: 3, targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: 'medium' }, { account_id: 1, model_id: 'gpt-6-astra', effort: 'medium' }] }))
   expect(mocks.startTask).not.toHaveBeenCalled()
 })
+
+it('keeps original-mode HTML works previewable without empty scene or nonce labels', async () => {
+  const value = result()
+  value.status = 'failed'; value.preview_url = value.preview_url!.replace('/scene.svg', '/index.html')
+  value.evaluation = { ...value.evaluation!, scene: '', nonce: '', checks: { document: true }, review: 'error', verdict: 'error' }
+  mocks.gallery.mockResolvedValue({ items: [value], total: 1, page: 1, page_size: 24 })
+  mocks.getResult.mockResolvedValue({ ...value, raw_html: '<html><svg/><script>animate()</script></html>', html: '<html><svg/><script>animate()</script></html>', raw_response: 'RAW', raw_answer: 'ANSWER', error: 'Review error', preview_unavailable: '' })
+  const wrapper = await make()
+  expect(wrapper.get('[data-test="pelican-result-r1"]').text()).not.toContain('场景')
+  expect(wrapper.get('[data-test="pelican-result-r1"]').text()).not.toContain('校验码')
+  expect(wrapper.getComponent({ name: 'PelicanPreview' }).props('previewUrl')).toContain('/index.html')
+  await wrapper.get('[data-test="pelican-result-r1"] button').trigger('click'); await flushPromises()
+  const content = wrapper.get('[data-test="pelican-detail-content"]')
+  expect(content.text()).not.toContain('场景：'); expect(content.text()).not.toContain('校验码：')
+  expect(content.text()).toContain('作品格式'); expect(content.text()).toContain('Review error')
+})

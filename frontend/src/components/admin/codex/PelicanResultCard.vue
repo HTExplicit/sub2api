@@ -10,10 +10,10 @@
       <PelicanEvaluationBadges :evaluation="result.evaluation" :status="result.status" />
       <div class="space-y-1.5 text-xs leading-relaxed text-muted">
         <p class="break-words">{{ text('账号', 'Account') }}：{{ result.account_name }} #{{ result.account_id }}</p>
-        <p v-if="result.evaluation?.test_items.includes('pelican')">{{ text('场景', 'Scene') }}：{{ result.evaluation.scene }}</p>
+        <p v-if="result.evaluation?.scene">{{ text('场景', 'Scene') }}：{{ result.evaluation.scene }}</p>
         <p class="break-words">{{ result.model_id }} · {{ result.effort || t('admin.pelicanTests.normalDefault') }} · {{ (result.duration_ms / 1000).toFixed(1) }}s</p>
         <p data-test="pelican-repeat-label">{{ repeatLabel }}</p>
-        <p>{{ text('手动检测', 'Manual test') }}<template v-if="result.evaluation?.checks"> · {{ text('校验码', 'Verification code') }} {{ result.evaluation.checks.nonce ? text('一致', 'Matched') : text('未通过', 'Not matched') }}</template></p>
+        <p>{{ text('手动检测', 'Manual test') }}<template v-if="result.evaluation?.nonce && result.evaluation?.checks && 'nonce' in result.evaluation.checks"> · {{ text('校验码', 'Verification code') }} {{ result.evaluation.checks.nonce ? text('一致', 'Matched') : text('未通过', 'Not matched') }}</template></p>
       </div>
       <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs">
         <label class="mr-auto flex items-center gap-1.5"><input type="checkbox" :checked="selected" :disabled="(selectionFull || expired) && !selected" @change="$emit('select', result)" />{{ text('比较', 'Compare') }}</label>

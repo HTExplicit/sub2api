@@ -324,9 +324,11 @@ func (r *PelicanTestRunner) Create(ctx context.Context, createdBy int64, request
 			}
 		}
 	}
+	config := request.PelicanTestConfig
+	config.Scene = "" // Deprecated scene inputs remain in the replay hash, never in the new generation.
 	now := r.now().UTC()
 	task := &PelicanTestTask{ID: uuid.NewString(), ClientTaskID: request.ClientTaskID,
-		TestConfig: request.PelicanTestConfig,
+		TestConfig: config,
 		CreatedBy:  createdBy, RequestHash: pelicanTestRequestHash(request), Status: "pending",
 		GenerationTimeoutSeconds: request.GenerationTimeoutSeconds, ExecutionMode: PelicanExecutionModeAccount,
 		Prompt: PelicanPrompt, CreatedAt: now, ExpiresAt: now.Add(PelicanTestTTL),
@@ -354,7 +356,6 @@ func (r *PelicanTestRunner) Create(ctx context.Context, createdBy int64, request
 				return nil, false, evaluationErr
 			}
 			task.Results[len(task.Results)-1].Evaluation = evaluation
-			task.Prompt = PelicanScenePrompt
 		}
 	}
 	stored, replayed, err := r.repo.Create(ctx, task)

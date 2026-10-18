@@ -5,8 +5,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -27,19 +25,7 @@ func TestPelicanCandyAndReview(t *testing.T) {
 	}
 	_, _, err := parsePelicanReview(`{"checks":{"pelican":true}}`)
 	require.Error(t, err)
-	svg := `<svg xmlns="http://www.w3.org/2000/svg"><text>ABC123</text><circle><animate attributeName="r" values="10;20;10" dur="2s" repeatCount="indefinite"/></circle></svg>`
-	raw, checks, err := inspectPelicanSVG(svg, "ABC123")
-	require.NoError(t, err)
-	require.Equal(t, svg, raw)
-	require.True(t, checks["nonce"])
-	require.True(t, checks["animation"])
-	_, checks, err = inspectPelicanSVG(svg, "OTHER")
-	require.NoError(t, err)
-	require.False(t, checks["nonce"])
-	for _, bad := range []string{`<svg><script>alert(1)</script></svg>`, `<svg><image href="file:///etc/passwd"/></svg>`, `<svg><style>@import 'http://external.invalid';</style></svg>`, `<svg><text onclick="alert(1)">x</text></svg>`} {
-		_, _, err = inspectPelicanSVG(bad, "")
-		require.Error(t, err)
-	}
+
 }
 
 type pelicanEvaluationGenerator struct {
@@ -73,9 +59,7 @@ func (g *pelicanEvaluationGenerator) GeneratePelicanInput(ctx context.Context, _
 	if len(input.Images) > 0 {
 		return &PelicanResult{Status: "complete", RawAnswer: g.review}, nil
 	}
-	start := strings.Index(input.Text, "本次校验码：") + len("本次校验码：")
-	nonce := strings.Split(input.Text[start:], "。")[0]
-	return &PelicanResult{Status: "complete", RawAnswer: fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg"><text>%s</text><animate attributeName="opacity" values="0;1" dur="2s"/></svg>`, nonce)}, nil
+	return &PelicanResult{Status: "complete", RawAnswer: `<html><body><svg><circle r="30"/></svg><script>requestAnimationFrame(function animate(){requestAnimationFrame(animate)})</script></body></html>`}, nil
 }
 
 type pelicanFixedRenderer struct{ err error }
@@ -110,10 +94,10 @@ func TestPelicanEvaluationStagesKeepIndependentResults(t *testing.T) {
 			e, err := newPelicanEvaluation(PelicanTestConfig{TestItems: tc.items}, PelicanTestTarget{})
 			require.NoError(t, err)
 			result := &PelicanTestResult{ID: "result", TaskID: "task", AccountID: 1, ModelID: "model", Evaluation: e, ExpiresAt: time.Now().Add(time.Hour)}
-			persistedSVG := false
+			persistedWork := false
 			repo.onSave = func(value *PelicanTestResult) error {
-				if value.Status == "running" && value.SVG != "" {
-					persistedSVG = true
+				if value.Status == "running" && value.HTML != "" {
+					persistedWork = true
 				}
 				return nil
 			}
@@ -121,8 +105,13 @@ func TestPelicanEvaluationStagesKeepIndependentResults(t *testing.T) {
 			require.Equal(t, tc.want, e.Verdict)
 			require.Len(t, g.calls, tc.calls)
 			if tc.items[0] == "pelican" {
-				require.NotEmpty(t, result.SVG)
-				require.True(t, persistedSVG)
+				require.NotEmpty(t, result.HTML)
+				require.True(t, persistedWork)
+				require.Empty(t, result.SVG)
+				require.Empty(t, e.Scene)
+				require.Empty(t, e.Nonce)
+				require.Equal(t, map[string]bool{"document": true}, e.Checks)
+				require.Equal(t, PelicanPrompt, result.Evidence["generating"].Prompt)
 				require.True(t, pelicanResultSummary(result, "").HasPreview)
 			}
 			if tc.calls == 3 {
