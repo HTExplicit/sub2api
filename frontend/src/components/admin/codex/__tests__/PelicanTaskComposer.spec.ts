@@ -40,7 +40,7 @@ describe('Pelican three-step composer', () => {
     expect(wrapper.findAll<HTMLSelectElement>('[data-test^="pelican-effort-"]').every(effort => effort.element.value === '')).toBe(true)
     await wrapper.get('[data-test="pelican-next"]').trigger('click')
     await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
-    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ repeat_count: 1, generation_timeout_seconds: 600, test_items: ['pelican', 'candy'], scene: '', targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '' }, { account_id: 51, model_id: 'gpt-6.1-sol', effort: '' }] })
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ repeat_count: 1, generation_timeout_seconds: 600, test_items: ['pelican', 'candy'], targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '' }, { account_id: 51, model_id: 'gpt-6.1-sol', effort: '' }] })
   })
   it('requires correction of unsupported and duplicate combinations instead of dropping them', async () => {
     const wrapper = await make({ initial: { generation_timeout_seconds: 600, targets: [{ account_id: 1, model_id: 'codex-auto-review', effort: '' }] } })
@@ -97,4 +97,16 @@ it('validates uniform repeats and previews the expanded total for multiple model
   expect(wrapper.text()).toContain('同账号不同模型可并行')
   await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
   expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual(expect.objectContaining({ repeat_count: 3, targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: 'high' }, { account_id: 1, model_id: 'gpt-6-astra', effort: '' }] }))
+})
+
+it('uses the original prompt and drops deprecated scene settings from copied parameters', async () => {
+  const original = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试'
+  const wrapper = await make({ initial: { scene: '雪山谷地', repeat_count: 2, generation_timeout_seconds: 600, targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '', scene: '海边木栈道' }] } })
+  expect(wrapper.text()).toContain(original)
+  expect(wrapper.text()).not.toContain('随机场景')
+  expect(wrapper.text()).not.toContain('海边木栈道')
+  expect(wrapper.text()).not.toContain('雪山谷地')
+  await wrapper.get('[data-test="pelican-next"]').trigger('click')
+  await wrapper.get('[data-test="pelican-test-start"]').trigger('click')
+  expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ repeat_count: 2, generation_timeout_seconds: 600, test_items: ['pelican', 'candy'], targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: '' }] })
 })

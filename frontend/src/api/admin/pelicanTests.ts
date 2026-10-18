@@ -41,7 +41,7 @@ export interface PelicanTaskBase {
   replayed?: boolean
 }
 
-export const PELICAN_PROMPT = '创建独立的 SVG 鹈鹕骑自行车 2D 循环动画：橙色大嘴、蹼足踩踏板、翅膀保持平衡、车轮转动。按所选场景独立构图，在右下角显示本轮随机校验码。只返回 SVG，使用内联 CSS 或 SMIL，不使用脚本和外部资源。实际场景、校验码及完整题面保存在检测详情中。'
+export const PELICAN_PROMPT = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试'
 
 export function createPelicanClientTaskId(serverOffsetMs = 0): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))

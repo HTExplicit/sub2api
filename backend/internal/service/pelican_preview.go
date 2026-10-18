@@ -153,12 +153,18 @@ func (p *PelicanPreviewService) pruneLocked(now time.Time) {
 	}
 }
 
+// PelicanResultHasPreview separates saved generated works from later test failures.
+// Legacy partial HTML remains unavailable unless generation completed.
+func PelicanResultHasPreview(result *PelicanTestResult) bool {
+	return result.HTML != "" && (result.SVG != "" || result.Status == "complete" || result.Evaluation != nil && result.Evaluation.Generation == "passed")
+}
+
 // DecorateResult only adds an independently minted read capability. It makes no
 // upstream request and never turns incomplete HTML into a successful test.
 func (p *PelicanPreviewService) DecorateResult(result *PelicanTestResult) *PelicanTestResult {
 	decorated := *result
 	decorated.PreviewURL, decorated.PreviewExpiresAt = "", nil
-	if decorated.Status != "complete" && decorated.SVG == "" {
+	if !PelicanResultHasPreview(&decorated) && decorated.HTML != "" {
 		decorated.PreviewUnavailable = "test " + decorated.Status
 		return &decorated
 	}
@@ -241,7 +247,7 @@ func (p *PelicanPreviewService) Resolve(ctx context.Context, token string) (stri
 		result, err = p.repo.GetResult(ctx, capability.ResultID)
 	}
 	finishedRead := p.now().UTC()
-	if err != nil || result == nil || result.ID != capability.ResultID || (result.Status != "complete" && result.SVG == "") || result.HTML == "" || !result.ExpiresAt.After(finishedRead) || !capability.ExpiresAt.After(finishedRead) {
+	if err != nil || result == nil || result.ID != capability.ResultID || !PelicanResultHasPreview(result) || !result.ExpiresAt.After(finishedRead) || !capability.ExpiresAt.After(finishedRead) {
 		p.mu.Lock()
 		delete(p.capabilities, token)
 		p.mu.Unlock()
@@ -256,7 +262,7 @@ func (p *PelicanPreviewService) DecorateSummary(summary *PelicanResultSummary) {
 	}
 	// Metadata is enough to issue a capability; no original answer is loaded.
 	result := &PelicanTestResult{ID: summary.ID, Status: "complete", HTML: "preview", ExpiresAt: summary.ExpiresAt}
-	if summary.Evaluation != nil {
+	if summary.SVGPreview {
 		result.SVG = "svg"
 	}
 	summary.PreviewURL = p.DecorateResult(result).PreviewURL

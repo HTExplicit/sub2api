@@ -7,7 +7,7 @@
       <div><dt class="text-xs text-muted">{{ text('账号与模型', 'Account and model') }}</dt><dd class="break-words">{{ title }} · {{ result.effort || text('模型默认', 'Model default') }}</dd></div>
       <div><dt class="text-xs text-muted">{{ text('耗时', 'Duration') }}</dt><dd>{{ ((result.duration_ms || 0) / 1000).toFixed(1) }}s · {{ result.started_at ? new Date(result.started_at).toLocaleString() : '—' }}</dd></div>
       <div class="sm:col-span-2">{{ text('排队', 'Queue') }} {{ ((result.queue_duration_ms || 0) / 1000).toFixed(1) }}s · {{ text('准备', 'Preparation') }} {{ ((result.preparation_duration_ms || 0) / 1000).toFixed(1) }}s · {{ text('模型调用', 'Model calls') }} {{ ((result.generation_duration_ms || 0) / 1000).toFixed(1) }}s</div>
-      <template v-if="result.evaluation?.test_items.includes('pelican')"><div>{{ text('场景', 'Scene') }}：{{ result.evaluation.scene }}</div><div>{{ text('校验码', 'Verification code') }}：{{ result.evaluation.nonce }}</div></template>
+      <div v-if="result.evaluation?.scene">{{ text('场景', 'Scene') }}：{{ result.evaluation.scene }}</div><div v-if="result.evaluation?.nonce">{{ text('校验码', 'Verification code') }}：{{ result.evaluation.nonce }}</div>
       <div class="break-all sm:col-span-2">{{ result.platform }} · {{ result.upstream_model }} · {{ result.actual_endpoint }} · {{ result.actual_protocol }} · {{ result.actual_transport }}</div>
     </dl>
     <pre v-if="result.error" class="detail-error" data-test="pelican-result-error">{{ result.error }}</pre>
@@ -48,7 +48,7 @@ const label = (value: string) => pelicanLabel(value, locale.value)
 const source = computed(() => props.result.raw_svg || props.result.raw_html || props.result.html)
 const title = computed(() => `${props.result.account_name} #${props.result.account_id} · ${props.result.model_id}`)
 const copyMessage = ref('')
-const names: Record<string, [string, string]> = { svg: ['SVG 格式', 'SVG format'], animation: ['动画声明', 'Animation'], nonce: ['校验码', 'Verification code'], pelican: ['鹈鹕形态', 'Pelican anatomy'], bicycle: ['自行车结构', 'Bicycle structure'], riding: ['骑乘关系', 'Riding position'], motion: ['协调运动', 'Coordinated motion'] }
+const names: Record<string, [string, string]> = { document: ['作品格式', 'Work document'], svg: ['SVG 格式', 'SVG format'], animation: ['动画声明', 'Animation'], nonce: ['校验码', 'Verification code'], pelican: ['鹈鹕形态', 'Pelican anatomy'], bicycle: ['自行车结构', 'Bicycle structure'], riding: ['骑乘关系', 'Riding position'], motion: ['协调运动', 'Coordinated motion'] }
 function checkName(key: string) { const pair = names[key]; return pair ? text(...pair) : key }
 async function copySource() { try { await navigator.clipboard.writeText(source.value); copyMessage.value = text('已复制', 'Copied') } catch { copyMessage.value = text('复制失败，请下载源码', 'Copy failed; download the source') } }
 function download(content: string | Uint8Array, ext: string) { const url = URL.createObjectURL(new Blob([content], { type: ext === 'svg' ? 'image/svg+xml' : 'application/octet-stream' })); const link = document.createElement('a'); link.href = url; link.download = `${props.result.id}.${ext}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0) }

@@ -30,7 +30,7 @@
     </template>
     <template v-else>
       <div v-if="step === 2" class="space-y-4">
-        <fieldset class="space-y-3 rounded-lg border border-line p-3"><legend class="px-1 text-sm font-medium">{{ text('检测项目与场景', 'Tests and scene') }}</legend><div class="flex flex-wrap gap-5"><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="pelican" />{{ text('鹈鹕动画与多帧视觉审核', 'Pelican animation and visual review') }}</label><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="candy" />{{ text('糖果推理', 'Candy reasoning') }}</label></div><label v-if="testItems.includes('pelican')" class="block text-sm">{{ text('场景', 'Scene') }}<select v-model="scene" class="input ml-3"><option value="">{{ text('每条作品随机场景', 'Random scene per work') }}</option><option v-for="item in PELICAN_SCENES" :key="item">{{ item }}</option></select></label><p class="text-xs text-muted">{{ text('视觉审核使用同一账号和模型；不支持图片时显示未审核。每个项目分别发起请求。', 'Visual review uses the same account and model. Models without image support remain unreviewed. Each test uses a separate request.') }}</p></fieldset>
+        <fieldset class="space-y-3 rounded-lg border border-line p-3"><legend class="px-1 text-sm font-medium">{{ text('检测项目', 'Tests') }}</legend><div class="flex flex-wrap gap-5"><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="pelican" />{{ text('鹈鹕动画与多帧视觉审核', 'Pelican animation and visual review') }}</label><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="candy" />{{ text('糖果推理', 'Candy reasoning') }}</label></div><p class="text-xs text-muted">{{ text('视觉审核使用同一账号和模型；不支持图片时显示未审核。每个项目分别发起请求。', 'Visual review uses the same account and model. Models without image support remain unreviewed. Each test uses a separate request.') }}</p></fieldset>
         <div class="space-y-1 rounded-lg border border-line p-3">
           <label for="pelican-repeat-count" class="text-sm">{{ text('每个模型测试次数', 'Tests per model') }}</label>
           <input id="pelican-repeat-count" v-model.number="repeatCount" type="number" inputmode="numeric" min="1" :max="repeatMaximum" step="1" class="input ml-3 w-24" :aria-invalid="!repeatValid" aria-describedby="pelican-repeat-help" data-test="pelican-repeat-count" />
@@ -81,7 +81,7 @@ import Select from '@/components/common/Select.vue'
 import { accountsAPI, type AccountListFilters } from '@/api/admin/accounts'
 import { groupsAPI } from '@/api/admin/groups'
 import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
-import { pelicanTestsAPI, PELICAN_PROMPT, PELICAN_SCENES, type PelicanAccountOption, type PelicanModelOption, type PelicanTestRequest } from '@/api/admin/pelicanTests'
+import { pelicanTestsAPI, PELICAN_PROMPT, type PelicanAccountOption, type PelicanModelOption, type PelicanTestRequest } from '@/api/admin/pelicanTests'
 import { applyPelicanBulk, pelicanDefaultModel, pelicanDuplicateKeys, pelicanCombinationIssue, type PelicanCombination } from '@/utils/pelicanTaskSelection'
 import type { AccountListItem, AdminGroup } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -104,7 +104,7 @@ const loading = ref(false), selectingAll = ref(false), error = ref(''), bulkMess
 const bulkModel = ref(''), bulkEffort = ref(''), effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 let key = 0, pageRequest: AbortController | undefined, debounce: ReturnType<typeof setTimeout> | undefined
 const duplicates = computed(() => pelicanDuplicateKeys(rows.value))
-const testItems = ref(props.initial?.test_items || ['pelican', 'candy']), scene = ref(props.initial?.scene || '')
+const testItems = ref(props.initial?.test_items || ['pelican', 'candy'])
 const repeatCount = ref(props.initial?.repeat_count ?? 1)
 const repeatMaximum = computed(() => Math.floor(5000 / Math.max(1, rows.value.length)))
 const repeatValid = computed(() => Number.isInteger(repeatCount.value) && repeatCount.value >= 1 && repeatCount.value <= repeatMaximum.value)
@@ -182,7 +182,7 @@ function addRow(id: number) {
 }
 function removeRow(rowKey: number) { const id = rows.value.find(row => row.key === rowKey)?.account_id; rows.value = rows.value.filter(row => row.key !== rowKey); if (id && !rows.value.some(row => row.account_id === id)) selected.value = selected.value.filter(value => value !== id) }
 function applyBulk() { const result = applyPelicanBulk(rows.value, options.value, bulkModel.value, bulkEffort.value); rows.value = result.rows; bulkMessage.value = result.duplicate ? text('会产生重复组合，未应用；请修改已有行。', 'Would create duplicates; edit the existing rows.') : `${text('已保留不兼容账号的原参数', 'Incompatible accounts kept their parameters')}: ${[...new Set(result.skipped)].join(', ') || '0'}` }
-function submit() { if (valid.value && budgetValid.value) emit('submit', { repeat_count: repeatCount.value, generation_timeout_seconds: budgetMinutes.value * 60, test_items: testItems.value, scene: scene.value, targets: rows.value.map(row => ({ account_id: row.account_id, model_id: row.model_id.trim(), effort: row.effort })) }) }
+function submit() { if (valid.value && budgetValid.value) emit('submit', { repeat_count: repeatCount.value, generation_timeout_seconds: budgetMinutes.value * 60, test_items: testItems.value, targets: rows.value.map(row => ({ account_id: row.account_id, model_id: row.model_id.trim(), effort: row.effort })) }) }
 watch(selected, ids => {
   rows.value = rows.value.filter(row => ids.includes(row.account_id))
   for (const id of ids) if (options.value[id] && !rows.value.some(row => row.account_id === id)) rows.value.push({ key: ++key, account_id: id, model_id: pelicanDefaultModel(options.value[id]), effort: '' })
@@ -192,7 +192,7 @@ watch([search, platform, group, status], () => { if (debounce) clearTimeout(debo
 watch(step, async () => { await nextTick(); root.value?.focus() })
 watch(page, () => { void loadPage() })
 onMounted(() => {
-  if (props.initial) { rows.value = props.initial.targets.map(row => ({ ...row, key: ++key })); selected.value = [...new Set(rows.value.map(row => row.account_id))] }
+  if (props.initial) { rows.value = props.initial.targets.map(row => ({ account_id: row.account_id, model_id: row.model_id, effort: row.effort, key: ++key })); selected.value = [...new Set(rows.value.map(row => row.account_id))] }
   void loadPage()
   void groupsAPI.getAllIncludingInactive().then(value => { if (!lifecycle.signal.aborted) groups.value = value }).catch(value => { if (!lifecycle.signal.aborted) error.value = extractApiErrorMessage(value, text('读取分组失败', 'Could not load groups')) })
 })

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPelicanRetestPreservesSceneBudgetAndReplayIdentity(t *testing.T) {
+func TestPelicanRetestUsesOriginalPromptAndPreservesBudgetReplayIdentity(t *testing.T) {
 	runner, repo, catalog := newPelicanBackgroundFixture(t, func(context.Context, int64, string, string) (*PelicanResult, error) {
 		return &PelicanResult{Status: "complete"}, nil
 	})
@@ -21,11 +21,12 @@ func TestPelicanRetestPreservesSceneBudgetAndReplayIdentity(t *testing.T) {
 	created, err := runner.Retest(context.Background(), 7, source.ID, request, catalog)
 	require.NoError(t, err)
 	require.Equal(t, 1200, created.GenerationTimeoutSeconds)
+	require.Equal(t, PelicanPrompt, created.Prompt)
 	require.Equal(t, 1, created.Total)
 	repo.mu.Lock()
 	row := repo.tasks[created.ID].Results[0]
-	require.Equal(t, "雪山谷地", row.Evaluation.Scene)
-	require.NotEqual(t, "OLD-NONCE", row.Evaluation.Nonce)
+	require.Empty(t, row.Evaluation.Scene)
+	require.Empty(t, row.Evaluation.Nonce)
 	require.Equal(t, "high", row.Effort)
 	delete(repo.tasks, source.ID)
 	repo.mu.Unlock()
@@ -72,8 +73,8 @@ func TestPelicanRepeatRetestsDoNotMultiplySamples(t *testing.T) {
 			for i, row := range repo.tasks[created.ID].Results {
 				require.Equal(t, expected[i], row.RepeatIndex)
 				require.Equal(t, 3, row.RepeatCount)
-				require.Equal(t, PelicanScenes[expected[i]], row.Evaluation.Scene)
-				require.NotEqual(t, "OLD", row.Evaluation.Nonce)
+				require.Empty(t, row.Evaluation.Scene)
+				require.Empty(t, row.Evaluation.Nonce)
 			}
 		})
 	}

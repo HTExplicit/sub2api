@@ -176,24 +176,36 @@ filters, enlargement, downloads and parameter copying. Whole-task, single-result
 and failed-item retests directly create a new task with original model/effort
 parameters and budget. Cross-task selected retries create one task per source,
 preserving each source budget. Retests copy each selected result once, preserving
-its sample index and scene, with a fresh verification code; they never multiply
+its sample index and count, using the original fixed prompt; they never multiply
 by the task repeat count again. Parameter copying merges repeated model rows
 and restores the saved repeat count. New submissions retain UUID replay protection;
 history, browsing, reconnecting and comparison are read-only.
-New manual tasks select Pelican and/or candy (the UI defaults to both). Each
-result saves its chosen scene and a fresh visible verification code. The fixed
-legacy prompt remains exclusive to the old `/tests` contract. The actual sending path, credentials,
+New manual tasks select Pelican and/or candy (the UI defaults to both). Every
+generation, including repeats and retests, sends the original prompt verbatim:
+`创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试`.
+No scene, style, anatomy, color, verification code or format constraints are added.
+Deprecated scene inputs remain accepted for replay compatibility but do not affect
+new generation. Historical scene/nonce/prompt/verdict evidence is never rewritten.
+New results use opaque HTML previews, including minimally wrapped bare SVG, and
+retain inline scripts and original source. Saved works remain previewable after
+candy or review failure. Existing standalone SVG works keep image previews.
+The actual sending path, credentials,
 identity, model mapping, proxy, TLS and protocol remain owned by each account. No API Key, group policy, model score or fallback account
 is manufactured for a test.
 
-Candy (90 seconds), SVG generation (the saved generation budget), rendering
+Candy (90 seconds), HTML/SVG generation (the saved generation budget), rendering
 (30 seconds after renderer admission), and same-model visual review (180 seconds)
 run as distinct stages. Candy failure does not prevent generation. Review uses
-four 960x640 frames at 0/0.23/0.51/0.79 of the sampled animation cycle, checks
+four 960x640 frames at 0/0.23/0.51/0.79 of the sampled CSS/SMIL animation cycle.
+Script-driven works use the same fractions of a three-second real-time observation
+window and retain actual sampling times without rewriting scripts. Review checks
 pelican/bicycle/riding/motion, and keeps true/false/null judgments. Unsupported
 image input is unreviewed. Only all selected checks passing gives a passed verdict;
 execution status is independent. Stage evidence retains raw bytes as Base64 in
-detail JSON. A single on-demand Chromium process renders network-blocked SVGs.
+detail JSON. Generation checks extractable HTML/SVG rather than animation
+declarations or a nonce. A single on-demand Chromium process renders HTML with
+inline scripts; all network/local-file requests, nested documents and page
+navigations are blocked. The browser is released after each render.
 
 All batches share ten model request execution slots. Different models on one
 account may run concurrently, subject to the unchanged business account capacity.

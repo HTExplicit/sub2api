@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,15 +23,14 @@ func TestPelicanRepeatExpansionValidationAndReplay(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, replayed)
 	require.Equal(t, 6, task.Total)
-	ids, nonces := map[string]bool{}, map[string]bool{}
+	ids := map[string]bool{}
 	for i, row := range task.Results {
 		require.Equal(t, i%3+1, row.RepeatIndex)
 		require.Equal(t, 3, row.RepeatCount)
 		require.False(t, ids[row.ID])
 		ids[row.ID] = true
-		require.False(t, nonces[row.Evaluation.Nonce])
-		nonces[row.Evaluation.Nonce] = true
-		require.Contains(t, PelicanScenes, row.Evaluation.Scene)
+		require.Empty(t, row.Evaluation.Nonce)
+		require.Empty(t, row.Evaluation.Scene)
 	}
 	_, replayed, err = runner.Create(context.Background(), 7, request)
 	require.NoError(t, err)
@@ -98,8 +96,10 @@ func TestPelicanRepeatModelFlowsParallelAndOrdered(t *testing.T) {
 			stage = "reviewing"
 			answer = "{\"checks\":{\"pelican\":true,\"bicycle\":true,\"riding\":true,\"motion\":true}}"
 		} else {
-			nonce := strings.Split(strings.Split(input.Text, "本次校验码：")[1], "。")[0]
-			answer = fmt.Sprintf("<svg xmlns=\"http://www.w3.org/2000/svg\"><text>%s</text><animate attributeName=\"opacity\" values=\"0;1\" dur=\"2s\"/></svg>", nonce)
+			if input.Text != PelicanPrompt {
+				return nil, fmt.Errorf("unexpected prompt: %q", input.Text)
+			}
+			answer = `<html><body><svg><animate attributeName="opacity" values="0;1" dur="2s"/></svg></body></html>`
 		}
 		mu.Lock()
 		first := len(stages[model]) == 0
@@ -144,7 +144,7 @@ func TestPelicanRepeatModelFlowsParallelAndOrdered(t *testing.T) {
 	}
 	for _, row := range task.Results {
 		require.Equal(t, "passed", row.Evaluation.Verdict)
-		require.NotEmpty(t, row.SVG)
+		require.NotEmpty(t, row.HTML)
 	}
 }
 

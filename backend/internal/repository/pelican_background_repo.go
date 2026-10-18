@@ -55,7 +55,8 @@ func (r *pelicanTestRepository) GetTaskSnapshot(ctx context.Context, id string) 
 // Keep this projection independent from pelicanTestResultColumns:
 // no raw_answer, raw_response, raw_html, html or complete error enters a page.
 const pelicanResultSummaryColumns = `r.id,r.task_id,r.ordinal,r.account_id,r.account_name,r.platform,r.model_id,r.effort,r.status,
- (octet_length(r.raw_svg)>0 OR r.status='complete' AND octet_length(r.html)>0),
+ (octet_length(r.raw_svg)>0 OR octet_length(r.html)>0 AND (r.status='complete' OR COALESCE(r.evaluation->>'generation'='passed',FALSE))),
+ (octet_length(r.raw_svg)>0),
  (r.status='incomplete' AND t.error=convert_to('process stopped before the test finished; this task will not be replayed','UTF8')),
  r.started_at,r.finished_at,r.generation_started_at,r.duration_ms,r.queue_duration_ms,r.preparation_duration_ms,r.generation_duration_ms,t.expires_at,r.evaluation,r.repeat_index,COALESCE((t.test_config->>'repeat_count')::integer,1)`
 
@@ -122,7 +123,7 @@ func (r *pelicanTestRepository) ListTaskResults(ctx context.Context, id string, 
 		item := &service.PelicanResultSummary{}
 		var evaluation []byte
 		if err := rows.Scan(&item.ID, &item.TaskID, &item.Ordinal, &item.AccountID, &item.AccountName, &item.Platform, &item.ModelID, &item.Effort, &item.Status,
-			&item.HasPreview, &item.Interrupted, &item.StartedAt, &item.FinishedAt, &item.GenerationStartedAt, &item.DurationMS, &item.QueueDurationMS, &item.PreparationDurationMS, &item.GenerationDurationMS, &item.ExpiresAt, &evaluation, &item.RepeatIndex, &item.RepeatCount); err != nil {
+			&item.HasPreview, &item.SVGPreview, &item.Interrupted, &item.StartedAt, &item.FinishedAt, &item.GenerationStartedAt, &item.DurationMS, &item.QueueDurationMS, &item.PreparationDurationMS, &item.GenerationDurationMS, &item.ExpiresAt, &evaluation, &item.RepeatIndex, &item.RepeatCount); err != nil {
 			return nil, err
 		}
 		if len(evaluation) > 0 {
