@@ -69,21 +69,34 @@ func (*pelicanChromiumRenderer) Render(parent context.Context, source string) ([
 	defer stopAlloc()
 	browser, stopBrowser := chromedp.NewContext(alloc)
 	defer stopBrowser()
-	var served, navigationBlocked atomic.Bool
-	var mainFrame atomic.Value
+	var served atomic.Bool
+	var mainFrame, blockedReason atomic.Value
+	block := func(reason string) {
+		blockedReason.Store(reason)
+		cancel()
+	}
+	renderError := func(err error) error {
+		if reason, ok := blockedReason.Load().(string); ok {
+			return fmt.Errorf("render HTML: %s", reason)
+		}
+		return fmt.Errorf("render HTML: %w", err)
+	}
 	// Fulfil the initial document once, in memory. Subresources and later
 	// navigations can never use a network or local file request.
 	chromedp.ListenTarget(browser, func(event any) {
 		switch event := event.(type) {
+		case *page.EventFrameAttached:
+			// CSP does not prevent about:srcdoc. Reject nested contexts at creation.
+			if served.Load() {
+				block("nested documents blocked")
+			}
 		case *page.EventFrameRequestedNavigation:
 			if served.Load() && event.FrameID == mainFrame.Load() && event.Disposition == page.ClientNavigationDispositionCurrentTab {
-				navigationBlocked.Store(true)
-				cancel()
+				block("page navigation blocked")
 			}
 		case *page.EventFrameNavigated:
 			if served.Load() && event.Frame.ParentID == "" && event.Frame.URL != pelicanRenderURL {
-				navigationBlocked.Store(true)
-				cancel()
+				block("page navigation blocked")
 			}
 		case *fetch.EventRequestPaused:
 			go func() {
@@ -117,10 +130,7 @@ func (*pelicanChromiumRenderer) Render(parent context.Context, source string) ([
 })()`, &cycle))
 	}
 	if err != nil {
-		if navigationBlocked.Load() {
-			return nil, nil, fmt.Errorf("render HTML: page navigation blocked")
-		}
-		return nil, nil, fmt.Errorf("render HTML: %w", err)
+		return nil, nil, renderError(err)
 	}
 	frames := make([]PelicanImage, 0, 4)
 	sheet := image.NewRGBA(image.Rect(0, 0, 1920, 1280))
@@ -132,10 +142,7 @@ func (*pelicanChromiumRenderer) Render(parent context.Context, source string) ([
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				if navigationBlocked.Load() {
-					return nil, nil, fmt.Errorf("render HTML: page navigation blocked")
-				}
-				return nil, nil, ctx.Err()
+				return nil, nil, renderError(ctx.Err())
 			case <-timer.C:
 			}
 			seconds = time.Since(samplingStarted).Seconds()
@@ -147,10 +154,7 @@ func (*pelicanChromiumRenderer) Render(parent context.Context, source string) ([
 		}
 		var data []byte
 		if err = chromedp.Run(browser, chromedp.CaptureScreenshot(&data)); err != nil {
-			if navigationBlocked.Load() {
-				return nil, nil, fmt.Errorf("render HTML: page navigation blocked")
-			}
-			return nil, nil, err
+			return nil, nil, renderError(err)
 		}
 		frame, decodeErr := png.Decode(bytes.NewReader(data))
 		if decodeErr != nil {

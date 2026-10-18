@@ -204,8 +204,9 @@ image input is unreviewed. Only all selected checks passing gives a passed verdi
 execution status is independent. Stage evidence retains raw bytes as Base64 in
 detail JSON. Generation checks extractable HTML/SVG rather than animation
 declarations or a nonce. A single on-demand Chromium process renders HTML with
-inline scripts; all network/local-file requests, nested documents and page
-navigations are blocked. The browser is released after each render.
+inline scripts; all network/local-file requests are blocked. Nested document
+creation and page navigation terminate rendering with a stage error.
+The browser is released after each render.
 
 All batches share ten model request execution slots. Different models on one
 account may run concurrently, subject to the unchanged business account capacity.

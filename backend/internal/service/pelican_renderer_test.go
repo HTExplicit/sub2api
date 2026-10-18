@@ -56,22 +56,32 @@ func TestPelicanChromiumRenderer(t *testing.T) {
 			requirePelicanChromiumStopped(t)
 		})
 	}
-	t.Run("external resources and nested documents blocked", func(t *testing.T) {
+	t.Run("external resources blocked", func(t *testing.T) {
 		var requests atomic.Int64
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			requests.Add(1)
 			_, _ = w.Write([]byte("document.body.style.background='red'"))
 		}))
 		defer server.Close()
-		source := fmt.Sprintf("<html><head><script src=\"%s/script.js\"></script></head><body style=\"margin:0;background:white\"><iframe style=\"position:absolute;inset:0;width:960px;height:640px;border:0\" srcdoc=\"<html><body style='margin:0;background:red'></body></html>\"></iframe><iframe src=\"%s/frame\" style=\"display:none\"></iframe><img src=\"%s/image\" style=\"display:none\"><svg width=\"960\" height=\"640\"/><script>fetch('%s/fetch').catch(()=>{})</script></body></html>", server.URL, server.URL, server.URL, server.URL)
+		source := fmt.Sprintf("<html><head><script src=\"%s/script.js\"></script></head><body style=\"margin:0;background:white\"><img src=\"%s/image\" style=\"display:none\"><svg width=\"960\" height=\"640\"/><script>fetch('%s/fetch').catch(()=>{})</script></body></html>", server.URL, server.URL, server.URL)
 		frames, _, err := (&pelicanChromiumRenderer{}).Render(context.Background(), source)
 		require.NoError(t, err)
 		require.Zero(t, requests.Load())
 		img, err := png.Decode(bytes.NewReader(frames[0].PNG))
 		require.NoError(t, err)
-		require.Equal(t, color.RGBA{R: 255, G: 255, B: 255, A: 255}, color.RGBAModel.Convert(img.At(400, 300)), "nested frame or external script must not paint the work")
+		require.Equal(t, color.RGBA{R: 255, G: 255, B: 255, A: 255}, color.RGBAModel.Convert(img.At(400, 300)), "external script must not paint the work")
 		requirePelicanChromiumStopped(t)
 	})
+	for name, source := range map[string]string{
+		"inline nested document blocked":         "<html><body><svg/><iframe srcdoc=\"<html><body style='background:red'></body></html>\"></iframe></body></html>",
+		"script-created nested document blocked": "<html><body><svg/><script>const f=document.createElement('iframe');f.srcdoc='<html><body>nested</body></html>';document.body.append(f)</script></body></html>",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := (&pelicanChromiumRenderer{}).Render(context.Background(), source)
+			require.ErrorContains(t, err, "nested documents blocked")
+			requirePelicanChromiumStopped(t)
+		})
+	}
 	t.Run("page navigation blocked", func(t *testing.T) {
 		_, _, err := (&pelicanChromiumRenderer{}).Render(context.Background(), "<html><body><svg/><script>setTimeout(()=>{location.href='https://pelican.invalid/escape'},100)</script></body></html>")
 		require.ErrorContains(t, err, "navigation blocked")
