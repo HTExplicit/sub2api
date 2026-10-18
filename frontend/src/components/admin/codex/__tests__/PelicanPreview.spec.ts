@@ -58,3 +58,34 @@ describe('Pelican isolated preview', () => {
     wrapper.unmount()
   })
 })
+
+
+it('keeps HTML and SVG animations mounted when the same result gets a new capability', async () => {
+  for (const asset of ['index.html', 'scene.svg']) {
+    const original = previewUrl.replace('index.html', asset)
+    const renewed = original.replace('a'.repeat(43), 'b'.repeat(43))
+    const wrapper = mount(PelicanPreview, { props: { previewUrl: original, resultId: 'work-1', title: 'Work' } })
+    const selector = asset === 'index.html' ? 'iframe' : 'img'
+    const animation = wrapper.get(selector).element
+    await wrapper.setProps({ previewUrl: renewed })
+    expect(wrapper.get(selector).element).toBe(animation)
+    expect(wrapper.get(selector).attributes('src')).toBe(new URL(original, window.location.origin).href)
+    await wrapper.setProps({ resultId: 'work-2' })
+    expect(wrapper.get(selector).attributes('src')).toBe(new URL(renewed, window.location.origin).href)
+    wrapper.unmount()
+    const reopened = mount(PelicanPreview, { props: { previewUrl: renewed, resultId: 'work-1', title: 'Work' } })
+    expect(reopened.get(selector).attributes('src')).toBe(new URL(renewed, window.location.origin).href)
+    reopened.unmount()
+  }
+})
+
+it('removes a mounted animation when its capability is withdrawn or becomes unsafe', async () => {
+  const wrapper = mount(PelicanPreview, { props: { previewUrl, resultId: 'work-1', title: 'Work' } })
+  await wrapper.setProps({ previewUrl: 'https://other.example/work.html' })
+  expect(wrapper.find('iframe').exists()).toBe(false)
+  await wrapper.setProps({ previewUrl })
+  expect(wrapper.find('iframe').exists()).toBe(true)
+  await wrapper.setProps({ previewUrl: '' })
+  expect(wrapper.find('iframe').exists()).toBe(false)
+  wrapper.unmount()
+})

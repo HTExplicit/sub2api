@@ -1,6 +1,6 @@
 <template>
   <div class="min-w-0 space-y-4 text-sm" data-test="pelican-detail-content">
-    <div v-if="result.preview_url" class="aspect-[3/2] max-h-[60vh] w-full overflow-hidden rounded-lg border border-line"><PelicanPreview :preview-url="result.preview_url" :title="title" interactive /></div>
+    <div v-if="result.preview_url" class="aspect-[3/2] max-h-[60vh] w-full overflow-hidden rounded-lg border border-line"><PelicanPreview :preview-url="result.preview_url" :result-id="result.id" :title="title" interactive /></div>
     <PelicanEvaluationBadges :evaluation="result.evaluation" :status="result.status" />
     <dl class="grid gap-3 sm:grid-cols-2">
       <div data-test="pelican-repeat-detail"><dt class="text-xs text-muted">{{ text('测试次数', 'Test run') }}</dt><dd>{{ repeatLabel }}</dd></div>

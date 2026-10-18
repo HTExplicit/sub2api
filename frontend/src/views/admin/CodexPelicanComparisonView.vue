@@ -82,8 +82,8 @@ let selection = 0, content = 0
 function apiStatus(value: unknown) { return value && typeof value === 'object' && 'status' in value ? Number(value.status) : 0 }
 function report(value: unknown) { if (!lifecycle.signal.aborted) error.value = extractApiErrorMessage(value, text('操作失败，请查看原因。', 'Operation failed; review the error.')) }
 async function loadHistory() { try { history.value = await pelicanTestsAPI.listTasks(historyPage.value, lifecycle.signal) } catch (value) { report(value) } }
-async function loadGallery() {
-  galleryController?.abort(); const controller = new AbortController(); galleryController = controller; loading.value = true
+async function loadGallery(background = false) {
+  galleryController?.abort(); const controller = new AbortController(); galleryController = controller; loading.value = !background
   try {
     const value = await pelicanTestsAPI.gallery({ page: page.value, page_size: 24, task_id: taskId.value || undefined, account_id: Number(filters.account) || undefined, model: filters.model.trim() || undefined, effort: filters.effort || undefined, scene: filters.scene || undefined, verdict: filters.verdict || undefined, status: filters.status || undefined }, controller.signal)
     if (!controller.signal.aborted && !lifecycle.signal.aborted) results.value = value
@@ -104,7 +104,7 @@ async function observe(id: string) {
   let delay = 1000
   while (!controller.signal.aborted && taskId.value === id) {
     try {
-      await pelicanTestsAPI.observeTask(id, event => { if (controller.signal.aborted) return; activeTask.value = event.task; connection.value = 'connected'; delay = 1000; void loadGallery(); if (event.type === 'task_complete') { stopping.value = false; void loadHistory() } }, controller.signal)
+      await pelicanTestsAPI.observeTask(id, event => { if (controller.signal.aborted) return; activeTask.value = event.task; connection.value = 'connected'; delay = 1000; void loadGallery(true); if (event.type === 'task_complete') { stopping.value = false; void loadHistory() } }, controller.signal)
       return
     } catch {
       if (controller.signal.aborted) return
