@@ -35,6 +35,7 @@ type CodexFingerprintSettingsView struct {
 	VersionPendingValidation bool   `json:"version_pending_validation"`
 	TransportPolicy          string `json:"transport_policy"`
 	EffectiveVersion         string `json:"effective_version"`
+	VersionSource            string `json:"version_source"`
 	EffectiveUserAgent       string `json:"effective_user_agent"`
 }
 
@@ -180,23 +181,27 @@ func (s *SettingService) codexFingerprintSettingsFromValues(values map[string]st
 		config.VersionAutoSyncEnabled = raw == "true"
 	}
 	synced := NormalizeCodexClientVersion(values[SettingKeyOpenAICodexClientVersionSynced])
-	version := NormalizeCodexClientVersion(config.ClientVersion)
-	if version == "" {
-		version = synced
-	}
-	if config.ClientVersion == "" && !codextransport.SupportsVersion(version) {
-		version = codextransport.LatestVersion()
-	}
-	if version == "" || CompareVersions(version, codexUpstreamMinVersion) < 0 {
-		version = codextransport.LatestVersion()
-	}
+	version, source := resolveCodexClientVersion(config.ClientVersion, synced)
 	ua := buildCodexCLIUserAgent(version)
 	if _, paired, ok := openai.PairCodexClientIdentity(config.UserAgent); ok {
 		if rebuilt := openai.SetCodexUserAgentVersion(paired, version); rebuilt != "" {
 			ua = rebuilt
 		}
 	}
-	return CodexFingerprintSettingsView{CodexFingerprintSettings: config, SyncedVersion: synced, EffectiveVersion: version, EffectiveUserAgent: ua, VerifiedVersion: codextransport.LatestVersion(), VersionPendingValidation: synced != "" && CompareVersions(synced, version) > 0 && !codextransport.SupportsVersion(synced), TransportPolicy: "strict"}, nil
+	return CodexFingerprintSettingsView{CodexFingerprintSettings: config, SyncedVersion: synced, EffectiveVersion: version, VersionSource: source, EffectiveUserAgent: ua, VerifiedVersion: codextransport.LatestVersion(), VersionPendingValidation: false, TransportPolicy: "strict"}, nil
+}
+
+// resolveCodexClientVersion is shared by the settings view and outbound resolver.
+// Transport archive metadata never determines the selected client release.
+func resolveCodexClientVersion(manual, synced string) (string, string) {
+	version, source := NormalizeCodexClientVersion(manual), "manual"
+	if version == "" {
+		version, source = NormalizeCodexClientVersion(synced), "synced"
+	}
+	if version == "" || CompareVersions(version, codexUpstreamMinVersion) < 0 {
+		return codexCLIVersion, "builtin"
+	}
+	return version, source
 }
 
 func publishCodexFingerprintSettings(view CodexFingerprintSettingsView) {
@@ -227,8 +232,8 @@ func (s *SettingService) LoadCodexFingerprintSettings(ctx context.Context) error
 }
 
 func (s *SettingService) UpdateCodexFingerprintSettings(ctx context.Context, config CodexFingerprintSettings) (CodexFingerprintSettingsView, error) {
-	if config.ClientVersion != "" && !codextransport.SupportsVersion(config.ClientVersion) {
-		return CodexFingerprintSettingsView{}, fmt.Errorf("codex version %s has no verified transport profile", config.ClientVersion)
+	if config.ClientVersion != "" && NormalizeCodexClientVersion(config.ClientVersion) == "" {
+		return CodexFingerprintSettingsView{}, errors.New("client_version must be empty or a valid Codex version")
 	}
 	s.codexFingerprintMu.Lock()
 	defer s.codexFingerprintMu.Unlock()

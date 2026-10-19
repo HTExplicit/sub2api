@@ -1,6 +1,8 @@
 <template>
   <div class="min-w-0 space-y-4 text-sm" data-test="pelican-detail-content">
-    <div v-if="result.preview_url" class="aspect-[3/2] max-h-[60vh] w-full overflow-hidden rounded-lg border border-line"><PelicanPreview :preview-url="result.preview_url" :result-id="result.id" :title="title" interactive /></div>
+    <div class="grid items-start gap-5" :class="compact ? '' : 'lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]'">
+    <div v-if="result.preview_url" class="aspect-[4/3] w-full overflow-hidden rounded-xl border border-line"><PelicanPreview :preview-url="result.preview_url" :result-id="result.id" :title="title" interactive /></div>
+    <section class="min-w-0 space-y-4 rounded-xl border border-line p-4"><h2 class="break-words text-base font-semibold">{{ result.model_id }}</h2>
     <PelicanEvaluationBadges :evaluation="result.evaluation" :status="result.status" />
     <dl class="grid gap-3 sm:grid-cols-2">
       <div data-test="pelican-repeat-detail"><dt class="text-xs text-muted">{{ text('测试次数', 'Test run') }}</dt><dd>{{ repeatLabel }}</dd></div>
@@ -13,6 +15,9 @@
     <pre v-if="result.error" class="detail-error" data-test="pelican-result-error">{{ result.error }}</pre>
     <p v-if="!result.preview_url && result.preview_unavailable" class="text-xs text-muted">{{ result.preview_unavailable }}</p>
     <div v-if="result.evaluation?.checks" class="flex flex-wrap gap-3 text-xs"><span v-for="(passed, key) in result.evaluation.checks" :key="key">{{ passed ? '✓' : '×' }} {{ checkName(String(key)) }}</span></div>
+    </section>
+    </div>
+    <details :open="!compact" class="rounded-xl border border-line p-4"><summary class="font-medium">{{ text('检测结果与完整证据', 'Test results and full evidence') }}</summary><div class="mt-4 space-y-4">
     <section v-if="result.evaluation?.review_checks || result.review_image" class="space-y-3 rounded-lg border border-line p-3">
       <h3 class="font-medium">{{ text('多帧视觉审核', 'Multi-frame visual review') }}</h3>
       <img v-if="result.review_image" :src="`data:image/png;base64,${result.review_image}`" :alt="text('按时间顺序排列的四帧审核截图', 'Four review frames in chronological order')" class="w-full rounded" />
@@ -28,6 +33,7 @@
       <details :open="key === 'candy'"><summary>{{ text('模型回答', 'Model answer') }}</summary><pre>{{ decodePelicanEvidence(stage.raw_answer) }}</pre></details>
       <details><summary>{{ text('完整上游响应与调用资料', 'Full upstream response and invocation') }}</summary><pre>{{ stage.invocation }}</pre><pre>{{ decodePelicanEvidence(stage.raw_response) }}</pre></details>
     </section>
+    </div></details>
     <details v-if="source"><summary>{{ text('作品源码', 'Work source') }}</summary><pre data-test="pelican-raw-html">{{ source }}</pre></details>
     <details><summary>{{ text('生成回答原文', 'Raw generation answer') }}</summary><pre data-test="pelican-raw-answer">{{ result.raw_answer }}</pre></details>
     <details><summary>{{ text('生成响应原文', 'Raw generation response') }}</summary><pre data-test="pelican-raw-response">{{ result.raw_response }}</pre></details>
@@ -40,7 +46,7 @@ import type { PelicanTestResult } from '@/api/admin/pelicanTests'
 import { decodePelicanEvidence, pelicanLabel, pelicanRepeatLabel } from '@/utils/pelicanDisplay'
 import PelicanPreview from './PelicanPreview.vue'
 import PelicanEvaluationBadges from './PelicanEvaluationBadges.vue'
-const props = defineProps<{ result: PelicanTestResult }>()
+const props = withDefaults(defineProps<{ result: PelicanTestResult; compact?: boolean }>(), { compact: false })
 const { locale } = useI18n()
 const repeatLabel = computed(() => pelicanRepeatLabel(props.result, locale.value))
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en

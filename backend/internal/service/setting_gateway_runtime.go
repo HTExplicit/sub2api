@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -496,16 +495,7 @@ func (s *SettingService) GetOpenAICodexClientVersion(ctx context.Context) string
 			})
 			return fallback, nil
 		}
-		version := NormalizeCodexClientVersion(values[SettingKeyOpenAICodexClientVersion])
-		if version == "" {
-			version = NormalizeCodexClientVersion(values[SettingKeyOpenAICodexClientVersionSynced])
-			if !codextransport.SupportsVersion(version) {
-				version = codextransport.LatestVersion()
-			}
-		}
-		if version == "" {
-			version = fallback
-		}
+		version, _ := resolveCodexClientVersion(values[SettingKeyOpenAICodexClientVersion], values[SettingKeyOpenAICodexClientVersionSynced])
 		s.openAICodexVersionCache.Store(&cachedOpenAICodexClientVersion{
 			version:   version,
 			expiresAt: time.Now().Add(openAICodexClientVersionCacheTTL).UnixNano(),

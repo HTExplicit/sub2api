@@ -83,8 +83,8 @@ func TestStrictCodexTLSValidationAndHTTP2Streaming(t *testing.T) {
 }
 
 func TestStrictCodexUnsupportedAndCanceledRequests(t *testing.T) {
-	if _, err := Select("codex-tui/999.0.0 (Windows 10.0.26100; x86_64) WindowsTerminal", "test", "http"); err == nil {
-		t.Fatal("accepted unverified version")
+	if _, err := Select("codex-tui/0.163.0 (Windows 10.0.26100; arm64) WindowsTerminal", "test", "http"); err == nil {
+		t.Fatal("accepted unsupported device architecture")
 	}
 	if _, err := New(Binding{Version: LatestVersion()}, Options{}); err == nil {
 		t.Fatal("accepted unverified binding")
