@@ -35,7 +35,8 @@
       <p v-if="view.identity.transport_profile_error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ view.identity.transport_profile_error }}</p>
       <dl v-if="view.identity.transport_profile" class="grid gap-3 text-sm sm:grid-cols-2">
         <div><dt class="text-muted">{{ text('档案', 'Profile') }}</dt><dd class="break-all font-mono">{{ view.identity.transport_profile.profile_id }}</dd></div>
-        <div><dt class="text-muted">{{ text('已验证客户端', 'Verified client') }}</dt><dd class="font-mono">{{ view.identity.transport_profile.version }}</dd></div>
+        <div><dt class="text-muted">{{ text('传输档案来源版本', 'Transport reference version') }}</dt><dd class="font-mono">{{ view.identity.transport_profile.version }}</dd></div>
+        <div><dt class="text-muted">{{ text('请求客户端版本', 'Request client version') }}</dt><dd class="font-mono">{{ view.identity.transport_profile.client_version || view.identity.version }}</dd></div>
         <div><dt class="text-muted">{{ text('平台', 'Platform') }}</dt><dd>{{ view.identity.transport_profile.system }} / {{ view.identity.transport_profile.arch }}</dd></div>
         <div><dt class="text-muted">{{ text('失败策略', 'Failure policy') }}</dt><dd>{{ text('严格：报错，不回退', 'Strict: fail without fallback') }}</dd></div>
         <div class="sm:col-span-2"><dt class="text-muted">{{ text('官方源码', 'Official source') }}</dt><dd class="break-all font-mono">{{ view.identity.transport_profile.source_commit }}</dd></div>

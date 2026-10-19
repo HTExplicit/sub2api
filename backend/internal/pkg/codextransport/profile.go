@@ -80,6 +80,7 @@ type Binding struct {
 	RequestZstd            bool   `json:"-"`
 	ProfileID              string `json:"profile_id"`
 	Version                string `json:"version"`
+	ClientVersion          string `json:"client_version"`
 	SourceCommit           string `json:"source_commit"`
 	System                 string `json:"system"`
 	Arch                   string `json:"arch"`
@@ -96,9 +97,8 @@ func Select(ua, scope, plane string) (Binding, error) {
 	if len(m) == 0 {
 		return Binding{}, &Error{"User-Agent has no supported fixed device profile"}
 	}
-	if !SupportsVersion(m[1]) {
-		return Binding{}, &Error{fmt.Sprintf("version %s has no verified profile", m[1])}
-	}
+	// The archive version describes the sampled transport, not an admission
+	// list for client releases. Identity follows the selected client version.
 	system := map[string]string{"Mac OS": "Darwin", "Windows": "Windows", "Ubuntu": "Linux"}[m[2]]
 	arch := m[3]
 	matched := false
@@ -121,12 +121,12 @@ func Select(ua, scope, plane string) (Binding, error) {
 	if plane != "ws" {
 		plane = "http"
 	}
-	return Binding{ProfileID: "codex-rust-" + verified.Version + "-r1", Version: verified.Version, SourceCommit: verified.SourceCommit,
+	return Binding{ProfileID: "codex-rust-" + verified.Version + "-r1", Version: verified.Version, ClientVersion: m[1], SourceCommit: verified.SourceCommit,
 		System: system, Arch: arch, Strict: true, Validated: true, Scope: scope, Plane: plane, ReferenceConfiguration: "official binary with isolated custom CA"}, nil
 }
 
 func (b Binding) Key() string {
-	sum := sha256.Sum256([]byte(b.ProfileID + "\x00" + b.System + "\x00" + b.Arch + "\x00" + b.Scope + "\x00" + b.Plane))
+	sum := sha256.Sum256([]byte(b.ProfileID + "\x00" + b.ClientVersion + "\x00" + b.System + "\x00" + b.Arch + "\x00" + b.Scope + "\x00" + b.Plane))
 	return fmt.Sprintf("%x", sum[:16])
 }
 

@@ -123,12 +123,19 @@ source, proxy and profile. The Codex-only WebSocket adapter retains upstream
 coder/websocket v1.8.14 and its license, adding actual bounded deflate-window support;
 other services use the original dependency.
 
-Version discovery still runs every six hours. Automatic effective identity advances
-only within the shipped verified profile set; newly discovered unsupported releases
-are visible as pending validation. Saving an unsupported manual version returns an
-error. Settings reads add verified/pending/strict-profile details without changing
-the four-field write payload. Existing device seeds and persisted hardware identities
-are retained; their supported platform/architecture classes match the verified set.
+Version discovery runs every six hours and directly advances the effective client
+identity. Precedence is a normalized manual version, the discovered stable version,
+then the built-in default (subject to the existing minimum version). Client releases
+are not gated on transport sampling. The transport retains its recorded reference
+version and source; `Binding.client_version` records the actual requested identity
+and participates in pool keys. `Binding.version` and `validated` describe the sampled
+transport reference, not validation of a later client release. Settings GET adds
+`version_source` (`manual`, `synced`, `builtin`); `verified_version` retains the
+reference version and the compatibility `version_pending_validation` is false.
+The four-field settings write payload is unchanged. Existing device seeds and
+persisted hardware identities are retained. The identity page shows the effective
+and discovered versions with their source, with full UA/reference details available
+in disclosures. No new sampling or per-client-release publishing pipeline is required.
 
 One immutable policy/identity selection is shared by each attempt's headers, body
 and transport. New requests freeze the compression choice too. WS pool compatibility
@@ -139,11 +146,22 @@ handshake. Account mode edits invalidate only that account's subsequent connecti
 
 ## Independent Pelican tests
 
-`/admin/pelican-tests` opens a paginated gallery of all observations from the last
-24 hours, with task/account/model/effort/scene/execution/verdict filters. Wide
-screens show four cards, medium screens two, and phones one. The new-task composer loads
-accounts in pages of 50, retains selection across pages, and offers explicit
-current-page/all-matching scopes. Models use locally saved mappings and catalogs;
+`/admin/pelican-tests` opens a paginated gallery of observations from the last
+24 hours with Works and Tasks views. Account name/ID search, model and verdict are
+primary filters; effort, execution and legacy scene remain in More filters. Active
+filters are removable. URL query keys retain the view (`gallery`, `tasks`, `new`),
+selected `task`, `page`, `task_page` and existing gallery filters (`account_id`,
+`model`, `effort`, `scene`, `verdict`, `status`). Four-to-three previews use one
+column below 768px, two from 768px, three from 1280px and four from 1920px.
+The single-page new-task composer shows account selection and model configuration
+side by side on wide screens, with a sticky launch summary. It loads accounts in
+pages of 50, retains cross-page selections and explicit current-page/all-matching
+scopes. Selected account groups are paginated in sets of 20 without changing the
+submitted selection. Per-user session drafts retain configuration on navigation or
+rejected submissions and are cleared only on accepted creation or explicit clear.
+Task cards expose progress and open the task gallery; the comparison tray remains
+at the bottom. Work details group the preview, summary, results and complete raw
+evidence; comparisons collapse detailed evidence by default. Models use locally saved mappings and catalogs;
 searchable dropdowns accept catalog choices only. Backend defaults prefer
 `gpt-6.1-sol` for OpenAI and `claude-opus-5-5` for Anthropic, falling back to the
 first text-capable local choice. Effort defaults to the model default.

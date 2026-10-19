@@ -13,7 +13,7 @@
             <input v-model="draft.enabled" data-test="fingerprint-enabled" type="checkbox" />
             {{ text('启用客户端身份模拟', 'Enable client identity simulation') }}
           </label>
-          <p class="text-sm text-muted">{{ text('开启：每个凭据来源使用固定设备身份，独立对话保留各自会话与线程关系；使用已验证的严格传输，失败不回退。关闭：保留客户端身份与标识，已保存的设备档案继续保留。', 'On: use a fixed device per credential source, preserve independent conversations, and require verified transport without fallback. Off: retain caller identity and identifiers; saved devices are preserved.') }}</p>
+          <p class="max-w-4xl text-sm leading-relaxed text-muted">{{ text('每个凭据来源保留固定设备身份，对话各自独立。开启自动同步后，客户端版本直接跟随官方稳定版；关闭身份模拟时，保留客户端传入的身份与标识。', 'Each credential source keeps a fixed device and independent conversations. Automatic sync follows official stable client releases. Turning simulation off preserves the caller identity and identifiers.') }}</p>
           <div v-if="advanced" class="grid gap-4 lg:grid-cols-2">
             <label class="block text-sm text-ink lg:col-span-2" for="codex-fingerprint-ua">
               {{ text('全局 UA', 'Global User-Agent') }}
@@ -29,13 +29,17 @@
               {{ text('每 6 小时自动同步官方稳定版', 'Sync the official stable version every 6 hours') }}
             </label>
           </div>
-          <dl v-if="settings" class="grid gap-3 text-sm sm:grid-cols-2">
-            <div><dt class="text-muted">{{ text('同步版本', 'Synced version') }}</dt><dd class="font-mono text-ink">{{ settings.synced_version || '—' }}</dd></div>
-            <div><dt class="text-muted">{{ text('已验证版本', 'Verified version') }}</dt><dd class="font-mono text-ink">{{ settings.verified_version || '—' }}</dd></div>
-            <div v-if="settings.version_pending_validation" role="status" class="sm:col-span-2 text-amber-700 dark:text-amber-300">{{ text('已发现新版，传输档案尚未验证；继续使用已验证版本。', 'A newer release is available; its transport profile is pending validation. The verified version remains effective.') }}</div>
-            <div><dt class="text-muted">{{ settings.enabled ? text('生效模拟版本', 'Effective simulated version') : text('待启用模拟版本', 'Saved simulation version') }}</dt><dd class="font-mono text-ink" data-test="fingerprint-effective-version">{{ settings.effective_version }}</dd></div>
-            <div class="sm:col-span-2"><dt class="text-muted">{{ text('全局默认身份', 'Global default identity') }}</dt><dd class="break-words font-mono text-ink">{{ settings.effective_user_agent }}</dd></div>
-          </dl>
+          <template v-if="settings">
+            <dl class="grid gap-3 text-sm sm:grid-cols-3">
+              <div class="rounded-lg border border-primary-200 bg-primary-50 p-4 dark:border-primary-800 dark:bg-primary-950"><dt class="text-muted">{{ settings.enabled ? text('当前生效版本', 'Effective client version') : text('待启用版本', 'Saved client version') }}</dt><dd class="mt-2 font-mono text-2xl font-semibold text-ink" data-test="fingerprint-effective-version">{{ settings.effective_version }}</dd></div>
+              <div class="rounded-lg border border-line p-4"><dt class="text-muted">{{ text('官方同步版本', 'Synced official version') }}</dt><dd class="mt-2 font-mono text-2xl text-ink">{{ settings.synced_version || '—' }}</dd></div>
+              <div class="rounded-lg border border-line p-4"><dt class="text-muted">{{ text('版本来源', 'Version source') }}</dt><dd class="mt-2 font-medium text-ink">{{ settings.version_source === 'manual' ? text('手动固定', 'Manually pinned') : settings.version_source === 'builtin' ? text('内置默认', 'Built-in default') : text('官方版本同步', 'Official release sync') }}</dd><dd class="mt-1 text-xs text-muted">{{ settings.version_auto_sync_enabled ? text('每 6 小时自动同步', 'Syncs every 6 hours') : text('自动同步已关闭', 'Automatic sync is off') }}</dd></div>
+            </dl>
+            <details class="rounded-lg border border-line p-3 text-sm">
+              <summary class="cursor-pointer font-medium text-ink">{{ text('完整身份与传输来源', 'Full identity and transport source') }}</summary>
+              <dl class="mt-3 space-y-3"><div><dt class="text-muted">{{ text('全局默认身份', 'Global default identity') }}</dt><dd class="break-words font-mono text-ink">{{ settings.effective_user_agent }}</dd></div><div><dt class="text-muted">{{ text('传输档案来源版本', 'Transport reference version') }}</dt><dd class="font-mono text-ink">{{ settings.verified_version || '—' }}</dd></div></dl>
+            </details>
+          </template>
           <button data-test="fingerprint-save" type="submit" :disabled="settingsBusy || !settingsDirty" class="btn btn-primary">{{ text('保存设置', 'Save settings') }}</button>
         </fieldset>
         <p v-if="!settings" class="text-sm text-muted">{{ t('common.loading') }}</p>
@@ -43,7 +47,7 @@
 
       <section class="space-y-4" :aria-label="text('账号身份', 'Account identities')">
         <div class="flex flex-wrap items-end justify-between gap-3">
-          <div><h2 class="text-lg font-semibold text-ink">{{ text('账号身份', 'Account identities') }}</h2><p class="mt-1 text-sm text-muted">{{ text('固定设备为每个账号保留一套设备身份。线路借用在“使用与状态”页独立配置。', 'Fixed device keeps one device identity for each account. Route borrowing is configured separately in Setup & status.') }}</p></div>
+          <div><h2 class="text-lg font-semibold text-ink">{{ text('账号身份', 'Account identities') }}</h2><p class="mt-1 text-sm text-muted">{{ text('每个账号保留一套固定设备身份，版本更新不会重新生成设备。', 'Each account keeps a fixed device identity across client updates.') }}</p></div>
           <form class="flex items-center gap-2" @submit.prevent="searchAccounts">
             <label class="sr-only" for="codex-fingerprint-search">{{ text('搜索账号', 'Search accounts') }}</label>
             <input id="codex-fingerprint-search" v-model="search" class="input w-48" :placeholder="text('搜索账号', 'Search accounts')" />

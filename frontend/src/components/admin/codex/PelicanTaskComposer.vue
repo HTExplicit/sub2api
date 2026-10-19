@@ -1,80 +1,84 @@
 <template>
-  <div ref="root" class="space-y-4" tabindex="-1" :aria-label="steps[step - 1]" data-test="pelican-composer">
-    <ol class="flex flex-wrap gap-3 text-sm" :aria-label="text('新建测试步骤', 'New test steps')">
-      <li v-for="(label, index) in steps" :key="label" :aria-current="step === index + 1 ? 'step' : undefined" :class="step === index + 1 ? 'font-semibold text-primary-600' : 'text-muted'">{{ index + 1 }}. {{ label }}</li>
-    </ol>
-    <pre v-if="error" role="alert" class="whitespace-pre-wrap break-words text-sm text-red-700 dark:text-red-300">{{ error }}</pre>
-    <template v-if="step === 1">
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label class="text-sm">{{ t('admin.pelicanTests.searchAccounts') }}<input v-model="search" type="search" class="input mt-1 w-full" data-test="pelican-account-search" /></label>
-        <label class="text-sm">{{ t('admin.pelicanTests.platform') }}<select v-model="platform" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.allPlatforms') }}</option><option v-for="option in CONCRETE_PLATFORM_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-        <label class="text-sm">{{ text('分组', 'Group') }}<select v-model="group" class="input mt-1 w-full"><option value="">{{ text('全部分组', 'All groups') }}</option><option v-for="item in groups" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
-        <label class="text-sm">{{ text('状态', 'Status') }}<select v-model="status" class="input mt-1 w-full"><option value="">{{ text('所有状态', 'All statuses') }}</option><option v-for="state in ['active', 'inactive', 'error', 'disabled']" :key="state" :value="state">{{ t(`admin.pelicanTests.states.${state}`) }}</option></select></label>
-      </div>
-      <div class="flex flex-wrap items-center gap-2 text-sm">
-        <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="selectPage">{{ text('选择当前页', 'Select this page') }} ({{ accounts.length }})</button>
-        <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || selectingAll || total > 5000" @click="selectAll">{{ text('选择全部匹配', 'Select all matching') }} ({{ total }})</button>
-        <button type="button" class="btn btn-ghost btn-sm" :disabled="selectingAll" @click="selected = []; rows = []">{{ t('admin.pelicanTests.clearSelection') }}</button>
-        <span role="status">{{ text('跨页已选', 'Selected across pages') }} {{ selected.length }}{{ selectingAll ? text(' · 正在读取匹配项…', ' · Reading matching accounts…') : '' }}</span>
-      </div>
-      <p class="text-xs text-muted">{{ text('每页 50 个账号；错误、限流和停用账号仍可明确选择。查看与选择不会调用模型。', '50 accounts per page. Error, limited and disabled accounts remain selectable. Browsing and selecting never calls a model.') }}</p>
-      <fieldset :disabled="loading || selectingAll" class="grid gap-2 sm:grid-cols-2" :aria-busy="loading">
-        <legend class="sr-only">{{ t('admin.pelicanTests.chooseAccounts') }}</legend>
-        <label v-for="account in accounts" :key="account.id" class="flex min-w-0 cursor-pointer items-start gap-3 rounded-lg border border-line p-3">
-          <input type="checkbox" class="checkbox mt-1" :checked="selected.includes(account.id)" :data-test="`pelican-account-${account.id}`" @change="toggleAccount(account.id)" />
-          <span class="min-w-0"><span class="block break-words font-medium">{{ account.name }} #{{ account.id }}</span><span class="text-xs text-muted">{{ account.platform }} · {{ account.status }}</span></span>
-        </label>
-      </fieldset>
-      <p v-if="!loading && !accounts.length" class="py-6 text-center text-muted">{{ t('admin.pelicanTests.noAccounts') }}</p>
-      <Pagination v-if="total" v-model:page="page" :total="total" :page-size="50" :show-page-size-selector="false" />
-    </template>
-    <template v-else>
-      <div v-if="step === 2" class="space-y-4">
-        <fieldset class="space-y-3 rounded-lg border border-line p-3"><legend class="px-1 text-sm font-medium">{{ text('检测项目', 'Tests') }}</legend><div class="flex flex-wrap gap-5"><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="pelican" />{{ text('鹈鹕动画与多帧视觉审核', 'Pelican animation and visual review') }}</label><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="candy" />{{ text('糖果推理', 'Candy reasoning') }}</label></div><p class="text-xs text-muted">{{ text('视觉审核使用同一账号和模型；不支持图片时显示未审核。每个项目分别发起请求。', 'Visual review uses the same account and model. Models without image support remain unreviewed. Each test uses a separate request.') }}</p></fieldset>
-        <div class="space-y-1 rounded-lg border border-line p-3">
-          <label for="pelican-repeat-count" class="text-sm">{{ text('每个模型测试次数', 'Tests per model') }}</label>
-          <input id="pelican-repeat-count" v-model.number="repeatCount" type="number" inputmode="numeric" min="1" :max="repeatMaximum" step="1" class="input ml-3 w-24" :aria-invalid="!repeatValid" aria-describedby="pelican-repeat-help" data-test="pelican-repeat-count" />
-          <p id="pelican-repeat-help" class="text-xs" :class="repeatValid ? 'text-muted' : 'text-red-700 dark:text-red-300'" :role="repeatValid ? undefined : 'alert'">{{ text('每个账号／模型组合各执行相同次数，须为正整数；当前最多', 'Each account/model combination runs this many times. Enter a positive integer, up to') }} {{ repeatMaximum }} {{ text('次，整批最多 5000 条测试。', 'times, with at most 5000 tests per task.') }}</p>
-        </div>
-        <div class="flex flex-wrap items-end gap-2 rounded-lg border border-line p-3">
-          <div class="min-w-40 flex-1 text-sm"><label for="pelican-bulk-model">{{ t('admin.pelicanTests.bulkModel') }}</label><Select id="pelican-bulk-model" v-model="bulkModel" class="mt-1" :aria-label="t('admin.pelicanTests.bulkModel')" :options="bulkModelOptions" searchable :disabled="optionsLoading || submitting" data-test="pelican-bulk-model" /></div>
-          <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="bulkEffort" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in effortLevels" :key="effort" :value="effort">{{ effort }}</option></select></label>
-          <button type="button" class="btn btn-secondary" @click="applyBulk">{{ text('批量设置兼容组合', 'Apply to compatible combinations') }}</button>
-        </div>
-        <p v-if="bulkMessage" role="status" class="text-sm">{{ bulkMessage }}</p>
-        <div v-for="id in selected" :key="id" class="space-y-3 rounded-lg border border-line p-3">
-          <div class="flex items-center justify-between gap-2"><h3 class="min-w-0 break-words font-medium">{{ options[id]?.name || names[id] || id }} #{{ id }}</h3><button type="button" class="btn btn-secondary btn-sm" @click="addRow(id)">{{ t('admin.pelicanTests.addModel') }}</button></div>
-          <p v-if="options[id]?.capability_reason" class="text-xs text-muted">{{ options[id].capability_reason }}</p>
-          <div v-for="row in rows.filter(item => item.account_id === id)" :key="row.key" class="space-y-1">
-            <div class="flex flex-wrap items-end gap-2">
-              <div class="min-w-36 flex-1 text-sm"><label :for="`pelican-model-${row.key}`">{{ t('admin.pelicanTests.model') }}</label><Select :id="`pelican-model-${row.key}`" v-model="row.model_id" class="mt-1" :aria-label="`${t('admin.pelicanTests.model')} #${id}`" :options="rowModelOptions(row)" searchable :disabled="optionsLoading || submitting" :error="!!issue(row)" :data-test="`pelican-model-${row.key}`" @change="row.effort = ''" /></div>
-              <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="row.effort" class="input mt-1" :data-test="`pelican-effort-${row.key}`"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in modelOption(row)?.reasoning_efforts || []" :key="effort" :value="effort">{{ effort }}</option></select></label>
-              <button type="button" class="btn btn-ghost btn-sm" :aria-label="`${t('admin.pelicanTests.removeModel')} ${row.model_id} #${id}`" @click="removeRow(row.key)">{{ text('移除', 'Remove') }}</button>
+  <div class="space-y-5" data-test="pelican-composer">
+    <pre v-if="error" role="alert" class="whitespace-pre-wrap break-words rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{{ error }}</pre>
+    <fieldset :disabled="submitting" class="min-w-0 disabled:opacity-70">
+      <legend class="sr-only">{{ text('配置鹈鹕测试', 'Configure Pelican test') }}</legend>
+      <div class="grid min-w-0 gap-5 xl:grid-cols-[minmax(300px,0.85fr)_minmax(0,1.5fr)]">
+        <section class="min-w-0 self-start rounded-xl border border-line bg-white dark:bg-dark-900">
+          <header class="flex items-center justify-between border-b border-line p-4"><h2 class="font-semibold">{{ text('选择账号', 'Choose accounts') }}</h2><span class="rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 dark:bg-primary-950 dark:text-primary-300">{{ text('已选', 'Selected') }} {{ selected.length }}</span></header>
+          <div class="space-y-3 p-4">
+            <label class="block text-sm">{{ t('admin.pelicanTests.searchAccounts') }}<input v-model="search" type="search" class="input mt-1 w-full" data-test="pelican-account-search" /></label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="text-xs text-muted">{{ t('admin.pelicanTests.platform') }}<select v-model="platform" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.allPlatforms') }}</option><option v-for="option in CONCRETE_PLATFORM_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+              <label class="text-xs text-muted">{{ text('分组', 'Group') }}<select v-model="group" class="input mt-1 w-full"><option value="">{{ text('全部分组', 'All groups') }}</option><option v-for="item in groups" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select></label>
             </div>
-            <p v-if="issue(row)" role="alert" class="text-xs text-red-700 dark:text-red-300">{{ issue(row) }}</p>
-            <p v-else class="text-xs text-muted">{{ t('admin.pelicanTests.mappedModel') }}: {{ modelOption(row)?.upstream_model }}</p>
+            <label class="block text-xs text-muted">{{ text('账号状态', 'Account status') }}<select v-model="status" class="input mt-1 w-full"><option value="">{{ text('所有状态', 'All statuses') }}</option><option v-for="state in ['active', 'inactive', 'error', 'disabled']" :key="state" :value="state">{{ t(`admin.pelicanTests.states.${state}`) }}</option></select></label>
+            <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs">
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="loading || selectingAll" @click="selectPage">{{ text('选择本页', 'Select page') }} · {{ accounts.length }}</button>
+              <button type="button" class="btn btn-ghost btn-sm" :disabled="loading || selectingAll || total > 5000" @click="selectAll">{{ text('全部匹配', 'All matching') }} · {{ total }}</button>
+            </div>
+            <p v-if="selectingAll" role="status" class="text-xs text-muted">{{ text('正在读取全部匹配账号…', 'Reading all matching accounts…') }}</p>
           </div>
-        </div>
+          <fieldset :disabled="loading || selectingAll" class="max-h-[30rem] divide-y divide-gray-100 overflow-y-auto border-y border-line dark:divide-dark-800" :aria-busy="loading">
+            <legend class="sr-only">{{ t('admin.pelicanTests.chooseAccounts') }}</legend>
+            <label v-for="account in accounts" :key="account.id" class="flex min-w-0 cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-dark-800" :class="selected.includes(account.id) ? 'bg-primary-50 dark:bg-primary-950' : ''">
+              <input type="checkbox" class="checkbox shrink-0" :checked="selected.includes(account.id)" :data-test="`pelican-account-${account.id}`" @change="toggleAccount(account.id)" />
+              <span class="min-w-0 flex-1"><span class="block break-words text-sm font-medium">{{ account.name }}</span><span class="text-xs text-muted">#{{ account.id }} · {{ account.platform }}</span></span>
+              <span class="shrink-0 text-xs text-muted">{{ t(`admin.pelicanTests.states.${account.status}`) }}</span>
+            </label>
+            <p v-if="loading" role="status" class="p-5 text-center text-sm text-muted">{{ t('common.loading') }}</p>
+            <p v-else-if="!accounts.length" class="p-5 text-center text-sm text-muted">{{ t('admin.pelicanTests.noAccounts') }}</p>
+          </fieldset>
+          <div v-if="total" class="p-3"><Pagination v-model:page="page" :total="total" :page-size="50" :show-page-size-selector="false" /></div>
+        </section>
+        <section class="min-w-0 space-y-4" :aria-label="text('模型与检测配置', 'Models and test configuration')">
+          <div class="rounded-xl border border-line bg-white p-4 dark:bg-dark-900">
+            <h2 class="font-semibold">{{ text('检测设置', 'Test settings') }}</h2>
+            <fieldset class="mt-3 flex flex-wrap gap-4"><legend class="sr-only">{{ text('检测项目', 'Tests') }}</legend><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="pelican" />{{ text('鹈鹕动画与视觉审核', 'Animation and visual review') }}</label><label class="flex items-center gap-2 text-sm"><input v-model="testItems" type="checkbox" value="candy" />{{ text('糖果推理', 'Candy reasoning') }}</label></fieldset>
+            <p v-if="!testItems.length" role="alert" class="mt-2 text-sm text-red-700 dark:text-red-300">{{ text('至少选择一个检测项目。', 'Select at least one test.') }}</p>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <label for="pelican-repeat-count" class="text-sm">{{ text('每个模型测试次数', 'Runs per model') }}<input id="pelican-repeat-count" v-model.number="repeatCount" type="number" inputmode="numeric" min="1" :max="repeatMaximum" step="1" class="input mt-1 w-full" :aria-invalid="!repeatValid" aria-describedby="pelican-repeat-help" data-test="pelican-repeat-count" /></label>
+              <label class="text-sm">{{ text('每项生成时限（分钟）', 'Generation limit (minutes)') }}<input v-model.number="budgetMinutes" class="input mt-1 w-full" type="number" min="1" max="30" step="1" :aria-invalid="!budgetValid" data-test="pelican-budget" /></label>
+            </div>
+            <p id="pelican-repeat-help" class="mt-2 text-xs" :class="repeatValid ? 'text-muted' : 'text-red-700 dark:text-red-300'" :role="repeatValid ? undefined : 'alert'">{{ text('次数须为正整数，当前每个模型最多', 'Enter a positive integer, up to') }} {{ repeatMaximum }} {{ text('次；整批最多 5000 条测试。', 'runs per model; at most 5000 tests per task.') }}</p>
+            <p v-if="!budgetValid" role="alert" class="mt-2 text-sm text-red-700 dark:text-red-300">{{ t('admin.pelicanTests.budgetBoundary') }}</p>
+          </div>
+          <div class="flex items-center justify-between gap-3"><h2 class="font-semibold">{{ text('已选模型组合', 'Selected combinations') }} <span class="ml-1 text-sm font-normal text-muted">{{ rows.length }}</span></h2><button type="button" class="btn btn-ghost btn-sm" :disabled="selectingAll" @click="clear">{{ text('清空草稿', 'Clear draft') }}</button></div>
+          <details v-if="selected.length" class="rounded-lg border border-line bg-white p-3 dark:bg-dark-900">
+            <summary class="cursor-pointer text-sm font-medium">{{ text('批量设置模型与思考强度', 'Set models and reasoning in bulk') }}</summary>
+            <div class="mt-3 flex flex-wrap items-end gap-2">
+              <div class="min-w-40 flex-1 text-sm"><label for="pelican-bulk-model">{{ t('admin.pelicanTests.bulkModel') }}</label><Select id="pelican-bulk-model" v-model="bulkModel" class="mt-1" :aria-label="t('admin.pelicanTests.bulkModel')" :options="bulkModelOptions" searchable :disabled="optionsLoading || submitting" data-test="pelican-bulk-model" /></div>
+              <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="bulkEffort" class="input mt-1 w-full"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in effortLevels" :key="effort" :value="effort">{{ effort }}</option></select></label>
+              <button type="button" class="btn btn-secondary" :disabled="optionsLoading" @click="applyBulk">{{ text('应用到兼容组合', 'Apply to compatible rows') }}</button>
+            </div><p v-if="bulkMessage" role="status" class="mt-2 text-sm">{{ bulkMessage }}</p>
+          </details>
+          <div v-if="!selected.length" class="rounded-xl border border-dashed border-line px-6 py-14 text-center"><p class="font-medium">{{ text('从账号列表开始', 'Start with an account') }}</p><p class="mt-2 text-sm text-muted">{{ text('选择账号后，在这里配置模型；同一账号可以添加多个模型。', 'Choose accounts to configure their models here. Each account can use multiple models.') }}</p></div>
+          <div v-for="entry in rowGroups" :key="entry.id" class="min-w-0 space-y-3 rounded-xl border border-line bg-white p-4 dark:bg-dark-900">
+            <div class="flex items-center justify-between gap-3"><h3 class="min-w-0 break-words font-medium">{{ options[entry.id]?.name || names[entry.id] || entry.id }} <span class="text-xs font-normal text-muted">#{{ entry.id }}</span></h3><button type="button" class="btn btn-secondary btn-sm shrink-0" :disabled="optionsLoading" @click="addRow(entry.id)">{{ t('admin.pelicanTests.addModel') }}</button></div>
+            <p v-if="options[entry.id]?.capability_reason" class="text-xs text-muted">{{ options[entry.id].capability_reason }}</p>
+            <p v-if="!entry.rows.length" role="status" class="text-sm text-muted">{{ text('正在读取可用模型…', 'Loading available models…') }}</p>
+            <div v-for="row in entry.rows" :key="row.key" class="space-y-1">
+              <div class="flex flex-wrap items-end gap-2">
+                <div class="min-w-36 flex-1 text-sm"><label :for="`pelican-model-${row.key}`">{{ t('admin.pelicanTests.model') }}</label><Select :id="`pelican-model-${row.key}`" v-model="row.model_id" class="mt-1" :aria-label="`${t('admin.pelicanTests.model')} #${entry.id}`" :options="rowModelOptions(row)" searchable :disabled="optionsLoading || submitting" :error="!!issue(row)" :data-test="`pelican-model-${row.key}`" @change="row.effort = ''" /></div>
+                <label class="text-sm">{{ t('admin.pelicanTests.effort') }}<select v-model="row.effort" class="input mt-1 w-full" :data-test="`pelican-effort-${row.key}`"><option value="">{{ t('admin.pelicanTests.normalDefault') }}</option><option v-for="effort in modelOption(row)?.reasoning_efforts || []" :key="effort" :value="effort">{{ effort }}</option></select></label>
+                <button type="button" class="btn btn-ghost btn-sm" :aria-label="`${t('admin.pelicanTests.removeModel')} ${row.model_id} #${entry.id}`" @click="removeRow(row.key)">{{ text('移除', 'Remove') }}</button>
+              </div>
+              <p v-if="issue(row)" role="alert" class="text-xs text-red-700 dark:text-red-300">{{ issue(row) }}</p><p v-else class="break-words text-xs text-muted">{{ t('admin.pelicanTests.mappedModel') }}: {{ modelOption(row)?.upstream_model }}</p>
+            </div>
+          </div>
+          <Pagination v-if="selected.length > 20" v-model:page="selectedPage" :total="selected.length" :page-size="20" :show-page-size-selector="false" />
+          <details class="rounded-lg border border-line p-3 text-sm"><summary class="cursor-pointer text-muted">{{ text('提示词与执行说明', 'Prompt and execution details') }}</summary><p class="mt-3 whitespace-pre-wrap">{{ PELICAN_PROMPT }}</p><p class="mt-3 text-xs leading-relaxed text-muted">{{ text('共享 10 个模型请求执行位，同账号不同模型可并行，同模型重复依次执行，并遵守账号自身并发额度。视觉审核使用同一账号和模型；不支持图片时显示未审核。关闭页面后任务继续。', 'Ten shared request slots; different models on one account can run in parallel, while repeats run in order. Account limits apply. Review uses the same account and model; models without image input remain unreviewed. Tasks continue after this page closes.') }}</p></details>
+        </section>
       </div>
-      <div v-else class="space-y-4" data-test="pelican-review">
-        <p class="font-medium" data-test="pelican-total-tests">{{ rows.length }} {{ text('个账号／模型组合', 'account/model combinations') }} × {{ repeatCount }} {{ text('次', 'runs') }} = {{ totalTests }} {{ text('条测试', 'tests') }}</p>
-        <ul class="max-h-64 space-y-2 overflow-auto rounded-lg border border-line p-3 text-sm"><li v-for="row in rows" :key="row.key" class="break-words">{{ options[row.account_id]?.name }} #{{ row.account_id }} · {{ row.model_id }} · {{ row.effort || t('admin.pelicanTests.normalDefault') }}</li></ul>
-        <label class="flex flex-wrap items-center gap-2 text-sm">{{ text('每项生成预算', 'Generation budget per item') }}<input v-model.number="budgetMinutes" class="input w-24" type="number" min="1" max="30" step="1" data-test="pelican-budget" />{{ t('admin.pelicanTests.minutes') }}</label>
-        <p v-if="!budgetValid" role="alert" class="text-red-700 dark:text-red-300">{{ t('admin.pelicanTests.budgetBoundary') }}</p>
-        <p class="text-sm text-muted">{{ text('共享 10 个模型请求执行位，同账号不同模型可并行，同模型重复依次执行，仍受账号自身并发额度限制。关闭此页面后任务继续；停止需要明确点击任务的停止按钮。', 'Ten shared model request slots. Different models on one account can run in parallel; repeats of the same model run in order. Account concurrency limits still apply. Tasks continue after this page closes; use the task Stop button to cancel.') }}</p>
-      </div>
-      <details class="rounded-lg border border-line p-3"><summary class="cursor-pointer text-sm">{{ t('admin.pelicanTests.viewPrompt') }}</summary><p class="mt-2 whitespace-pre-wrap text-sm">{{ PELICAN_PROMPT }}</p></details>
-    </template>
-    <div class="flex justify-between gap-3 border-t border-line pt-4">
-      <button type="button" class="btn btn-secondary" :disabled="step === 1 || submitting" @click="step--">{{ text('上一步', 'Back') }}</button>
-      <button v-if="step < 3" type="button" class="btn btn-primary" :disabled="!selected.length || optionsLoading || selectingAll || (step === 2 && !valid)" data-test="pelican-next" @click="step++">{{ text('下一步', 'Next') }}</button>
-      <button v-else type="button" class="btn btn-primary" :disabled="!valid || !budgetValid || submitting" data-test="pelican-test-start" @click="submit">{{ submitting ? text('正在提交…', 'Submitting…') : text('启动后台任务', 'Start background task') }}</button>
-    </div>
+    </fieldset>
+    <footer class="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-white p-4 shadow-lg dark:border-primary-800 dark:bg-dark-900" data-test="pelican-review">
+      <div class="min-w-0"><p class="text-sm font-semibold" data-test="pelican-total-tests">{{ rows.length }} {{ text('个账号／模型组合', 'account/model combinations') }} × {{ repeatCount }} {{ text('次', 'runs') }} = {{ totalTests }} {{ text('条测试', 'tests') }}</p><p class="mt-1 text-xs text-muted">{{ testItems.includes('pelican') ? text('鹈鹕与视觉审核', 'Animation and review') : '' }}{{ testItems.length === 2 ? ' + ' : '' }}{{ testItems.includes('candy') ? text('糖果推理', 'Candy reasoning') : '' }} · {{ budgetMinutes }} {{ text('分钟生成时限', 'minute generation limit') }}</p></div>
+      <button type="button" class="btn btn-primary min-w-36" :disabled="!valid || !budgetValid || submitting" data-test="pelican-test-start" @click="submit">{{ submitting ? text('正在提交…', 'Submitting…') : text('启动后台测试', 'Start background test') }}</button>
+    </footer>
   </div>
 </template>
-
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
@@ -87,17 +91,16 @@ import type { AccountListItem, AdminGroup } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const props = defineProps<{ initial?: Omit<PelicanTestRequest, 'client_task_id'>; submitting?: boolean }>()
-const emit = defineEmits<{ submit: [Omit<PelicanTestRequest, 'client_task_id'>] }>()
+const emit = defineEmits<{ submit: [Omit<PelicanTestRequest, 'client_task_id'>]; draft: [Omit<PelicanTestRequest, 'client_task_id'>]; clear: [] }>()
 const { t, locale } = useI18n()
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
-const steps = computed(() => [t('admin.pelicanTests.chooseAccounts'), text('配置模型与档位', 'Models and reasoning'), text('确认组合并启动', 'Review and start')])
-const root = ref<HTMLElement | null>(null)
 const lifecycle = new AbortController()
 const accounts = shallowRef<AccountListItem[]>([]), groups = shallowRef<AdminGroup[]>([])
 const selected = ref<number[]>([]), rows = ref<PelicanCombination[]>([])
 const options = ref<Record<number, PelicanAccountOption>>({}), names = ref<Record<number, string>>({})
 const search = ref(''), platform = ref(''), group = ref(''), status = ref(''), page = ref(1), total = ref(0)
-const step = ref(props.initial ? 2 : 1), budgetMinutes = ref((props.initial?.generation_timeout_seconds || 600) / 60)
+const selectedPage = ref(1)
+const budgetMinutes = ref((props.initial?.generation_timeout_seconds ?? 600) / 60)
 const optionRequests = ref(0)
 const optionsLoading = computed(() => optionRequests.value > 0)
 const loading = ref(false), selectingAll = ref(false), error = ref(''), bulkMessage = ref('')
@@ -109,7 +112,7 @@ const repeatCount = ref(props.initial?.repeat_count ?? 1)
 const repeatMaximum = computed(() => Math.floor(5000 / Math.max(1, rows.value.length)))
 const repeatValid = computed(() => Number.isInteger(repeatCount.value) && repeatCount.value >= 1 && repeatCount.value <= repeatMaximum.value)
 const totalTests = computed(() => rows.value.length * repeatCount.value)
-const valid = computed(() => repeatValid.value && testItems.value.length > 0 && rows.value.length > 0 && rows.value.length <= 5000 && !optionsLoading.value && !rows.value.some(row => issue(row)))
+const valid = computed(() => !selectingAll.value && selected.value.length === new Set(rows.value.map(row => row.account_id)).size && repeatValid.value && testItems.value.length > 0 && rows.value.length > 0 && rows.value.length <= 5000 && !optionsLoading.value && !rows.value.some(row => issue(row)))
 const budgetValid = computed(() => Number.isInteger(budgetMinutes.value) && budgetMinutes.value >= 1 && budgetMinutes.value <= 30)
 function modelOption(row: PelicanCombination) { return options.value[row.account_id]?.models.find(model => model.id === row.model_id.trim()) }
 function modelLabel(model: PelicanModelOption) { return model.display_name && model.display_name !== model.id ? `${model.display_name} (${model.id})` : model.id }
@@ -182,14 +185,26 @@ function addRow(id: number) {
 }
 function removeRow(rowKey: number) { const id = rows.value.find(row => row.key === rowKey)?.account_id; rows.value = rows.value.filter(row => row.key !== rowKey); if (id && !rows.value.some(row => row.account_id === id)) selected.value = selected.value.filter(value => value !== id) }
 function applyBulk() { const result = applyPelicanBulk(rows.value, options.value, bulkModel.value, bulkEffort.value); rows.value = result.rows; bulkMessage.value = result.duplicate ? text('会产生重复组合，未应用；请修改已有行。', 'Would create duplicates; edit the existing rows.') : `${text('已保留不兼容账号的原参数', 'Incompatible accounts kept their parameters')}: ${[...new Set(result.skipped)].join(', ') || '0'}` }
-function submit() { if (valid.value && budgetValid.value) emit('submit', { repeat_count: repeatCount.value, generation_timeout_seconds: budgetMinutes.value * 60, test_items: testItems.value, targets: rows.value.map(row => ({ account_id: row.account_id, model_id: row.model_id.trim(), effort: row.effort })) }) }
+function parameters(): Omit<PelicanTestRequest, 'client_task_id'> {
+  return { repeat_count: repeatCount.value, generation_timeout_seconds: budgetMinutes.value * 60, test_items: [...testItems.value], targets: selected.value.flatMap(id => {
+    const selectedRows = rows.value.filter(row => row.account_id === id)
+    return selectedRows.length ? selectedRows.map(row => ({ account_id: id, model_id: row.model_id.trim(), effort: row.effort })) : [{ account_id: id, model_id: '', effort: '' }]
+  }) }
+}
+function submit() { if (valid.value && budgetValid.value && !props.submitting) emit('submit', parameters()) }
+function clear() { selected.value = []; rows.value = []; testItems.value = ['pelican', 'candy']; repeatCount.value = 1; budgetMinutes.value = 10; error.value = ''; bulkMessage.value = ''; emit('clear') }
+const rowGroups = computed(() => {
+  const grouped = new Map<number, PelicanCombination[]>()
+  for (const row of rows.value) { const group = grouped.get(row.account_id) || []; group.push(row); grouped.set(row.account_id, group) }
+  return selected.value.slice((selectedPage.value - 1) * 20, selectedPage.value * 20).map(id => ({ id, rows: grouped.get(id) || [] }))
+})
+watch([rows, selected, testItems, repeatCount, budgetMinutes], () => { emit('draft', parameters()); selectedPage.value = Math.min(selectedPage.value, Math.max(1, Math.ceil(selected.value.length / 20))) }, { deep: true })
 watch(selected, ids => {
   rows.value = rows.value.filter(row => ids.includes(row.account_id))
   for (const id of ids) if (options.value[id] && !rows.value.some(row => row.account_id === id)) rows.value.push({ key: ++key, account_id: id, model_id: pelicanDefaultModel(options.value[id]), effort: '' })
   const missing = ids.filter(id => !options.value[id]); if (missing.length) void loadOptions(missing)
 })
 watch([search, platform, group, status], () => { if (debounce) clearTimeout(debounce); pageRequest?.abort(); debounce = setTimeout(() => { if (page.value !== 1) page.value = 1; else void loadPage() }, 250) })
-watch(step, async () => { await nextTick(); root.value?.focus() })
 watch(page, () => { void loadPage() })
 onMounted(() => {
   if (props.initial) { rows.value = props.initial.targets.map(row => ({ account_id: row.account_id, model_id: row.model_id, effort: row.effort, key: ++key })); selected.value = [...new Set(rows.value.map(row => row.account_id))] }

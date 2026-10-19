@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import CodexPelicanComparisonView from '../CodexPelicanComparisonView.vue'
 import type { PelicanResultPage, PelicanResultSummary, PelicanTaskEvent, PelicanTaskSnapshot } from '@/api/admin/pelicanTests'
 
@@ -22,8 +23,8 @@ beforeEach(() => {
   mocks.deleteTask.mockResolvedValue({ deleted: true }); mocks.deleteResult.mockResolvedValue({ deleted: true })
 })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers(); vi.unstubAllGlobals() })
-async function make(realPreview = false) { const wrapper = mount(CodexPelicanComparisonView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }, PelicanTaskComposer: { props: ['initial', 'submitting'], emits: ['submit'], template: '<div data-test="composer-stub" />' }, PelicanPreview: !realPreview } } }); wrappers.push(wrapper); await flushPromises(); return wrapper }
-async function selectTask(wrapper: ReturnType<typeof mount>) { await wrapper.get('[data-test="pelican-task-select"]').setValue('task-1'); await flushPromises() }
+async function make(realPreview = false, query = '') { const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/pelican-tests', component: { template: '<div />' } }] }); await router.push('/admin/pelican-tests' + query); await router.isReady(); const wrapper = mount(CodexPelicanComparisonView, { global: { plugins: [router], stubs: { AppLayout: { template: '<div><slot /></div>' }, BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }, PelicanTaskComposer: { props: ['initial', 'submitting'], emits: ['submit', 'draft', 'clear'], template: '<div data-test="composer-stub" />' }, PelicanPreview: !realPreview } } }); wrappers.push(wrapper); await flushPromises(); return wrapper }
+async function selectTask(wrapper: ReturnType<typeof mount>) { await wrapper.get('[data-test="pelican-tasks-tab"]').trigger('click'); await wrapper.get('[data-test="pelican-task-task-1"]').trigger('click'); await flushPromises() }
 
 describe('Pelican gallery workbench', () => {
   it('opens all-work summaries and previews without reading answers or invoking models', async () => {
@@ -153,4 +154,34 @@ it('updates task progress quietly without restarting the displayed HTML animatio
   expect(wrapper.get('iframe').attributes('src')).toBe(source)
   expect(wrapper.get('[data-test="pelican-result-r1"]').text()).toContain('视觉审核 · 通过')
   expect(mocks.startTask).not.toHaveBeenCalled(); expect(mocks.retestTask).not.toHaveBeenCalled(); expect(mocks.cancelTask).not.toHaveBeenCalled()
+})
+
+it('restores URL task, filters and page and handles browser navigation without resetting the page', async () => {
+  const wrapper = await make(false, '?task=task-1&model=gpt-6-astra&page=2')
+  expect(mocks.getTask).toHaveBeenCalledWith('task-1', expect.any(AbortSignal))
+  expect(mocks.gallery).toHaveBeenLastCalledWith(expect.objectContaining({ task_id: 'task-1', model: 'gpt-6-astra', page: 2 }), expect.any(AbortSignal))
+  await wrapper.vm.$router.push({ query: { task: 'task-2', model: 'gpt-6.1-sol', page: '3' } })
+  await flushPromises()
+  await new Promise(resolve => setTimeout(resolve, 280)); await flushPromises()
+  expect(mocks.gallery).toHaveBeenLastCalledWith(expect.objectContaining({ task_id: 'task-2', model: 'gpt-6.1-sol', page: 3 }), expect.any(AbortSignal))
+  expect(wrapper.vm.$route.query.page).toBe('3')
+  expect(mocks.startTask).not.toHaveBeenCalled()
+})
+
+it('restores the session draft and clears it only after an accepted submission', async () => {
+  const wrapper = await make()
+  await wrapper.get('[data-test="pelican-new"]').trigger('click'); await flushPromises()
+  const parameters = { repeat_count: 2, generation_timeout_seconds: 600, test_items: ['pelican', 'candy'], targets: [{ account_id: 1, model_id: 'gpt-6.1-sol', effort: 'high' }] }
+  wrapper.getComponent('[data-test="composer-stub"]').vm.$emit('draft', parameters)
+  await flushPromises()
+  await wrapper.vm.$router.replace({ query: { view: 'gallery' } }); await flushPromises()
+  await wrapper.get('[data-test="pelican-new"]').trigger('click'); await flushPromises()
+  expect(wrapper.getComponent('[data-test="composer-stub"]').props('initial')).toEqual(parameters)
+  mocks.startTask.mockRejectedValueOnce({ status: 400, message: 'Correct the model' })
+  wrapper.getComponent('[data-test="composer-stub"]').vm.$emit('submit', parameters); await flushPromises()
+  expect(sessionStorage.getItem('pelican.draft.v1.current')).not.toBeNull()
+  wrapper.getComponent('[data-test="composer-stub"]').vm.$emit('submit', parameters); await flushPromises()
+  expect(sessionStorage.getItem('pelican.draft.v1.current')).toBeNull()
+  expect(wrapper.find('[data-test="composer-stub"]').exists()).toBe(false)
+  expect(wrapper.vm.$route.query.task).toBe('new-task')
 })
