@@ -14,6 +14,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/tidwall/gjson"
 
 	"github.com/gin-gonic/gin"
 )
@@ -402,10 +403,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 
 	// 重试循环
-	// Keep the unsigned request view for signature recovery, even after an
-	// accepted attempt updates ParsedRequest to its actual signed wire body.
-	signatureRecoveryBase := body
-	var activeRecoveryDiagnostic *ClaudeSignatureRecoveryDiagnostic
 	var resp *http.Response
 	lastWireBody := body
 	retryStart := time.Now()
@@ -495,7 +492,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 						})
 					if retryResp != nil && retryErr == nil {
 						if retryResp.StatusCode < 400 {
-							activeRecoveryDiagnostic = recoveryDiagnostic
 							// 重试请求被上游接受后同步 ParsedRequest，保证 usage/日志看到真实请求体。
 							lastWireBody = retryWireBody
 							if err := replaceBody(retryWireBody); err != nil {
@@ -546,7 +542,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 									if retryErr2 == nil {
 										recoveryDiagnostic.Outcome = "upstream_rejected"
 										if retryResp2.StatusCode < 400 {
-											activeRecoveryDiagnostic = recoveryDiagnostic
 											recoveryDiagnostic.Outcome = "accepted"
 											// 二阶段工具块降级成功时也必须更新当前 body。
 											lastWireBody = retryWireBody2
@@ -856,135 +851,23 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	var firstTokenMs *int
 	var clientDisconnect bool
 	if reqStream {
-		allowSignatureRecovery := s.claudeSignatureRecoveryEnabled(ctx, account, reqModel)
-		for {
-			streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode,
-				allowSignatureRecovery && !signatureRecovery.used, activeRecoveryDiagnostic != nil)
-			if err != nil {
-				var sseErr *sseStreamErrorEventError
-				if errors.As(err, &sseErr) {
-					streamErrorBody := []byte(sseErr.RawData)
-					classification := ClassifyClaudeStreamError(streamErrorBody)
-					if activeRecoveryDiagnostic != nil {
-						activeRecoveryDiagnostic.Outcome = "upstream_rejected"
-					}
-					var recoveryDiagnostic *ClaudeSignatureRecoveryDiagnostic
-					if classification.StatusCode == http.StatusBadRequest && s.claudeSignatureErrorCandidate(ctx, account, streamErrorBody) {
-						recoveryDiagnostic = signatureRecovery.diagnostic("sse_error", sseErr.MessageStarted)
-						if !allowSignatureRecovery {
-							recoveryDiagnostic.Reason = "disabled"
-						}
-					}
-					upstreamDetail := ""
-					if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-						maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
-						if maxBytes <= 0 {
-							maxBytes = 2048
-						}
-						upstreamDetail = truncateString(sseErr.RawData, maxBytes)
-					}
-
-					appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-						ProxyID:                opsUpstreamProxyID(account),
-						ProxyName:              opsUpstreamProxyName(account),
-						Platform:               account.Platform,
-						AccountID:              account.ID,
-						AccountName:            account.Name,
-						UpstreamStatusCode:     classification.StatusCode,
-						UpstreamHTTPStatusCode: resp.StatusCode,
-						UpstreamRequestID:      resp.Header.Get("x-request-id"),
-						Kind:                   "stream_error",
-						Message:                classification.ClientMessage,
-						Detail:                 upstreamDetail,
-						SignatureRecovery:      recoveryDiagnostic,
-					})
-					if recoveryDiagnostic != nil && allowSignatureRecovery {
-						// Release the rejected response before acquiring another
-						// connection, including pools with a single host slot.
-						_ = resp.Body.Close()
-						retryResp, retryWireBody, recoveryErr := signatureRecovery.run(ctx, recoveryDiagnostic, signatureRecoveryBase, reqModel,
-							func(filteredBody []byte) (*http.Request, []byte, error) {
-								retryCtx, releaseRetryCtx := detachStreamUpstreamContext(ctx, reqStream)
-								defer releaseRetryCtx()
-								return s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
-							},
-							func(req *http.Request) (*http.Response, error) {
-								return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
-							})
-						if recoveryErr != nil {
-							logger.LegacyPrintf("service.gateway", "Account %d: SSE signature recovery failed (%s): %v", account.ID, recoveryDiagnostic.Reason, recoveryErr)
-						}
-						if retryResp != nil {
-							_ = resp.Body.Close()
-							resp = retryResp
-							if resp.StatusCode < 400 {
-								if err := replaceBody(retryWireBody); err != nil {
-									return nil, err
-								}
-								beginUpstreamResponseModelObservation(c)
-								activeRecoveryDiagnostic = recoveryDiagnostic
-								continue
-							}
-							// A repair can fail with a real HTTP response, including while
-							// earlier keepalive pings have committed HTTP 200. Let the
-							// streaming-aware handler write the terminal, never append JSON.
-							retryBody, readErr := s.readUpstreamErrorBody(resp)
-							if readErr != nil {
-								recoveryDiagnostic.Outcome, recoveryDiagnostic.Reason = "response_read_failed", "response_read_failed"
-							}
-							appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-								ProxyID: opsUpstreamProxyID(account), ProxyName: opsUpstreamProxyName(account),
-								Platform: account.Platform, AccountID: account.ID, AccountName: account.Name,
-								UpstreamStatusCode: resp.StatusCode, UpstreamRequestID: resp.Header.Get("x-request-id"),
-								Kind: "http_error", Message: extractUpstreamErrorMessage(retryBody),
-							})
-							failure := &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: retryBody, NextAccountAction: NextAccountStop, SuppressAccountHealthPenalty: true}
-							if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusRequestEntityTooLarge {
-								failure.ClientStatusCode = resp.StatusCode
-								failure.ClientErrorType = "invalid_request_error"
-								failure.ClientMessage = sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(retryBody))
-							}
-							return nil, failure
-						}
-					}
-					if activeRecoveryDiagnostic == nil && !sseErr.MessageStarted && classification.StatusCode == 529 {
-						syntheticResp := &http.Response{StatusCode: classification.StatusCode, Header: resp.Header.Clone(), Body: io.NopCloser(bytes.NewReader(streamErrorBody))}
-						s.handleFailoverSideEffects(ctx, syntheticResp, account, reqModel)
-					}
-					failure := classification.FailoverError(streamErrorBody)
-					if activeRecoveryDiagnostic != nil {
-						failure.NextAccountAction = NextAccountStop
-						failure.SuppressAccountHealthPenalty = true
-					}
-					return nil, failure
-				}
-				if activeRecoveryDiagnostic != nil {
-					activeRecoveryDiagnostic.Outcome, activeRecoveryDiagnostic.Reason = "response_read_failed", "stream_incomplete"
-					appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-						ProxyID: opsUpstreamProxyID(account), ProxyName: opsUpstreamProxyName(account),
-						Platform: account.Platform, AccountID: account.ID, AccountName: account.Name,
-						UpstreamStatusCode: http.StatusBadGateway, UpstreamHTTPStatusCode: resp.StatusCode,
-						UpstreamRequestID: resp.Header.Get("x-request-id"),
-						Kind:              "stream_failure", Message: sanitizeStreamError(err),
-					})
-					var failure *UpstreamFailoverError
-					if errors.As(err, &failure) {
-						failure.NextAccountAction = NextAccountStop
-						failure.SuppressAccountHealthPenalty = true
-					}
-				}
-				// 流中断（缺失 terminal 事件、读错误、数据间隔超时等）时保留已观测到的
-				// usage 与错误一起返回，handler 在错误处理完成后照常提交 usage 记录。
-				if partial := partialStreamUsageResult(c, resp, streamResult, originalModel, mappedModel, startTime, err); partial != nil {
-					return partial, err
-				}
-				return nil, err
+		writerSizeBeforeStream := c.Writer.Size()
+		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode)
+		if err != nil {
+			var sseErr *sseStreamErrorEventError
+			if errors.As(err, &sseErr) {
+				return nil, s.sseStreamErrorEventFailover(ctx, c, account, resp, sseErr.RawData, reqModel, c.Writer.Size() != writerSizeBeforeStream)
 			}
-			usage = streamResult.usage
-			firstTokenMs = streamResult.firstTokenMs
-			clientDisconnect = streamResult.clientDisconnect
-			break
+			// 流中断（缺失 terminal 事件、读错误、数据间隔超时等）时保留已观测到的
+			// usage 与错误一起返回，handler 在错误处理完成后照常提交 usage 记录。
+			if partial := partialStreamUsageResult(c, resp, streamResult, originalModel, mappedModel, startTime, err); partial != nil {
+				return partial, err
+			}
+			return nil, err
 		}
+		usage = streamResult.usage
+		firstTokenMs = streamResult.firstTokenMs
+		clientDisconnect = streamResult.clientDisconnect
 	} else {
 		usage, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, reqModel)
 		if err != nil {
@@ -1165,4 +1048,58 @@ func (s *GatewayService) isStickyAccountUpstreamRestricted(ctx context.Context, 
 		return false
 	}
 	return s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel)
+}
+
+// sseStreamErrorEventFailover 把上游 HTTP 200 + SSE 流体内的 event:error 帧转为
+// UpstreamFailoverError：尚未向客户端写出内容且错误类型为 overloaded_error 时按 529
+// 处理并触发账号侧副作用，其余按 403；同时登记 stream_error 运维记录。
+func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, rawData, model string, outputStarted bool) *UpstreamFailoverError {
+	body := []byte(rawData)
+	semanticStatus := http.StatusForbidden
+	if !outputStarted && gjson.GetBytes(body, "error.type").String() == "overloaded_error" {
+		semanticStatus = 529
+		syntheticResp := &http.Response{
+			StatusCode: semanticStatus,
+			Header:     resp.Header.Clone(),
+			Body:       io.NopCloser(bytes.NewReader(body)),
+		}
+		s.handleFailoverSideEffects(ctx, syntheticResp, account, model)
+	}
+
+	upstreamMsg := sanitizeUpstreamErrorMessage(
+		strings.TrimSpace(extractUpstreamErrorMessage(body)),
+	)
+
+	upstreamDetail := ""
+	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+		if maxBytes <= 0 {
+			maxBytes = 2048
+		}
+		upstreamDetail = truncateString(rawData, maxBytes)
+	}
+
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
+		Platform:           account.Platform,
+		AccountID:          account.ID,
+		AccountName:        account.Name,
+		UpstreamStatusCode: semanticStatus,
+		UpstreamRequestID:  resp.Header.Get("x-request-id"),
+		Kind:               "stream_error",
+		Message:            upstreamMsg,
+		Detail:             upstreamDetail,
+	})
+
+	logger.LegacyPrintf("service.gateway",
+		"[Forward] SSE error event in stream: Account=%d(%s) RequestID=%s Body=%s",
+		account.ID, account.Name, resp.Header.Get("x-request-id"),
+		truncateString(rawData, 1000),
+	)
+
+	return &UpstreamFailoverError{
+		StatusCode:   semanticStatus,
+		ResponseBody: body,
+	}
 }

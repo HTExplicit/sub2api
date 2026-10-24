@@ -5,7 +5,7 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 ## Source baseline
 
 - Integrated official baseline: the release recorded in `.downstream/upstream-base`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.17.md).
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.18.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
 ## Settings and account operations
@@ -24,6 +24,19 @@ Invalid nonempty ID lists cannot fall back to all filter results.
 Folder/tag filters, explicit field clearing and untouched-field preservation
 remain supported. A bulk-update item without a saved target account fails with
 `target_missing` rather than selecting a fresh set of accounts.
+
+Platform and status filters follow the official single-select controls and
+`account-filter-values` localStorage object (`platform`, `status`). The page has
+one filter state for both controls and requests. Legacy `platforms` / `statuses`
+URL conditions are ignored; the backend's existing plural-parameter API remains.
+Other filters retain their current URL or session storage. The official
+five-minute upstream billing-rate timer retains the official `immediate: false`
+option and is not started by the page.
+
+Vertex service accounts use the official quota limits, progress and reset
+behavior. The Gemini/Vertex usage region uses the official template rather than
+the former downstream common quota bars and loading-with-old-values condition.
+Upstream model synchronization and system-prompt binding remain independent.
 
 The Codex runtime setting is one switch, request body compression for the
 streaming `/responses` turns of OpenAI OAuth accounts; its contract is in
@@ -51,6 +64,13 @@ Quota storage, aggregation, cleanup and resets follow official semantics. Missin
 quota rows represent unlimited access; rows with three NULL limits are purged by
 the official migration.
 The three `238_*` migrations retain separate filenames and checksums.
+
+Scheduler snapshots use the official decoded in-process memo, revision
+invalidation, original key names and batch Pipeline writes. The downstream v2
+namespace, legacy-key cleanup and extra batch transactions are retired. Account
+metadata still carries the fields required by the independent downstream
+features. Startup and periodic snapshot rebuilds follow official behavior;
+the update adds no cache migration or Redis clearing.
 
 ## Model discovery and context capacity
 
@@ -98,23 +118,17 @@ regardless of the Codex remote/file selection.
 
 ## Claude streaming failures and signature recovery
 
-Ordinary Claude Messages forwarding classifies SSE error events by their error
-type, with a narrow thinking-signature fallback for third-party errors missing
-the type. A stream error is not an HTTP permission rejection. In Ops attempt
-JSON, `stream_error.upstream_status_code` retains the error's semantic status;
-the optional `upstream_http_status_code` records the actual response status.
-Existing records and HTTP error semantics remain compatible without a migration.
+Ordinary Claude Messages and Anthropic compatibility streams follow official
+v0.2.18 SSE error handling: an `overloaded_error` before output is recorded as
+529; other stream error events use 403. The downstream type-based SSE classifier,
+pre-message buffering and same-account SSE thinking repair are retired. Official
+HTTP 400 thinking-signature repair and its existing tool fallback remain.
 
-When the existing signature rectifier permits it, ordinary Claude forwarding
-can repair rejected thinking history on the same account before any message
-event is committed. It buffers only `message_start`, up to 64 KiB, while sending
-ping immediately. Committing the next message event or exceeding the bound
-ends recovery eligibility. The first thinking repair has one attempt independent
-of the initial request's ten-second backoff budget; the existing HTTP-only tool
-fallback retains its original conditions. Automatic passthrough and other
-provider paths do not gain this repair. Fingerprint-only recovery diagnostics
-stay attached to the upstream attempt and do not replace its failure or expose
-new thinking text or signature values.
+Historical Ops diagnostics, including the optional actual HTTP status and SSE
+signature-recovery fields, remain readable. The update does not rewrite records
+or add a new recovery path. The official compatibility reader collects observed
+usage after client disconnect and reports upstream stream interruption according
+to the selected protocol.
 
 ## OpenAI forwarding and model identity
 
@@ -139,6 +153,14 @@ any conflicting response declarations. WebSocket composite routing uses the
 resolved forward target for scheduling. A Codex WebSocket window rollover removes
 the previous response ID without inferring an anchor from the old window; owner,
 identity and verified-replay checks remain in force.
+
+Streaming Responses-to-Chat tool handling and its callers follow official
+v0.2.18. The downstream tool-parameter/call-ID/final-snapshot consistency guard
+and its dedicated error frames are retired. Independent buffered response
+reconstruction still supplements completed arguments by the actual call ID.
+The special downstream classification of HTTP 400 `upstream_error` wrappers is
+also retired; error classification, account effects and capacity Retry-After
+waiting follow official behavior.
 
 ## Release and production deployment
 
@@ -167,13 +189,14 @@ stripping, persistent rejection memory, SSE repair, missing-item-id repair and
 special account failovers are retired. The global recovery page and its
 `GET/PUT /api/v1/admin/reasoning-recovery` interface are removed. Stored settings,
 historical SQL and diagnostic records remain intact; ordinary Claude thinking
-signature recovery is independent and remains available.
+signature recovery for HTTP 400 remains independent and available.
 
 Cline and Command Code share the existing system-prompt insertion points.
 Connection-test reasoning options require declared model support and a wire
 path that retains the chosen effort; unsupported and `ultra` options remain
-unavailable. The inline account filters retain multi-selection, tags, proxy,
-plan and count controls in both console-theme modes.
+unavailable. The inline account filters retain tags, proxy, plan and count
+controls in both console-theme modes; platform/status selection is described
+under account operations above.
 
 Official migration 242 removes platform CHECK constraints. Immutable downstream
 251, 260 and 265 restore the quota constraint during a fresh installation, so
@@ -186,17 +209,29 @@ Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
 
-`.downstream/upstream-risk.json` records the v0.2.16-to-v0.2.17 integration against
-downstream commit `4ebe80cf5c69408fbc6b43a86c730e44f2f03f66`. The risk gate
-recomputes those exact inputs. `initial_conflict_files` records 21 resolved
-conflicts; `merge_conflicts: []` records that none remain. The candidate requires
-a completed review and the `upstream-reviewed` label before promotion.
+`.downstream/upstream-risk.json` records the v0.2.17-to-v0.2.18 integration against
+downstream commit `48da9d2dd3c5cfceaaf5f8477556e32b83fd2852`. The risk gate
+recomputes those exact inputs. The 14 initial conflict files and operator-selected
+resolutions are recorded in the [v0.2.18 review](.downstream/upstream-review-v0.2.18.md).
+The candidate requires a completed review, no unresolved conflicts and the
+`upstream-reviewed` label before promotion.
+
+Vertex quota limits, disconnected-stream billing, shared snapshot reuse,
+Cloudflare 1010 handling, Gemini tool-schema fixes, DeepSeek image normalization
+and public-only image-storage downloads follow v0.2.18. Official migration
+`246_enable_gemini_image_generation_groups.sql` enables image generation on
+existing Gemini/Antigravity groups. Composite groups retain their stored switch;
+Gemini image requests are rejected when that switch is off. The migration keeps
+its original filename and checksum alongside `246_plugin_extension_state.sql`.
+Go follows official 1.27.3. Frontend overrides follow official v0.2.18, including
+DOMPurify 3.4.17 and follow-redirects 1.16.1; redundant nanoid/Vue constraints are
+removed, while the independent xlsx 0.20.3 author-distribution dependency remains.
 
 Gemini 4 Argon, thinking summaries, Vertex error handling, payment fixes and
 workspace-aware Codex imports follow v0.2.17. GPT-5.5 retirement applies to
 ChatGPT subscription upstream targets; API keys and explicit replacement mappings
-remain supported. Account filters are inline in both console-theme modes, retaining
-downstream multi-selection and taxonomy. `gateway.min_output_tokens` defaults to
+remain supported. Account filters remain inline in both console-theme modes.
+`gateway.min_output_tokens` defaults to
 128, with a minimum of 16. Antigravity capacity observations use the shared
 source-bound evidence resolver, including provider-specific `maxTokens`.
 

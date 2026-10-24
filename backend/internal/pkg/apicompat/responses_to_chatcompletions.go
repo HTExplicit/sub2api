@@ -2,7 +2,6 @@ package apicompat
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -132,11 +131,9 @@ type ResponsesEventToChatState struct {
 	Finalized              bool        // true after finish chunk has been emitted
 	NextToolCallIndex      int         // next sequential tool_call index to assign
 	OutputIndexToToolIndex map[int]int // Responses output_index → Chat tool_calls index
+	OutputIndexToArguments map[int]string
 	IncludeUsage           bool
 	Usage                  *ChatUsage
-	ProtocolError          string // safe static error; never embeds upstream arguments
-	functionCalls          map[int]*responsesChatFunctionState
-	customToolArguments    map[int]*responsesChatFunctionState
 }
 
 // NewResponsesEventToChatState returns an initialised stream state.
@@ -145,15 +142,13 @@ func NewResponsesEventToChatState() *ResponsesEventToChatState {
 		ID:                     generateChatCmplID(),
 		Created:                time.Now().Unix(),
 		OutputIndexToToolIndex: make(map[int]int),
+		OutputIndexToArguments: make(map[int]string),
 	}
 }
 
 // ResponsesEventToChatChunks converts a single Responses SSE event into zero
 // or more Chat Completions chunks, updating state as it goes.
 func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
-	if state.ProtocolError != "" {
-		return nil
-	}
 	switch evt.Type {
 	case "response.created":
 		return resToChatHandleCreated(evt, state)
@@ -163,8 +158,6 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 		return resToChatHandleRefusalDelta(evt, state)
 	case "response.output_item.added":
 		return resToChatHandleOutputItemAdded(evt, state)
-	case "response.output_item.done":
-		return resToChatFunctionItem(evt.Item, evt.OutputIndex, true, state)
 	case "response.function_call_arguments.delta",
 		// custom/freeform 工具（如新版 apply_patch）的输入增量与 function_call 参数增量同形，
 		// 均按 OutputIndex 累加到对应工具调用。
@@ -191,10 +184,9 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 // FinalizeResponsesChatStream emits a final chunk with finish_reason if the
 // stream ended without a proper completion event (e.g. upstream disconnect).
 // It is idempotent: if a completion event already emitted the finish chunk,
-// this returns nil. A protocol failure must be surfaced by the caller and
-// cannot be converted into a normal finish or usage chunk at EOF.
+// this returns nil.
 func FinalizeResponsesChatStream(state *ResponsesEventToChatState) []ChatCompletionsChunk {
-	if state.Finalized || state.ProtocolError != "" {
+	if state.Finalized {
 		return nil
 	}
 	state.Finalized = true
@@ -272,9 +264,6 @@ func resToChatHandleRefusalDelta(evt *ResponsesStreamEvent, state *ResponsesEven
 }
 
 func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
-	if evt.Item != nil && evt.Item.Type == "function_call" {
-		return resToChatFunctionItem(evt.Item, evt.OutputIndex, false, state)
-	}
 	// function_call 与 custom_tool_call（custom/freeform 工具）均按工具调用注册，
 	// 以便后续 *_input.delta / *_arguments.delta 能映射到正确的工具索引。
 	if evt.Item == nil || (evt.Item.Type != "function_call" && evt.Item.Type != "custom_tool_call") {
@@ -285,10 +274,6 @@ func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 	idx := state.NextToolCallIndex
 	state.OutputIndexToToolIndex[evt.OutputIndex] = idx
 	state.NextToolCallIndex++
-	if state.customToolArguments == nil {
-		state.customToolArguments = make(map[int]*responsesChatFunctionState)
-	}
-	state.customToolArguments[evt.OutputIndex] = &responsesChatFunctionState{argumentHash: sha256.New()}
 
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
 		ToolCalls: []ChatToolCall{{
@@ -311,18 +296,7 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 	if !ok {
 		return nil
 	}
-	tool := state.functionCalls[evt.OutputIndex]
-	if tool == nil {
-		tool = state.customToolArguments[evt.OutputIndex]
-	}
-	if tool != nil {
-		if tool.completed || tool.argumentsDone {
-			responseChatFunctionError(state)
-			return nil
-		}
-		_, _ = tool.argumentHash.Write([]byte(evt.Delta))
-		tool.argumentBytes += len(evt.Delta)
-	}
+	state.OutputIndexToArguments[evt.OutputIndex] += evt.Delta
 
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
 		ToolCalls: []ChatToolCall{{
@@ -340,34 +314,17 @@ func resToChatHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEven
 		return nil
 	}
 
-	if evt.Type == "response.function_call_arguments.done" {
-		if evt.Arguments == "" {
-			return nil
-		}
-		// Share the exact prefix digest and byte count with output_item.done and
-		// the final response. A separate accumulated string would duplicate the
-		// suffix later and keep an unbounded second copy of the arguments.
-		chunks := resToChatFunctionItem(&ResponsesOutput{
-			Type: "function_call", ID: evt.ItemID, CallID: evt.CallID,
-			Name: evt.Name, Arguments: evt.Arguments,
-		}, evt.OutputIndex, false, state)
-		if tool := state.functionCalls[evt.OutputIndex]; tool != nil && state.ProtocolError == "" {
-			tool.argumentsDone = json.Valid([]byte(evt.Arguments))
-		}
-		return chunks
+	completed := evt.Arguments
+	if evt.Type == "response.custom_tool_call_input.done" {
+		completed = evt.Input
 	}
-	tool := state.customToolArguments[evt.OutputIndex]
-	if tool == nil || evt.Input == "" {
+	current := state.OutputIndexToArguments[evt.OutputIndex]
+	if completed == "" || !strings.HasPrefix(completed, current) || completed == current {
 		return nil
 	}
-	remainder, ok := resToChatArgumentsSnapshotSuffix(evt.Input, tool, state)
-	if !ok {
-		return nil
-	}
-	tool.argumentsDone = true
-	if remainder == "" {
-		return nil
-	}
+
+	remainder := completed[len(current):]
+	state.OutputIndexToArguments[evt.OutputIndex] = completed
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
 		ToolCalls: []ChatToolCall{{
 			Index: &idx,
@@ -420,13 +377,7 @@ func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		finishReason = "tool_calls"
 	}
 
-	chunks := resToChatCompleteFunctions(evt.Response, state)
-	if state.ProtocolError != "" {
-		return nil
-	}
-	if evt.Response != nil && evt.Response.Status == "completed" && state.SawToolCall {
-		finishReason = "tool_calls"
-	}
+	var chunks []ChatCompletionsChunk
 	chunks = append(chunks, makeChatFinishChunk(state, finishReason))
 
 	if state.IncludeUsage && state.Usage != nil {

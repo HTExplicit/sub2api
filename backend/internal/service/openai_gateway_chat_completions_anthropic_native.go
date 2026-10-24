@@ -169,7 +169,7 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 	var usage ClaudeUsage
 
 	// 读间隔上限：上游挂住 SSE 时中止组装（缓冲路径尚未提交响应头，可回 502）。
-	streamInterval := s.anthropicNativeStreamInterval()
+	streamInterval := anthropicNativeStreamInterval(s.cfg)
 	pump := newAnthropicNativeLinePump(scanner, streamInterval)
 	defer pump.stop()
 
@@ -328,7 +328,6 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	var firstTokenMs *int
 	firstChunk := true
 	clientDisconnected := false
-	var protocolErr error
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -357,7 +356,7 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	// 读间隔上限：上游挂住 SSE（不发数据也不断连）时结束排水。上游 ctx 为
 	// WithoutCancel 且 http.Client 无整体 Timeout，无此界限则客户端断开后
 	// scanner.Scan() 永久阻塞（见 anthropic native pump 文件注释）。
-	streamInterval := s.anthropicNativeStreamInterval()
+	streamInterval := anthropicNativeStreamInterval(s.cfg)
 	pump := newAnthropicNativeLinePump(scanner, streamInterval)
 	defer pump.stop()
 
@@ -373,9 +372,6 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	// 返回——与 messages 主路径 "stream usage incomplete after timeout" 同语义。
 	onIdle := func() (*OpenAIForwardResult, error) {
 		_ = resp.Body.Close()
-		if protocolErr != nil {
-			return resultWithUsage(), protocolErr
-		}
 		if !clientDisconnected {
 			logger.L().Warn("openai cc via native anthropic stream: data interval timeout",
 				zap.String("request_id", requestID),
@@ -401,27 +397,6 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 		return false
 	}
 
-	writeResponseEvent := func(event *apicompat.ResponsesStreamEvent) {
-		if protocolErr != nil || clientDisconnected {
-			return
-		}
-		chunks := apicompat.ResponsesEventToChatChunks(event, ccState)
-		if ccState.ProtocolError != "" {
-			protocolErr = errors.New(ccState.ProtocolError)
-			MarkResponseCommitted(c)
-			if !clientDisconnected {
-				if _, err := fmt.Fprint(c.Writer, buildChatStreamErrorSSE("upstream_protocol_error", ccState.ProtocolError)+"data: [DONE]\n\n"); err != nil {
-					clientDisconnected = true
-				}
-				c.Writer.Flush()
-			}
-			return
-		}
-		for _, chunk := range chunks {
-			writeChunk(chunk)
-		}
-	}
-
 	processAnthropicEvent := func(event *apicompat.AnthropicStreamEvent) bool {
 		if firstChunk {
 			firstChunk = false
@@ -442,14 +417,18 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 		syncAnthropicResponsesUsage(anthState, usage)
 		normalizeAnthropicEventUsageForResponses(event, usage)
 
-		// 客户端已断开：跳过转换与写出，继续读上游直到流结束（usage 完整、		// 连接及时归还），不再提前 return。
-		if clientDisconnected || protocolErr != nil {
+		// 客户端已断开：跳过转换与写出，继续读上游直到流结束（usage 完整、
+		// 连接及时归还），不再提前 return。
+		if clientDisconnected {
 			return false
 		}
 
 		responsesEvents := apicompat.AnthropicEventToResponsesEvents(event, anthState)
 		for _, resEvt := range responsesEvents {
-			writeResponseEvent(&resEvt)
+			ccChunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
+			for _, chunk := range ccChunks {
+				writeChunk(chunk)
+			}
 		}
 		if len(responsesEvents) > 0 {
 			c.Writer.Flush()
@@ -494,17 +473,17 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 		ccState.IncludeUsage = ccState.IncludeUsage || anthropicChatStreamHasUsage(&event, payload)
 
 		if processAnthropicEvent(&event) {
-			return resultWithUsage(), protocolErr
+			return resultWithUsage(), nil
 		}
 	}
 
 	// Finalize both state machines（客户端已断开时仍执行，保证 usage 汇总完整）。
 	finalResEvents := apicompat.FinalizeAnthropicResponsesStream(anthState)
 	for _, resEvt := range finalResEvents {
-		writeResponseEvent(&resEvt)
-	}
-	if protocolErr != nil {
-		return resultWithUsage(), protocolErr
+		ccChunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
+		for _, chunk := range ccChunks {
+			writeChunk(chunk) //nolint:errcheck
+		}
 	}
 	finalCCChunks := apicompat.FinalizeResponsesChatStream(ccState)
 	for _, chunk := range finalCCChunks {

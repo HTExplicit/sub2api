@@ -567,36 +567,62 @@ describe('admin AccountsView Cockpit console', () => {
     wrapper.unmount()
   })
 
-  it('restores URL filters through browser history while sensitive filters stay in session storage', async () => {
+  it('restores other URL filters while platform and status use local storage and ignore legacy URL lists', async () => {
+    localStorage.setItem('account-filter-values', JSON.stringify({ platform: 'openai', status: 'error' }))
     sessionStorage.setItem('account-console-sensitive-filters-v1', JSON.stringify({ search: 'private search', account_ids: [1] }))
     listFolders.mockResolvedValue([{ id: 7, name: 'Production', sort_order: 0, account_count: 1 }])
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/admin/accounts', component: { template: '<div />' } }]
     })
-    await router.push('/admin/accounts?folder=7&statuses=active&group_id=ungrouped&sort_by=status&sort_order=desc&page=2&page_size=50')
+    await router.push('/admin/accounts?folder=7&platforms=grok,gemini&statuses=active&types=oauth,apikey&group_id=ungrouped&sort_by=status&sort_order=desc&page=2&page_size=50')
     await router.isReady()
     const wrapper = mountView([router])
 
     // the restored search text is looked up before the first list request
     await vi.waitFor(() => {
       expect(listAccounts).toHaveBeenCalledWith(2, 50, expect.objectContaining({
-        folder: '7', statuses: 'active', group_id: 'ungrouped', search: 'private search', account_ids: '1', sort_by: 'status', sort_order: 'desc'
+        folder: '7', platform: 'openai', status: 'error', types: 'oauth,apikey', group_id: 'ungrouped', search: 'private search', account_ids: '1', sort_by: 'status', sort_order: 'desc'
       }), expect.any(Object))
     })
     await flushPromises()
     expect(router.currentRoute.value.query.search).toBeUndefined()
     expect(router.currentRoute.value.query.account_ids).toBeUndefined()
+    expect(listAccounts.mock.calls.at(-1)?.[2]).not.toHaveProperty('platforms')
+    expect(listAccounts.mock.calls.at(-1)?.[2]).not.toHaveProperty('statuses')
 
     await router.push('/admin/accounts?statuses=inactive')
     await flushPromises()
-    expect(listAccounts).toHaveBeenLastCalledWith(1, 20, expect.objectContaining({ statuses: 'inactive', search: 'private search', account_ids: '1' }), expect.any(Object))
+    expect(listAccounts).toHaveBeenLastCalledWith(1, 20, expect.objectContaining({ platform: 'openai', status: 'error', search: 'private search', account_ids: '1' }), expect.any(Object))
 
     router.back()
     await vi.waitFor(() => {
-      expect(listAccounts).toHaveBeenLastCalledWith(2, 50, expect.objectContaining({ folder: '7', statuses: 'active' }), expect.any(Object))
+      expect(listAccounts).toHaveBeenLastCalledWith(2, 50, expect.objectContaining({ folder: '7', platform: 'openai', status: 'error', types: 'oauth,apikey' }), expect.any(Object))
     })
     wrapper.unmount()
+  })
+
+  it('persists changed single platform and status values and their explicit clearing', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const filters = wrapper.findComponent(ConsoleFiltersStub)
+    const requestsBeforeChange = listAccounts.mock.calls.length
+    filters.vm.$emit('update:modelValue', { ...filters.props('modelValue'), platform: 'gemini', status: 'inactive' })
+    filters.vm.$emit('change')
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(requestsBeforeChange + 1))
+    expect(JSON.parse(localStorage.getItem('account-filter-values') || '{}')).toEqual({ platform: 'gemini', status: 'inactive' })
+    wrapper.unmount()
+
+    const restored = mountView()
+    await flushPromises()
+    const restoredFilters = restored.findComponent(ConsoleFiltersStub)
+    expect(restoredFilters.props('modelValue')).toMatchObject({ platform: 'gemini', status: 'inactive' })
+    const requestsBeforeClear = listAccounts.mock.calls.length
+    restoredFilters.vm.$emit('update:modelValue', { ...restoredFilters.props('modelValue'), platform: '', status: '' })
+    restoredFilters.vm.$emit('change')
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(requestsBeforeClear + 1))
+    expect(JSON.parse(localStorage.getItem('account-filter-values') || '{}')).toEqual({ platform: '', status: '' })
+    restored.unmount()
   })
 
   it('searches by name when the text is not the API key of any account', async () => {
@@ -731,7 +757,7 @@ describe('admin AccountsView Cockpit console', () => {
     getFacets.mockClear()
     await wrapper.get('[data-test="page-refresh"]').trigger('click')
     const filters = wrapper.findComponent(ConsoleFiltersStub)
-    filters.vm.$emit('update:modelValue', { ...filters.props('modelValue'), statuses: ['active'] })
+    filters.vm.$emit('update:modelValue', { ...filters.props('modelValue'), status: 'active' })
     filters.vm.$emit('change')
     await flushPromises()
     expect(searches).toEqual([])
@@ -741,11 +767,12 @@ describe('admin AccountsView Cockpit console', () => {
     // the refresh loads at once, the filter change a debounce later
     await vi.waitFor(() => expect(searches).toEqual([keyDigestTerm(key), keyDigestTerm(key)]), SEARCH_RELOAD_WAIT)
     await flushPromises()
-    expect(getFacets).toHaveBeenLastCalledWith(expect.objectContaining({ search: keyDigestTerm(key), statuses: 'active' }))
+    expect(getFacets).toHaveBeenLastCalledWith(expect.objectContaining({ search: keyDigestTerm(key), status: 'active' }))
     wrapper.unmount()
   })
 
   it('asks for upstream billing rates of the current page with the filters of the list request', async () => {
+    localStorage.setItem('account-filter-values', JSON.stringify({ platform: 'openai', status: 'active' }))
     sessionStorage.setItem('account-console-sensitive-filters-v1', JSON.stringify({ search: 'console', account_ids: [] }))
     listFolders.mockResolvedValue([{ id: 7, name: 'Production', sort_order: 0, account_count: 1 }])
     listTags.mockResolvedValue([{ id: 3, name: 'canary', sort_order: 0, account_count: 1 }])
@@ -759,7 +786,7 @@ describe('admin AccountsView Cockpit console', () => {
       history: createMemoryHistory(),
       routes: [{ path: '/admin/accounts', component: { template: '<div />' } }]
     })
-    await router.push('/admin/accounts?folder=7&statuses=active&group_id=23&tags=3&sort_by=status&sort_order=desc&page=2&page_size=50')
+    await router.push('/admin/accounts?folder=7&group_id=23&tags=3&sort_by=status&sort_order=desc&page=2&page_size=50')
     await router.isReady()
     const wrapper = mountView([router])
     try {
@@ -773,9 +800,9 @@ describe('admin AccountsView Cockpit console', () => {
       const [page, pageSize, rateFilters] = getUpstreamBillingRatesWithEtag.mock.calls[0]
       expect([page, pageSize]).toEqual([2, 50])
       expect(rateFilters).toEqual({
-        folder: '7', statuses: 'active', group_id: '23', tags: '3', search: 'console', sort_by: 'status', sort_order: 'desc'
+        folder: '7', platform: 'openai', status: 'active', group_id: '23', tags: '3', search: 'console', sort_by: 'status', sort_order: 'desc'
       })
-      for (const legacyKey of ['platform', 'type', 'status', 'group']) expect(rateFilters).not.toHaveProperty(legacyKey)
+      for (const legacyKey of ['platforms', 'type', 'statuses', 'group']) expect(rateFilters).not.toHaveProperty(legacyKey)
       // the filters of the list request: all it sends but lite and include_scheduler_score, which only shape its rows
       const { lite: _lite, include_scheduler_score: _includeSchedulerScore, ...listFilters } = listRequests[listRequests.length - 1]
       expect(rateFilters).toEqual(listFilters)

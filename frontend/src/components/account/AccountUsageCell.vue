@@ -585,7 +585,7 @@
             />
           </svg>
           <span
-            class="theme-dark-surface pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
           >
             <div class="font-semibold mb-1">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
             <div class="mb-2 text-gray-300">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
@@ -608,7 +608,7 @@
           v-if="showGeminiTodayStats && todayStats"
           class="mb-0.5 flex items-center"
         >
-          <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
+          <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
             <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
               {{ formatKeyRequests }} req
             </span>
@@ -635,14 +635,37 @@
           <div class="h-3 w-8 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
-        <div v-if="loading && !usageInfo" class="space-y-1">
+        <!-- Vertex 设置了配额上限：显示配额进度条 -->
+        <template v-if="isGeminiVertex">
+          <UsageProgressBar
+            v-if="quotaDailyBar"
+            label="1d"
+            :utilization="quotaDailyBar.utilization"
+            :resets-at="quotaDailyBar.resetsAt"
+            color="indigo"
+          />
+          <UsageProgressBar
+            v-if="quotaWeeklyBar"
+            label="7d"
+            :utilization="quotaWeeklyBar.utilization"
+            :resets-at="quotaWeeklyBar.resetsAt"
+            color="emerald"
+          />
+          <UsageProgressBar
+            v-if="quotaTotalBar"
+            label="total"
+            :utilization="quotaTotalBar.utilization"
+            color="purple"
+          />
+        </template>
+        <div v-if="loading" class="space-y-1">
           <div class="flex items-center gap-1">
             <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           </div>
         </div>
-        <div v-else-if="error && !usageInfo" class="text-xs text-red-500">
+        <div v-else-if="error" class="text-xs text-red-500">
           {{ error }}
         </div>
         <!-- Gemini: show daily usage bars when available -->
@@ -650,7 +673,6 @@
           <UsageProgressBar
             v-for="bar in geminiUsageBars"
             :key="bar.key"
-            :density="usageBarDensity"
             :label="bar.label"
             :utilization="bar.utilization"
             :resets-at="bar.resetsAt"
@@ -665,29 +687,6 @@
         <div v-else-if="!showGeminiTodayStats" class="text-xs text-gray-400">
           {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
         </div>
-        <UsageProgressBar
-          v-if="quotaDailyBar"
-          :density="usageBarDensity"
-          label="1d"
-          :utilization="quotaDailyBar.utilization"
-          :resets-at="quotaDailyBar.resetsAt"
-          color="indigo"
-        />
-        <UsageProgressBar
-          v-if="quotaWeeklyBar"
-          :density="usageBarDensity"
-          label="7d"
-          :utilization="quotaWeeklyBar.utilization"
-          :resets-at="quotaWeeklyBar.resetsAt"
-          color="emerald"
-        />
-        <UsageProgressBar
-          v-if="quotaTotalBar"
-          :density="usageBarDensity"
-          label="total"
-          :utilization="quotaTotalBar.utilization"
-          color="purple"
-        />
       </div>
     </template>
 
@@ -823,6 +822,7 @@ import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber, formatRelativeTime } from '@/utils/format'
 import { isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
+import { supportsAccountQuota } from '@/utils/accountQuota'
 import UsageProgressBar from './UsageProgressBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 import ClaudeResetCreditsCell from './ClaudeResetCreditsCell.vue'
@@ -1875,7 +1875,7 @@ const makeQuotaBar = (
 }
 
 const hasApiKeyQuota = computed(() => {
-  if (props.account.type !== 'apikey' && props.account.type !== 'bedrock') return false
+  if (!supportsAccountQuota(props.account.type)) return false
   return (
     (props.account.quota_daily_limit ?? 0) > 0 ||
     (props.account.quota_weekly_limit ?? 0) > 0 ||

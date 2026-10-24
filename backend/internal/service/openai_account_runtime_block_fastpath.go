@@ -456,7 +456,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if isOpenAIRequestScopedSafetyRejection(responseBody) {
 		return false
 	}
-	if isOpenAIRequestBudgetRejection(account, statusCode, responseBody) || isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
+	if isOpenAIRequestBudgetRejection(account, statusCode, responseBody) {
 		return false
 	}
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(statusCode, responseBody) {

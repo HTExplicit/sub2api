@@ -53,7 +53,7 @@ func TestRefreshAccountTokenUsesAccountCodexIdentity(t *testing.T) {
 	require.Equal(t, "with-identity", info.AccessToken)
 	expected := resolveCodexOutboundIdentityForAccount(account, "")
 	require.Equal(t, expected.userAgent, stub.userAgent)
-	require.Equal(t, "codex-tui", stub.originator)
+	require.Equal(t, openai.CodexCLIOriginator, stub.originator)
 }
 
 func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
@@ -74,8 +74,9 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 	SetCodexForceCLIEnabled(true)
 	forced := resolveCodexIdentitySnapshot(account, account, codexAccountIdentityOverrideUA(account))
 	require.Equal(t, "account", forced.IdentitySource)
-	require.Equal(t, deriveCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
-		"ForceCodexCLI drops the custom UA while retaining the account's derived TUI profile")
+	_, expectedUA, _ := openai.NormalizeCodexClientIdentityToCLI(codexTUIOriginator, deriveCodexClientIdentity(seed).UserAgent(forced.Version))
+	require.Equal(t, expectedUA, forced.UserAgent,
+		"ForceCodexCLI drops the custom UA while retaining the account's derived device profile")
 }
 
 func TestCodexIdentitySnapshotReportsTheSelectedFingerprintSource(t *testing.T) {
@@ -107,9 +108,10 @@ func TestCodexAccountIdentityUsesBuiltInVersionWhenCanonicalVersionIsInvalid(t *
 		Extra:       map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
 	profile, ok := account.CodexClientIdentity()
 	require.True(t, ok)
+	originator, userAgent, _ := openai.NormalizeCodexClientIdentityToCLI(codexTUIOriginator, profile.UserAgent(codexCLIVersion))
 	expected := codexOutboundIdentity{
-		userAgent:  profile.UserAgent(codexCLIVersion),
-		originator: codexTUIOriginator,
+		userAgent:  userAgent,
+		originator: originator,
 		version:    codexCLIVersion,
 	}
 
@@ -172,9 +174,8 @@ func TestCodexIdentityBackfillWritesOnlyMissingIdentities(t *testing.T) {
 	}
 }
 
-// 账号级身份：由种子确定性派生，UA 三处版本同源，形态与 codex-rs 的
-// `codex-tui/<ver> (<os> <osver>; <arch>) <terminal> (codex-tui; <ver>)` 一致。
-func TestEnforceCodexIdentityHeadersForAccountUsesDerivedTUIIdentity(t *testing.T) {
+// 账号级设备由种子确定性派生；出站采用官方 CLI 标识，保留设备及有效版本。
+func TestEnforceCodexIdentityHeadersForAccountUsesDerivedCLIIdentity(t *testing.T) {
 	seed := "6f2c1c7e-6e2d-4a4b-9f0b-2f5f0c8a1d33"
 	account := &Account{ID: 5, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
 		Credentials: map[string]any{"chatgpt_account_id": "acct-5"},
@@ -192,11 +193,12 @@ func TestEnforceCodexIdentityHeadersForAccountUsesDerivedTUIIdentity(t *testing.
 	enforceCodexIdentityHeadersForAccount(h, account, "")
 
 	version := resolveCodexOutboundIdentity("").version
-	uaPattern := regexp.MustCompile(`^codex-tui/` + regexp.QuoteMeta(version) +
-		` \((Mac OS|Windows|Ubuntu) [0-9]+\.[0-9]+\.[0-9]+; (arm64|x86_64)\) \S+ \(codex-tui; ` + regexp.QuoteMeta(version) + `\)$`)
+	uaPattern := regexp.MustCompile(`^codex_cli_rs/` + regexp.QuoteMeta(version) +
+		` \((Mac OS|Windows|Ubuntu) [0-9]+\.[0-9]+\.[0-9]+; (arm64|x86_64)\) \S+$`)
 	require.Regexp(t, uaPattern, h.Get("user-agent"))
-	require.Equal(t, first.UserAgent(version), h.Get("user-agent"))
-	require.Equal(t, "codex-tui", h.Get("originator"))
+	require.Contains(t, h.Get("user-agent"), fmt.Sprintf("(%s %s; %s) %s", first.OSType, first.OSVersion, first.Arch, first.Terminal))
+	require.NotContains(t, h.Get("user-agent"), "codex-tui")
+	require.Equal(t, openai.CodexCLIOriginator, h.Get("originator"))
 	require.Equal(t, version, h.Get("version"))
 	require.Contains(t, []string{"seatbelt", "windows_sandbox", "seccomp"}, first.Sandbox)
 }

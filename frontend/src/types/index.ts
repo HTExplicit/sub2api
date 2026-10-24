@@ -1470,9 +1470,9 @@ export interface AccountBulkTaxonomyRequest {
 
 export interface AccountConsoleFilterState {
   search: string
-  platforms: string[]
+  platform: string
   types: string[]
-  statuses: string[]
+  status: string
   plans: string[]
   proxies: string[]
   tags: number[]

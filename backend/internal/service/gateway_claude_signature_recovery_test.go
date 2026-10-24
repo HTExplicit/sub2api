@@ -95,106 +95,53 @@ func claudeRecoveryService(upstream *claudeRecoverySequenceUpstream, enabled boo
 		settingService: NewSettingService(&gatewayTTLSettingRepo{data: map[string]string{SettingKeyRectifierSettings: settings}}, cfg)}
 }
 
-func TestClaudeSignatureRecoveryForwardHTTPAndSSE(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		status  int
-		prelude string
-	}{
-		{"http_400", 400, ""},
-		{"sse_before_message", 200, ""},
-		{"sse_after_ping", 200, "event: ping\ndata: {\"type\":\"ping\"}\n\n"},
-		{"sse_after_held_message_start", 200, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"rejected-message\",\"model\":\"other-model\",\"usage\":{\"input_tokens\":900}}}\n\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-			firstBody := claudeRecoverySignatureError
-			if tc.status == 200 {
-				firstBody = tc.prelude + "event: error\ndata: " + firstBody + "\n\n"
-			}
-			upstream := &claudeRecoverySequenceUpstream{responses: []*http.Response{
-				claudeRecoveryResponse(tc.status, firstBody, "initial-rid"), claudeRecoveryResponse(200, claudeRecoverySuccessStream(), "repaired-rid"),
-			}}
-			initialBody := &claudeRecoveryCloseObservedBody{ReadCloser: upstream.responses[0].Body}
-			upstream.responses[0].Body = initialBody
-			upstream.beforeSend = func(index int) {
-				if index == 1 {
-					require.True(t, initialBody.closed, "the rejected response must release its connection before repair sends")
-				}
-			}
-			account := newAnthropicAPIKeyAccountForTest()
-			account.Extra = nil
-			parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(claudeRecoveryTestBody)), PlatformAnthropic)
-			require.NoError(t, err)
-			acceptedCalls := 0
-			parsed.OnUpstreamAccepted = func() { acceptedCalls++ }
-			result, err := claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.Len(t, upstream.requests, 2)
-			require.Equal(t, []int64{account.ID, account.ID}, upstream.accountIDs)
-			require.Equal(t, upstream.requests[0].URL, upstream.requests[1].URL)
-			require.Equal(t, upstream.requests[0].Header.Get("X-Api-Key"), upstream.requests[1].Header.Get("X-Api-Key"))
-			require.Equal(t, 1, acceptedCalls)
-			require.Equal(t, 7, result.Usage.InputTokens)
-			require.Equal(t, 3, result.Usage.OutputTokens)
-			require.Equal(t, "repaired-rid", result.RequestID)
-			require.False(t, result.UpstreamResponseModelConflict)
-			require.NotContains(t, rec.Body.String(), "rejected-message")
-			require.Equal(t, 1, strings.Count(rec.Body.String(), "event: message_start"))
-			require.NotContains(t, string(upstream.bodies[1]), "private-signature-value")
-			require.Equal(t, "between_tools", gjson.GetBytes(upstream.bodies[1], "thinking.type").String())
-			require.Equal(t, "high", gjson.GetBytes(upstream.bodies[1], "output_config.effort").String())
-			require.True(t, bytes.Equal(parsed.Body.Bytes(), upstream.bodies[1]))
-			trigger := claudeRecoveryOpsEvents(t, c)[0]
-			require.NotNil(t, trigger.SignatureRecovery)
-			require.Equal(t, "accepted", trigger.SignatureRecovery.Outcome)
-			require.Equal(t, 1, trigger.SignatureRecovery.Attempts)
-			require.Equal(t, 1, trigger.SignatureRecovery.Inbound.TotalCount)
-			diagnosticJSON, err := json.Marshal(trigger.SignatureRecovery)
-			require.NoError(t, err)
-			require.NotContains(t, string(diagnosticJSON), "private-signature-value")
-			require.NotContains(t, string(diagnosticJSON), "old reasoning")
-		})
+func TestClaudeSignatureRecoveryForwardHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	upstream := &claudeRecoverySequenceUpstream{responses: []*http.Response{
+		claudeRecoveryResponse(400, claudeRecoverySignatureError, "initial-rid"), claudeRecoveryResponse(200, claudeRecoverySuccessStream(), "repaired-rid"),
+	}}
+	initialBody := &claudeRecoveryCloseObservedBody{ReadCloser: upstream.responses[0].Body}
+	upstream.responses[0].Body = initialBody
+	upstream.beforeSend = func(index int) {
+		if index == 1 {
+			require.True(t, initialBody.closed, "the rejected response must release its connection before repair sends")
+		}
 	}
-}
-
-func TestClaudeSignatureRecoveryDoesNotReplaySSEAgainOrAfterOutput(t *testing.T) {
-	for _, prefix := range []string{"", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":4}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"} {
-		t.Run(fmt.Sprintf("output_%t", prefix != ""), func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-			errStream := prefix + "event: error\ndata: " + claudeRecoverySignatureError + "\n\n"
-			upstream := &claudeRecoverySequenceUpstream{responses: []*http.Response{claudeRecoveryResponse(200, errStream, "one"), claudeRecoveryResponse(200, errStream, "two")}}
-			account := newAnthropicAPIKeyAccountForTest()
-			account.Extra = nil
-			parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(claudeRecoveryTestBody)), PlatformAnthropic)
-			require.NoError(t, err)
-			_, err = claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
-			require.Error(t, err)
-			var failure *UpstreamFailoverError
-			require.ErrorAs(t, err, &failure)
-			require.Equal(t, 400, failure.StatusCode)
-			require.False(t, failure.ShouldRetryNextAccount())
-			require.False(t, failure.ShouldReportAccountScheduleFailure())
-			wantRequests := 2
-			if prefix != "" {
-				wantRequests = 1
-			}
-			require.Len(t, upstream.requests, wantRequests)
-			last := claudeRecoveryOpsEvents(t, c)[wantRequests-1]
-			wantReason := "attempt_limit"
-			if prefix != "" {
-				wantReason = "output_started"
-			}
-			require.Equal(t, wantReason, last.SignatureRecovery.Reason)
-		})
-	}
+	account := newAnthropicAPIKeyAccountForTest()
+	account.Extra = nil
+	parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(claudeRecoveryTestBody)), PlatformAnthropic)
+	require.NoError(t, err)
+	acceptedCalls := 0
+	parsed.OnUpstreamAccepted = func() { acceptedCalls++ }
+	result, err := claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, []int64{account.ID, account.ID}, upstream.accountIDs)
+	require.Equal(t, upstream.requests[0].URL, upstream.requests[1].URL)
+	require.Equal(t, upstream.requests[0].Header.Get("X-Api-Key"), upstream.requests[1].Header.Get("X-Api-Key"))
+	require.Equal(t, 1, acceptedCalls)
+	require.Equal(t, 7, result.Usage.InputTokens)
+	require.Equal(t, 3, result.Usage.OutputTokens)
+	require.Equal(t, "repaired-rid", result.RequestID)
+	require.False(t, result.UpstreamResponseModelConflict)
+	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: message_start"))
+	require.NotContains(t, string(upstream.bodies[1]), "private-signature-value")
+	require.Equal(t, "between_tools", gjson.GetBytes(upstream.bodies[1], "thinking.type").String())
+	require.Equal(t, "high", gjson.GetBytes(upstream.bodies[1], "output_config.effort").String())
+	require.True(t, bytes.Equal(parsed.Body.Bytes(), upstream.bodies[1]))
+	trigger := claudeRecoveryOpsEvents(t, c)[0]
+	require.NotNil(t, trigger.SignatureRecovery)
+	require.Equal(t, "accepted", trigger.SignatureRecovery.Outcome)
+	require.Equal(t, 1, trigger.SignatureRecovery.Attempts)
+	require.Equal(t, 1, trigger.SignatureRecovery.Inbound.TotalCount)
+	diagnosticJSON, err := json.Marshal(trigger.SignatureRecovery)
+	require.NoError(t, err)
+	require.NotContains(t, string(diagnosticJSON), "private-signature-value")
+	require.NotContains(t, string(diagnosticJSON), "old reasoning")
 }
 
 func TestClaudeSignatureRecoveryDisabledAndPassthrough(t *testing.T) {
@@ -220,7 +167,7 @@ func TestClaudeSignatureRecoveryDisabledAndPassthrough(t *testing.T) {
 }
 
 func TestClaudeSignatureRecoveryDecisionAndFailureEvidence(t *testing.T) {
-	for _, reason := range []string{"build_failed", "transport_failed", "empty_response", "budget_exhausted", "context_canceled", "body_unchanged", "output_started", "attempt_limit"} {
+	for _, reason := range []string{"build_failed", "transport_failed", "empty_response", "budget_exhausted", "context_canceled", "attempt_limit"} {
 		t.Run(reason, func(t *testing.T) {
 			state := newClaudeSignatureRecoveryState([]byte(claudeRecoveryTestBody))
 			diag := state.diagnostic("http_400", false)
@@ -233,13 +180,6 @@ func TestClaudeSignatureRecoveryDecisionAndFailureEvidence(t *testing.T) {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
-			}
-			if reason == "body_unchanged" {
-				diag.Source = "sse_error"
-				body = []byte(`{"messages":[{"role":"user","content":"hi"}]}`)
-			}
-			if reason == "output_started" {
-				diag.MessageStarted = true
 			}
 			if reason == "attempt_limit" {
 				state.used = true
@@ -303,82 +243,6 @@ func TestClaudeSignatureRecoveryFingerprintAndSanitizer(t *testing.T) {
 	require.NotContains(t, string(encoded), "private text")
 }
 
-func TestClaudeSignatureRecoverySharedHTTPAndSSELimit(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-	errStream := "event: error\ndata: " + claudeRecoverySignatureError + "\n\n"
-	upstream := &claudeRecoverySequenceUpstream{responses: []*http.Response{
-		claudeRecoveryResponse(400, claudeRecoverySignatureError, "http-rejection"),
-		claudeRecoveryResponse(200, errStream, "sse-rejection"),
-	}}
-	account := newAnthropicAPIKeyAccountForTest()
-	account.Extra = nil
-	parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(claudeRecoveryTestBody)), PlatformAnthropic)
-	require.NoError(t, err)
-	_, err = claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
-	require.Error(t, err)
-	require.Len(t, upstream.requests, 2)
-	attempts := claudeRecoveryOpsEvents(t, c)
-	require.Equal(t, "attempt_limit", attempts[len(attempts)-1].SignatureRecovery.Reason)
-}
-
-func TestClaudeSignatureRecoveryFailureStopsWithoutHealthPenalty(t *testing.T) {
-	for _, streamFailure := range []bool{false, true} {
-		t.Run(fmt.Sprintf("stream_failure_%t", streamFailure), func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-			serviceError := `{"type":"error","error":{"type":"service_error","message":"temporarily unavailable"}}`
-			repairedStatus := 503
-			repairedBody := serviceError
-			if streamFailure {
-				repairedStatus = 200
-				repairedBody = "event: error\ndata: " + serviceError + "\n\n"
-			}
-			upstream := &claudeRecoverySequenceUpstream{responses: []*http.Response{
-				claudeRecoveryResponse(200, "event: error\ndata: "+claudeRecoverySignatureError+"\n\n", "initial"),
-				claudeRecoveryResponse(repairedStatus, repairedBody, "retry"),
-			}}
-			account := newAnthropicAPIKeyAccountForTest()
-			account.Extra = nil
-			parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(claudeRecoveryTestBody)), PlatformAnthropic)
-			require.NoError(t, err)
-			_, err = claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
-			require.Error(t, err)
-			var failure *UpstreamFailoverError
-			require.ErrorAs(t, err, &failure)
-			require.False(t, failure.ShouldRetryNextAccount())
-			require.False(t, failure.ShouldReportAccountScheduleFailure())
-			require.Equal(t, serviceError, string(failure.ResponseBody))
-			require.Len(t, upstream.requests, 2)
-		})
-	}
-}
-
-func TestClaudeSignatureRecoveryExplicitRequestPatternMatchesPrelude(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-	// This is an existing HTTP rectifier match without a "thinking" word; it
-	// must agree with the prelude handler when the provider declares HTTP 400.
-	first := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"discard-me\"}}\n\nevent: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"signature is invalid\"}}\n\n"
-	upstream := &claudeRecoverySequenceUpstream{responses: []*http.Response{claudeRecoveryResponse(200, first, "first"), claudeRecoveryResponse(200, claudeRecoverySuccessStream(), "second")}}
-	account := newAnthropicAPIKeyAccountForTest()
-	account.Extra = nil
-	parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(claudeRecoveryTestBody)), PlatformAnthropic)
-	require.NoError(t, err)
-	result, err := claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.requests, 2)
-	require.NotContains(t, rec.Body.String(), "discard-me")
-	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: message_start"))
-}
-
 func TestClaudeSignatureRecoverySlowInitialResponseDoesNotSpendDecisionBudget(t *testing.T) {
 	clock := time.Unix(0, 0)
 	state := newClaudeSignatureRecoveryState([]byte(claudeRecoveryTestBody))
@@ -403,41 +267,6 @@ func TestClaudeSignatureRecoverySlowInitialResponseDoesNotSpendDecisionBudget(t 
 	require.Equal(t, 1, sent)
 	require.Equal(t, "accepted", diag.Outcome)
 	require.Equal(t, int64(1000), diag.ElapsedMs)
-}
-
-func TestClaudeSignatureRecoveryIncompleteRepairedStreamRecordsActualAttempt(t *testing.T) {
-	for _, initialHTTP := range []bool{false, true} {
-		t.Run(fmt.Sprintf("initial_http_%t", initialHTTP), func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-			firstStatus := 200
-			firstBody := "event: error\ndata: " + claudeRecoverySignatureError + "\n\n"
-			if initialHTTP {
-				firstStatus = 400
-				firstBody = claudeRecoverySignatureError
-			}
-			incomplete := strings.Split(claudeRecoverySuccessStream(), "event: message_stop")[0]
-			upstream := &claudeRecoverySequenceUpstream{responses: []*http.Response{claudeRecoveryResponse(firstStatus, firstBody, "initial"), claudeRecoveryResponse(200, incomplete, "incomplete-retry")}}
-			account := newAnthropicAPIKeyAccountForTest()
-			account.Extra = nil
-			parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(claudeRecoveryTestBody)), PlatformAnthropic)
-			require.NoError(t, err)
-			_, err = claudeRecoveryService(upstream, true).Forward(context.Background(), c, account, parsed)
-			require.Error(t, err)
-			require.Contains(t, err.Error(), "missing terminal")
-			attempts := claudeRecoveryOpsEvents(t, c)
-			require.Equal(t, "response_read_failed", attempts[0].SignatureRecovery.Outcome)
-			require.Equal(t, "stream_incomplete", attempts[0].SignatureRecovery.Reason)
-			last := attempts[len(attempts)-1]
-			require.Equal(t, "stream_failure", last.Kind)
-			require.Equal(t, 502, last.UpstreamStatusCode)
-			require.Equal(t, 200, last.UpstreamHTTPStatusCode)
-			require.Equal(t, "incomplete-retry", last.UpstreamRequestID)
-			require.Len(t, upstream.requests, 2)
-		})
-	}
 }
 
 func TestClaudeSignatureRecoveryHTTPToolOnlyKeepsExistingSecondStage(t *testing.T) {
