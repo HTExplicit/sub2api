@@ -87,7 +87,7 @@ func TestCodexFingerprintAccountViewCustomUAAndUnknownDeviceFields(t *testing.T)
 	require.Contains(t, view.Identity.UserAgent, "0.162.0")
 	account.Credentials["user_agent"] = "codex-tui/0.150.0"
 	view = DescribeCodexFingerprintAccount(account, account)
-	require.Equal(t, "codex-tui/0.162.0", view.Identity.UserAgent)
+	require.Equal(t, "codex_cli_rs/0.162.0", view.Identity.UserAgent)
 	require.NotNil(t, view.EffectiveDevice)
 	require.Nil(t, view.EffectiveDevice.OSType)
 	require.Nil(t, view.EffectiveDevice.Terminal)

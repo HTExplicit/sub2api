@@ -15,7 +15,7 @@ import (
 // CodexClientIdentityExtraKey 持久化在 accounts.extra 中的每账号 Codex 客户端身份。
 // OpenAI OAuth（及 setup_token）账号一账号一身份：由系统种子确定性派生后固定，
 // 所有出站请求（HTTP / 透传 / WS 握手 / 探针 / token 刷新）共用，使上游看到的
-// 是同一台设备上运行的同一个真实 Codex TUI，而不是多个用户各自的客户端。
+// 是同一台固定设备；出站客户端标识由统一身份解析器归一。
 const CodexClientIdentityExtraKey = "codex_client_identity"
 
 const codexClientIdentitySchemaVersion = 1
@@ -105,7 +105,7 @@ func codexSandboxForUserAgent(userAgent string) string {
 	}
 }
 
-// UserAgent 拼出真实 Codex TUI 的 User-Agent：
+// UserAgent 保留设备原有的 Codex TUI User-Agent 形态，出站由官方规则归一为 CLI：
 // codex-tui/<ver> (<os> <osver>; <arch>) <terminal> (codex-tui; <ver>)。
 // 首段版本、尾部括号组版本与 version 头必须同源（codex-rs 三处都取同一个
 // CARGO_PKG_VERSION）。

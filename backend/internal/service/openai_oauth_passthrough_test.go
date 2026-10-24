@@ -1299,7 +1299,7 @@ func TestOpenAIGatewayService_OAuthLegacy_CompositeCodexUAUsesCodexOriginator(t 
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	// 浏览器型复合 UA 被替换为该账号的 Codex TUI 身份 UA，
+	// 浏览器型复合 UA 被替换为该账号固定设备的 Codex CLI 身份 UA，
 	// originator 随最终 UA 配套（issue #3901）。
 	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))

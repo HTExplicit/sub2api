@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
@@ -14,47 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
-
-func TestClaudeStreamErrorTerminal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, test := range []struct {
-		errorType string
-		message   string
-		status    int
-	}{
-		{"invalid_request_error", "Invalid thinking signature", 400},
-		{"overloaded_error", "Overloaded", 503},
-		{"service_error", "Service temporarily unavailable", 502},
-	} {
-		for _, started := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/stream=%v", test.errorType, started), func(t *testing.T) {
-				recorder := httptest.NewRecorder()
-				c, _ := gin.CreateTestContext(recorder)
-				c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-				if started {
-					_, err := c.Writer.WriteString(partialMessageStartSSE)
-					require.NoError(t, err)
-				}
-				body := []byte(fmt.Sprintf(`{"type":"error","error":{"type":%q,"message":%q}}`, test.errorType, test.message))
-				failoverErr := service.ClassifyClaudeStreamError(body).FailoverError(body)
-				(&GatewayHandler{}).handleFailoverExhausted(c, failoverErr, service.PlatformAnthropic, started)
-				if started {
-					require.Equal(t, 200, recorder.Code)
-					require.Equal(t, 1, strings.Count(recorder.Body.String(), "event: message_start"))
-					require.Equal(t, 1, strings.Count(recorder.Body.String(), `"type":"error"`))
-					parsed := parseOpsErrorResponse(recorder.Body.Bytes())
-					require.Equal(t, test.errorType, parsed.ErrorType)
-					require.Equal(t, test.message, parsed.Message)
-				} else {
-					require.Equal(t, test.status, recorder.Code)
-					require.Equal(t, test.errorType, gjson.Get(recorder.Body.String(), "error.type").String())
-					require.Equal(t, test.message, gjson.Get(recorder.Body.String(), "error.message").String())
-				}
-				require.NotContains(t, recorder.Body.String(), "Upstream access forbidden")
-			})
-		}
-	}
-}
 
 type claudeStreamPassthroughRepo struct {
 	service.ErrorPassthroughRepository
@@ -77,7 +35,7 @@ func TestClaudeStreamErrorTerminal_PassthroughRulePrecedence(t *testing.T) {
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 	body := []byte(`{"error":{"type":"overloaded_error","message":"Overloaded"}}`)
-	handler.handleFailoverExhausted(c, service.ClassifyClaudeStreamError(body).FailoverError(body), service.PlatformAnthropic, false)
+	handler.handleFailoverExhausted(c, &service.UpstreamFailoverError{StatusCode: 529, ResponseBody: body}, service.PlatformAnthropic, false)
 	require.Equal(t, responseCode, recorder.Code)
 	require.Equal(t, message, gjson.Get(recorder.Body.String(), "error.message").String())
 	require.Equal(t, true, c.GetBool(service.OpsSkipPassthroughKey))
@@ -142,7 +100,7 @@ func TestClaudeOpsErrorLogger_StreamErrorSemanticStatus(t *testing.T) {
 				c.Set(service.OpsUpstreamErrorsKey, []*service.OpsUpstreamErrorEvent{{Platform: service.PlatformAnthropic, Kind: "stream_error", UpstreamStatusCode: test.status, UpstreamHTTPStatusCode: 200, Message: "provider failure"}})
 				_, err := c.Writer.WriteString(partialMessageStartSSE)
 				require.NoError(t, err)
-				(&GatewayHandler{}).handleFailoverExhausted(c, service.ClassifyClaudeStreamError(body).FailoverError(body), service.PlatformAnthropic, true)
+				(&GatewayHandler{}).handleFailoverExhausted(c, &service.UpstreamFailoverError{StatusCode: 529, ResponseBody: body}, service.PlatformAnthropic, true)
 			})
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/messages", nil))

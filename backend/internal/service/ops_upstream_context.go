@@ -411,8 +411,7 @@ func IsGatewayFixedClientMessage(message string) bool {
 		openAISilentRefusalClientMessage,
 		openAIUpstreamAccessUnavailableClientMessage,
 		geminiCustomCodeSkippedClientMessage,
-		"Temporary upstream failure",
-		"Upstream failed to process the request":
+		"Temporary upstream failure":
 		return true
 	}
 	return false

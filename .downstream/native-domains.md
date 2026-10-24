@@ -78,11 +78,16 @@ invented from an empty request. Reads never persist identities or timestamps.
 The page loads full identities automatically, limits detail reads to three,
 rejects obsolete page/policy/mode responses, and retains unsaved mode drafts.
 General account edits preserve the latest stored mode when it is omitted.
-Existing seeds and persisted TUI identities are retained, and new accounts still
+Existing seeds and persisted device identities are retained, and new accounts still
 default to `device`.
 
-Enabled simulation uses one fixed credential-source TUI device with independent
-real conversations. Stored `session` / `full` values and API inputs remain
+Enabled simulation uses one randomly seed-derived, fixed credential-source device
+with independent real conversations. The final outbound identity uses official
+`codex_cli_rs` normalization for both originator and User-Agent, including the
+per-account device path. Stored device fields, OS/architecture/terminal, effective
+version and conversation identities retain their existing selection. Persisted
+TUI values remain stored; normalization does not regenerate the device.
+Stored `session` / `full` values and API inputs remain
 compatible but have effective mode `device`; the UI offers only `off` and
 fixed-device/multiple-conversation mode. Their stored raw values are not migrated.
 Every enabled mode scopes session/thread/parent/window identities one-to-one by

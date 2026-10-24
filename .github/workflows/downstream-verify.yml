@@ -47,9 +47,9 @@ jobs:
       - name: DeepSeek default reasoning contracts
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/server/routes -run '^TestDeepSeekDefault' -count=1
-      - name: Claude stream failure and signature recovery contracts
+      - name: Claude HTTP signature repair and historical Ops contracts
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service ./internal/handler -run '^TestClaude(ClassifyStreamError|ThinkingSignatureError|Prelude_|Signature|StreamError|StreamFailureStatus|OpsErrorLogger)|^TestGatewayService_Forward_(PreOutputSSE|PostOutputSSE)' -count=1
+        run: go test -p=1 -tags unit ./internal/service ./internal/handler -run '^TestClaude(ThinkingSignatureError|Signature|OpsErrorLogger)|^TestGatewayService_Forward_(PreOutputSSE|PostOutputSSE)' -count=1
       - name: Independent Pelican contracts
         working-directory: backend
         run: |

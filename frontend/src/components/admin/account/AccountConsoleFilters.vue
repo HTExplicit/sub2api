@@ -5,6 +5,22 @@
       <SearchInput :model-value="modelValue.search" :placeholder="t('admin.accounts.searchAccounts')" data-ui="account-search" class="min-w-0 w-full sm:w-56" @update:model-value="updateSearch" @search="emit('change')" />
     </div>
     <div v-if="part !== 'search'" class="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" data-ui="account-inline-filters">
+      <Select
+        :model-value="modelValue.platform"
+        :options="platformOptions"
+        :aria-label="t('admin.accounts.filterPlatform')"
+        class="min-w-0 sm:w-40"
+        data-test="account-filter-platform"
+        @update:model-value="withUpdate({ platform: $event as string })"
+      />
+      <Select
+        :model-value="modelValue.status"
+        :options="statusOptions"
+        :aria-label="t('admin.accounts.filterStatus')"
+        class="min-w-0 sm:w-40"
+        data-test="account-filter-status"
+        @update:model-value="withUpdate({ status: $event as string })"
+      />
       <div v-for="menu in menus" :key="menu.key" class="relative min-w-0">
         <button
           type="button"
@@ -113,8 +129,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Select from '@/components/common/Select.vue'
 import SearchInput from '@/components/common/SearchInput.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import type {
   AccountConsoleFacets,
   AccountConsoleFilterState,
@@ -122,7 +140,7 @@ import type {
   AdminGroup
 } from '@/types'
 
-type MenuKey = 'platforms' | 'types' | 'statuses' | 'plans' | 'proxies' | 'tags'
+type MenuKey = 'types' | 'plans' | 'proxies' | 'tags'
 type MenuOption = AccountFacetOption
 
 const props = withDefaults(defineProps<{
@@ -156,26 +174,25 @@ const typeLabel = (value: string) => {
   return labels[value] || value
 }
 
-const statusLabel = (value: string) => {
-  const labels: Record<string, string> = {
-    active: t('admin.accounts.status.active'),
-    inactive: t('admin.accounts.status.inactive'),
-    disabled: t('admin.accounts.status.inactive'),
-    error: t('admin.accounts.status.error'),
-    rate_limited: t('admin.accounts.status.rateLimited'),
-    temp_unschedulable: t('admin.accounts.status.tempUnschedulable'),
-    unschedulable: t('admin.accounts.status.unschedulable')
-  }
-  return labels[value] || value
-}
+const platformOptions = computed(() => [
+  { value: '', label: t('admin.accounts.allPlatforms') },
+  ...CONCRETE_PLATFORM_OPTIONS
+])
+const statusOptions = computed(() => [
+  { value: '', label: t('admin.accounts.allStatus') },
+  { value: 'active', label: t('admin.accounts.status.active') },
+  { value: 'inactive', label: t('admin.accounts.status.inactive') },
+  { value: 'error', label: t('admin.accounts.status.error') },
+  { value: 'rate_limited', label: t('admin.accounts.status.rateLimited') },
+  { value: 'temp_unschedulable', label: t('admin.accounts.status.tempUnschedulable') },
+  { value: 'unschedulable', label: t('admin.accounts.status.unschedulable') }
+])
 
 const normalizedOptions = (items: AccountFacetOption[] | undefined, labeler?: (value: string) => string) =>
   (items || []).map((item) => ({ ...item, label: labeler?.(item.value) || item.label }))
 
 const menus = computed<Array<{ key: MenuKey; label: string; options: MenuOption[] }>>(() => [
-  { key: 'platforms', label: t('admin.accounts.filterPlatform'), options: normalizedOptions(props.facets?.platforms) },
   { key: 'types', label: t('admin.accounts.filterType'), options: normalizedOptions(props.facets?.types, typeLabel) },
-  { key: 'statuses', label: t('admin.accounts.filterStatus'), options: normalizedOptions(props.facets?.statuses, statusLabel) },
   { key: 'plans', label: t('admin.accounts.filterPlan'), options: normalizedOptions(props.facets?.plans) },
   { key: 'proxies', label: t('admin.accounts.filterProxy'), options: normalizedOptions(props.facets?.proxies) },
   {
@@ -264,7 +281,7 @@ const removeChip = (chip: FilterChip) => {
 }
 
 const clearAll = () => withUpdate({
-  platforms: [], types: [], statuses: [], plans: [], proxies: [], tags: [], group_id: '', account_ids: []
+  platform: '', types: [], status: '', plans: [], proxies: [], tags: [], group_id: '', account_ids: []
 })
 
 const handleDocumentClick = (event: MouseEvent) => {

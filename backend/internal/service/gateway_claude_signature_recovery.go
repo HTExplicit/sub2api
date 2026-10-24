@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -120,7 +119,7 @@ func (s *GatewayService) claudeSignatureErrorCandidate(ctx context.Context, acco
 	return s.settingService != nil && s.isSignatureErrorPattern(ctx, account, body)
 }
 
-// run provides one first-stage repair shared by HTTP and SSE rejection paths.
+// run provides the first-stage repair for HTTP signature rejections.
 // Its decision budget begins at the rejection, not before the first upstream
 // request. Normal transport/stream timeouts remain in force after sending.
 func (s *claudeSignatureRecoveryState) run(
@@ -133,22 +132,11 @@ func (s *claudeSignatureRecoveryState) run(
 		diagnostic.Reason = "context_canceled"
 		return nil, nil, nil
 	}
-	if diagnostic.MessageStarted {
-		diagnostic.Reason = "output_started"
-		return nil, nil, nil
-	}
 	if s.used {
 		diagnostic.Reason = "attempt_limit"
 		return nil, nil, nil
 	}
 	filteredBody := FilterThinkingBlocksForRetry(baseBody, model)
-	// The existing HTTP two-stage fallback can need a no-op first stage
-	// before a tool-specific rejection authorizes its second-stage filter.
-	// New SSE recovery must not replay an unchanged body.
-	if bytes.Equal(filteredBody, baseBody) && diagnostic.Source == "sse_error" {
-		diagnostic.Reason = "body_unchanged"
-		return nil, nil, nil
-	}
 	s.used = true
 	req, wireBody, err := build(filteredBody)
 	if err != nil {

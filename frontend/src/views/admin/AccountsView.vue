@@ -712,6 +712,7 @@ import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { adminAPI } from '@/api/admin'
 import type { AccountListFilters } from '@/api/admin/accounts'
 import accountJobsAPI, { type AccountJob } from '@/api/admin/accountJobs'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -842,6 +843,31 @@ const loadSensitiveConsoleState = (): Pick<AccountConsoleFilterState, 'search' |
 }
 const initialSensitiveConsoleState = loadSensitiveConsoleState()
 
+// Account filter settings
+const ACCOUNT_FILTER_STORAGE_KEY = 'account-filter-values'
+type AccountFilterValues = {
+  platform: string
+  status: string
+}
+const loadInitialAccountFilterValues = (): AccountFilterValues => {
+  const fallback: AccountFilterValues = { platform: '', status: '' }
+  try {
+    const raw = localStorage.getItem(ACCOUNT_FILTER_STORAGE_KEY)
+    if (!raw) return fallback
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return fallback
+    const values = parsed as Record<string, unknown>
+    return {
+      platform: typeof values.platform === 'string' && CONCRETE_PLATFORM_OPTIONS.some(option => option.value === values.platform)
+        ? values.platform : '',
+      status: typeof values.status === 'string' && ['active', 'inactive', 'error', 'rate_limited', 'temp_unschedulable', 'unschedulable'].includes(values.status)
+        ? values.status : ''
+    }
+  } catch {
+    return fallback
+  }
+}
+
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
 const ACCOUNT_VIEW_MODE_STORAGE_KEY = 'account-console-view-mode'
@@ -860,10 +886,9 @@ const activeFolder = ref(queryString('folder'))
 const showTaxonomyManager = ref(false)
 const detailsAccount = ref<Account | null>(null)
 const consoleFilters = ref<AccountConsoleFilterState>({
+  ...loadInitialAccountFilterValues(),
   search: initialSensitiveConsoleState.search,
-  platforms: queryList('platforms'),
   types: queryList('types'),
-  statuses: queryList('statuses'),
   plans: queryList('plans'),
   proxies: queryList('proxies'),
   tags: queryList('tags').map(Number).filter((id) => Number.isInteger(id) && id > 0),
@@ -1442,12 +1467,10 @@ const {
 } = useTableLoader<AccountListItem, any>({
   fetchFn: adminAPI.accounts.list,
   initialParams: {
-    platform: '',
+    platform: consoleFilters.value.platform,
+    status: consoleFilters.value.status,
     type: '',
-    status: '',
-    platforms: '',
     types: '',
-    statuses: '',
     plans: '',
     proxies: '',
     folder: '',
@@ -1485,9 +1508,7 @@ const buildConsoleRouteQuery = (): Record<string, string> => {
   const setList = (key: string, values: Array<string | number>) => {
     if (values.length) query[key] = values.join(',')
   }
-  setList('platforms', state.platforms)
   setList('types', state.types)
-  setList('statuses', state.statuses)
   setList('plans', state.plans)
   setList('proxies', state.proxies)
   setList('tags', state.tags)
@@ -1517,9 +1538,7 @@ const applyConsoleRouteState = () => {
   activeFolder.value = queryString('folder')
   consoleFilters.value = {
     ...consoleFilters.value,
-    platforms: queryList('platforms'),
     types: queryList('types'),
-    statuses: queryList('statuses'),
     plans: queryList('plans'),
     proxies: queryList('proxies'),
     tags: queryList('tags').map(Number).filter((id) => Number.isInteger(id) && id > 0),
@@ -1536,9 +1555,9 @@ const applyConsoleRouteState = () => {
 const buildConsoleAPIParams = (includeFolder = true) => {
   const state = consoleFilters.value
   return {
-    platforms: state.platforms.length ? state.platforms.join(',') : undefined,
+    platform: state.platform || undefined,
     types: state.types.length ? state.types.join(',') : undefined,
-    statuses: state.statuses.length ? state.statuses.join(',') : undefined,
+    status: state.status || undefined,
     plans: state.plans.length ? state.plans.join(',') : undefined,
     proxies: state.proxies.length ? state.proxies.join(',') : undefined,
     folder: includeFolder && activeFolder.value ? activeFolder.value : undefined,
@@ -1901,7 +1920,21 @@ const refreshUpstreamBillingSortedList = async (force = false) => {
   await refreshUpstreamBillingRates(force)
 }
 
+useIntervalFn(() => { void refreshUpstreamBillingRates() }, 5 * 60_000, { immediate: false })
+
+const saveAccountFilterValues = () => {
+  try {
+    localStorage.setItem(ACCOUNT_FILTER_STORAGE_KEY, JSON.stringify({
+      platform: consoleFilters.value.platform,
+      status: consoleFilters.value.status
+    }))
+  } catch {
+    // Filtering must remain available when browser storage is unavailable.
+  }
+}
+
 const debouncedReload = () => {
+  saveAccountFilterValues()
   clearSelection()
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
@@ -2716,9 +2749,9 @@ const accountConsoleStatus = (account: Account) => {
 }
 const accountMatchesCurrentFilters = (account: Account) => {
   const state = consoleFilters.value
-  if (state.platforms.length && !state.platforms.includes(account.platform)) return false
+  if (state.platform && state.platform !== account.platform) return false
   if (state.types.length && !state.types.includes(account.type)) return false
-  if (state.statuses.length && !state.statuses.includes(accountConsoleStatus(account))) return false
+  if (state.status && state.status !== accountConsoleStatus(account)) return false
   if (state.plans.length) {
     const plan = String(getAccountPlanType(account) || '').toLowerCase()
     if (!state.plans.some(value => value.toLowerCase() === plan)) return false

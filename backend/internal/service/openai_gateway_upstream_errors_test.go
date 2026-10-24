@@ -33,7 +33,7 @@ func TestClassifyOpenAIRequestRejection(t *testing.T) {
 		{"model missing without code", 400, `{"error":{"message":"unknown provider for model missing-model"}}`, ""},
 		{"model unavailable", 400, `{"error":{"type":"model_not_supported","code":400,"message":"model is not supported"}}`, ""},
 		{"workspace access", 400, `{"error":{"code":"deactivated_workspace"}}`, ""},
-		{"reported upstream failure", 400, `{"error":{"type":"upstream_error","message":"failed"}}`, ""},
+		{"upstream error envelope", 400, `{"error":{"type":"upstream_error","message":"failed"}}`, "unclassified_bad_request"},
 		{"authentication HTTP error", 401, `{"error":{"type":"invalid_request_error"}}`, ""},
 		{"upstream gateway error", 502, `{"error":{"message":"generic compatibility failure"}}`, ""},
 	}

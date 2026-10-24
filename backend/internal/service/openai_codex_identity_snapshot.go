@@ -123,7 +123,7 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, po
 			snapshot.IdentitySource = "override_ua"
 		}
 	} else if source != nil {
-		if accountIdentity, ok := source.CodexClientIdentity(); ok && accountIdentity.UserAgent(identity.version) == identity.userAgent {
+		if _, ok := source.CodexClientIdentity(); ok {
 			snapshot.IdentitySource = "account"
 		}
 	}

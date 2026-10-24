@@ -9,9 +9,9 @@ vi.mock('vue-i18n', () => ({
 
 const state = (): AccountConsoleFilterState => ({
   search: '',
-  platforms: ['openai'],
-  types: [],
-  statuses: [],
+  platform: 'openai',
+  types: ['apikey'],
+  status: '',
   plans: [],
   proxies: [],
   tags: [4],
@@ -27,7 +27,10 @@ const facets: AccountConsoleFacets = {
     { value: 'openai', label: 'OpenAI', count: 7 },
     { value: 'grok', label: 'Grok', count: 3 }
   ],
-  types: [],
+  types: [
+    { value: 'apikey', label: 'API Key', count: 7 },
+    { value: 'oauth', label: 'OAuth', count: 3 }
+  ],
   statuses: [],
   plans: [],
   proxies: [],
@@ -46,18 +49,18 @@ describe('AccountConsoleFilters', () => {
   it('shows facet counts and removes individual active filters', async () => {
     const wrapper = mount(AccountConsoleFilters, {
       props: { modelValue: state(), facets, groups: [] },
-      global: { stubs: { SearchInput: true, Icon: true } }
+      global: { stubs: { Select: true, SearchInput: true, Icon: true } }
     })
 
-    await wrapper.get('[data-test="account-filter-platforms"]').trigger('click')
-    const platformMenu = wrapper.get('[data-test="account-filter-platforms"]').element.parentElement!
-    expect(platformMenu.textContent).toContain('OpenAI')
-    expect(platformMenu.textContent).toContain('7')
-    expect(platformMenu.textContent).toContain('Grok')
-    expect(platformMenu.textContent).toContain('3')
+    await wrapper.get('[data-test="account-filter-types"]').trigger('click')
+    const typeMenu = wrapper.get('[data-test="account-filter-types"]').element.parentElement!
+    expect(typeMenu.textContent).toContain('admin.accounts.apiKey')
+    expect(typeMenu.textContent).toContain('7')
+    expect(typeMenu.textContent).toContain('admin.accounts.oauthType')
+    expect(typeMenu.textContent).toContain('3')
 
-    await wrapper.get('[data-test="account-filter-chip-platforms:openai"]').trigger('click')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ platforms: [] })
+    await wrapper.get('[data-test="account-filter-chip-types:apikey"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ types: [] })
     expect(wrapper.emitted('change')).toHaveLength(1)
 
     await wrapper.setProps({ modelValue: state() })
@@ -67,6 +70,30 @@ describe('AccountConsoleFilters', () => {
     await wrapper.setProps({ modelValue: state() })
     await wrapper.get('[data-test="account-filter-chip-account_ids:import"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ account_ids: [] })
+    wrapper.unmount()
+  })
+
+  it('uses single platform and status selections while other filter menus stay multiple', async () => {
+    const wrapper = mount(AccountConsoleFilters, {
+      props: { modelValue: state(), facets, groups: [] },
+      global: { stubs: { Select: true, SearchInput: true, Icon: true } }
+    })
+
+    wrapper.findComponent('[data-test="account-filter-platform"]').vm.$emit('update:modelValue', 'grok')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ platform: 'grok', types: ['apikey'] })
+    wrapper.findComponent('[data-test="account-filter-status"]').vm.$emit('update:modelValue', 'error')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ status: 'error' })
+    wrapper.findComponent('[data-test="account-filter-platform"]').vm.$emit('update:modelValue', '')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ platform: '' })
+
+    await wrapper.get('[data-test="account-filter-types"]').trigger('click')
+    await wrapper.findAll('input[type="checkbox"]')[1].setValue(true)
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ types: ['apikey', 'oauth'] })
+    expect(wrapper.find('[data-test="account-filter-chip-platforms:openai"]').exists()).toBe(false)
+
+    await wrapper.get('[data-ui="account-filters-clear"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ platform: '', status: '', types: [], tags: [] })
+    wrapper.unmount()
   })
 })
 
@@ -75,10 +102,10 @@ it('shows all filters inline and preserves selections across split theme parts',
   const filters = { ...state(), types: ['apikey'], group_id: '12', privacy_mode: 'training_off' }
   const wrapper = mount(AccountConsoleFilters, {
     props: { modelValue: filters, facets, groups: [] },
-    global: { stubs: { SearchInput: true, Icon: true } }
+    global: { stubs: { Select: true, SearchInput: true, Icon: true } }
   })
   expect(wrapper.find('[data-test="account-more-filters"]').exists()).toBe(false)
-  for (const key of ['platforms', 'types', 'statuses', 'plans', 'proxies', 'tags']) {
+  for (const key of ['platform', 'types', 'status', 'plans', 'proxies', 'tags']) {
     expect(wrapper.get(`[data-test="account-filter-${key}"]`).isVisible()).toBe(true)
   }
   expect(wrapper.get('[data-ui="account-inline-filters"]').classes()).toContain('grid-cols-2')

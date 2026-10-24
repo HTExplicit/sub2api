@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -190,6 +192,63 @@ func isOpenAIRequestScopedCapacityShed(upstreamMsg string, upstreamBody []byte) 
 		(!gjson.ValidBytes(upstreamBody) && isOpenAICapacityShedMessage(string(upstreamBody)))
 }
 
+const openAIRequestScopedRetryMaxDelay = 8 * time.Second
+
+func openAIRequestScopedRetryDelay(responseHeaders http.Header, responseBody []byte) time.Duration {
+	type retryAfterValue struct {
+		raw          string
+		milliseconds bool
+	}
+	for _, value := range []retryAfterValue{
+		{raw: responseHeaders.Get("Retry-After")},
+		{raw: responseHeaders.Get("Retry-After-Ms"), milliseconds: true},
+		{raw: gjson.GetBytes(responseBody, "error.headers.retry-after").String()},
+		{raw: gjson.GetBytes(responseBody, "response.error.headers.retry-after").String()},
+		{raw: gjson.GetBytes(responseBody, "error.headers.retry-after-ms").String(), milliseconds: true},
+		{raw: gjson.GetBytes(responseBody, "response.error.headers.retry-after-ms").String(), milliseconds: true},
+	} {
+		raw := strings.TrimSpace(value.raw)
+		if raw == "" {
+			continue
+		}
+		var delay time.Duration
+		var ok bool
+		if value.milliseconds {
+			delay, ok = parseOpenAIRequestScopedRetryDelayMilliseconds(raw)
+		} else {
+			delay, ok = parseOpenAIRequestScopedRetryDelay(raw)
+		}
+		if !ok || delay <= 0 {
+			continue
+		}
+		if delay > openAIRequestScopedRetryMaxDelay {
+			return openAIRequestScopedRetryMaxDelay
+		}
+		return delay
+	}
+	return 0
+}
+
+func parseOpenAIRequestScopedRetryDelay(raw string) (time.Duration, bool) {
+	if seconds, err := strconv.ParseFloat(raw, 64); err == nil && seconds > 0 {
+		return time.Duration(seconds * float64(time.Second)), true
+	}
+	if resetAt, err := http.ParseTime(raw); err == nil {
+		delay := time.Until(resetAt)
+		if delay > 0 {
+			return delay, true
+		}
+	}
+	return 0, false
+}
+
+func parseOpenAIRequestScopedRetryDelayMilliseconds(raw string) (time.Duration, bool) {
+	if millis, err := strconv.ParseFloat(raw, 64); err == nil && millis > 0 {
+		return time.Duration(millis * float64(time.Millisecond)), true
+	}
+	return 0, false
+}
+
 func isOpenAIContextWindowError(upstreamMsg string, upstreamBody []byte) bool {
 	match := func(text string) bool {
 		lower := strings.ToLower(strings.TrimSpace(text))
@@ -275,9 +334,6 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Acc
 	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
 		return account != nil && account.IsOpenAICompatible()
 	}
-	if isOpenAIReportedUpstreamFailure(statusCode, upstreamBody) {
-		return true
-	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}
@@ -301,28 +357,6 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Acc
 		return true
 	}
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
-}
-
-// A proxy can report its own upstream failure using HTTP 400. The structured
-// error type, not the number or message text alone, distinguishes that from a
-// client's invalid request. An identified parameter always stays client-scoped.
-func isOpenAIReportedUpstreamFailure(status int, body []byte) bool {
-	if status != http.StatusBadRequest || gjson.GetBytes(body, "error.type").String() != "upstream_error" ||
-		strings.TrimSpace(gjson.GetBytes(body, "error.param").String()) != "" {
-		return false
-	}
-	if isOpenAIContinuationStateError("", body) || isOpenAIContextWindowError("", body) || isOpenAIInstructionsRequiredError(status, "", body) {
-		return false
-	}
-	if hit, _, _ := detectOpenAICyberPolicy(body); hit {
-		return false
-	}
-	switch gjson.GetBytes(body, "error.code").String() {
-	case "", "400", "upstream_error", "server_error":
-		return true
-	default:
-		return false
-	}
 }
 
 func isOpenAIRequestBudgetRejection(account *Account, status int, body []byte) bool {
@@ -486,8 +520,7 @@ func classifyOpenAIRequestRejection(statusCode int, upstreamMsg string, upstream
 		isOpenAIRequestScopedSafetyRejection(upstreamBody) ||
 		isOpenAICompatibleModelNotFound400(upstreamBody) ||
 		isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) ||
-		isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) ||
-		isOpenAIReportedUpstreamFailure(statusCode, upstreamBody) {
+		isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) {
 		return ""
 	}
 
@@ -574,14 +607,8 @@ func newOpenAIUpstreamFailoverError(
 		RetryableOnSameAccount: retryableOnSameAccount || requestScopedCapacity,
 		RequestScopedTransient: requestScopedCapacity,
 	}
-	if isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
-		failoverErr.RetryableOnSameAccount = false
-		failoverErr.Scope = GatewayFailureScopeRequest
-		failoverErr.SuppressAccountHealthPenalty = true
-		failoverErr.Reason = GatewayFailureReason("openai_upstream_reported_failure")
-		failoverErr.ClientStatusCode = http.StatusBadGateway
-		failoverErr.ClientErrorCode = "upstream_request_failed"
-		failoverErr.ClientMessage = "Upstream failed to process the request"
+	if requestScopedCapacity {
+		failoverErr.SameAccountRetryDelay = openAIRequestScopedRetryDelay(responseHeaders, responseBody)
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false
