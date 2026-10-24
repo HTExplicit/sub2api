@@ -19,7 +19,7 @@
 | `frontend/package.json`, `frontend/pnpm-lock.yaml` | Use official v0.2.18 overrides, DOMPurify 3.4.17 and follow-redirects 1.16.1; remove redundant nanoid/Vue constraints. Preserve the independent xlsx 0.20.3 author-distribution dependency. |
 | `frontend/src/components/account/AccountUsageCell.vue` | Use the official Gemini/Vertex usage region and service-account quota capability. Remove the former common quota bars and loading-with-old-values condition in that region. |
 | `frontend/src/components/account/CreateAccountModal.vue`, `frontend/src/components/account/EditAccountModal.vue`, `frontend/src/components/admin/account/AccountActionMenu.vue` | Merge the imports used by official quota support and the independent model-sync/system-prompt features. Adopt official Vertex quota editing/reset behavior. |
-| `frontend/src/views/admin/AccountsView.vue` | Platform/status return to official single-select localStorage persistence. Ignore old plural platform/status URL conditions; keep other filters and sensitive session state. Restore the official five-minute billing-rate refresh timer. |
+| `frontend/src/views/admin/AccountsView.vue` | Platform/status return to official single-select localStorage persistence. Ignore old plural platform/status URL conditions; keep other filters and sensitive session state. Restore the official timer verbatim with `immediate: false`; it remains inactive, as explicitly selected after checking the library startup behavior. |
 
 These rows cover all 14 initial conflict files. Clean textual merges do not
 override these decisions: the final per-account identity, shared tool converter,

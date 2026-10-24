@@ -30,7 +30,8 @@ Platform and status filters follow the official single-select controls and
 one filter state for both controls and requests. Legacy `platforms` / `statuses`
 URL conditions are ignored; the backend's existing plural-parameter API remains.
 Other filters retain their current URL or session storage. The official
-five-minute upstream billing-rate refresh timer is enabled.
+five-minute upstream billing-rate timer retains the official `immediate: false`
+option and is not started by the page.
 
 Vertex service accounts use the official quota limits, progress and reset
 behavior. The Gemini/Vertex usage region uses the official template rather than
