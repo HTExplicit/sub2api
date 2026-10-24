@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -534,14 +534,14 @@ func TestIncrementUsageBillingAccountQuota_StatementVariantsMatchFullStatement(t
 				}
 
 				if cfg.wantErr {
-					sqlState := func(accountID int64, daily, weekly bool) pq.ErrorCode {
+					sqlState := func(accountID int64, daily, weekly bool) string {
 						tx, err := integrationDB.BeginTx(ctx, nil)
 						require.NoError(t, err)
 						defer func() { _ = tx.Rollback() }()
 						_, err = incrementUsageBillingAccountQuota(ctx, tx, accountID, 2.5, daily, weekly)
-						var pqErr *pq.Error
-						require.ErrorAs(t, err, &pqErr)
-						return pqErr.Code
+						var pgErr *pgconn.PgError
+						require.ErrorAs(t, err, &pgErr)
+						return pgErr.Code
 					}
 					require.Equal(t, sqlState(reference.ID, true, true), sqlState(variant.ID, hints[0], hints[1]))
 					return
