@@ -611,6 +611,8 @@ func grokAuditChatSSE(model string) string {
 	return strings.Join([]string{
 		fmt.Sprintf(`data: {"id":"chatcmpl_audit","object":"chat.completion.chunk","model":%q,"choices":[{"index":0,"delta":{"content":"ok"}}]}`, model),
 		"",
+		fmt.Sprintf(`data: {"id":"chatcmpl_audit","object":"chat.completion.chunk","model":%q,"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`, model),
+		"",
 		fmt.Sprintf(`data: {"id":"chatcmpl_audit","object":"chat.completion.chunk","model":%q,"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`, model),
 		"",
 		"data: [DONE]",

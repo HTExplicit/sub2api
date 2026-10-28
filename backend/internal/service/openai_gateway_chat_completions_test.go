@@ -1719,12 +1719,8 @@ func TestGPT6ReasoningModeAndSamplingCompatibility(t *testing.T) {
 		d := newConfiguredCodexModelDescriptor(model)
 		require.NotNil(t, d.DefaultReasoningLevel)
 		require.Equal(t, "medium", *d.DefaultReasoningLevel)
-		require.Zero(t, d.MaxContextWindow, "raw descriptor has no fabricated capacity before account resolver projection")
-		wantLevels := 5
-		if model == "gpt-6-sol" {
-			wantLevels = 6 // Downstream: Sol also lists Codex's Ultra workflow, as the official catalog does.
-		}
-		require.Len(t, d.SupportedReasoningLevels, wantLevels)
+		require.EqualValues(t, 872000, d.MaxContextWindow)
+		require.Len(t, d.SupportedReasoningLevels, 5)
 		require.Len(t, d.ServiceTiers, 1)
 	}
 }

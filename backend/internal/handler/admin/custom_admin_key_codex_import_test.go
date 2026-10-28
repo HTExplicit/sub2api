@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -141,6 +142,7 @@ func TestScopedCodexImportIdempotencySeparatesKeysAndPolicy(t *testing.T) {
 	h := &AccountHandler{adminService: memory}
 	principal := &adminaccess.Principal{KeyID: "aaaaaaaaaaaaaaaaaaaaaaaa", Policy: adminaccess.Policy{Rules: []adminaccess.Rule{{Permissions: []string{"accounts.create", "accounts.credentials", "accounts.schedule", "accounts.network"}, GroupIDs: []int64{2}, AccountTypes: []string{"oauth"}}}}}
 	r := gin.New()
+	jobs := attachAccountJobSubmitter(r, h)
 	r.Use(func(c *gin.Context) {
 		if principal != nil {
 			c.Request = c.Request.WithContext(adminaccess.WithPrincipal(c.Request.Context(), principal))
@@ -154,7 +156,11 @@ func TestScopedCodexImportIdempotencySeparatesKeysAndPolicy(t *testing.T) {
 		req.Header.Set("Idempotency-Key", "same-import")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		require.Equal(t, 200, w.Code, w.Body.String())
+		if principal == nil {
+			require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+		} else {
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		}
 		require.NotContains(t, w.Body.String(), "fixture-")
 		return w
 	}
@@ -174,10 +180,18 @@ func TestScopedCodexImportIdempotencySeparatesKeysAndPolicy(t *testing.T) {
 	require.Empty(t, restricted.Header().Get("X-Idempotency-Replayed"))
 	require.Contains(t, restricted.Body.String(), `"failed":1`)
 	require.Len(t, memory.createdAccounts, 2)
+	require.Empty(t, jobs.created)
 	principal = nil
 	memory.err = nil
 	full := call()
 	require.Empty(t, full.Header().Get("X-Idempotency-Replayed"))
+	require.Empty(t, full.Header().Get("Idempotency-Replayed"))
+	require.Len(t, memory.createdAccounts, 2)
+	require.Len(t, jobs.created, 1)
+	require.Equal(t, "same-import", jobs.created[0].IdempotencyKey)
+	results := executeCodexImportJobTestItems(t, h, jobs.created[0])
+	require.Len(t, results, 1)
+	require.Equal(t, service.AccountJobItemStatusSucceeded, results[0].Status)
 	require.Len(t, memory.createdAccounts, 3)
 	for _, record := range repo.data {
 		require.LessOrEqual(t, len(record.Scope), 128, "生产数据库 scope 最大长度")
