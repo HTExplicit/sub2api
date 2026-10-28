@@ -6,7 +6,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -243,9 +242,6 @@ func TestCNProviderAnthropicUsageBillsUncachedInput(t *testing.T) {
 
 			pricing, err := billing.GetModelPricing(tt.model)
 			require.NoError(t, err)
-			// GetModelPricing returns base rates; CalculateCost freezes DeepSeek official
-			// peak pricing at the current time, so compare against the same time-adjusted card.
-			pricing = applyDeepseekTimePricing(pricing, timezone.Now())
 			require.InDelta(t, float64(tt.wantInput)*pricing.InputPricePerToken, cost.InputCost, 1e-12)
 		})
 	}

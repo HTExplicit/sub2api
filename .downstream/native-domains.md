@@ -48,6 +48,20 @@ Responses-shaped bodies on the Chat Completions URL use their Responses field.
 Compact and count-tokens operations retain their existing behavior. Turning the
 setting off restores the original omitted-effort behavior.
 
+## Model catalog interfaces
+
+The official model-capacity and client-catalog behavior is described in
+[model discovery and client catalogs](../DOWNSTREAM.md#model-discovery-capacity-and-client-catalogs).
+The downstream account capacity editor, preview/read interfaces and settings
+catalog endpoint are retired: `POST /admin/accounts/models/context-capacities-preview`,
+`GET /admin/accounts/:id/models/context-capacities`, and
+`GET /admin/settings/model-context-catalog` no longer exist. Account create/edit
+and bulk forms no longer write custom model context overrides. Historical SQL,
+stored override/source identity values and diagnostic records are retained.
+Manual upstream model sync, confirmation picker, native model metadata, test
+plans and actual effort options remain independent; no data cleanup or settings
+migration accompanies removal of the custom resolver.
+
 ## Codex fingerprint simulation
 
 The Extensions sidebar owns one Codex entry. `/admin/codex` redirects to
@@ -219,7 +233,8 @@ The actual sending path, credentials,
 identity, model mapping, proxy, TLS and protocol remain owned by each account. No API Key, group policy, model score or fallback account
 is manufactured for a test.
 
-Candy (90 seconds), HTML/SVG generation (the saved generation budget), rendering
+Candy (90 seconds), HTML/SVG generation (the saved generation budget, with the existing 64000-token
+output budget or a smaller explicitly selected limit), rendering
 (30 seconds after renderer admission), and same-model visual review (180 seconds)
 run as distinct stages. Candy failure does not prevent generation. Review uses
 four 960x640 frames at 0/0.23/0.51/0.79 of the sampled CSS/SMIL animation cycle.

@@ -717,7 +717,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 
-	finalResponse, usage, acc, terminalPayload, err := s.readOpenAICompatBufferedTerminal(resp, c, "openai chat_completions buffered", requestID, account.IsOpenAI() && !isOpenAICompatMessagesBridgeContext(c))
+	finalResponse, usage, acc, priorModels, err := s.readOpenAICompatBufferedTerminal(resp, c, account, "openai chat_completions buffered", requestID)
 	if err != nil {
 		return nil, s.newOpenAICompatBufferedReadFailoverError(c, account, resp, requestID, err)
 	}
@@ -730,13 +730,11 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
+	priorModels.apply(observer)
 	observer.Observe(finalResponse.Model, true)
 	observer.ObserveServiceTier(finalResponse.ServiceTier, true)
 	if strings.TrimSpace(finalResponse.Status) == "failed" {
-		payload := terminalPayload
-		if len(payload) == 0 {
-			payload, _ = json.Marshal(gin.H{"type": "response.failed", "response": finalResponse})
-		}
+		payload, _ := json.Marshal(gin.H{"type": "response.failed", "response": finalResponse})
 
 		// cyber_policy 致命不可重试：不 failover，以 Chat Completions 错误格式回写（F4），
 		// 标记供 handler 事后写风控/邮件/tokens=0 用量行。

@@ -178,7 +178,7 @@ func TestAccountHandlerGetAvailableModels_ConfiguredModelWildcards(t *testing.T)
 			require.NoError(t, err)
 			require.Equal(t, before, after)
 			if tc.name == "live" {
-				require.Equal(t, openai.Model{ID: "case/two", DisplayName: "Provider Two", Type: "provider-model", Object: "model", Created: 123, OwnedBy: "provider", Description: "Provider description", ContextWindow: 321000, MaxOutputTokens: 1234}, models[2])
+				require.Equal(t, openai.Model{ID: "case/two", DisplayName: "Provider Two", Type: "provider-model", Object: "model", Created: 123, OwnedBy: "provider", Description: "Provider description"}, models[2])
 				for id, target := range map[string]string{"case/special-one": "exact-target", "case/special-two": "specific-target", "case/two": "broad-target"} {
 					mapped, matched := adminSvc.account.ResolveMappedModel(id)
 					require.True(t, matched)

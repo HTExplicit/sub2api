@@ -19,16 +19,6 @@
               <ModelIcon :model="model" size="14px" />
               <span data-testid="selected-model-name" class="truncate" :title="model">{{ model }}</span>
             </span>
-            <ModelContextCapacityField
-              v-if="capacityRows !== undefined"
-              class="ml-auto shrink-0"
-              :model-id="model"
-              :row="capacityRowFor(model)"
-              :draft="capacityDraftFor(model)"
-              @commit="setCapacityDraft(model, $event)"
-              @editing="setCapacityFieldEditing(`selected:${model}`, $event)"
-              @validity="setCapacityFieldValidity(`selected:${model}`, $event)"
-            />
             <button
               type="button"
               data-testid="remove-model"
@@ -89,16 +79,6 @@
               <ModelIcon :model="model.value" size="18px" />
               <span data-testid="model-option-name" class="min-w-0 flex-1 truncate text-gray-900 dark:text-white" :title="model.value">{{ model.value }}</span>
             </button>
-            <ModelContextCapacityField
-              v-if="capacityRows !== undefined"
-              class="shrink-0"
-              :model-id="model.value"
-              :row="capacityRowFor(model.value)"
-              :draft="capacityDraftFor(model.value)"
-              @commit="setCapacityDraft(model.value, $event)"
-              @editing="setCapacityFieldEditing(`option:${model.value}`, $event)"
-              @validity="setCapacityFieldValidity(`option:${model.value}`, $event)"
-            />
             <button
               type="button"
               data-testid="copy-model-id"
@@ -128,12 +108,11 @@
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
       <button
-        v-if="canSyncUpstream"
+        v-if="canSyncUpstream && showSyncButton"
         type="button"
         data-testid="sync-upstream-models"
         @click="syncUpstreamModels"
-        :disabled="isSyncingUpstream || syncDisabled"
-        :title="syncDisabledReason"
+        :disabled="isSyncingUpstream"
         class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
       >
         {{ isSyncingUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
@@ -186,30 +165,23 @@ import { ref, shallowRef, computed, watch, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
-import type { ModelContextCapacityRow, SyncUpstreamModelsResult, SyncUpstreamPreviewParams } from '@/api/admin/accounts'
+import type { SyncUpstreamModelsResult, SyncUpstreamPreviewParams } from '@/api/admin/accounts'
 import { useClipboard } from '@/composables/useClipboard'
-import ModelContextCapacityField from '@/components/account/ModelContextCapacityField.vue'
 import UpstreamModelPickerDialog from '@/components/account/UpstreamModelPickerDialog.vue'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
-import { findContextCapacityRow } from '@/utils/modelContextCapacity'
 import { supportsUpstreamModelSync } from '@/constants/platformCatalog'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: string[]
   modelMappings?: { from: string; to: string }[]
   platform?: string
   platforms?: string[]
   accountId?: number
-  syncedModels?: SyncUpstreamModelsResult
-  capacityRows?: ModelContextCapacityRow[]
-  capacityDrafts?: Record<string, string>
-  syncDisabled?: boolean
-  syncDisabledReason?: string
   syncSourceKey?: string
   syncCredentials?: {
     platform: string
@@ -217,13 +189,13 @@ const props = defineProps<{
     base_url?: string
     api_key: string
   }
-}>()
+  showSyncButton?: boolean
+}>(), { showSyncButton: true })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
-  'update:capacityDrafts': [value: Record<string, string>]
-  'capacity-validity': [valid: boolean]
   'upstream-synced': [result: SyncUpstreamModelsResult]
+  'upstream-sync-finished': []
 }>()
 
 const appStore = useAppStore()
@@ -237,29 +209,9 @@ const isSyncingUpstream = ref(false)
 const lastSyncResult = ref<SyncUpstreamModelsResult>()
 // A successful sync opens the picker; the whitelist and the synced candidates change only on its confirm.
 const pickerResult = shallowRef<SyncUpstreamModelsResult>()
-const capacityFieldStates = ref<Record<string, { editing?: boolean; valid?: boolean }>>({})
-const capacityFieldsValid = computed(() => Object.values(capacityFieldStates.value)
-  .every(state => !state.editing && state.valid !== false))
-watch(capacityFieldsValid, valid => emit('capacity-validity', valid), { immediate: true })
-const setCapacityFieldEditing = (key: string, editing: boolean) => {
-  capacityFieldStates.value[key] = { ...capacityFieldStates.value[key], editing }
-}
-const setCapacityFieldValidity = (key: string, valid: boolean) => {
-  capacityFieldStates.value[key] = { ...capacityFieldStates.value[key], valid }
-}
-const capacityRowFor = (model: string) => findContextCapacityRow(props.capacityRows ?? [], model)
-const capacityDraftFor = (model: string) => {
-  const row = capacityRowFor(model)
-  return row ? props.capacityDrafts?.[row.upstream_model_id] : undefined
-}
-const setCapacityDraft = (model: string, value: string) => {
-  const row = capacityRowFor(model)
-  if (!row?.editable) return
-  emit('update:capacityDrafts', { ...props.capacityDrafts, [row.upstream_model_id]: value })
-}
 let syncGeneration = 0
 watch(
-  () => JSON.stringify([props.accountId, props.platform, props.platforms, props.syncCredentials, props.syncSourceKey, props.syncDisabled]),
+  () => JSON.stringify([props.accountId, props.platform, props.platforms, props.syncCredentials, props.syncSourceKey]),
   () => {
     syncGeneration += 1
     isSyncingUpstream.value = false
@@ -269,7 +221,6 @@ watch(
 )
 onScopeDispose(() => {
   syncGeneration += 1
-  emit('capacity-validity', true)
 })
 const normalizedPlatforms = computed(() => {
   const rawPlatforms =
@@ -302,8 +253,6 @@ const canSyncUpstream = computed(() => {
 interface ModelSelectorOption {
   value: string
   label: string
-  context_window?: number
-  max_output_tokens?: number
 }
 
 const staticOptions = computed<ModelSelectorOption[]>(() => {
@@ -322,18 +271,16 @@ const staticOptions = computed<ModelSelectorOption[]>(() => {
 })
 
 // A successful sync may contain models absent from the shipped selector catalog.
-// Keep their complete metadata and let the modal retain it across mode switches.
+// Keep confirmed models available while the selector remains mounted.
 const availableOptions = computed<ModelSelectorOption[]>(() => {
   const options = new Map(staticOptions.value.map(model => [model.value, model]))
-  const result = props.syncedModels ?? lastSyncResult.value
+  const result = lastSyncResult.value
   for (const id of result?.models ?? []) {
     const metadata = result?.metadata?.[id]
     options.set(id, {
       ...options.get(id),
       value: id,
-      label: metadata?.display_name || id,
-      context_window: metadata?.context_window,
-      max_output_tokens: metadata?.max_output_tokens
+      label: metadata?.display_name || id
     })
   }
   return [...options.values()]
@@ -346,21 +293,6 @@ const filteredModels = computed(() => {
     m => m.value.toLowerCase().includes(query) || m.label.toLowerCase().includes(query)
   )
 })
-
-// A selected chip and its open candidate row have independent edit buffers.
-// Do not let one instance's valid event mask the other instance's pending edit.
-watch(
-  () => [
-    ...props.modelValue.map(model => `selected:${model}`),
-    ...(showDropdown.value ? filteredModels.value.map(model => `option:${model.value}`) : [])
-  ],
-  keys => {
-    const renderedKeys = new Set(keys)
-    for (const key of Object.keys(capacityFieldStates.value)) {
-      if (!renderedKeys.has(key)) delete capacityFieldStates.value[key]
-    }
-  }
-)
 
 const toggleDropdown = () => {
   showDropdown.value = !showDropdown.value
@@ -416,21 +348,27 @@ const fillRelated = () => {
 }
 
 const syncUpstreamModels = async () => {
-  if (isSyncingUpstream.value || props.syncDisabled || !canSyncUpstream.value) return
+  if (isSyncingUpstream.value || !canSyncUpstream.value) return
 
   isSyncingUpstream.value = true
   const generation = ++syncGeneration
+  const accountId = props.accountId
+  const previewCredentials = props.syncCredentials
   try {
     let result
-    if (props.accountId) {
-      result = await accountsAPI.syncUpstreamModels(props.accountId)
-    } else if (props.syncCredentials) {
-      result = await accountsAPI.syncUpstreamModelsPreview(props.syncCredentials as SyncUpstreamPreviewParams)
+    if (accountId) {
+      result = await accountsAPI.syncUpstreamModels(accountId)
+    } else if (previewCredentials) {
+      result = await accountsAPI.syncUpstreamModelsPreview(previewCredentials as SyncUpstreamPreviewParams)
     } else {
       return
     }
 
     if (generation !== syncGeneration) return
+    if (result.discovery_source === 'configured_fallback') {
+      appStore.showWarning(t('admin.accounts.grokModelDiagnostics.configuredFallback'))
+      return
+    }
     const upstreamModels = result.models.map(model => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
       lastSyncResult.value = result
@@ -445,7 +383,10 @@ const syncUpstreamModels = async () => {
     const message = extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
-    if (generation === syncGeneration) isSyncingUpstream.value = false
+    if (generation === syncGeneration) {
+      isSyncingUpstream.value = false
+      if (accountId) emit('upstream-sync-finished')
+    }
   }
 }
 
@@ -468,6 +409,8 @@ const applyUpstreamPicker = (models: string[], changes: { added: number; removed
   emit('upstream-synced', result)
   closeUpstreamPicker()
 }
+
+defineExpose({ syncUpstreamModels, isSyncingUpstream })
 
 const clearAll = () => {
   emit('update:modelValue', [])

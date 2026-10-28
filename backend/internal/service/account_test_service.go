@@ -38,7 +38,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -154,30 +153,26 @@ func normalizeGrokAccountTestMode(mode string) string {
 
 // AccountTestService handles account testing operations
 type AccountTestService struct {
-	quotaActivity               *QuotaActivityService
-	accountRepo                 AccountRepository
-	geminiTokenProvider         *GeminiTokenProvider
-	claudeTokenProvider         *ClaudeTokenProvider
-	grokTokenProvider           *GrokTokenProvider
-	antigravityGatewayService   *AntigravityGatewayService
-	httpUpstream                HTTPUpstream
-	cfg                         *config.Config
-	settingService              *SettingService
-	tlsFPProfileService         *TLSFingerprintProfileService
-	openaiGatewayService        *OpenAIGatewayService
-	pelicanGatewayService       *GatewayService
-	pelicanGeminiService        *GeminiMessagesCompatService
-	pelicanConcurrencyService   *ConcurrencyService
-	modelMetadataRegistryMu     sync.Mutex
-	modelMetadataRegistry       map[string]modelsDevProvider
-	modelMetadataRegistryAt     time.Time
-	cindyMetadataRegistryMu     sync.Mutex
-	cindyMetadataRegistry       map[string]UpstreamModelMetadata
-	cindyMetadataRegistryAt     time.Time
-	cindyMetadataRegistryFlight singleflight.Group
-	pluginManager               *PluginManager
-	agentIdentityTaskMu         sync.Mutex
-	agentIdentityWS             agentIdentityWSConnectionInvalidator
+	quotaActivity             *QuotaActivityService
+	accountRepo               AccountRepository
+	geminiTokenProvider       *GeminiTokenProvider
+	claudeTokenProvider       *ClaudeTokenProvider
+	grokTokenProvider         *GrokTokenProvider
+	antigravityGatewayService *AntigravityGatewayService
+	httpUpstream              HTTPUpstream
+	cfg                       *config.Config
+	settingService            *SettingService
+	tlsFPProfileService       *TLSFingerprintProfileService
+	openaiGatewayService      *OpenAIGatewayService
+	pelicanGatewayService     *GatewayService
+	pelicanGeminiService      *GeminiMessagesCompatService
+	pelicanConcurrencyService *ConcurrencyService
+	modelMetadataRegistryMu   sync.Mutex
+	modelMetadataRegistry     map[string]modelsDevProvider
+	modelMetadataRegistryAt   time.Time
+	pluginManager             *PluginManager
+	agentIdentityTaskMu       sync.Mutex
+	agentIdentityWS           agentIdentityWSConnectionInvalidator
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
 	// WS dialer when nil (supports proxy + coder/websocket handshake).
 	grokWSDialer openAIWSClientDialer
@@ -2610,6 +2605,14 @@ func (s *AccountTestService) markOpenAIBudgetExceededFromTest(ctx context.Contex
 	return true
 }
 
+// geminiDefaultTestModel 返回 Gemini 连接测试未指定模型时使用的模型；Google One 账号只能使用其保守模型集。
+func geminiDefaultTestModel(account *Account) string {
+	if account.IsGeminiGoogleOne() {
+		return geminicli.GoogleOneModels[0].ID
+	}
+	return geminicli.DefaultTestModel
+}
+
 // testGeminiAccountConnection tests a Gemini account's connection
 func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	ctx := c.Request.Context()
@@ -2617,7 +2620,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 	// Determine the model to use
 	testModelID := modelID
 	if testModelID == "" {
-		testModelID = geminicli.DefaultTestModel
+		testModelID = geminiDefaultTestModel(account)
 	}
 
 	// For static upstream credentials with model mapping, map the model

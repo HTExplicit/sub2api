@@ -1113,35 +1113,6 @@ export interface UpdateSettingsRequest {
   allow_user_view_error_requests?: boolean;
 }
 
-export interface OfficialModelCapacityReference {
-  product: string
-  source_url: string
-  release: string
-  verified_at: string
-  context_window: number
-  max_context_window: number
-}
-
-export interface OfficialModelCapacityEntry {
-  model_id: string
-  aliases?: string[]
-  provider: string
-  product: string
-  context_window?: number
-  max_context_window?: number
-  max_input_tokens?: number
-  max_output_tokens?: number
-  source_url: string
-  verified_at: string
-  conditions?: string
-  reference?: OfficialModelCapacityReference
-}
-
-export interface OfficialModelCapacityCatalog {
-  reference_release: string
-  entries: OfficialModelCapacityEntry[]
-}
-
 export interface ObservabilitySettings {
   theme_enabled: boolean
 }
@@ -1154,12 +1125,6 @@ export async function getObservabilitySettings(): Promise<ObservabilitySettings>
 
 export async function updateObservabilitySettings(settings: ObservabilitySettings): Promise<ObservabilitySettings> {
   const { data } = await apiClient.put<ObservabilitySettings>("/admin/settings/observability", settings);
-  return data;
-}
-
-/** Read-only release-pinned official model capacity catalog. */
-export async function getOfficialModelCapacityCatalog(): Promise<OfficialModelCapacityCatalog> {
-  const { data } = await apiClient.get<OfficialModelCapacityCatalog>("/admin/settings/model-context-catalog");
   return data;
 }
 
@@ -1679,7 +1644,6 @@ export async function resetWebSearchUsage(payload: {
 
 export const settingsAPI = {
   getSettings,
-  getOfficialModelCapacityCatalog,
   getObservabilitySettings,
   updateObservabilitySettings,
   updateSettings,

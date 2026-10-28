@@ -74,6 +74,23 @@ var (
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
 	}
+	openAIGPT61TerraFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   1e-6,
+		InputCostPerTokenPriority:           2e-6,
+		OutputCostPerToken:                  5e-6,
+		OutputCostPerTokenPriority:          10e-6,
+		CacheCreationInputTokenCost:         1.25e-6,
+		CacheCreationInputTokenCostPriority: 2.5e-6,
+		CacheReadInputTokenCost:             0.05e-6,
+		CacheReadInputTokenCostPriority:     0.1e-6,
+		LongContextInputTokenThreshold:      272_000,
+		LongContextInputCostMultiplier:      2,
+		LongContextOutputCostMultiplier:     1.5,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
 	openAIGPT61SolFallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:                   2e-6,
 		InputCostPerTokenPriority:           4e-6,
@@ -210,7 +227,6 @@ var (
 // LiteLLMModelPricing LiteLLM价格数据结构
 // 只保留我们需要的字段，使用指针来处理可能缺失的值
 type LiteLLMModelPricing struct {
-	deepseekIdentity                    *deepseekPricingIdentity
 	CacheCreationInputTokenCostExplicit bool    `json:"-"`
 	InputCostPerToken                   float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           float64 `json:"input_cost_per_token_priority"`
@@ -1041,8 +1057,7 @@ func (s *PricingService) mergeOverrideOnlyModels(data map[string]*LiteLLMModelPr
 	return data
 }
 
-// buildPricingData merges the catalog and custom layers, then materializes the
-// official DeepSeek cards with admin overrides last. It returns the catalog and
+// buildPricingData 解析目录正文并依次叠加 fallback、override 两层，返回合并结果与
 // 叠加层文件指纹。指纹在合并读取之前采样：并发改文件只会让存下的指纹落后于实际
 // 合并的数据、不会领先，下一轮定时比对因此会再次重建。
 func (s *PricingService) buildPricingData(body []byte) (map[string]*LiteLLMModelPricing, string, error) {
@@ -1053,7 +1068,6 @@ func (s *PricingService) buildPricingData(body []byte) (map[string]*LiteLLMModel
 	}
 	data = s.mergeFallbackPricingData(data)
 	data = s.mergeOverrideOnlyModels(data)
-	data = s.mergeDeepSeekPricing(data)
 	return data, fingerprint, nil
 }
 
@@ -1221,9 +1235,6 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 
 	// 标准化模型名称（同时兼容 "models/xxx"、VertexAI 资源名等前缀）
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
-	if pricing, handled := s.lookupDeepseekPricingLocked(modelLower); handled {
-		return pricing
-	}
 	lookupCandidates := s.buildModelLookupCandidates(modelLower)
 
 	// 1~3. 确定性识别（精确名 / 已知拼写变体 / 去掉日期版本后缀）
@@ -1298,9 +1309,6 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	if modelLower == "" {
 		return nil
-	}
-	if pricing, handled := s.lookupDeepseekPricingLocked(modelLower); handled {
-		return pricing
 	}
 	return s.lookupIdentifiedModelPricingLocked(s.buildModelLookupCandidates(modelLower))
 }
@@ -1583,26 +1591,6 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 // 5. gpt-5.4* -> 业务静态兜底价
 // 6. 最终回退到 DefaultTestModel (gpt-5.1-codex)
 func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
-	if named := openai.GPT6NamedModel(model); named != "" {
-		if pricing, ok := s.pricingData[named]; ok {
-			return pricing
-		}
-		if named == "gpt-6-sol" {
-			return openAIGPT6SolFallbackPricing
-		}
-		return openAIGPT6LunaFallbackPricing
-	}
-	// A future named GPT-6 is not the numeric gpt-6 (Astra) alias, nor the
-	// default test model. Exact custom price cards were already considered.
-	if strings.HasPrefix(model, "gpt-6-") && !isOpenAIGPT6AstraModel(model) {
-		return nil
-	}
-	// Likewise for GPT-6 point releases: only the published GPT-6.1 Sol
-	// spellings have a card. Dated snapshots (passed through verbatim) and other
-	// gpt-6.x names stay unpriced instead of borrowing the default model's rate.
-	if strings.HasPrefix(model, "gpt-6.") && !openai.IsGPT61SolModelSpelling(model) {
-		return nil
-	}
 	if strings.HasPrefix(model, "gpt-5.3-codex-spark") {
 		if pricing, ok := s.pricingData["gpt-5.1-codex"]; ok {
 			logger.LegacyPrintf("service.pricing", "[Pricing][SparkBilling] %s -> %s billing", model, "gpt-5.1-codex")
@@ -1631,6 +1619,12 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 		}
 	}
 
+	if openai.IsGPT61TerraModelSpelling(model) {
+		if pricing, ok := s.pricingData["gpt-6.1-terra"]; ok {
+			return pricing
+		}
+		return openAIGPT61TerraFallbackPricing
+	}
 	if openai.IsGPT61SolModelSpelling(model) {
 		if pricing, ok := s.pricingData["gpt-6.1-sol"]; ok {
 			return pricing

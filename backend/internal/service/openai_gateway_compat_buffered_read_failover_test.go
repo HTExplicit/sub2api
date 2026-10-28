@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,32 @@ import (
 
 type openAICompatBufferedReadErrorCloser struct {
 	err error
+}
+
+func TestOpenAICompatBufferedErrorTerminalShapes(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		body   string
+		failed bool
+	}{
+		{"bare event", "event: error\n\n", false},
+		{"JSON typed error", "data: {\"type\":\"error\",\"error\":{\"message\":\"provider failed\"}}\n\n", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			resp := &http.Response{Body: io.NopCloser(strings.NewReader(tt.body))}
+			terminal, _, _, _, err := (&OpenAIGatewayService{}).readOpenAICompatBufferedTerminal(resp, c, nil, "buffered fixture", "")
+			require.NoError(t, err)
+			if !tt.failed {
+				require.Nil(t, terminal)
+				return
+			}
+			require.NotNil(t, terminal)
+			require.Equal(t, "failed", terminal.Status)
+			require.Equal(t, "provider failed", terminal.Error.Message)
+		})
+	}
 }
 
 func (r *openAICompatBufferedReadErrorCloser) Read([]byte) (int, error) { return 0, r.err }

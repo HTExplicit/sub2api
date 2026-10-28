@@ -99,16 +99,6 @@ func (h *SettingHandler) SetStepUpDeps(totpService *service.TotpService, userSer
 	h.userService = userService
 }
 
-// GetOfficialModelContextCatalog returns the release-pinned official model
-// capacity catalog for the read-only admin browser.
-// GET /api/v1/admin/settings/model-context-catalog
-func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
-	response.Success(c, gin.H{
-		"reference_release": service.GPTContextCapacityReferenceRelease,
-		"entries":           service.OfficialModelCatalogSnapshot(),
-	})
-}
-
 // GetObservabilitySettings returns the flat theme switch this process applies.
 // GET /api/v1/admin/settings/observability
 func (h *SettingHandler) GetObservabilitySettings(c *gin.Context) {

@@ -32,6 +32,8 @@ func RegisterAdminRoutes(
 	// 审计中间件挂在认证之后：所有管理面变更类操作 + 敏感读取入审计日志
 	admin.Use(gin.HandlerFunc(auditLog))
 	admin.Use(middleware.AdminComplianceGuard(settingService))
+	// 受限密钥的账户操作走独立资源校验，普通管理员保持原处理器。
+	admin.Use(h.Admin.Account.ScopedAdminKeyAccounts)
 	{
 		// 部署与运营合规确认
 		registerAdminComplianceRoutes(admin, h)
@@ -358,6 +360,7 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	groups := admin.Group("/groups")
+	groups.Use(h.Admin.Group.ScopedAdminKeyGroupModels)
 	{
 		groups.GET("", h.Admin.Group.List)
 		groups.GET("/all", h.Admin.Group.GetAll)
@@ -459,10 +462,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/:id/temp-unschedulable", h.Admin.Account.ClearTempUnschedulable)
 		accounts.POST("/:id/schedulable", h.Admin.Account.SetSchedulable)
 		accounts.POST("/models/sync-upstream-preview", h.Admin.Account.SyncUpstreamModelsPreview)
-		accounts.POST("/models/context-capacities-preview", h.Admin.Account.PreviewModelContextCapacities)
 		accounts.GET("/:id/models", h.Admin.Account.GetAvailableModels)
 		accounts.POST("/:id/models/sync-upstream", h.Admin.Account.SyncUpstreamModels)
-		accounts.GET("/:id/models/context-capacities", h.Admin.Account.GetModelContextCapacities)
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)
@@ -619,10 +620,10 @@ func registerPromoCodeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	adminSettings := admin.Group("/settings")
+	registerScopedAdminKeyRoutes(adminSettings, h, stepUpAuth)
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
-		adminSettings.GET("/model-context-catalog", h.Admin.Setting.GetOfficialModelContextCatalog)
 		adminSettings.GET("/observability", h.Admin.Setting.GetObservabilitySettings)
 		adminSettings.PUT("/observability", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateObservabilitySettings)
 		adminSettings.GET("/codex-runtime", h.Admin.Setting.GetCodexRuntimeSettings)
@@ -638,8 +639,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.POST("/email-templates/:event/:locale/restore-official", h.Admin.Setting.RestoreOfficialEmailTemplate)
 		// Admin API Key 管理
 		adminSettings.GET("/admin-api-key", h.Admin.Setting.GetAdminAPIKey)
-		adminSettings.POST("/admin-api-key/regenerate", h.Admin.Setting.RegenerateAdminAPIKey)
-		adminSettings.DELETE("/admin-api-key", h.Admin.Setting.DeleteAdminAPIKey)
+		adminSettings.POST("/admin-api-key/regenerate", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.RegenerateAdminAPIKey)
+		adminSettings.DELETE("/admin-api-key", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.DeleteAdminAPIKey)
 		// 529过载冷却配置
 		adminSettings.GET("/overload-cooldown", h.Admin.Setting.GetOverloadCooldownSettings)
 		adminSettings.PUT("/overload-cooldown", h.Admin.Setting.UpdateOverloadCooldownSettings)

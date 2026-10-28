@@ -339,10 +339,7 @@ func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, 
 		return nil, nil, err
 	}
 	response := &OpenAIModelsResponse{Body: body, ETag: codexModelsManifestBodyETag(body)}
-	if err := s.ProjectOpenAIModelsListContextCapacities(ctx, group, response, ifNoneMatch); err != nil {
-		return nil, nil, err
-	}
-	return response, results[0].account, nil
+	return openAIModelsResponseForClient(response, ifNoneMatch), results[0].account, nil
 }
 
 func selectModelCatalogEntries(byID map[string]json.RawMessage, selected []string) []json.RawMessage {

@@ -15,8 +15,7 @@ import (
 
 func performOrdinaryPinnedModelsRequest(t *testing.T, codex *OpenAIGatewayHandler, group *service.Group, path, etag string) *httptest.ResponseRecorder {
 	t.Helper()
-	require.NotNil(t, codex.nativeAnthropicGatewayService, "ordinary models require the same generic gateway dependency as production")
-	h := &GatewayHandler{gatewayService: codex.nativeAnthropicGatewayService, openAIGatewayService: codex.gatewayService, maxAccountSwitches: 3}
+	h := &GatewayHandler{openAIGatewayService: codex.gatewayService, maxAccountSwitches: 3}
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
@@ -32,39 +31,6 @@ func ordinaryPinnedModelIDs(t *testing.T, recorder *httptest.ResponseRecorder) [
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
 	require.NotNil(t, response.Data, "an empty catalog must be an array, not null")
 	return modelIDsForTest(response.Data)
-}
-
-func requirePinnedModelContextCapacity(t *testing.T, recorder *httptest.ResponseRecorder, codex bool, want service.ResolvedModelContextCapacity) {
-	t.Helper()
-	var envelope struct {
-		Models []map[string]any `json:"models"`
-		Data   []map[string]any `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
-	rows := envelope.Data
-	if codex {
-		rows = envelope.Models
-	}
-	require.NotEmpty(t, rows)
-	if !want.Known() {
-		// An unknown capacity leaves the upstream row exactly as discovered.
-		for _, row := range rows {
-			require.EqualValues(t, want.ContextWindow, row["context_window"])
-			require.NotContains(t, row, "context_capacity_source")
-		}
-		return
-	}
-	// The wire contract always exposes a usable maximum at least as large as
-	// its context window.
-	wantMaximum := want.MaxContextWindow
-	if wantMaximum < want.ContextWindow {
-		wantMaximum = want.ContextWindow
-	}
-	for _, row := range rows {
-		require.EqualValues(t, want.ContextWindow, row["context_window"])
-		require.EqualValues(t, wantMaximum, row["max_context_window"])
-		require.Equal(t, want.Source, row["context_capacity_source"])
-	}
 }
 
 func TestOrdinaryPinnedModelsUsesSelectedAccountsAndFinalETag(t *testing.T) {
@@ -105,58 +71,6 @@ func TestOrdinaryPinnedModelsUsesSelectedAccountsAndFinalETag(t *testing.T) {
 	again := performOrdinaryPinnedModelsRequest(t, h, group, "/v1/models", "")
 	require.Equal(t, first.Body.String(), again.Body.String(), "group filters must not modify account cache")
 	require.Equal(t, []int64{2, 3}, upstream.accountIDs())
-}
-
-func TestPinnedModelsFinalETagTracksLocalCapacityWithoutRefetching(t *testing.T) {
-	for _, codex := range []bool{false, true} {
-		t.Run(map[bool]string{false: "ordinary", true: "codex"}[codex], func(t *testing.T) {
-			const upstreamID = "capacity-live-unknown"
-			account := newPinnedCodexAccount(1, service.StatusActive, true, false)
-			account.Credentials["model_mapping"] = map[string]any{"public-capacity": upstreamID}
-			account.Extra = map[string]any{}
-			body := `{"data":[{"id":"capacity-live-unknown","context_window":410000,"owned_by":"provider"}]}`
-			if codex {
-				body = `{"models":[{"slug":"capacity-live-unknown","context_window":410000,"description":"Provider description"}]}`
-			}
-			upstream := &codexModelsPinnedHTTPUpstream{bodies: map[int64]string{1: body}}
-			h := newPinnedCodexTestHandler([]service.Account{account}, upstream, 3)
-			group := &service.Group{ID: 96, Platform: service.PlatformOpenAI,
-				CodexModelsManifestConfig: service.GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{1}}}
-			request := func(etag string) *httptest.ResponseRecorder {
-				if codex {
-					return performPinnedCodexModelsRequest(t, h, group, etag)
-				}
-				return performOrdinaryPinnedModelsRequest(t, h, group, "/v1/models", etag)
-			}
-			require.False(t, service.ResolveAccountModelContextCapacity(&account, upstreamID).Known())
-			first := request("")
-			require.Equal(t, http.StatusOK, first.Code, first.Body.String())
-			requirePinnedModelContextCapacity(t, first, codex, service.ResolvedModelContextCapacity{ModelContextCapacity: service.ModelContextCapacity{ContextWindow: 410000}})
-			firstETag := first.Header().Get("ETag")
-			require.NotEmpty(t, firstETag)
-			unchanged := request(firstETag)
-			require.Equal(t, http.StatusNotModified, unchanged.Code, unchanged.Body.String())
-			require.Empty(t, unchanged.Body.Bytes())
-
-			account.Extra[service.ModelContextOverridesExtraKey] = map[string]int64{upstreamID: 650001}
-			wantCustom := service.ResolveAccountModelContextCapacity(&account, upstreamID)
-			require.Equal(t, "custom", wantCustom.Source)
-			changed := request(firstETag)
-			require.Equal(t, http.StatusOK, changed.Code, changed.Body.String())
-			requirePinnedModelContextCapacity(t, changed, codex, wantCustom)
-			require.NotEqual(t, firstETag, changed.Header().Get("ETag"), "the client ETag must include final local capacity projection")
-			conditional := request(changed.Header().Get("ETag"))
-			require.Equal(t, http.StatusNotModified, conditional.Code, conditional.Body.String())
-			require.Empty(t, conditional.Body.Bytes())
-
-			delete(account.Extra, service.ModelContextOverridesExtraKey)
-			restored := request("")
-			require.Equal(t, http.StatusOK, restored.Code, restored.Body.String())
-			require.Equal(t, first.Body.String(), restored.Body.String(), "removing a local override must reveal the unmodified raw upstream capacity again")
-			require.Equal(t, firstETag, restored.Header().Get("ETag"))
-			require.Equal(t, []int64{1}, upstream.accountIDs(), "capacity-only changes must reuse the raw account cache")
-		})
-	}
 }
 
 func TestOrdinaryPinnedModelsFailureAndEmptyPolicies(t *testing.T) {
@@ -239,12 +153,6 @@ func TestPinnedModelsAllowlistExpandsWildcardsForBothRepresentations(t *testing.
 			accounts[0].Credentials["model_mapping"] = map[string]any{
 				"public-a": "gpt-5.5", "public-b": "gpt-5.5", "blocked": "gpt-5.5",
 			}
-			accounts[0].SetUpstreamModelMetadataSnapshot(service.UpstreamModelMetadataSnapshot{
-				Source: "upstream", SourceIdentity: service.UpstreamModelMetadataSourceIdentity(&accounts[0]),
-				Models: map[string]service.UpstreamModelMetadata{
-					"gpt-5.5": {ID: "gpt-5.5", ContextWindow: 272000, MaxContextWindow: 872000, MaxOutputTokens: 64000},
-				},
-			})
 			body := `{"data":[{"id":"gpt-5.5","owned_by":"provider"}]}`
 			if codex {
 				body = `{"models":[{"slug":"gpt-5.5","context_window":424242}]}`
@@ -254,22 +162,16 @@ func TestPinnedModelsAllowlistExpandsWildcardsForBothRepresentations(t *testing.
 			group := &service.Group{ID: 95, Platform: service.PlatformOpenAI,
 				ModelAllowlist:            service.GroupModelAllowlist{Enabled: true, Models: []string{"public-b", "public-*"}},
 				CodexModelsManifestConfig: service.GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{1}}}
-			wantCapacity := service.ResolveAccountModelContextCapacity(&accounts[0], "gpt-5.5")
-			require.Equal(t, "official", wantCapacity.Source, "the real upstream target uses its official API capacity even with a current smaller observation")
-			require.EqualValues(t, 1050000, wantCapacity.ContextWindow)
-			require.EqualValues(t, 1050000, wantCapacity.MaxContextWindow)
-			require.EqualValues(t, 128000, wantCapacity.MaxOutputTokens)
 			if codex {
 				recorder := performPinnedCodexModelsRequest(t, h, group, "")
 				require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 				require.Equal(t, []string{"public-b", "public-a"}, codexHandlerManifestSlugs(t, recorder))
-				requirePinnedModelContextCapacity(t, recorder, true, wantCapacity)
+				require.Contains(t, recorder.Body.String(), `"context_window":424242`)
 			} else {
 				recorder := performOrdinaryPinnedModelsRequest(t, h, group, "/v1/models", "")
 				require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 				require.Equal(t, []string{"public-b", "public-a"}, ordinaryPinnedModelIDs(t, recorder))
 				require.Contains(t, recorder.Body.String(), `"owned_by":"provider"`)
-				requirePinnedModelContextCapacity(t, recorder, false, wantCapacity)
 			}
 		})
 	}
@@ -303,11 +205,9 @@ func TestPinnedModelsMappingFollowsUpstreamDiscoveryForBothRepresentations(t *te
 			}
 			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 			require.Equal(t, []int64{2}, upstream.accountIDs(), "mappings must not bypass pinned discovery")
-			wantCapacity := service.ResolveAccountModelContextCapacity(&accounts[1], "gpt-5.5")
-			require.Equal(t, "official", wantCapacity.Source, "without a persisted upstream declaration the reference catalog applies")
-			requirePinnedModelContextCapacity(t, recorder, codex, wantCapacity)
 			if codex {
 				require.Equal(t, []string{"custom-concrete", "public-alias"}, codexHandlerManifestSlugs(t, recorder))
+				require.Contains(t, recorder.Body.String(), `"context_window":424242`)
 			} else {
 				require.Equal(t, []string{"custom-concrete", "public-alias"}, ordinaryPinnedModelIDs(t, recorder))
 				require.Contains(t, recorder.Body.String(), `"owned_by":"provider"`)

@@ -26,6 +26,7 @@ import (
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/adminaccess"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -127,19 +128,13 @@ func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedul
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
-	client := r.client
-	exec := r.sql
-	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
-		client = contextTx.Client()
-		exec = client
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.Create(ctx, account)
 	}
-	if err := createAccountRecord(ctx, client, account); err != nil {
+	if err := createAccountRecord(ctx, r.client, account); err != nil {
 		return err
 	}
-	if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
-		if dbent.TxFromContext(ctx) != nil {
-			return err
-		}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account create failed: account=%d err=%v", account.ID, err)
 	}
 	return nil
@@ -278,11 +273,10 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 }
 
 func (r *accountRepository) GetByID(ctx context.Context, id int64) (*service.Account, error) {
-	client := r.client
-	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
-		client = contextTx.Client()
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.GetByID(ctx, id)
 	}
-	m, err := client.Account.Query().Where(dbaccount.IDEQ(id)).Only(ctx)
+	m, err := r.client.Account.Query().Where(dbaccount.IDEQ(id)).Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
@@ -431,6 +425,9 @@ func (r *accountRepository) ListCRSAccountIDs(ctx context.Context) (map[string]i
 }
 
 func (r *accountRepository) Update(ctx context.Context, account *service.Account) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.Update(ctx, account)
+	}
 	return r.updateAccount(ctx, account, nil, nil, account.RateMultiplier)
 }
 
@@ -498,7 +495,6 @@ func (r *accountRepository) updateAccount(
 	}
 
 	account.UpdatedAt = updated.UpdatedAt
-	account.ModelContextOverridesPatch = nil
 	// 普通账号编辑（如 model_mapping / credentials）也需要立即刷新单账号快照，
 	// 否则网关在 outbox worker 延迟或异常时仍可能读到旧配置。
 	if contextTx == nil {
@@ -642,8 +638,6 @@ func lockAndMergeAccountProbeExtra(
 			extra -> 'ollama_cloud_usage_session',
 			extra -> 'ollama_cloud_usage_auto_refresh',
 			extra -> 'ollama_cloud_usage_snapshot',
-			extra -> 'model_context_overrides',
-			extra -> 'upstream_model_metadata',
 			extra -> 'system_prompt',
 			COALESCE(
 				(
@@ -666,7 +660,9 @@ func lockAndMergeAccountProbeExtra(
 				false
 			),
 			extra -> 'opencode_go_usage_auto_refresh',
-			extra -> 'opencode_go_usage_snapshot'
+			extra -> 'opencode_go_usage_snapshot',
+			extra -> 'grok_observed_models',
+			extra -> 'upstream_model_metadata'
 		FROM accounts
 		WHERE id = $1 AND deleted_at IS NULL
 		FOR NO KEY UPDATE
@@ -686,18 +682,18 @@ func lockAndMergeAccountProbeExtra(
 		identityUnchanged              bool
 		ollamaGroupIdentityUnchanged   bool
 		ollamaProxyIdentityUnchanged   bool
+		opencodeGroupIdentityUnchanged bool
 		currentEnabled                 []byte
 		currentRateSyncEnabled         []byte
 		currentSnapshot                []byte
 		currentOllamaSession           []byte
 		currentOllamaAutoRefresh       []byte
 		currentOllamaSnapshot          []byte
-		currentContextOverrides        []byte
-		currentModelMetadata           []byte
 		currentSystemPrompt            []byte
-		opencodeGroupIdentityUnchanged bool
 		currentOpenCodeAutoRefresh     []byte
 		currentOpenCodeSnapshot        []byte
+		currentGrokObservedModels      []byte
+		currentUpstreamModelMetadata   []byte
 	)
 	if err := rows.Scan(
 		&identityUnchanged,
@@ -709,12 +705,12 @@ func lockAndMergeAccountProbeExtra(
 		&currentOllamaSession,
 		&currentOllamaAutoRefresh,
 		&currentOllamaSnapshot,
-		&currentContextOverrides,
-		&currentModelMetadata,
 		&currentSystemPrompt,
 		&opencodeGroupIdentityUnchanged,
 		&currentOpenCodeAutoRefresh,
 		&currentOpenCodeSnapshot,
+		&currentGrokObservedModels,
+		&currentUpstreamModelMetadata,
 	); err != nil {
 		return nil, err
 	}
@@ -722,12 +718,7 @@ func lockAndMergeAccountProbeExtra(
 		return nil, err
 	}
 
-	extra, err := mergeAccountModelContextExtra(
-		account, account.Extra, currentContextOverrides, currentModelMetadata,
-	)
-	if err != nil {
-		return nil, err
-	}
+	extra := copyJSONMap(normalizeJSONMap(account.Extra))
 	// Preserve the system prompt binding read under the row lock. A stale
 	// general account editor cannot overwrite the dedicated binding endpoint.
 	delete(extra, service.AccountExtraSystemPromptKey)
@@ -841,53 +832,22 @@ func lockAndMergeAccountProbeExtra(
 			}
 		}
 	}
-	return extra, nil
-}
-
-// mergeAccountModelContextExtra protects service-owned snapshots from stale
-// whole-account edits. The caller supplies the current values read under the
-// account row lock, so patches to separate models compose even when both edits
-// were opened before either save. Sync writes continue to use UpdateExtra.
-func mergeAccountModelContextExtra(
-	account *service.Account,
-	extra map[string]any,
-	currentOverrides, currentMetadata []byte,
-) (map[string]any, error) {
-	if err := service.ValidateModelContextOverrides(account.ModelContextOverridesPatch); err != nil {
-		return nil, err
-	}
-	merged := copyJSONMap(normalizeJSONMap(extra))
-	for _, field := range []struct {
-		key string
-		raw []byte
-	}{
-		{service.ModelContextOverridesExtraKey, currentOverrides},
-		{service.UpstreamModelMetadataExtraKey, currentMetadata},
+	// Grok 目录和能力 metadata 是同步写入的受管状态。普通更新在行锁内采用最新
+	// 数据库值，忽略表单旧值、缺键和注入。来源身份变化不删除已有成功快照。
+	for key, raw := range map[string][]byte{
+		"grok_observed_models":                currentGrokObservedModels,
+		service.UpstreamModelMetadataExtraKey: currentUpstreamModelMetadata,
 	} {
-		delete(merged, field.key)
-		value, ok, err := decodeAccountExtraJSON(field.raw)
+		delete(extra, key)
+		value, ok, err := decodeAccountExtraJSON(raw)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			merged[field.key] = value
+			extra[key] = value
 		}
 	}
-	if account.ModelContextOverridesPatch != nil {
-		overrides, err := service.ApplyAccountModelContextOverrides(
-			account,
-			merged[service.ModelContextOverridesExtraKey], account.ModelContextOverridesPatch,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if len(overrides) == 0 {
-			delete(merged, service.ModelContextOverridesExtraKey)
-		} else {
-			merged[service.ModelContextOverridesExtraKey] = overrides
-		}
-	}
-	return merged, nil
+	return extra, nil
 }
 
 func decodeAccountExtraJSON(raw []byte) (any, bool, error) {
@@ -1019,6 +979,9 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 }
 
 func (r *accountRepository) Delete(ctx context.Context, id int64) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.Delete(ctx, id)
+	}
 	groupIDs, err := r.loadAccountGroupIDs(ctx, id)
 	if err != nil {
 		return err
@@ -1914,6 +1877,9 @@ func (r *accountRepository) syncSchedulerAccountSnapshots(ctx context.Context, a
 }
 
 func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.ClearError(ctx, id)
+	}
 	_, err := r.client.Account.Update().
 		Where(dbaccount.IDEQ(id)).
 		SetStatus(service.StatusActive).
@@ -1997,6 +1963,12 @@ func (r *accountRepository) GetGroups(ctx context.Context, accountID int64) ([]s
 }
 
 func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.BindGroups(ctx, accountID, groupIDs)
+	}
+	if adminaccess.FromContext(ctx) != nil {
+		return r.scopedAdminBindGroups(ctx, accountID, groupIDs)
+	}
 	existingGroupIDs, err := r.loadAccountGroupIDs(ctx, accountID)
 	if err != nil {
 		return err
@@ -2334,42 +2306,6 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	return r.accountsToService(ctx, accounts)
 }
 
-// ListModelCapacityCandidates returns every active account of the platforms
-// that may bound a model's advertised context capacity. Unlike the availability
-// pool it ignores the schedulable switch: pausing an account changes routing,
-// not what its upstream can hold.
-func (r *accountRepository) ListModelCapacityCandidates(
-	ctx context.Context,
-	groupID *int64,
-	platforms []string,
-	includeGrouped bool,
-) ([]service.Account, error) {
-	if len(platforms) == 0 {
-		return []service.Account{}, nil
-	}
-	if groupID != nil {
-		return r.queryAccountsByGroup(ctx, *groupID, accountGroupQueryOptions{
-			status:    service.StatusActive,
-			platforms: platforms,
-		})
-	}
-	preds := []dbpredicate.Account{
-		dbaccount.StatusEQ(service.StatusActive),
-		dbaccount.PlatformIn(platforms...),
-	}
-	if !includeGrouped {
-		preds = append(preds, dbaccount.Not(dbaccount.HasAccountGroups()))
-	}
-	accounts, err := r.client.Account.Query().
-		Where(preds...).
-		Order(dbent.Asc(dbaccount.FieldPriority)).
-		All(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return r.accountsToService(ctx, accounts)
-}
-
 // SetRateLimited marks an account rate limited until resetAt. It delegates to
 // SetRateLimitedIfLater, so the write is monotonic: a later, shorter reset can
 // never shorten a longer window that is already stored, and rate_limited_at is
@@ -2644,6 +2580,9 @@ func (r *accountRepository) SetGrokCredentialTempUnschedulableIfMatch(
 }
 
 func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.ClearTempUnschedulable(ctx, id)
+	}
 	_, err := r.sql.ExecContext(ctx, `
 		UPDATE accounts
 		SET temp_unschedulable_until = NULL,
@@ -2697,6 +2636,9 @@ func (r *accountRepository) ClearTempUnschedulableIfMatch(ctx context.Context, i
 }
 
 func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.ClearRateLimit(ctx, id)
+	}
 	_, err := r.client.Account.Update().
 		Where(dbaccount.IDEQ(id)).
 		ClearRateLimitedAt().
@@ -2714,6 +2656,9 @@ func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error 
 }
 
 func (r *accountRepository) ClearAntigravityQuotaScopes(ctx context.Context, id int64) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.ClearAntigravityQuotaScopes(ctx, id)
+	}
 	client := clientFromContext(ctx, r.client)
 	result, err := client.ExecContext(
 		ctx,
@@ -2738,6 +2683,9 @@ func (r *accountRepository) ClearAntigravityQuotaScopes(ctx context.Context, id 
 }
 
 func (r *accountRepository) ClearModelRateLimits(ctx context.Context, id int64) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.ClearModelRateLimits(ctx, id)
+	}
 	client := clientFromContext(ctx, r.client)
 	result, err := client.ExecContext(
 		ctx,
@@ -2800,26 +2748,20 @@ func (r *accountRepository) UpdateSessionWindowEnd(ctx context.Context, id int64
 }
 
 func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
-	client := r.client
-	exec := r.sql
-	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
-		client = contextTx.Client()
-		exec = client
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.SetSchedulable(ctx, id, schedulable)
 	}
-	_, err := client.Account.Update().
+	_, err := r.client.Account.Update().
 		Where(dbaccount.IDEQ(id)).
 		SetSchedulable(schedulable).
 		Save(ctx)
 	if err != nil {
 		return err
 	}
-	if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
-		if dbent.TxFromContext(ctx) != nil {
-			return err
-		}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue schedulable change failed: account=%d err=%v", id, err)
 	}
-	if !schedulable && dbent.TxFromContext(ctx) == nil {
+	if !schedulable {
 		r.syncSchedulerAccountSnapshot(ctx, id)
 	}
 	return nil
@@ -2867,6 +2809,9 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 }
 
 func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.UpdateExtra(ctx, id, updates)
+	}
 	updates = stripCodexFingerprintSeedFromExtraUpdate(updates)
 	if len(updates) == 0 {
 		return nil
@@ -4306,6 +4251,9 @@ func (r *accountRepository) RevertProxyFallback(ctx context.Context, accountID i
 // ⚠️ 新增影子维度时：须更新此函数（或新增维度专用列举），并检查所有调用点（级联删除/一母一影校验/type 守卫），否则会静默漏掉新维度。
 // 软删除行由 SoftDeleteMixin 拦截器自动排除，无需手写 deleted_at IS NULL。
 func (r *accountRepository) ListShadowsByParent(ctx context.Context, parentID int64) ([]*service.Account, error) {
+	if scoped := r.accountTransactionScope(ctx); scoped != r {
+		return scoped.ListShadowsByParent(ctx, parentID)
+	}
 	rows, err := r.client.Account.Query().
 		Where(dbaccount.ParentAccountIDEQ(parentID), dbaccount.QuotaDimensionEQ(dbaccount.QuotaDimensionSpark)).
 		All(ctx)

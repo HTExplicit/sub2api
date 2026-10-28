@@ -2343,7 +2343,7 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  *   views/admin/BackupView.vue:347                   data-ui="r2-table-box"   (the R2 guide's settings table frame)
  *   views/admin/SettingsView.vue:7836, BackupView.vue:203  data-ui="settings-list-box" (6.3 the two lists that can be empty)
  * Existing hooks used: .settings-tabs-* (SettingsView), #provider-form (PaymentProviderDialog), data-testid
- * "official-model-catalog*", "observability-settings", "backup-schedule",
+ * "observability-settings", "backup-schedule",
  * data-test="account-system-prompt-binding" (the per-account binding in the accounts dialogs).
  * Selectors start with html.flat-theme and one of those roots; the theme switched off renders upstream. */
 
@@ -2730,9 +2730,9 @@ html.flat-theme [data-ui~="settings"] .card table tr[data-ui~="quota-row"]:not(u
 
 /* ================================================================== settings · 5 panels inside a card */
 
-/* 5.1 The Codex card stacks two fork panels (observation, the model catalogue) and the client rules: one hairline
-   between them, as between the rows of a card. */
-html.flat-theme [data-ui~="settings"] .card > div[class~="p-6"] > :is([data-testid="observability-settings"], [data-testid="official-model-catalog"]) + * {
+/* 5.1 The Codex card stacks the observation panel and the client rules: one hairline between them, as between
+   the rows of a card. */
+html.flat-theme [data-ui~="settings"] .card > div[class~="p-6"] > [data-testid="observability-settings"] + * {
   margin-top: var(--set-row);
   border-top: 1px solid rgb(var(--ui-line));
   padding-top: var(--set-row);
@@ -2748,55 +2748,6 @@ html.flat-theme [data-ui~="settings"] [data-testid="observability-settings"] > l
 
 html.flat-theme [data-ui~="settings"] [data-testid="observability-settings"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: 0.625rem;
-}
-
-/* 5.2 The model catalogue reads as the reference's docs reference list: a bordered scroll box (radius 8, 14px in),
-   one entry per hairline; the model id 14 / 600 ink (upstream text-sm), the provider / product 12px muted; the facts
-   as a two-column definition list, 12 / 18, labels muted, values ink-soft; the count as a 12px meta line. Every field
-   stays shown. */
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-list"] {
-  border-color: rgb(var(--ui-line));
-  border-radius: var(--ui-radius-lg);
-  padding-inline: 0.875rem;
-}
-
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] {
-  padding-block: 0.625rem 0.75rem;
-}
-
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > p:first-child {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  font-weight: 600;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > p:nth-child(2) {
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > dl {
-  margin-top: 0.5rem;
-  column-gap: 1rem;
-  row-gap: 0.125rem;
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-}
-
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > dl > dt {
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > dl > dd {
-  color: rgb(var(--ui-ink-soft));
-}
-
-html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog"] > p[class~="text-xs"] {
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: rgb(var(--ui-label));
 }
 
 /* ================================================================== settings · 6 tab specifics */

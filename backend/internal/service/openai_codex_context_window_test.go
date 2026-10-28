@@ -19,7 +19,7 @@ func TestCodexContextWindowSyncRoundTrip(t *testing.T) {
 		wantWindow int64
 		wantMax    int64
 	}{
-		{"distinct windows", `"context_window":272000,"max_context_window":872000`, 872000, 872000},
+		{"distinct windows", `"context_window":272000,"max_context_window":872000`, 272000, 872000},
 		{"equal windows", `"context_window":272000,"max_context_window":272000`, 272000, 272000},
 		{"default only", `"context_window":272000`, 272000, 272000},
 		{"maximum only", `"max_context_window":872000`, 872000, 872000},
@@ -29,12 +29,12 @@ func TestCodexContextWindowSyncRoundTrip(t *testing.T) {
 		{"maximum below default", `"context_window":272000,"max_context_window":128000`, 128000, 128000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			account := codexContextWindowAccount(t, 1, "unlisted-model", `"context_window":64000`)
+			account := codexContextWindowAccount(t, 1, `"context_window":64000`)
 			upstream := &httpUpstreamRecorder{resp: &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"models":[{
-					"slug":"unlisted-model","reasoning":true,
+					"slug":"gpt-6-astra","reasoning":true,
 					"supported_reasoning_levels":[{"effort":"high"}],
 					"input_modalities":["text","image"],%s
 				}]}`, tc.fields))),
@@ -53,7 +53,7 @@ func TestCodexContextWindowSyncRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			account.Extra = nil
 			require.NoError(t, json.Unmarshal(persisted, &account.Extra))
-			model := codexContextWindowManifest(t, []Account{account}, "unlisted-model")
+			model := codexContextWindowManifest(t, []Account{account})
 			require.EqualValues(t, tc.wantWindow, model["context_window"])
 			require.EqualValues(t, tc.wantMax, model["max_context_window"])
 		})
@@ -68,33 +68,33 @@ func TestCodexContextWindowAccountIntersection(t *testing.T) {
 		wantMax    int64
 	}{
 		{
-			"minimum effective maximum",
+			"independent minima",
 			[]string{`"context_window":272000,"max_context_window":872000`, `"context_window":300000,"max_context_window":512000`},
-			512000, 512000,
+			272000, 512000,
 		},
 		{
-			"context-only snapshot caps maximum",
+			"legacy snapshot caps maximum",
 			[]string{`"context_window":272000,"max_context_window":872000`, `"context_window":300000`},
-			300000, 300000,
+			272000, 300000,
 		},
 		{
-			"context-only snapshot alone",
+			"legacy snapshot alone",
 			[]string{`"context_window":272000`},
 			272000, 272000,
 		},
 		{
 			"invalid maximum uses known default",
 			[]string{`"context_window":272000,"max_context_window":872000`, `"context_window":300000,"max_context_window":-1`},
-			300000, 300000,
+			272000, 300000,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			accounts := make([]Account, len(tc.accounts))
 			for i, fields := range tc.accounts {
-				accounts[i] = codexContextWindowAccount(t, int64(i+1), "unlisted-model", fields)
+				accounts[i] = codexContextWindowAccount(t, int64(i+1), fields)
 			}
 			for range 2 {
-				model := codexContextWindowManifest(t, accounts, "unlisted-model")
+				model := codexContextWindowManifest(t, accounts)
 				require.EqualValues(t, tc.wantWindow, model["context_window"])
 				require.EqualValues(t, tc.wantMax, model["max_context_window"])
 				for i, j := 0, len(accounts)-1; i < j; i, j = i+1, j-1 {
@@ -107,20 +107,17 @@ func TestCodexContextWindowAccountIntersection(t *testing.T) {
 
 func TestCodexContextWindowRegistryEnrichment(t *testing.T) {
 	for _, tc := range []struct {
-		name             string
-		fields           string
-		wantWindow       int64
-		wantMax          int64
-		wantPublicWindow int64
-		wantPublicMax    int64
-		wantSource       string
+		name       string
+		fields     string
+		wantWindow int64
+		wantMax    int64
 	}{
-		{"preserve upstream limits", `"context_window":272000,"max_context_window":872000`, 272000, 872000, 1050000, 1050000, "official"},
-		{"upstream default without maximum", `"context_window":272000`, 272000, 0, 1050000, 1050000, "official"},
-		{"registry supplies missing limits", `"description":"Model without context metadata"`, 1050000, 1050000, 1050000, 1050000, "official"},
+		{"preserve upstream limits", `"context_window":272000,"max_context_window":872000`, 272000, 872000},
+		{"upstream default remains ceiling", `"context_window":272000`, 272000, 272000},
+		{"registry supplies missing limits", `"description":"Model without context metadata"`, 1050000, 1050000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			account := codexContextWindowAccount(t, 1, "gpt-6-astra", `"context_window":64000`)
+			account := codexContextWindowAccount(t, 1, `"context_window":64000`)
 			account.Type = AccountTypeAPIKey
 			account.Credentials["api_key"] = "test-key"
 			account.Credentials["base_url"] = "https://provider.example/v1"
@@ -148,49 +145,40 @@ func TestCodexContextWindowRegistryEnrichment(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, catalog.Warnings)
 			require.Len(t, upstream.requests, 2)
-			// Synchronization preserves the upstream observation, while the public
-			// projection follows the applicable official API specification.
-			require.EqualValues(t, tc.wantWindow, catalog.Metadata["gpt-6-astra"].ContextWindow)
-			require.EqualValues(t, tc.wantMax, catalog.Metadata["gpt-6-astra"].MaxContextWindow)
-			model := codexContextWindowManifest(t, []Account{account}, "gpt-6-astra")
-			require.EqualValues(t, tc.wantPublicWindow, model["context_window"])
-			require.EqualValues(t, tc.wantPublicMax, model["max_context_window"])
-			require.Equal(t, tc.wantSource, model["context_capacity_source"])
+			model := codexContextWindowManifest(t, []Account{account})
+			require.EqualValues(t, tc.wantWindow, model["context_window"])
+			require.EqualValues(t, tc.wantMax, model["max_context_window"])
 		})
 	}
 }
 
-func codexContextWindowAccount(t *testing.T, id int64, model, fields string) Account {
+func codexContextWindowAccount(t *testing.T, id int64, fields string) Account {
 	t.Helper()
 	account := Account{
 		ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
 		Credentials: map[string]any{
 			"access_token":  "test-token",
-			"model_mapping": map[string]any{model: model},
+			"model_mapping": map[string]any{"gpt-6-astra": "gpt-6-astra"},
 		},
 	}
 	err := json.Unmarshal([]byte(fmt.Sprintf(`{"upstream_model_metadata":{
-		"source":"upstream","models":{%q:{
-			"id":%q,"reasoning":true,
+		"source":"upstream","models":{"gpt-6-astra":{
+			"id":"gpt-6-astra","reasoning":true,
 			"supported_reasoning_levels":["high"],"input_modalities":["text","image"],%s
 		}}
-	}}`, model, model, fields)), &account.Extra)
+	}}`, fields)), &account.Extra)
 	require.NoError(t, err)
-	snapshot := account.GetUpstreamModelMetadataSnapshot()
-	require.NotNil(t, snapshot)
-	snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(&account)
-	account.SetUpstreamModelMetadataSnapshot(*snapshot)
 	return account
 }
 
-func codexContextWindowManifest(t *testing.T, accounts []Account, model string) map[string]any {
+func codexContextWindowManifest(t *testing.T, accounts []Account) map[string]any {
 	t.Helper()
 	const groupID int64 = 7042
 	svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
 		groupID: accounts,
 	}}}
 	body, err := svc.BuildCodexModelsManifestForGroup(
-		context.Background(), &Group{ID: groupID, Platform: PlatformOpenAI}, "", []string{model},
+		context.Background(), &Group{ID: groupID, Platform: PlatformOpenAI}, "", []string{"gpt-6-astra"},
 	)
 	require.NoError(t, err)
 	models := decodeCodexManifestModels(t, body)

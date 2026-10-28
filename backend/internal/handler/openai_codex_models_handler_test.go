@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -41,15 +40,11 @@ func (r codexModelsFailoverAccountRepo) GetByID(_ context.Context, id int64) (*s
 func (r codexModelsFailoverAccountRepo) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	accounts := make([]service.Account, 0, len(r.accounts))
 	for _, account := range r.accounts {
-		if account.Platform == platform && account.IsSchedulable() {
+		if account.Platform == platform {
 			accounts = append(accounts, account)
 		}
 	}
 	return accounts, nil
-}
-
-func (r codexModelsFailoverAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, _ int64, platform string) ([]service.Account, error) {
-	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
 func (r codexModelsFailoverAccountRepo) ListSchedulableByGroupID(_ context.Context, _ int64) ([]service.Account, error) {
@@ -428,8 +423,6 @@ func TestCompositeCodexModelsReusesExistingManifestSelection(t *testing.T) {
 
 func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 	retryableStatuses := []int{
-		http.StatusNotFound,
-		http.StatusMethodNotAllowed,
 		http.StatusTooManyRequests,
 		http.StatusInternalServerError,
 		http.StatusBadGateway,
@@ -441,14 +434,30 @@ func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 			handler, upstream, groupID := newCodexModelsFailoverTestHandler(status)
 			recorder := performCodexModelsRequest(t, handler, groupID)
 
-			want := []int64{1, 2}
-			if got := upstream.calls(); !equalInt64Slices(got, want) {
+			if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
 				t.Fatalf("upstream account calls: got %v, want %v", got, want)
 			}
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 			}
 			requireCompleteCodexModelsHandlerResponse(t, recorder, "gpt-5.6-sol")
+		})
+	}
+}
+
+// Scenario: an API-key upstream without /models is excluded only for this discovery request.
+func TestCodexModelsFailsOverWhenAPIKeyModelsEndpointIsUnavailable(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusMethodNotAllowed} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			handler, upstream, groupID := newCodexModelsFailoverTestHandler(status)
+			recorder := performCodexModelsRequest(t, handler, groupID)
+
+			if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+				t.Fatalf("upstream account calls: got %v, want %v", got, want)
+			}
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
 		})
 	}
 }
@@ -506,51 +515,6 @@ func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
 	}
 }
 
-func requireCompleteCodexModelsHandlerResponse(t *testing.T, recorder *httptest.ResponseRecorder, slug string) {
-	t.Helper()
-	manifestSlugs := codexHandlerManifestSlugs(t, recorder)
-	foundSlug := false
-	for _, candidate := range manifestSlugs {
-		if candidate == slug || strings.TrimPrefix(candidate, "openai/") == slug {
-			foundSlug = true
-			break
-		}
-	}
-	if !foundSlug {
-		t.Fatalf("manifest slugs %v do not contain %q", manifestSlugs, slug)
-	}
-	var envelope struct {
-		Models []map[string]any `json:"models"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("decode body: %v; body=%s", err, recorder.Body.String())
-	}
-	var model map[string]any
-	for _, candidate := range envelope.Models {
-		candidateSlug, _ := candidate["slug"].(string)
-		if candidateSlug == slug || strings.TrimPrefix(candidateSlug, "openai/") == slug {
-			model = candidate
-			break
-		}
-	}
-	if model == nil {
-		t.Fatalf("manifest does not contain slug %q; body=%s", slug, recorder.Body.String())
-	}
-	if levels, ok := model["supported_reasoning_levels"].([]any); !ok || len(levels) == 0 {
-		t.Fatalf("supported_reasoning_levels must be populated: %v", model["supported_reasoning_levels"])
-	}
-	if messages, ok := model["model_messages"].(map[string]any); !ok || messages["instructions_template"] == "" {
-		t.Fatalf("model_messages.instructions_template must be populated: %v", model["model_messages"])
-	}
-	if policy, ok := model["truncation_policy"].(map[string]any); !ok || len(policy) == 0 {
-		t.Fatalf("truncation_policy must be populated: %v", model["truncation_policy"])
-	}
-	modalities, ok := model["input_modalities"].([]any)
-	if !ok || len(modalities) != 2 || modalities[0] != "text" || modalities[1] != "image" {
-		t.Fatalf("known GPT model modalities: got %v, want [text image]", model["input_modalities"])
-	}
-}
-
 func TestCodexModelsDoesNotFailOverFromUpstreamConfigurationError(t *testing.T) {
 	handler, upstream, groupID := newCodexModelsFailoverTestHandler(http.StatusServiceUnavailable)
 	upstream.firstErr = errors.New("invalid proxy URL")
@@ -602,61 +566,6 @@ func TestCodexModelsHonorsAccountSwitchLimit(t *testing.T) {
 	if body := recorder.Body.String(); !strings.Contains(body, "upstream error 504") {
 		t.Fatalf("body does not preserve the limit-ending upstream error: %s", body)
 	}
-}
-
-func TestCodexModelsIgnoresGroupProfitControl(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	overThreshold := 0.8
-	repo := codexModelsFailoverAccountRepo{accounts: []service.Account{
-		{
-			ID:             1,
-			Name:           "over-threshold",
-			Platform:       service.PlatformOpenAI,
-			Type:           service.AccountTypeAPIKey,
-			Status:         service.StatusActive,
-			Schedulable:    true,
-			Concurrency:    1,
-			RateMultiplier: &overThreshold,
-			Credentials: map[string]any{
-				"api_key":  "sk-test",
-				"base_url": "https://upstream.example/v1",
-			},
-		},
-	}}
-	upstream := &codexModelsFailoverHTTPUpstream{firstBody: `{"models":[{"slug":"gpt-5.6-sol"}]}`}
-	gatewayService := service.NewOpenAIGatewayService(
-		repo,
-		nil, nil, nil, nil, nil, nil, &config.Config{RunMode: config.RunModeSimple}, nil, nil, nil, nil, nil,
-		upstream,
-		nil, nil, nil, nil, nil, nil, nil, nil,
-	)
-	handler := &OpenAIGatewayHandler{gatewayService: gatewayService}
-	group := &service.Group{
-		ID:                   46,
-		Platform:             service.PlatformOpenAI,
-		Status:               service.StatusActive,
-		Hydrated:             true,
-		RateMultiplier:       1,
-		ProfitControlEnabled: true,
-		ProfitMinMargin:      0.5,
-	}
-	// The auth middleware puts the hydrated group into the request context,
-	// which is where the profit gate reads its configuration.
-	requestCtx := context.WithValue(context.Background(), ctxkey.Group, group)
-	gatedCtx, _ := gatewayService.WithOpenAIRequestPricingContext(requestCtx, &group.ID)
-	vetoed, _ := service.OpenAIProfitControlVeto(gatedCtx, &repo.accounts[0])
-	require.True(t, vetoed, "the group's profit gate must reject the only account")
-
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.144.0", nil).WithContext(requestCtx)
-	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{GroupID: &group.ID, Group: group})
-
-	handler.CodexModels(c)
-
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Equal(t, []int64{1}, upstream.calls())
-	requireCompleteCodexModelsHandlerResponse(t, recorder, "gpt-5.6-sol")
 }
 
 func newCodexModelsFailoverTestHandler(firstStatus int) (*OpenAIGatewayHandler, *codexModelsFailoverHTTPUpstream, int64) {
@@ -735,6 +644,37 @@ func codexHandlerManifestSlugs(t *testing.T, recorder *httptest.ResponseRecorder
 		slugs = append(slugs, model.Slug)
 	}
 	return slugs
+}
+
+func requireCompleteCodexModelsHandlerResponse(t *testing.T, recorder *httptest.ResponseRecorder, slug string) {
+	t.Helper()
+
+	var envelope struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode body: %v; body=%s", err, recorder.Body.String())
+	}
+	if len(envelope.Models) != 1 {
+		t.Fatalf("models count: got %d, want 1; body=%s", len(envelope.Models), recorder.Body.String())
+	}
+	model := envelope.Models[0]
+	if got := model["slug"]; got != slug {
+		t.Fatalf("slug: got %v, want %q", got, slug)
+	}
+	if levels, ok := model["supported_reasoning_levels"].([]any); !ok || len(levels) == 0 {
+		t.Fatalf("supported_reasoning_levels must be populated: %v", model["supported_reasoning_levels"])
+	}
+	if messages, ok := model["model_messages"].(map[string]any); !ok || messages["instructions_template"] == "" {
+		t.Fatalf("model_messages.instructions_template must be populated: %v", model["model_messages"])
+	}
+	if policy, ok := model["truncation_policy"].(map[string]any); !ok || len(policy) == 0 {
+		t.Fatalf("truncation_policy must be populated: %v", model["truncation_policy"])
+	}
+	modalities, ok := model["input_modalities"].([]any)
+	if !ok || len(modalities) != 2 || modalities[0] != "text" || modalities[1] != "image" {
+		t.Fatalf("known GPT model modalities: got %v, want [text image]", model["input_modalities"])
+	}
 }
 
 func equalInt64Slices(got, want []int64) bool {
@@ -817,17 +757,13 @@ func newPinnedCodexAccount(id int64, status string, schedulable bool, rateLimite
 func newPinnedCodexTestHandler(accounts []service.Account, upstream *codexModelsPinnedHTTPUpstream, maxSwitches int) *OpenAIGatewayHandler {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{RunMode: config.RunModeSimple}
-	repo := codexModelsFailoverAccountRepo{accounts: accounts}
 	gatewayService := service.NewOpenAIGatewayService(
-		repo,
+		codexModelsFailoverAccountRepo{accounts: accounts},
 		nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil,
 		upstream,
 		nil, nil, nil, nil, nil, nil, nil, nil,
 	)
-	return &OpenAIGatewayHandler{
-		gatewayService: gatewayService, maxAccountSwitches: maxSwitches,
-		nativeAnthropicGatewayService: newGatewayModelsHandlerForTest(repo).gatewayService,
-	}
+	return &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: maxSwitches}
 }
 
 func performPinnedCodexModelsRequest(t *testing.T, handler *OpenAIGatewayHandler, group *service.Group, etag string) *httptest.ResponseRecorder {

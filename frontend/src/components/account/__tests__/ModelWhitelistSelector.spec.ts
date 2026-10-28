@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import type { ModelContextCapacityRow, SyncUpstreamModelsResult } from '@/api/admin/accounts'
+import type { SyncUpstreamModelsResult } from '@/api/admin/accounts'
 import { getModelsByPlatform } from '@/composables/useModelWhitelist'
 import {
   BUILTIN_PLATFORM_CATALOG,
@@ -69,20 +69,15 @@ vi.mock('@/composables/useClipboard', () => ({
 }))
 
 import ModelWhitelistSelector from '../ModelWhitelistSelector.vue'
-import ModelContextCapacityField from '../ModelContextCapacityField.vue'
 
-function capacityRow(overrides: Partial<ModelContextCapacityRow> = {}): ModelContextCapacityRow {
-  return {
-    upstream_model_id: 'gpt-5.6-sol',
-    aliases: ['gpt-5.6-sol'],
-    editable: true,
-    automatic_context_window: 258_000,
-    automatic_source: 'default',
-    effective_context_window: 258_000,
-    effective_source: 'default',
-    capacity_basis: 'context_window',
-    ...overrides
-  }
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
 }
 
 function mountSelector(props: Record<string, unknown> = {}) {
@@ -104,6 +99,10 @@ function mountSelector(props: Record<string, unknown> = {}) {
 }
 
 type SelectorWrapper = ReturnType<typeof mountSelector>
+
+function syncButton(wrapper: SelectorWrapper) {
+  return wrapper.get('[data-testid="sync-upstream-models"]')
+}
 
 function findModelRow(wrapper: SelectorWrapper, modelId: string) {
   const row = wrapper
@@ -331,7 +330,6 @@ describe('ModelWhitelistSelector', () => {
     ]]])
     expect(syncUpstreamModels).not.toHaveBeenCalled()
     expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
-    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
     const selected = wrapper.emitted('update:modelValue')![0][0] as string[]
     expect(selected).toContain('gpt-6-sol')
     expect(selected).toContain('gpt-6-luna')
@@ -347,7 +345,6 @@ describe('ModelWhitelistSelector', () => {
     const result: SyncUpstreamModelsResult = {
       models: ['New.Exact-ID', 'New.Exact-ID', 'manual-model'],
       metadata: { 'New.Exact-ID': { id: 'New.Exact-ID', context_window: 1_050_000 } },
-      capacity_rows: [capacityRow({ upstream_model_id: 'New.Exact-ID', aliases: ['New.Exact-ID'] })]
     }
     const wrapper = mountSelector({ modelValue: ['manual-model', 'user-only-model'], accountId: 46 })
     const button = wrapper.get('[data-testid="sync-upstream-models"]')
@@ -375,133 +372,8 @@ describe('ModelWhitelistSelector', () => {
 
     expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
     expect(wrapper.emitted('update:modelValue')).toEqual([[['manual-model', 'user-only-model', 'New.Exact-ID']]])
-    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
     expect(findPicker(wrapper).exists()).toBe(false)
     wrapper.unmount()
-  })
-
-  it('retains the saved OAuth account sync entry even when capacity editing is protected', async () => {
-    syncUpstreamModels.mockResolvedValue({ models: ['oauth-model'] })
-    const wrapper = mountSelector({
-      modelValue: ['gpt-5.6-sol'],
-      accountId: 91,
-      capacityRows: [capacityRow({ editable: false, effective_source: 'protected' })]
-    })
-
-    expect(wrapper.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
-    await openPicker(wrapper)
-
-    expect(syncUpstreamModels).toHaveBeenCalledOnce()
-    expect(syncUpstreamModels).toHaveBeenCalledWith(91)
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    // The whitelist entry the upstream did not return starts unchecked, so confirming as offered drops it.
-    await confirmPicker(wrapper)
-    expect(wrapper.emitted('update:modelValue')).toEqual([[['oauth-model']]])
-    wrapper.unmount()
-  })
-
-  it('shows separate always-visible capacity and source beside unchanged selected and candidate names', async () => {
-    const wrapper = mountSelector({
-      modelValue: ['gpt-5.6-sol', 'Unknown.Exact-ID'],
-      capacityRows: [capacityRow({ effective_context_window: 1_050_000, effective_source: 'official' })]
-    })
-    const chips = wrapper.findAll('[data-testid="selected-model"]')
-    expect(chips[0].element.parentElement?.classList.contains('grid-cols-2')).toBe(true)
-    expect(chips.map(chip => chip.get('[data-testid="selected-model-name"]').text())).toEqual(['gpt-5.6-sol', 'Unknown.Exact-ID'])
-    expect(chips[0].get('[data-testid="context-capacity-value"]').text()).toContain('1.05M')
-    expect(chips[0].get('[data-testid="context-capacity-source"]').text()).toContain('official')
-    expect(chips[1].get('[data-testid="context-capacity-source"]').text()).not.toBe('')
-    expect(chips[1].find('[data-testid="context-capacity-edit"]').exists()).toBe(false)
-
-    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
-    const candidate = findModelRow(wrapper, 'gpt-5.6-sol')
-    expect(candidate.get('[data-testid="model-option-name"]').text()).toBe('gpt-5.6-sol')
-    expect(candidate.get('[data-testid="context-capacity-value"]').text()).toContain('1.05M')
-    expect(candidate.get('[data-testid="context-capacity-source"]').text()).toContain('official')
-    expect(candidate.get('[data-testid="copy-model-id"]').attributes('aria-label')).toBe('复制 gpt-5.6-sol')
-    await candidate.get('[data-testid="copy-model-id"]').trigger('click')
-    expect(copyToClipboard).toHaveBeenCalledOnce()
-    expect(copyToClipboard).toHaveBeenCalledWith('gpt-5.6-sol')
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
-    wrapper.unmount()
-  })
-
-  it('commits only the real alias target capacity without toggling the dropdown or changing the whitelist', async () => {
-    const wrapper = mountSelector({
-      modelValue: ['Public.Alias'],
-      capacityRows: [
-        capacityRow({ upstream_model_id: 'Public.Alias', aliases: ['other-alias'], effective_context_window: 999_000 }),
-        capacityRow({ upstream_model_id: 'Real.Upstream-ID', aliases: ['Public.Alias'] })
-      ],
-      capacityDrafts: { 'untouched-model': '300K' }
-    })
-    const chip = wrapper.get('[data-testid="selected-model"]')
-    expect(chip.get('[data-testid="context-capacity-value"]').text()).toContain('258K')
-    await chip.get('[data-testid="context-capacity-edit"]').trigger('click')
-    expect(wrapper.find('[data-testid="model-option"]').exists()).toBe(false)
-    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([false])
-    const input = chip.get('[data-testid="context-capacity-input"]')
-    await input.setValue('1.05M')
-    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
-    const keydown = vi.fn()
-    wrapper.element.addEventListener('keydown', keydown)
-    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
-    input.element.dispatchEvent(enter)
-    await flushPromises()
-
-    expect(enter.defaultPrevented).toBe(true)
-    expect(keydown).not.toHaveBeenCalled()
-    expect(wrapper.emitted('update:capacityDrafts')).toEqual([[{
-      'untouched-model': '300K', 'Real.Upstream-ID': '1.05M'
-    }]])
-    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(chip.get('[data-testid="selected-model-name"]').text()).toBe('Public.Alias')
-    expect(wrapper.find('[data-testid="model-option"]').exists()).toBe(false)
-    expect(syncUpstreamModels).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('edits a candidate capacity independently of selection and cancels without a patch', async () => {
-    const wrapper = mountSelector({ modelValue: ['manual-model'], capacityRows: [capacityRow()] })
-    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
-    const candidate = findModelRow(wrapper, 'gpt-5.6-sol')
-    await candidate.get('[data-testid="context-capacity-edit"]').trigger('click')
-    await candidate.get('[data-testid="context-capacity-input"]').setValue('2M')
-    await candidate.get('[data-testid="context-capacity-input"]').trigger('keydown', { key: 'Escape' })
-
-    expect(candidate.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="model-option"]').exists()).toBe(true)
-    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
-    expect(copyToClipboard).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('keeps Save blocked for either duplicate model field until every pending edit ends', async () => {
-    const wrapper = mountSelector({ modelValue: ['gpt-5.6-sol'], capacityRows: [capacityRow()] })
-    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
-    const selected = wrapper.get('[data-testid="selected-model"]').getComponent(ModelContextCapacityField)
-    const candidate = findModelRow(wrapper, 'gpt-5.6-sol').getComponent(ModelContextCapacityField)
-    selected.vm.$emit('editing', true)
-    selected.vm.$emit('validity', false)
-    candidate.vm.$emit('validity', true)
-    await flushPromises()
-    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([false])
-
-    candidate.vm.$emit('editing', true)
-    selected.vm.$emit('editing', false)
-    selected.vm.$emit('validity', true)
-    await flushPromises()
-    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([false])
-
-    candidate.vm.$emit('editing', false)
-    await flushPromises()
-    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
-    wrapper.unmount()
-    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
   })
 
   it('shows incomplete capability metadata inside the picker instead of a toast', async () => {
@@ -630,27 +502,6 @@ describe('ModelWhitelistSelector', () => {
     expect(findModelRow(wrapper, 'x-preview-f-free')).toBeDefined()
   })
 
-  it('forwards capacity rows for saved accounts and retains dynamic models after remount', async () => {
-    const result = {
-      models: ['dynamic-only'],
-      metadata: { 'dynamic-only': { id: 'dynamic-only', context_window: 1_050_000 } },
-      capacity_rows: [capacityRow({ upstream_model_id: 'dynamic-only', aliases: ['dynamic-only'], effective_context_window: 1_050_000 })]
-    }
-    syncUpstreamModels.mockResolvedValue(result)
-    const wrapper = mountSelector({ accountId: 46 })
-    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!.trigger('click')
-    await flushPromises()
-    await confirmPicker(wrapper)
-    expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
-    wrapper.unmount()
-
-    const remounted = mountSelector({ syncedModels: result, capacityRows: result.capacity_rows })
-    await remounted.get('div.cursor-pointer').trigger('click')
-    expect(findModelRow(remounted, 'dynamic-only').get('[data-testid="context-capacity-value"]').text()).toContain('1.05M')
-    expect(remounted.emitted('update:modelValue')).toBeUndefined()
-    remounted.unmount()
-  })
-
   it('clears a locally cached dynamic model when sync source changes', async () => {
     syncUpstreamModelsPreview.mockResolvedValue({ models: ['provider-a-only'] })
     const wrapper = mountSelector({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://a.example/v1', api_key: 'key-a' } })
@@ -659,12 +510,12 @@ describe('ModelWhitelistSelector', () => {
     await confirmPicker(wrapper)
     await wrapper.get('div.cursor-pointer').trigger('click')
     expect(wrapper.text()).toContain('provider-a-only')
-    await wrapper.setProps({ syncedModels: undefined, syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://b.example/v1', api_key: 'key-b' } })
+    await wrapper.setProps({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://b.example/v1', api_key: 'key-b' } })
     expect(wrapper.text()).not.toContain('provider-a-only')
     wrapper.unmount()
   })
 
-  it('ignores an in-flight old-source response instead of forwarding stale rows or changing selection', async () => {
+  it('ignores an in-flight old-source response instead of changing selection', async () => {
     let resolve!: (result: { models: string[] }) => void
     syncUpstreamModelsPreview.mockReturnValue(new Promise(result => { resolve = result }))
     const wrapper = mountSelector({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://a.example/v1', api_key: 'key-a' } })
@@ -677,70 +528,6 @@ describe('ModelWhitelistSelector', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(showSuccess).not.toHaveBeenCalled()
     expect(showError).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('does not synchronize when a parent marks saved connection changes as unsaved', async () => {
-    const wrapper = mountSelector({ accountId: 42, syncDisabled: true, syncDisabledReason: 'Save first' })
-    const button = wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!
-    expect(button.attributes('disabled')).toBeDefined()
-    expect(button.attributes('title')).toBe('Save first')
-    await button.trigger('click')
-    expect(syncUpstreamModels).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('invalidates an in-flight saved-account sync when the parent source generation changes', async () => {
-    let resolve!: (result: SyncUpstreamModelsResult) => void
-    syncUpstreamModels.mockReturnValue(new Promise(result => { resolve = result }))
-    const wrapper = mountSelector({ modelValue: ['manual-model'], accountId: 42, syncSourceKey: 'source-a' })
-    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
-    await wrapper.setProps({ syncSourceKey: 'source-b' })
-    resolve({ models: ['stale-model'], capacity_rows: [capacityRow()] })
-    await flushPromises()
-    expect(syncUpstreamModels).toHaveBeenCalledOnce()
-    expect(syncUpstreamModels).toHaveBeenCalledWith(42)
-    expect(findPicker(wrapper).exists()).toBe(false)
-    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(showSuccess).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('keeps selectors without capacity data unchanged', async () => {
-    const wrapper = mountSelector({ modelValue: ['gpt-5.6-sol'] })
-    expect(wrapper.findComponent(ModelContextCapacityField).exists()).toBe(false)
-    expect(wrapper.get('[data-testid="selected-model-name"]').text()).toBe('gpt-5.6-sol')
-    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
-    expect(wrapper.findAll('[data-testid="model-option"]').length).toBeGreaterThan(0)
-    expect(wrapper.findComponent(ModelContextCapacityField).exists()).toBe(false)
-    expect(wrapper.find('[data-testid="fill-related-models"]').exists()).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('retains inline placeholders for an explicitly connected loading catalog', async () => {
-    const wrapper = mountSelector({ modelValue: ['gpt-5.6-sol'], capacityRows: [] })
-    expect(wrapper.findComponent(ModelContextCapacityField).exists()).toBe(true)
-    await wrapper.setProps({ capacityRows: [capacityRow({ effective_source: 'official', effective_context_window: 1_050_000 })] })
-    expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[1.05M]')
-    expect(wrapper.get('[data-testid="context-capacity-source"]').exists()).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('does not invalidate a sync when an independent capacity draft changes', async () => {
-    let resolve!: (result: SyncUpstreamModelsResult) => void
-    syncUpstreamModels.mockReturnValue(new Promise(result => { resolve = result }))
-    const wrapper = mountSelector({ accountId: 42, syncSourceKey: 'same-source' })
-    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
-    await wrapper.setProps({ capacityDrafts: { 'gpt-5.6-sol': '1M' } })
-    const result = { models: ['new-model'], capacity_rows: [capacityRow()] }
-    resolve(result)
-    await flushPromises()
-    expect(pickerRowIds(wrapper)).toEqual(['new-model'])
-    await confirmPicker(wrapper)
-    expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
-    expect(wrapper.emitted('update:modelValue')).toEqual([[['new-model']]])
-    expect(wrapper.props('capacityDrafts')).toEqual({ 'gpt-5.6-sol': '1M' })
     wrapper.unmount()
   })
 
@@ -1059,7 +846,7 @@ describe('ModelWhitelistSelector', () => {
     wrapper.unmount()
   })
 
-it('shows the upstream sync button for OpenCode Go create-account credentials', () => {
+  it('shows the upstream sync button for OpenCode Go create-account credentials', () => {
     const wrapper = mountSelector({
       platform: 'opencode_go',
       syncCredentials: {
@@ -1075,5 +862,201 @@ it('shows the upstream sync button for OpenCode Go create-account credentials', 
 
     expect(syncButton).toBeDefined()
     expect(syncButton?.exists()).toBe(true)
+  })
+  it('does not append configured fallback IDs', async () => {
+    syncUpstreamModels.mockResolvedValue({
+      models: ['composer-2.5'],
+      discovery_source: 'configured_fallback',
+      warnings: [{ code: 'grok_model_catalog_configured_fallback', message: 'fallback' }]
+    })
+    const wrapper = mountSelector({ platform: 'grok', accountId: 46, modelValue: ['grok-4.7'] })
+    const button = wrapper.findAll('button').find(b => b.text() === 'admin.accounts.syncUpstreamModels')!
+    await button.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(showWarning).toHaveBeenCalledWith('admin.accounts.grokModelDiagnostics.configuredFallback')
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(wrapper.emitted('upstream-sync-finished')).toHaveLength(1)
+  })
+
+  it('does not mark a creation preview synced when the catalog is only a configured fallback', async () => {
+    syncUpstreamModelsPreview.mockResolvedValue({
+      models: ['composer-2.5'],
+      discovery_source: 'configured_fallback',
+      warnings: [{ code: 'grok_model_catalog_configured_fallback', message: 'fallback' }]
+    })
+    const wrapper = mountSelector({
+      syncCredentials: {
+        platform: 'grok',
+        type: 'apikey',
+        api_key: 'xai-test'
+      }
+    })
+    const button = wrapper.findAll('button').find(b => b.text() === 'admin.accounts.syncUpstreamModels')!
+    await button.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
+    expect(wrapper.emitted('upstream-sync-finished')).toBeUndefined()
+    expect(showWarning).toHaveBeenCalledWith('admin.accounts.grokModelDiagnostics.configuredFallback')
+    expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('emits completion when a saved account sync fails so the last attempt can refresh', async () => {
+    syncUpstreamModels.mockRejectedValue({
+      status: 502,
+      message: 'upstream unavailable'
+    })
+    const wrapper = mountSelector({ platform: 'grok', accountId: 46, modelValue: ['grok-4.7'] })
+    const button = wrapper.findAll('button').find(b => b.text() === 'admin.accounts.syncUpstreamModels')!
+    await button.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(showError).toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(wrapper.emitted('upstream-sync-finished')).toHaveLength(1)
+  })
+
+  it('can hide only the built-in trigger while retaining its public sync action', async () => {
+    syncUpstreamModels.mockResolvedValue({ models: ['grok-4.7'], discovery_source: 'upstream' })
+    const wrapper = mountSelector({ platform: 'grok', accountId: 46, showSyncButton: false })
+    expect(wrapper.find('[data-testid="sync-upstream-models"]').exists()).toBe(false)
+    await wrapper.vm.syncUpstreamModels()
+    await flushPromises()
+    expect(syncUpstreamModels).toHaveBeenCalledTimes(1)
+    expect(syncUpstreamModels).toHaveBeenCalledWith(46)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(findPicker(wrapper).exists()).toBe(true)
+    await confirmPicker(wrapper)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['grok-4.7']]])
+    expect(wrapper.emitted('upstream-sync-finished')).toEqual([[]])
+    wrapper.unmount()
+  })
+
+  it('keeps the public busy flag on the newer sync when an older account sync settles', async () => {
+    const first = deferred<any>()
+    const second = deferred<any>()
+    syncUpstreamModels.mockImplementation((id: number) => (id === 1 ? first.promise : second.promise))
+    const wrapper = mountSelector({ platform: 'grok', accountId: 1, modelValue: ['a-local'], showSyncButton: false })
+
+    const firstSync = wrapper.vm.syncUpstreamModels()
+    expect(wrapper.vm.isSyncingUpstream).toBe(true)
+
+    await wrapper.setProps({ accountId: 2, modelValue: ['b-local'] })
+    expect(wrapper.vm.isSyncingUpstream).toBe(false)
+    const secondSync = wrapper.vm.syncUpstreamModels()
+    expect(wrapper.vm.isSyncingUpstream).toBe(true)
+
+    first.resolve({ models: ['a-private-catalog'], discovery_source: 'upstream' })
+    await firstSync
+    await flushPromises()
+    expect(wrapper.vm.isSyncingUpstream).toBe(true)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('upstream-sync-finished')).toBeUndefined()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showWarning).not.toHaveBeenCalled()
+    expect(showError).not.toHaveBeenCalled()
+
+    second.resolve({ models: ['b-catalog'], discovery_source: 'upstream' })
+    await secondSync
+    await flushPromises()
+    expect(wrapper.vm.isSyncingUpstream).toBe(false)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(findPicker(wrapper).exists()).toBe(true)
+    await confirmPicker(wrapper)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['b-catalog']]])
+    expect(wrapper.emitted('upstream-sync-finished')).toEqual([[]])
+    expect(showSuccess).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('still withholds configured fallback ids when the built-in trigger is hidden', async () => {
+    syncUpstreamModels.mockResolvedValue({
+      models: ['composer-2.5'],
+      discovery_source: 'configured_fallback',
+      warnings: [{ code: 'grok_model_catalog_configured_fallback', message: 'fallback' }]
+    })
+    const wrapper = mountSelector({ platform: 'grok', accountId: 46, modelValue: ['grok-4.7'], showSyncButton: false })
+    await wrapper.vm.syncUpstreamModels()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sync-upstream-models"]').exists()).toBe(false)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(showWarning).toHaveBeenCalledWith('admin.accounts.grokModelDiagnostics.configuredFallback')
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(wrapper.emitted('upstream-sync-finished')).toEqual([[]])
+    wrapper.unmount()
+  })
+
+  it('does not apply an older account sync to the current draft or clear its loading', async () => {
+    const first = deferred<any>()
+    const second = deferred<any>()
+    syncUpstreamModels.mockImplementation((id: number) => (id === 1 ? first.promise : second.promise))
+    const wrapper = mountSelector({ platform: 'grok', accountId: 1, modelValue: ['a-local'] })
+    await syncButton(wrapper).trigger('click')
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.setProps({ accountId: 2, modelValue: ['b-local'] })
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(false)
+    await syncButton(wrapper).trigger('click')
+    expect(syncUpstreamModels).toHaveBeenNthCalledWith(1, 1)
+    expect(syncUpstreamModels).toHaveBeenNthCalledWith(2, 2)
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(true)
+
+    first.resolve({ models: ['a-private-catalog'], discovery_source: 'upstream' })
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showWarning).not.toHaveBeenCalled()
+    expect(showError).not.toHaveBeenCalled()
+    expect(wrapper.emitted('upstream-sync-finished')).toBeUndefined()
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(true)
+
+    second.resolve({ models: ['b-catalog'], discovery_source: 'upstream' })
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(findPicker(wrapper).exists()).toBe(true)
+    await confirmPicker(wrapper)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['b-catalog']]])
+    expect(showSuccess).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('upstream-sync-finished')).toHaveLength(1)
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('does not toast or finish an older account sync that fails during a newer sync', async () => {
+    const first = deferred<any>()
+    const second = deferred<any>()
+    syncUpstreamModels.mockImplementation((id: number) => (id === 1 ? first.promise : second.promise))
+    const wrapper = mountSelector({ platform: 'grok', accountId: 1, modelValue: ['a-local'] })
+    await syncButton(wrapper).trigger('click')
+    await wrapper.setProps({ accountId: 2, modelValue: ['b-local'] })
+    await syncButton(wrapper).trigger('click')
+
+    first.reject({ message: 'old account failure' })
+    await flushPromises()
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('upstream-sync-finished')).toBeUndefined()
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(true)
+
+    second.reject({ message: 'current failure' })
+    await flushPromises()
+    expect(showError).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('upstream-sync-finished')).toHaveLength(1)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('does not toast when a saved sync fails after the selector is destroyed', async () => {
+    const pending = deferred<any>()
+    syncUpstreamModels.mockReturnValue(pending.promise)
+    const wrapper = mountSelector({ platform: 'grok', accountId: 46, modelValue: ['grok-4.7'] })
+    await syncButton(wrapper).trigger('click')
+    wrapper.unmount()
+    pending.reject({ message: 'old account failure' })
+    await flushPromises()
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showWarning).not.toHaveBeenCalled()
   })
 })

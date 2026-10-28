@@ -189,7 +189,7 @@ func pelicanTestLocalModelIDs(account *Account) []string {
 	for _, id := range defaults {
 		add(id)
 	}
-	if snapshot := account.GetUpstreamModelMetadataSnapshot(); upstreamModelMetadataSourceMatches(account, snapshot) {
+	if snapshot := account.GetUpstreamModelMetadataSnapshot(); snapshot != nil {
 		for id := range snapshot.Models {
 			add(id)
 		}
@@ -291,7 +291,7 @@ func pelicanTestUpstreamModel(account *Account, model string) (string, bool) {
 
 func pelicanTestLocalMetadata(account *Account, model string) (UpstreamModelMetadata, bool) {
 	snapshot := account.GetUpstreamModelMetadataSnapshot()
-	if !upstreamModelMetadataSourceMatches(account, snapshot) {
+	if snapshot == nil {
 		return UpstreamModelMetadata{}, false
 	}
 	metadata, ok := snapshot.Models[model]

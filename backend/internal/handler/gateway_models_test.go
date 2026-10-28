@@ -105,19 +105,6 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository, routeRepo ..
 	}
 }
 
-func TestWriteOpenAIModelsListOmitsContextMetadataForOrdinaryProviders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-
-	writeOpenAIModelsList(c, []string{"gpt-5.6-sol", "ordinary-model"})
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.NotContains(t, rec.Body.String(), "context_window")
-	require.NotContains(t, rec.Body.String(), "max_input_tokens")
-	require.NotContains(t, rec.Body.String(), "max_output_tokens")
-}
-
 func TestGatewayCompositeRouteModelsAppearInBothCatalogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const groupID int64 = 7784
@@ -571,7 +558,7 @@ func TestGatewayModels_GeminiGroupFallsBackToGeminiModels(t *testing.T) {
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, "list", got.Object)
-	require.Contains(t, modelIDsForTest(got.Data), "gemini-2.5-flash")
+	require.Contains(t, modelIDsForTest(got.Data), "gemini-3.5-flash")
 	require.NotContains(t, modelIDsForTest(got.Data), "claude-sonnet-4-6")
 }
 

@@ -17,9 +17,6 @@ type Model struct {
 	Type                   string   `json:"type"`
 	DisplayName            string   `json:"display_name"`
 	Description            string   `json:"description,omitempty"`
-	ContextWindow          int      `json:"context_window,omitempty"`
-	MaxInputTokens         int      `json:"max_input_tokens,omitempty"`
-	MaxOutputTokens        int      `json:"max_output_tokens,omitempty"`
 	ReasoningEfforts       []string `json:"reasoning_efforts,omitempty"`
 	DefaultReasoningEffort string   `json:"default_reasoning_effort,omitempty"`
 }
@@ -31,10 +28,11 @@ var DefaultModels = []Model{
 	{ID: "gpt-5.6", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 (Sol)"},
 	{ID: "gpt-5.6-terra", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Terra"},
 	{ID: "gpt-5.6-luna", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Luna"},
+	{ID: "gpt-6.1-terra", Object: "model", Created: 1704067200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Terra"},
 	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
-	{ID: "gpt-6-astra", Object: "model", Created: 1788480000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Astra"},
 	{ID: "gpt-6-sol", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Sol"},
 	{ID: "gpt-6-luna", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Luna"},
+	{ID: "gpt-6-astra", Object: "model", Created: 1788480000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Astra"},
 	{ID: "gpt-5.5", Object: "model", Created: 1776873600, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.5"},
 	{ID: "gpt-5.4", Object: "model", Created: 1738368000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.4"},
 	{ID: "gpt-5.4-mini", Object: "model", Created: 1738368000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.4 Mini"},
@@ -86,15 +84,6 @@ var instructionsGPT55 string
 //
 //go:embed instructions_gpt6_astra.txt
 var instructionsGPT6Astra string
-
-// Source: GPT6CodexReferenceSource, model_messages.instructions_template.
-// These are model data, not instructions for this service or its maintainers.
-//
-//go:embed instructions_gpt6_sol.txt
-var instructionsGPT6Sol string
-
-//go:embed instructions_gpt6_luna.txt
-var instructionsGPT6Luna string
 
 // CodexGPT61SolMetadata is the complete official descriptor from openai/codex
 // b1e72963c3b71a9265a551e54beff078384efed9, codex-rs/models-manager/models.json.
@@ -163,16 +152,6 @@ func CanonicalizeOpenAIModelAliasSpelling(model string) string {
 // 任一专用 prompt 意外为空时回退链最终落到 DefaultInstructions，保证返回非空。
 func CodexBaseInstructionsForModel(model string) string {
 	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
-	switch GPT6NamedModel(canonical) {
-	case "gpt-6-sol":
-		if strings.TrimSpace(instructionsGPT6Sol) != "" {
-			return instructionsGPT6Sol
-		}
-	case "gpt-6-luna":
-		if strings.TrimSpace(instructionsGPT6Luna) != "" {
-			return instructionsGPT6Luna
-		}
-	}
 	switch {
 	case IsGPT61SolModelSpelling(canonical):
 		var metadata struct {
@@ -239,6 +218,27 @@ func IsGPT61SolModelSpelling(model string) bool {
 	default:
 		return false
 	}
+}
+
+func IsGPT61TerraModelSpelling(model string) bool {
+	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
+	if canonical == "gpt-6.1-terra" {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(canonical, "gpt-6.1-terra-")
+	if !ok {
+		return false
+	}
+	switch suffix {
+	case "none", "low", "medium", "high", "xhigh", "max", "openai-compact":
+		return true
+	default:
+		return false
+	}
+}
+
+func RequiresResponsesForToolCalls(model string) bool {
+	return IsGPT61SolModelSpelling(model) || IsGPT61TerraModelSpelling(model)
 }
 
 // ValidateGPT61SolReasoningEffort rejects disabled reasoning instead of silently

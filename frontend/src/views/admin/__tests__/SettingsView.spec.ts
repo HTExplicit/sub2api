@@ -94,7 +94,6 @@ vi.mock("@/api/admin/settings", async () => {
   const panelAPI = {
     getObservabilitySettings: vi.fn(async () => ({ ...panelSettings.observability })),
     updateObservabilitySettings: vi.fn(async (value) => value),
-    getOfficialModelCapacityCatalog: vi.fn(async () => ({ entries: [] })),
   };
   return { ...actual, ...panelAPI, settingsAPI: { ...actual.settingsAPI, ...panelAPI }, default: { ...actual.default, ...panelAPI } };
 });
@@ -759,12 +758,11 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
-  it("mounts the observability settings and the official model catalog without resubmitting their configuration through the general settings form", async () => {
+  it("mounts the observability settings without resubmitting their configuration through the general settings form", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
     expect(wrapper.get('[data-testid="observability-settings"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="official-model-catalog"]').exists()).toBe(true);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
     expect(updateSettings).toHaveBeenCalledOnce();

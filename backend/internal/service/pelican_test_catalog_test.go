@@ -82,7 +82,7 @@ func TestPelicanTestCatalogPreferredDefaults(t *testing.T) {
 	}
 }
 
-func TestPelicanTestCatalogUsesMappingAndSourceBoundLocalMetadataWithoutMutation(t *testing.T) {
+func TestPelicanTestCatalogUsesMappingAndLocalMetadataWithoutMutation(t *testing.T) {
 	reasoning := true
 	account := &Account{ID: 5, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://catalog.example", "model_mapping": map[string]any{
@@ -90,7 +90,7 @@ func TestPelicanTestCatalogUsesMappingAndSourceBoundLocalMetadataWithoutMutation
 		},
 	}}
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
-		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
+		Models: map[string]UpstreamModelMetadata{
 			"custom-upstream": {ID: "custom-upstream", Reasoning: &reasoning, SupportedReasoningLevels: []string{"low", "high"}, InputModalities: []string{"text"}},
 			"not-mapped":      {ID: "not-mapped", InputModalities: []string{"text"}},
 		},
@@ -121,10 +121,6 @@ func TestPelicanTestCatalogUsesMappingAndSourceBoundLocalMetadataWithoutMutation
 	require.JSONEq(t, string(beforeCredentials), string(afterCredentials))
 	require.JSONEq(t, string(beforeExtra), string(afterExtra))
 
-	account.Credentials["base_url"] = "https://different-source.example"
-	changed := PelicanTestModelOptions(account, "custom")
-	require.Empty(t, changed.ReasoningEfforts, "old endpoint metadata must not claim current reasoning capabilities")
-	require.Empty(t, changed.DefaultEffort)
 }
 
 func TestPelicanTestCatalogDefaultsNativeCapabilitiesAndSpecificUnsupportedReasons(t *testing.T) {
@@ -182,7 +178,7 @@ func TestPelicanTestCatalogPassthroughAndDeclaredNoTextUseEffectiveModel(t *test
 	require.True(t, option.TextSupported)
 	require.Empty(t, option.DefaultEffort)
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
-		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
+		Models: map[string]UpstreamModelMetadata{
 			"gpt-6.1-sol": {ID: "gpt-6.1-sol", InputModalities: []string{"image"}},
 		},
 	})
@@ -204,7 +200,7 @@ func TestPelicanTestCatalogNativeUpstreamAndAdaptiveUseBusinessEffortCapabilitie
 	adaptive := &Account{Platform: PlatformKimi, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_protocol": APIProtocolAdaptive}}
 	reasoning := true
 	adaptive.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
-		SourceIdentity: UpstreamModelMetadataSourceIdentity(adaptive), Models: map[string]UpstreamModelMetadata{
+		Models: map[string]UpstreamModelMetadata{
 			"kimi-k2.5": {ID: "kimi-k2.5", Reasoning: &reasoning, SupportedReasoningLevels: []string{"medium", "high"}},
 		},
 	})
@@ -227,7 +223,7 @@ func TestPelicanTestCatalogOpenAIModelCapabilityUsesNativeResolvedAlias(t *testi
 	}}
 	reasoning := false
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
-		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
+		Models: map[string]UpstreamModelMetadata{
 			"gpt-6.1-sol": {ID: "gpt-6.1-sol", Reasoning: &reasoning, InputModalities: []string{"text"}},
 		},
 	})
