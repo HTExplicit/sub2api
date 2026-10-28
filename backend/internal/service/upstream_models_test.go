@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,8 @@ type upstreamModelMetadataRepoStub struct {
 	accountID int64
 	updates   map[string]any
 	err       error
+	account   *Account
+	casCalls  int
 }
 
 func headerValuesEqualFold(header http.Header, name string) []string {
@@ -36,11 +39,58 @@ func (r *upstreamModelMetadataRepoStub) UpdateExtra(_ context.Context, id int64,
 	return r.err
 }
 
-func (r *upstreamModelMetadataRepoStub) UpdateExtraIfRevision(ctx context.Context, id int64, _ time.Time, updates map[string]any) (bool, error) {
-	if err := r.UpdateExtra(ctx, id, updates); err != nil {
+func (r *upstreamModelMetadataRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
+	if r == nil || r.account == nil || r.account.ID != id {
+		return nil, ErrAccountNotFound
+	}
+	return r.account, nil
+}
+
+func (r *upstreamModelMetadataRepoStub) CompareAndSwapGrokObservedModels(ctx context.Context, id int64, expected, next json.RawMessage) (bool, error) {
+	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	r.casCalls++
+	if r.account == nil || r.account.ID != id || r.account.Platform != PlatformGrok {
+		return false, nil
+	}
+	var current any
+	if r.account.Extra != nil {
+		current = r.account.Extra[grokObservedModelsExtraKey]
+	}
+	currentJSON, err := json.Marshal(current)
+	if err != nil {
+		return false, err
+	}
+	if !jsonValuesEqual(currentJSON, expected) {
+		return false, nil
+	}
+	var decoded any
+	if err := json.Unmarshal(next, &decoded); err != nil {
+		return false, err
+	}
+	if r.account.Extra == nil {
+		r.account.Extra = map[string]any{}
+	}
+	r.account.Extra[grokObservedModelsExtraKey] = decoded
 	return true, nil
+}
+
+func jsonValuesEqual(left, right []byte) bool {
+	var lhs, rhs any
+	if len(left) == 0 {
+		left = []byte("null")
+	}
+	if len(right) == 0 {
+		right = []byte("null")
+	}
+	if err := json.Unmarshal(left, &lhs); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(right, &rhs); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(lhs, rhs)
 }
 
 func upstreamModelSyncTestConfig() *config.Config {
@@ -478,7 +528,6 @@ func TestSyncUpstreamModelCatalogEnrichesOpenCodeIDOnlyListAndPersistsSnapshot(t
 	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
 	require.NoError(t, err)
 	require.Equal(t, []string{"x-preview-f-free"}, catalog.Models)
-	require.Equal(t, "upstream", catalog.ModelListSource, "registry enrichment does not change the source of model IDs")
 	require.Len(t, upstream.requests, 2)
 	require.Equal(t, "https://opencode.ai/zen/v1/models", upstream.requests[0].URL.String())
 	require.Equal(t, []string{"account-secret"}, headerValuesEqualFold(upstream.requests[0].Header, "X-Custom-Account-Header"))
@@ -553,15 +602,13 @@ func TestSyncUpstreamModelCatalogUsesConfiguredModelsWhenListEndpointUnsupported
 		},
 	}
 
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: ModelContextSourceUpstream,
-		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
-			"old-live-model": {ID: "old-live-model", ContextWindow: 256000, CapacitySource: ModelContextSourceUpstream},
-		}})
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+		"old-live-model": {ID: "old-live-model", ContextWindow: 256000},
+	}})
 	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
 	require.NoError(t, err)
 	require.Contains(t, account.GetUpstreamModelMetadataSnapshot().Models, "old-live-model", "an unavailable model-list endpoint is not evidence of removal")
 	require.Equal(t, []string{"glm-5.3"}, catalog.Models)
-	require.Equal(t, "configured", catalog.ModelListSource, "configured IDs are not evidence of upstream availability")
 	require.Empty(t, catalog.Warnings)
 	require.Len(t, upstream.requests, 2)
 	require.Equal(t, "https://provider.example/v1/models", upstream.requests[0].URL.String())
@@ -813,9 +860,7 @@ func TestSyncUpstreamModelCatalogDoesNotOverwriteSnapshotWhenRegistryFails(t *te
 		Code:    UpstreamModelMetadataIncompleteCode,
 		Message: "Model IDs were synced, but capability metadata is incomplete.",
 	}}, catalog.Warnings)
-	saved, ok := repo.updates[UpstreamModelMetadataExtraKey].(UpstreamModelMetadataSnapshot)
-	require.True(t, ok, "the sync time is recorded even when enrichment fails")
-	require.NotNil(t, saved.Models["x-preview-f-free"].Reasoning, "a failed metadata enrichment must not erase a previously saved capability entry")
+	require.Nil(t, repo.updates, "a failed metadata enrichment must not erase a previously saved snapshot")
 }
 
 func TestSyncUpstreamModelCatalogDoesNotPersistPartialMetadataWhenRegistryFails(t *testing.T) {
@@ -842,10 +887,7 @@ func TestSyncUpstreamModelCatalogDoesNotPersistPartialMetadataWhenRegistryFails(
 	require.Equal(t, []string{"partially-described-model"}, catalog.Models)
 	require.Equal(t, "Partial Model", catalog.Metadata["partially-described-model"].DisplayName)
 	require.Equal(t, UpstreamModelMetadataIncompleteCode, catalog.Warnings[0].Code)
-	saved, ok := repo.updates[UpstreamModelMetadataExtraKey].(UpstreamModelMetadataSnapshot)
-	require.True(t, ok)
-	require.Equal(t, []string{"low", "high"}, saved.Models["partially-described-model"].SupportedReasoningLevels, "partial metadata must not replace a more complete persisted capability entry")
-	require.Empty(t, saved.Models["partially-described-model"].DisplayName)
+	require.Nil(t, repo.updates, "partial metadata must not replace a more complete persisted snapshot")
 }
 
 // Scenario: 图片专用模型缺少 context 时，不阻止 agent 模型能力落库，也不误报整批失败。
@@ -1185,15 +1227,14 @@ func TestSyncUpstreamModelCatalogAstraPartialRefreshPreservesKnownCapabilities(t
 		Credentials: map[string]any{"api_key": "test", "base_url": "https://api.openai.com/v1",
 			"model_mapping": map[string]any{"public-model": "mapped-only"}},
 	}
-	old := UpstreamModelMetadata{ID: "still-listed", ContextWindow: 256000, CapacitySource: ModelContextSourceRegistry}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "models.dev",
-		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
-			"still-listed": old, "removed": {ID: "removed", ContextWindow: 128000},
-			"gpt-6-astra": {ID: "gpt-6-astra", CodexToolCapabilities: map[string]json.RawMessage{
-				"supports_search_tool": json.RawMessage("true"), "apply_patch_tool_type": json.RawMessage(`"freeform"`),
-				"comp_hash": json.RawMessage(`"3000"`),
-			}},
-		}})
+	old := UpstreamModelMetadata{ID: "still-listed", ContextWindow: 256000}
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+		"still-listed": old, "removed": {ID: "removed", ContextWindow: 128000},
+		"gpt-6-astra": {ID: "gpt-6-astra", CodexToolCapabilities: map[string]json.RawMessage{
+			"supports_search_tool": json.RawMessage("true"), "apply_patch_tool_type": json.RawMessage(`"freeform"`),
+			"comp_hash": json.RawMessage(`"3000"`),
+		}},
+	}})
 
 	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
 	require.NoError(t, err)

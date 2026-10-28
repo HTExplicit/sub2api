@@ -5,7 +5,7 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 ## Source baseline
 
 - Integrated official baseline: the release recorded in `.downstream/upstream-base`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.18.md).
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.19.md).
 - The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
 ## Settings and account operations
@@ -65,6 +65,12 @@ quota rows represent unlimited access; rows with three NULL limits are purged by
 the official migration.
 The three `238_*` migrations retain separate filenames and checksums.
 
+Account creation, detail reads and schedulable changes use the official
+`accountTransactionScope`. Inside a transaction, Create/SetSchedulable outbox
+write failures follow official logging-and-continue behavior; the caller owns
+the surrounding commit result. The downstream immediate-return exception is
+retired.
+
 Scheduler snapshots use the official decoded in-process memo, revision
 invalidation, original key names and batch Pipeline writes. The downstream v2
 namespace, legacy-key cleanup and extra batch transactions are retired. Account
@@ -72,49 +78,44 @@ metadata still carries the fields required by the independent downstream
 features. Startup and periodic snapshot rebuilds follow official behavior;
 the update adds no cache migration or Redis clearing.
 
-## Model discovery and context capacity
+## Model discovery, capacity and client catalogs
 
-The account test picker reads raw upstream model IDs and applies the saved mapping
-itself. Configured request names remain testable when the upstream catalog omits
-their target; wildcard mappings select request IDs from that raw catalog. The
-ordinary account-model projection keeps official mapping and passthrough semantics.
-Capacity resolves the real account/channel targets, rather than public aliases.
+Model capacity, upstream metadata, generated Codex descriptors and OpenCode
+limits follow official v0.2.19. The downstream evidence resolver, custom window
+overrides, source-priority and source-identity policy, group minimum projection,
+capacity interfaces and automatic refresh service are retired. Official defaults
+and metadata enrichment now apply; the former "unknown stays unknown" and
+"locally generated descriptors have no capacity defaults" rules no longer apply.
+Historical SQL and stored account extra values are retained without a cleanup
+migration. Native upstream metadata synchronization, official models.dev
+supplementation and Grok catalog observation remain active.
 
-Every provider and account type uses
-`custom > applicable official API > source-bound upstream > registry > unknown`.
-One complete automatic evidence record wins: omitted input/output limits are not
-filled from another source. A custom window overlays that record and keeps only
-its compatible independently declared input/output limits. The effective window
-is `max_context_window`, then `context_window`, then the input limit; a smaller
-explicit maximum is still authoritative. Group capacity is the minimum of the
-resolved targets of active accounts, independent of their schedulable toggle.
-Unknown capacity stays unknown, with no invented fallback or hard expiry.
+Cindy uses the ordinary OpenAI model-sync path. The separate Cindy model-access
+registry request, enrichment cache and identity/revision-controlled write path
+are removed. Its account model mapping and ordinary channel pricing remain.
 
-`upstream_model_metadata.source_identity` binds capacity observations and registry
-enrichment to the normalized endpoint and protocol, including Responses mode and
-escaped URL paths. An unbound or old-endpoint snapshot remains visible to
-administrators but supplies no current capacity. Asynchronous writes use the
-account revision gate; one reread/retry is allowed only when the source and complete
-stored snapshot, including an empty catalog, are unchanged. Persistence retries
-never fetch the upstream catalog again or resurrect a superseded observation.
+The account test picker still reads raw upstream IDs and applies the saved
+mapping itself. Its `view=plan`, actual forwarded-effort metadata and saved test
+model choices remain. Manual model synchronization opens a confirmation picker;
+only confirmation applies models and synced candidates to the form, and the
+account dialog's Save still persists it. Cancel discards the result without
+changing the whitelist. A Grok configured fallback warns without opening the
+picker; saved-account sync completion refreshes its diagnostics. API-key reveal
+still requires the configured password and returns the existing no-store wrapper;
+the account test dialog keeps list position.
 
-Administrator rows, `/v1/models` and Codex manifests share this resolver. Locally
-generated Codex descriptors have no capacity defaults, including the GPT-5.6,
-GPT-6 and GPT-6.1 Sol families; real upstream fields remain when no effective
-evidence supersedes them. OpenCode exports limits only from resolver-tagged
-manifest rows (`custom`, `official`, `upstream`, `registry`) when the client schema's
-required values are known, without a separate hard-coded capacity table. The
-capacity self-test remains version 4 with
-`priority=custom,official,upstream,registry`.
+Codex manifest fetching, synthesis, metadata completion, cache behavior and
+account selection follow official v0.2.19. The manifest-specific downstream
+scheduling/failover retry adapter is removed. Credential-source fixed devices
+and strict transport remain in the actual fetch path. Native manifest metadata,
+model discovery and pinned group catalogs remain available.
 
-The Use Key catalog panel and fetch remain available for Codex tabs, including
-OpenAI groups, and for the OpenCode tab. Codex configuration defaults to
-`model_catalog_url = "{root}/v1/models"`; Codex appends its own `client_version` to
-reach the same manifest handler. Fetching and downloading the catalog uses
-`{root}/backend-api/codex/models` without a pinned client version. The alternative
-is the downloaded `model_catalog_json` file; a response over 1 MiB switches the
-Codex configuration to that file mode. OpenCode continues reading the manifest
-regardless of the Codex remote/file selection.
+The Use Key catalog panel, fetch and download follow official behavior. Remote
+configuration uses `model_catalog_url = "{root}/v1/models"`; download uses
+`{root}/v1/models?client_version=0.158.0`. File mode uses the downloaded
+`model_catalog_json`, and a response over 1 MiB switches remote configuration to
+that mode. OpenCode limits use the official client export and do not trigger a
+Codex catalog fetch. No second capacity projection or registry is added.
 
 ## Claude streaming failures and signature recovery
 
@@ -139,10 +140,10 @@ provider-normalized value. Explicit cross-protocol normalization retains `max`,
 except that legacy GPT-5.4/5.5 models map it to `xhigh`. GPT-6 Sol's Codex catalog
 keeps the six-level workflow including `ultra`; Luna keeps five levels.
 
-Finite known model/effort aliases are normalized, while undocumented dated GPT-6
-snapshots, including GPT-6.1 Sol, pass through unchanged. Unrecognized `gpt-6-*`
-and `gpt-6.*` names do not borrow the default model's price; exact configured
-price cards are still considered first.
+Codex model-name normalization and pricing-prefix selection follow official
+v0.2.19, including GPT-6.1 Terra. The former downstream dated-name passthrough
+and unknown GPT-6 price early-return exceptions are retired. The independent
+GPT-5.6 named-family match remains ahead of its numeric-family match.
 
 Responses streams require an authoritative terminal event. Chat Completions
 streams require a supported `finish_reason`; `[DONE]` and transport EOF alone
@@ -156,7 +157,10 @@ identity and verified-replay checks remain in force.
 
 Streaming Responses-to-Chat tool handling and its callers follow official
 v0.2.18. The downstream tool-parameter/call-ID/final-snapshot consistency guard
-and its dedicated error frames are retired. Independent buffered response
+and its dedicated error frames are retired. Buffered compatibility reads,
+terminal error handling, failed-response reconstruction and Grok model auditing
+follow official v0.2.19; raw terminal-payload retention and the downstream bare
+error/pending-signature branches are removed. Independent buffered response
 reconstruction still supplements completed arguments by the actual call ID.
 The special downstream classification of HTTP 400 `upstream_error` wrappers is
 also retired; error classification, account effects and capacity Retry-After
@@ -209,12 +213,22 @@ Scheduled discovery may identify newer official releases. It cannot deploy
 production. Each integration records its selected official commit, conflicts and
 retained downstream contracts before a new immutable release is published.
 
-`.downstream/upstream-risk.json` records the v0.2.17-to-v0.2.18 integration against
-downstream commit `48da9d2dd3c5cfceaaf5f8477556e32b83fd2852`. The risk gate
-recomputes those exact inputs. The 14 initial conflict files and operator-selected
-resolutions are recorded in the [v0.2.18 review](.downstream/upstream-review-v0.2.18.md).
+`.downstream/upstream-risk.json` records the v0.2.18-to-v0.2.19 integration against
+downstream commit `6ac28b7ecf2e247b1dbe5985b6ad115016aa514f`. The risk gate
+recomputes those exact inputs. The 28 initial conflict files and operator-selected
+resolutions are recorded in the [v0.2.19 review](.downstream/upstream-review-v0.2.19.md).
 The candidate requires a completed review, no unresolved conflicts and the
 `upstream-reviewed` label before promotion.
+
+Scoped administrator API keys, per-image billing for OpenAI/Composite groups,
+GPT-6.1 Terra, Gemini defaults/retry configuration and Grok catalog diagnostics
+follow v0.2.19. Image-count billing defaults off. Official migrations
+`247_scoped_admin_api_keys.sql` and `248_group_image_count_billing.sql` retain
+complete filenames and checksums alongside historical downstream migrations.
+DeepSeek pricing, its time-based policy and cache-hit usage accounting follow
+the official implementation; the downstream pricing registry, forced catalog
+rewrite and common time-pricing hooks are retired. Generic pricing override-file
+support and independent default reasoning effort remain.
 
 Vertex quota limits, disconnected-stream billing, shared snapshot reuse,
 Cloudflare 1010 handling, Gemini tool-schema fixes, DeepSeek image normalization
@@ -232,8 +246,8 @@ workspace-aware Codex imports follow v0.2.17. GPT-5.5 retirement applies to
 ChatGPT subscription upstream targets; API keys and explicit replacement mappings
 remain supported. Account filters remain inline in both console-theme modes.
 `gateway.min_output_tokens` defaults to
-128, with a minimum of 16. Antigravity capacity observations use the shared
-source-bound evidence resolver, including provider-specific `maxTokens`.
+128, with a minimum of 16. Antigravity model metadata follows the official
+synchronization and descriptor behavior.
 
 Gemini explicit caches follow the official account/key binding, storage billing,
 mutation lease and recovery rules. Vertex API-key authentication and service-account
@@ -242,8 +256,7 @@ translations follow v0.2.16. Existing unconfigured accounts and rules retain the
 stored behavior. Official migrations 242 through 245 keep their original filenames
 and coexist with downstream migrations of the same numeric prefixes.
 
-Haiku 5.5 uses adaptive thinking and medium default effort; its API limits are
-resolved through the official evidence catalog. Local Codex descriptors still
-carry no capacity defaults, including the official Sol 500k generation default.
+Haiku 5.5 uses adaptive thinking and medium default effort. Its limits and local
+Codex descriptor defaults follow the official model catalog.
 Sol's subscription model-card long-context exemption follows the actual credential
 and upstream model; API-key and custom-interval pricing keep their own policies.

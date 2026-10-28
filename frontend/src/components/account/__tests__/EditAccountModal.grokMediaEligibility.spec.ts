@@ -26,8 +26,6 @@ vi.mock('@/api/admin', () => ({
       update: updateAccountMock,
       getGrokMediaEligibility: getEligibilityMock,
       updateGrokMediaEligibility: updateEligibilityMock,
-      getModelContextCapacities: vi.fn().mockResolvedValue({ capacity_rows: [] }),
-      previewModelContextCapacities: vi.fn().mockResolvedValue({ capacity_rows: [] }),
       checkMixedChannelRisk: vi.fn().mockResolvedValue({ has_risk: false })
     },
     settings: {

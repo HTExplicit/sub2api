@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -127,46 +126,44 @@ func NewAccountHandler(
 
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
-	Name                    string            `json:"name" binding:"required"`
-	Notes                   *string           `json:"notes"`
-	Platform                string            `json:"platform" binding:"required"`
-	Type                    string            `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any    `json:"credentials" binding:"required"`
-	Extra                   map[string]any    `json:"extra"`
-	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
-	ProxyID                 *int64            `json:"proxy_id"`
-	Concurrency             int               `json:"concurrency"`
-	Priority                int               `json:"priority"`
-	RateMultiplier          *float64          `json:"rate_multiplier"`
-	LoadFactor              *int              `json:"load_factor"`
-	GroupIDs                []int64           `json:"group_ids"`
-	ExpiresAt               *int64            `json:"expires_at"`
-	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
-	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	Name                    string         `json:"name" binding:"required"`
+	Notes                   *string        `json:"notes"`
+	Platform                string         `json:"platform" binding:"required"`
+	Type                    string         `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any `json:"credentials" binding:"required"`
+	Extra                   map[string]any `json:"extra"`
+	ProxyID                 *int64         `json:"proxy_id"`
+	Concurrency             int            `json:"concurrency"`
+	Priority                int            `json:"priority"`
+	RateMultiplier          *float64       `json:"rate_multiplier"`
+	LoadFactor              *int           `json:"load_factor"`
+	GroupIDs                []int64        `json:"group_ids"`
+	ExpiresAt               *int64         `json:"expires_at"`
+	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
+	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
 // UpdateAccountRequest represents update account request
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateAccountRequest struct {
-	Name                    string            `json:"name"`
-	Notes                   *string           `json:"notes"`
-	Type                    string            `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any    `json:"credentials"`
-	Extra                   map[string]any    `json:"extra"`
-	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
-	ProxyID                 *int64            `json:"proxy_id"`
-	Concurrency             *int              `json:"concurrency"`
-	Priority                *int              `json:"priority"`
-	RateMultiplier          *float64          `json:"rate_multiplier"`
-	LoadFactor              *int              `json:"load_factor"`
-	Status                  string            `json:"status" binding:"omitempty,oneof=active inactive error"`
-	GroupIDs                *[]int64          `json:"group_ids"`
-	ExpiresAt               *int64            `json:"expires_at"`
-	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
-	RateSyncEnabled         *bool             `json:"upstream_billing_rate_sync_enabled"`
-	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	Name                    string         `json:"name"`
+	Notes                   *string        `json:"notes"`
+	Type                    string         `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any `json:"credentials"`
+	Extra                   map[string]any `json:"extra"`
+	ProxyID                 *int64         `json:"proxy_id"`
+	Concurrency             *int           `json:"concurrency"`
+	Priority                *int           `json:"priority"`
+	RateMultiplier          *float64       `json:"rate_multiplier"`
+	LoadFactor              *int           `json:"load_factor"`
+	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
+	GroupIDs                *[]int64       `json:"group_ids"`
+	ExpiresAt               *int64         `json:"expires_at"`
+	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
+	RateSyncEnabled         *bool          `json:"upstream_billing_rate_sync_enabled"`
+	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
@@ -1010,7 +1007,11 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 		}
 	}
 
-	response.Success(c, h.buildAccountResponseWithRevealedAPIKey(c, account))
+	result := h.buildAccountResponseWithRevealedAPIKey(c, account)
+	if h.accountTestService != nil && account != nil && account.IsGrok() {
+		result.GrokModelDiagnostics = h.accountTestService.GetGrokModelDiagnostics(c.Request.Context(), account)
+	}
+	response.Success(c, result)
 }
 
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.
@@ -1095,7 +1096,6 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			Type:                  req.Type,
 			Credentials:           req.Credentials,
 			Extra:                 req.Extra,
-			ModelContextOverrides: req.ModelContextOverrides,
 			ProxyID:               req.ProxyID,
 			Concurrency:           req.Concurrency,
 			Priority:              req.Priority,
@@ -1143,7 +1143,6 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	// 探测失败不影响账号创建响应。
 	h.scheduleOpenAIResponsesProbe(createdAccount)
 	h.scheduleGrokImportProbe(createdAccount)
-	h.scheduleUpstreamModelCatalogSync(createdAccount)
 	response.Success(c, result.Data)
 }
 
@@ -1228,7 +1227,6 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Type:                  req.Type,
 		Credentials:           req.Credentials,
 		Extra:                 req.Extra,
-		ModelContextOverrides: req.ModelContextOverrides,
 		ProxyID:               req.ProxyID,
 		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
@@ -1262,7 +1260,6 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// 异步执行，探测失败不影响账号更新响应。
 	if len(req.Credentials) > 0 {
 		h.scheduleOpenAIResponsesProbe(account)
-		h.scheduleUpstreamModelCatalogSync(account)
 	}
 
 	response.Success(c, h.buildAccountResponseWithRevealedAPIKey(c, account))
@@ -1673,7 +1670,9 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		tokenInfo, err := h.openaiOAuthService.RefreshAccountToken(ctx, account)
 		if err != nil {
 			// 刷新失败但 access_token 可能仍有效，尝试设置隐私
-			h.adminService.EnsureOpenAIPrivacy(ctx, account)
+			service.AfterAccountCommit(ctx, func(committed context.Context) {
+				h.adminService.EnsureOpenAIPrivacy(committed, account)
+			})
 			return nil, "", err
 		}
 
@@ -1725,7 +1724,10 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 			if updateErr != nil {
 				return nil, "", fmt.Errorf("failed to update credentials: %w", updateErr)
 			}
-			h.adminService.EnsureAntigravityPrivacy(ctx, updatedAccount)
+			h.invalidateScopedAccountToken(ctx, updatedAccount)
+			service.AfterAccountCommit(ctx, func(committed context.Context) {
+				h.adminService.EnsureAntigravityPrivacy(committed, updatedAccount)
+			})
 			return updatedAccount, "missing_project_id_temporary", nil
 		}
 
@@ -1781,17 +1783,19 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		return nil, "", err
 	}
 
-	// 刷新成功后，清除 token 缓存，确保下次请求使用新 token
-	if h.tokenCacheInvalidator != nil {
-		if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updatedAccount); invalidateErr != nil {
-			log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", updatedAccount.ID, invalidateErr)
+	service.AfterAccountCommit(ctx, func(ctx context.Context) {
+		// 刷新成功后，清除 token 缓存，确保下次请求使用新 token
+		if h.tokenCacheInvalidator != nil {
+			if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updatedAccount); invalidateErr != nil {
+				log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", updatedAccount.ID, invalidateErr)
+			}
 		}
-	}
 
-	// OpenAI OAuth: 刷新成功后检查并设置 privacy_mode
-	h.adminService.EnsureOpenAIPrivacy(ctx, updatedAccount)
-	// Antigravity OAuth: 刷新成功后检查并设置 privacy_mode
-	h.adminService.EnsureAntigravityPrivacy(ctx, updatedAccount)
+		// OpenAI OAuth: 刷新成功后检查并设置 privacy_mode
+		h.adminService.EnsureOpenAIPrivacy(ctx, updatedAccount)
+		// Antigravity OAuth: 刷新成功后检查并设置 privacy_mode
+		h.adminService.EnsureAntigravityPrivacy(ctx, updatedAccount)
+	})
 
 	return updatedAccount, "", nil
 }
@@ -2745,6 +2749,10 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	h.respondAvailableModels(c, account)
+}
+
+func (h *AccountHandler) respondAvailableModels(c *gin.Context, account *service.Account) {
 	withPlan, err := accountTestPlanRequested(c.Query("view"))
 	if err != nil {
 		response.BadRequest(c, err.Error())
@@ -3007,107 +3015,6 @@ func (h *AccountHandler) discoverOpenAIAccountTestModels(ctx context.Context, ac
 	return h.accountTestService.FetchOpenAIAccountCatalogModels(ctx, account)
 }
 
-// scheduleUpstreamModelCatalogSync refreshes the upstream model list and the
-// capacities it declares right after an API-key account is created or its
-// credentials change. It runs in the background and never fails the request.
-func (h *AccountHandler) scheduleUpstreamModelCatalogSync(account *service.Account) {
-	if h.accountTestService == nil || !service.UpstreamModelCatalogAutoSyncEligible(account) {
-		return
-	}
-	h.accountTestService.SyncUpstreamModelCatalogInBackground(account.ID)
-}
-
-// GetModelContextCapacities reads the local snapshot, reference catalog and
-// overrides only. It never calls an upstream model endpoint or registry.
-func (h *AccountHandler) GetModelContextCapacities(c *gin.Context) {
-	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || accountID <= 0 {
-		response.BadRequest(c, "Invalid account ID")
-		return
-	}
-	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, gin.H{"capacity_rows": service.BuildAccountModelContextCapacityRows(account, c.QueryArray("model_ids"))})
-}
-
-// PreviewModelContextCapacities resolves unsaved model choices locally. This
-// endpoint deliberately accepts no API key, raw Extra or observed snapshots.
-func (h *AccountHandler) PreviewModelContextCapacities(c *gin.Context) {
-	var req struct {
-		AccountID    *int64            `json:"account_id"`
-		Platform     string            `json:"platform"`
-		Type         string            `json:"type"`
-		BaseURL      *string           `json:"base_url"`
-		AccountMode  *string           `json:"account_mode"`
-		APIProtocol  *string           `json:"api_protocol"`
-		APIBaseURLs  map[string]string `json:"api_base_urls"`
-		ModelMapping map[string]string `json:"model_mapping"`
-		ModelIDs     []string          `json:"model_ids"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request: "+err.Error())
-		return
-	}
-	account := &service.Account{Platform: req.Platform, Type: req.Type, Credentials: make(map[string]any)}
-	if req.AccountID != nil {
-		if *req.AccountID <= 0 {
-			response.BadRequest(c, "Invalid account ID")
-			return
-		}
-		stored, err := h.adminService.GetAccount(c.Request.Context(), *req.AccountID)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		preview := *stored
-		account = &preview
-		account.Credentials = make(map[string]any, len(stored.Credentials))
-		for key, value := range stored.Credentials {
-			account.Credentials[key] = value
-		}
-	} else if strings.TrimSpace(req.Platform) == "" || strings.TrimSpace(req.Type) == "" {
-		response.BadRequest(c, "platform and type are required for a new account preview")
-		return
-	}
-	endpointChanged := false
-	for key, value := range map[string]*string{"base_url": req.BaseURL, "account_mode": req.AccountMode, "api_protocol": req.APIProtocol} {
-		if value != nil {
-			current, _ := account.Credentials[key].(string)
-			endpointChanged = endpointChanged || current != *value
-			account.Credentials[key] = *value
-		}
-	}
-	if req.APIBaseURLs != nil {
-		baseURLs := make(map[string]any, len(req.APIBaseURLs))
-		for protocol, baseURL := range req.APIBaseURLs {
-			baseURLs[protocol] = baseURL
-		}
-		endpointChanged = endpointChanged || !reflect.DeepEqual(account.Credentials["api_base_urls"], any(baseURLs))
-		account.Credentials["api_base_urls"] = baseURLs
-	}
-	if endpointChanged && account.Extra != nil {
-		// Stored observations describe the saved endpoint, not an unsaved draft.
-		extra := make(map[string]any, len(account.Extra))
-		for key, value := range account.Extra {
-			if key != service.UpstreamModelMetadataExtraKey {
-				extra[key] = value
-			}
-		}
-		account.Extra = extra
-	}
-	if req.ModelMapping != nil {
-		mapping := make(map[string]any, len(req.ModelMapping))
-		for publicID, upstreamID := range req.ModelMapping {
-			mapping[publicID] = upstreamID
-		}
-		account.Credentials["model_mapping"] = mapping
-	}
-	response.Success(c, gin.H{"capacity_rows": service.BuildAccountModelContextCapacityRows(account, req.ModelIDs)})
-}
-
 // antigravityAccountTestModels uses the stored mapping rather than GetModelMapping,
 // which supplies defaults and compatibility aliases that the administrator did not configure.
 func antigravityAccountTestModels(rawMapping any) []antigravity.ClaudeModel {
@@ -3189,6 +3096,11 @@ func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
 		slog.Warn("sync_upstream_models_failed", "account_id", accountID, "error", err.Error())
 		response.Error(c, http.StatusBadGateway, "Failed to sync upstream models from upstream")
 		return
+	}
+	if catalog != nil && account != nil && account.IsGrok() && account.ID > 0 && h.accountTestService != nil {
+		if latest, readErr := h.adminService.GetAccount(c.Request.Context(), account.ID); readErr == nil && latest != nil {
+			catalog.GrokModelDiagnostics = h.accountTestService.GetGrokModelDiagnostics(c.Request.Context(), latest)
+		}
 	}
 
 	response.Success(c, catalog)

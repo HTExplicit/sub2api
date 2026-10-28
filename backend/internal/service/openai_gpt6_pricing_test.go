@@ -52,9 +52,6 @@ func TestGPT6NamedPriceCardsAndIsolatedFallbacks(t *testing.T) {
 		}
 	}
 	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{"gpt-6": misleading, "gpt-6-astra": misleading, "gpt-5.4": misleading}}
-	for _, unknown := range []string{"gpt-6-future", "gpt-6-solstice", "gpt-6-luna-2099-01-01", "gpt-6.1-sol-2026-10-01", "gpt-6.1-luna", "gpt-6.1"} {
-		require.Nil(t, svc.GetModelPricing(unknown), unknown)
-	}
 	for _, sol61 := range []string{"gpt-6.1-sol", "openai/gpt-6.1-sol-max"} {
 		require.Same(t, openAIGPT61SolFallbackPricing, svc.GetModelPricing(sol61), sol61)
 	}

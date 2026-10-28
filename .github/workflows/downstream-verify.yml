@@ -39,8 +39,6 @@ jobs:
           python3 .github/scripts/test_release_preflight.py
       - name: Agent protocol contracts
         run: bash .github/scripts/test_agent_protocol.sh
-      - name: Model context capacity contracts
-        run: bash .github/scripts/test_model_context_capacity.sh
       - name: Service tests
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|AlphaSearch|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|AccountTaxonomyRules|AccountTestReasoningValidated|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
@@ -166,10 +164,6 @@ jobs:
             src/components/account/__tests__/EditAccountModal.spec.ts \
             src/utils/__tests__/openaiProtocolModeEdits.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
-            src/components/account/__tests__/ModelContextCapacityField.spec.ts \
-            src/utils/__tests__/modelContextCapacity.spec.ts \
-            src/composables/__tests__/useModelContextCapacities.spec.ts \
-            src/api/__tests__/admin.accounts.contextCapacity.spec.ts \
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \

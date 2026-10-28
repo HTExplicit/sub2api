@@ -319,12 +319,3 @@ func TestPickConnectionTestModelUsesSystemOneModelForTypeSafe(t *testing.T) {
 	require.Empty(t, levels)
 	require.Empty(t, defaultLevel)
 }
-
-// System One has no model list, so the periodic catalog refresh skips TypeSafe
-// accounts instead of failing and backing off on every one of them.
-func TestUpstreamModelCatalogAutoSyncSkipsTypeSafe(t *testing.T) {
-	account := &Account{ID: 8, Platform: PlatformTypeSafe, Type: AccountTypeAPIKey, Status: StatusActive}
-	require.False(t, UpstreamModelCatalogAutoSyncEligible(account))
-	account.Platform = PlatformDeepseek
-	require.True(t, UpstreamModelCatalogAutoSyncEligible(account))
-}

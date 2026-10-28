@@ -4,23 +4,25 @@ export interface CodexModelsManifestResult {
   responseBytes: number
 }
 
-function normalizeCodexGatewayRoot(baseUrl: string): string {
+const DEFAULT_CODEX_CLIENT_VERSION = '0.158.0'
+
+function normalizeCodexBaseUrl(baseUrl: string): string {
   const fallback = typeof window !== 'undefined' ? window.location.origin : ''
-  return (baseUrl || fallback).trim().replace(/\/+$/, '').replace(/\/v1$/i, '')
+  const value = (baseUrl || fallback).trim().replace(/\/+$/, '')
+  if (!value) return '/v1'
+  return /\/v1$/i.test(value) ? value : `${value}/v1`
 }
 
-// The ChatGPT-style manifest route takes no client_version: the gateway asks
-// with its configured current Codex version, so a stale pinned version cannot
-// filter newer models out of the downloaded catalog.
-export function buildCodexModelsManifestUrl(baseUrl: string): string {
-  return `${normalizeCodexGatewayRoot(baseUrl)}/backend-api/codex/models`
+export function buildCodexModelsManifestUrl(
+  baseUrl: string,
+  clientVersion = DEFAULT_CODEX_CLIENT_VERSION
+): string {
+  const params = new URLSearchParams({ client_version: clientVersion })
+  return `${buildCodexModelCatalogUrl(baseUrl)}?${params.toString()}`
 }
 
-// Version-free remote catalog for model_catalog_url (Codex 0.156.0+). Codex
-// appends its own client_version, which selects the same server-side Codex
-// manifest as the download above.
 export function buildCodexModelCatalogUrl(baseUrl: string): string {
-  return `${normalizeCodexGatewayRoot(baseUrl)}/v1/models`
+  return `${normalizeCodexBaseUrl(baseUrl)}/models`
 }
 
 function isCodexModelsManifest(value: unknown): value is { models: unknown[] } {

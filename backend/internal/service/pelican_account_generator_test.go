@@ -173,7 +173,7 @@ func TestPelicanAccountGeneratorSharedOpenAISettings(t *testing.T) {
 			require.False(t, gjson.GetBytes(upstream.bodies[0], "reasoning.effort").Exists(), "omitted effort preserves the model default")
 			require.Contains(t, string(upstream.bodies[0]), PelicanPrompt)
 			require.Contains(t, string(upstream.bodies[0]), "saved site instructions")
-			require.Greater(t, gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Int(), int64(1024))
+			require.Equal(t, int64(64000), gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Int())
 			require.True(t, IsAccountObservation(upstream.requests[0].Context()))
 		})
 	}
@@ -281,6 +281,9 @@ func TestPelicanAccountGeneratorNativeImageDispatch(t *testing.T) {
 			require.Len(t, upstream.bodies, 1)
 			require.Contains(t, string(upstream.bodies[0]), "REVIEW-PROMPT")
 			require.Contains(t, string(upstream.bodies[0]), tc.imageMarker)
+			if tc.platform == PlatformOpenAI {
+				require.Equal(t, input.MaxOutputTokens, gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Int())
+			}
 			require.Contains(t, string(upstream.bodies[0]), "c3ludGhldGljLXBuZw==")
 			require.True(t, IsAccountObservation(upstream.requests[0].Context()))
 		})

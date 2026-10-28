@@ -101,7 +101,6 @@ func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *serv
 		nil, // pelicanTests
 		nil, // pelicanPreview
 		nil, // scheduledTestRunner
-		nil, // upstreamModelCatalogRefresh
 		nil, // backupSvc
 		nil, // paymentOrderExpiry
 		nil, // channelMonitorRunner

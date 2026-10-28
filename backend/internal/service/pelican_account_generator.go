@@ -504,14 +504,6 @@ func (s *AccountTestService) GeneratePelicanInput(ctx context.Context, accountID
 	return result, nil
 }
 
-func pelicanOutputBudget(account *Account, upstreamModel string) int64 {
-	capacity := ResolveAccountModelContextCapacity(account, upstreamModel)
-	if capacity.MaxOutputTokens > 0 {
-		return capacity.MaxOutputTokens
-	}
-	return 64000
-}
-
 func pelicanMessagesInputBody(model, upstreamModel, effort string, budget int64, input PelicanModelInput) []byte {
 	content := []map[string]any{{"type": "text", "text": input.Text}}
 	for _, image := range input.Images {
@@ -533,7 +525,7 @@ func pelicanMessagesInputBody(model, upstreamModel, effort string, budget int64,
 }
 
 func (s *AccountTestService) sendPelicanInputWithAccount(ctx context.Context, c *gin.Context, account *Account, model, upstreamModel, effort string, input PelicanModelInput) error {
-	budget := pelicanOutputBudget(account, upstreamModel)
+	budget := int64(64000)
 	if input.MaxOutputTokens > 0 && input.MaxOutputTokens < budget {
 		budget = input.MaxOutputTokens
 	}

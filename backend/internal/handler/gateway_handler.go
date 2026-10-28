@@ -1149,22 +1149,15 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 
 	var groupID *int64
-	var authenticatedGroup *service.Group
 	var platform string
 
 	if apiKey != nil && apiKey.Group != nil {
-		authenticatedGroup = apiKey.Group
 		groupID = &apiKey.Group.ID
 		platform = apiKey.Group.Platform
 	}
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
 	}
-	// Every list row carries the group's known context capacity; unknown
-	// capacity is simply absent.
-	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
-		return h.gatewayService.ProjectModelListContextCapacities(c.Request.Context(), authenticatedGroup, groupID, platform, body)
-	})
 
 	if platform == service.PlatformOpenAI && apiKey != nil && apiKey.Group != nil &&
 		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled {

@@ -27,9 +27,6 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	if normalized == "" {
 		return ""
 	}
-	if named := openai.GPT6NamedModel(normalized); named != "" {
-		return named
-	}
 
 	if mapped := getNormalizedCodexModel(normalized); mapped != "" {
 		return mapped
@@ -40,6 +37,9 @@ func normalizeKnownOpenAICodexModel(model string) string {
 		}
 	}
 
+	if openai.IsGPT61TerraModelSpelling(normalized) {
+		return "gpt-6.1-terra"
+	}
 	if openai.IsGPT61SolModelSpelling(normalized) {
 		return "gpt-6.1-sol"
 	}
@@ -53,8 +53,6 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	switch {
 	case normalized == "gpt-6" || normalized == "gpt-6-astra":
 		return "gpt-6-astra"
-	case strings.HasPrefix(normalized, "gpt-6-"):
-		return ""
 	case strings.Contains(normalized, "gpt-5.6-sol"):
 		return "gpt-5.6-sol"
 	case strings.Contains(normalized, "gpt-5.6-terra"):
@@ -122,7 +120,12 @@ func isOpenAIGPT6AstraModel(model string) bool {
 }
 
 func isOpenAIGPT6SolOrLunaModel(model string) bool {
-	return openai.GPT6NamedModel(model) != ""
+	switch normalizeKnownOpenAICodexModel(model) {
+	case "gpt-6-sol", "gpt-6-luna":
+		return true
+	default:
+		return false
+	}
 }
 
 func appendUsageBillingModelCandidate(candidates []string, seen map[string]struct{}, model string) []string {
@@ -172,5 +175,5 @@ func firstUsageBillingModel(candidates []string) string {
 }
 
 func isOpenAIGPT6Model(model string) bool {
-	return isOpenAIGPT6AstraModel(model) || openai.IsGPT6SolOrLunaModelSpelling(model) || openai.IsGPT61SolModelSpelling(model)
+	return openai.IsGPT61TerraModelSpelling(model) || isOpenAIGPT6AstraModel(model) || openai.IsGPT6SolOrLunaModelSpelling(model) || openai.IsGPT61SolModelSpelling(model)
 }

@@ -210,7 +210,6 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
-import { formatContextCapacity } from '@/utils/modelContextCapacity'
 
 type RowStatus = 'kept' | 'new' | 'missing'
 type StatusFilter = 'all' | 'checked' | 'unchecked' | 'new' | 'missing'
@@ -272,6 +271,15 @@ const idPrefix = `upstream-picker-${useId()}`
 
 const isTokenCount = (value?: number): value is number => !!value && Number.isSafeInteger(value) && value > 0
 
+const formatModelTokens = (value: number): string => {
+  const tokens = BigInt(value)
+  const scale = value >= 1_000_000 ? 6 : value >= 1_000 ? 3 : 0
+  if (!scale) return String(value)
+  const divisor = 10n ** BigInt(scale)
+  const fraction = String(tokens % divisor).padStart(scale, '0').replace(/0+$/, '')
+  return `${tokens / divisor}${fraction ? `.${fraction}` : ''}${scale === 6 ? 'M' : 'K'}`
+}
+
 const displayName = (id: string, metadata?: UpstreamModelMetadata) => {
   const name = metadata?.display_name?.trim()
   return name && name !== id ? name : ''
@@ -287,10 +295,10 @@ const detailsOf = (row: PickerRow) => {
     const output = row.metadata?.max_output_tokens
     const parts = [displayName(row.id, row.metadata)]
     if (isTokenCount(context)) {
-      parts.push(t('admin.accounts.syncUpstreamPicker.contextWindow', { value: formatContextCapacity(context) }))
+      parts.push(t('admin.accounts.syncUpstreamPicker.contextWindow', { value: formatModelTokens(context) }))
     }
     if (isTokenCount(output)) {
-      parts.push(t('admin.accounts.syncUpstreamPicker.maxOutput', { value: formatContextCapacity(output) }))
+      parts.push(t('admin.accounts.syncUpstreamPicker.maxOutput', { value: formatModelTokens(output) }))
     }
     details = parts.filter(Boolean).join(' · ')
     detailsCache.set(row, details)

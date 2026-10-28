@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -19,7 +18,7 @@ import (
 // GET /backend-api/codex/models (chatgpt_base_url mode). Both routes land
 // here. Pinned discovery takes precedence over local account model mappings;
 // when disabled, groups with explicit mappings are generated locally;
-// otherwise ChatGPT manifests are proxied and custom API key manifests
+// otherwise ChatGPT manifests are proxied verbatim and custom API key manifests
 // receive provider-compatibility normalization plus short-lived caching.
 func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	if c.Request.Context().Err() != nil {
@@ -99,37 +98,11 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	switchCount := 0
 	var lastUpstreamErr error
-	var lastFailoverErr *service.UpstreamFailoverError
-	retryState := newOpenAIFailoverRetryState()
-	var sameAccountRetrySelection *service.AccountSelectionResult
-	var oauth429FailoverState service.OpenAIOAuth429FailoverState
-
-	// The manifest is not billed, so the profit gate must not filter the
-	// accounts that can serve it.
-	c.Request = c.Request.WithContext(service.WithOpenAIProfitControlSuppressed(c.Request.Context()))
 
 	for {
-		retryingSameAccount := sameAccountRetrySelection != nil
-		var selection *service.AccountSelectionResult
-		var err error
-		if retryingSameAccount {
-			selection, err = h.gatewayService.ReacquireOpenAISameAccountSelection(c.Request.Context(), sameAccountRetrySelection)
-			sameAccountRetrySelection = nil
-		} else {
-			selection, _, err = h.gatewayService.SelectAccountWithSchedulerForCapability(
-				c.Request.Context(), apiKey.GroupID, "", "", "", failedAccountIDs,
-				service.OpenAIUpstreamTransportHTTPSSE,
-				service.OpenAIEndpointCapabilityChatCompletions,
-				false, false, false,
-			)
-		}
+		account, err := h.gatewayService.SelectAccountForModelWithExclusions(c.Request.Context(), apiKey.GroupID, "", "", failedAccountIDs)
 		if err != nil {
 			if c.Request.Context().Err() != nil {
-				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-				return
-			}
-			if retryingSameAccount && lastUpstreamErr != nil {
-				h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
 				return
 			}
 			if lastUpstreamErr != nil {
@@ -139,108 +112,37 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "No available OpenAI accounts")
 			return
 		}
-		if selection == nil || selection.Account == nil {
-			if lastUpstreamErr != nil {
-				h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
-			} else {
-				h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "No available OpenAI accounts")
-			}
-			return
-		}
-		account := selection.Account
 		// 让 ops 错误日志携带实际选中的上游账号，便于定位失效账号（#4544）。
 		setOpsSelectedAccount(c, account.ID, account.Platform)
-		var accountReleaseFunc func()
-		var slotResult openAISlotAcquireResult
-		if retryingSameAccount {
-			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlotForSameAccountRetry(c, apiKey.GroupID, "", selection, false, new(bool), zap.NewNop())
-		} else {
-			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, new(bool), zap.NewNop())
-		}
-		if slotResult != openAISlotAcquireOK {
-			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
-				c, account, "", lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState,
-				"codex_models", nil, true,
-				func() {
-					h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
-				},
-			) {
-				continue
-			}
-			return
-		}
 
-		// The client ETag represents the final group-specific body rather than
-		// the source manifest, so always fetch a complete source before applying
-		// provider normalization, group-local filtering and capacity projection.
-		upstreamIfNoneMatch := ""
-		manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), account, c.Query("client_version"), upstreamIfNoneMatch)
-		if accountReleaseFunc != nil {
-			accountReleaseFunc()
-		}
+		// The client ETag represents the final group-specific body, so fetch the
+		// source manifest before applying local filtering and alias metadata.
+		manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), account, c.Query("client_version"), "")
 		if err != nil {
 			if c.Request.Context().Err() != nil {
-				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				return
 			}
-			failoverErr := service.NormalizeCodexModelsManifestFailoverError(err, account)
-			if failoverErr != nil {
-				lastUpstreamErr = err
-				lastFailoverErr = failoverErr
-				retryAction := retryState.Handle(c.Request.Context(), h.gatewayService, account, "", failoverErr, true, sameAccountRetryDelay, "codex_models")
-				finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, "", failoverErr, retryAction)
-				switch retryAction {
-				case openAIFailoverRetrySameAccount:
-					sameAccountRetrySelection = selection
-					continue
-				case openAIFailoverRetryCanceled:
-					return
-				case openAIFailoverRetryStop:
-					h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
-					return
-				}
+			if service.IsRetryableCodexModelsManifestError(err) && switchCount < maxAccountSwitches {
 				failedAccountIDs[account.ID] = struct{}{}
-				if switchCount >= maxAccountSwitches {
-					h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
-					return
-				}
 				switchCount++
-				if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
-					h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
-					return
-				}
-				h.gatewayService.RecordOpenAIAccountSwitch()
+				lastUpstreamErr = err
 				continue
 			}
-			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
 			return
 		}
 		if err := h.gatewayService.CompleteAPIKeyCodexModelsManifestForClient(manifest, account); err != nil {
-			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to complete Codex models manifest")
 			return
 		}
 		if err := service.ApplyPinnedCodexModelsMapping(manifest, account, apiKey.Group); err != nil {
-			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to apply model mappings")
 			return
 		}
-		if apiKey.Group.Platform == service.PlatformComposite {
-			if err := h.projectCodexModelContextCapacities(c, apiKey.Group, manifest, ifNoneMatch); err != nil {
-				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-				h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to project model capacities")
-				return
-			}
-		} else if err := h.gatewayService.MergeGroupConfiguredCodexModels(
-			c.Request.Context(), apiKey.Group, manifest, ifNoneMatch,
-		); err != nil {
-			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+		if err := h.gatewayService.MergeGroupConfiguredCodexModels(c.Request.Context(), apiKey.Group, manifest, ifNoneMatch); err != nil {
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
 			return
 		}
-		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "", true, nil)
 		if c.Request.Context().Err() != nil {
 			return
 		}
@@ -248,11 +150,4 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		writeOpenAIModelsResponse(c, manifest)
 		return
 	}
-}
-
-func (h *OpenAIGatewayHandler) projectCodexModelContextCapacities(c *gin.Context, group *service.Group, manifest *service.OpenAIModelsResponse, ifNoneMatch string) error {
-	if group != nil && group.Platform == service.PlatformComposite && h.nativeAnthropicGatewayService != nil {
-		return h.nativeAnthropicGatewayService.ProjectCodexModelContextCapacities(c.Request.Context(), group, manifest, ifNoneMatch)
-	}
-	return h.gatewayService.ProjectCodexModelContextCapacities(c.Request.Context(), group, manifest, ifNoneMatch)
 }
