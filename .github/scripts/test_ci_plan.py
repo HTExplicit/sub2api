@@ -97,11 +97,57 @@ class ChangeSelectionTests(unittest.TestCase):
         self.assertFalse(any(group.endswith("_race") or group.endswith("_db") for group in ordinary["groups"]))
         database = ci_plan.classify_paths(["backend/migrations/281_pelican_repeat_samples.sql"])
         self.assertTrue(database["passed"])
-        self.assertIn("pelican_db", database["groups"])
+        self.assertEqual(1, len(database["backend_tests"]))
+        self.assertEqual("^(?:TestPelicanRepeatSamplesIntegration)$", database["backend_tests"][0]["pattern"])
+        self.assertEqual(["integration"], database["backend_tests"][0]["tags"])
         self.assertIn("candidate_image", database["groups"])
         concurrency = ci_plan.classify_paths(["backend/internal/service/account_test_sse_keepalive.go"])
         self.assertTrue(concurrency["passed"])
         self.assertIn("keepalive_race", concurrency["groups"])
+
+    def test_gallery_source_selects_only_its_handler_contract(self):
+        plan = ci_plan.classify_paths(["backend/internal/handler/admin/pelican_gallery_handler.go"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(1, len(plan["backend_tests"]))
+        selected = plan["backend_tests"][0]
+        self.assertEqual(["./internal/handler/admin"], selected["packages"])
+        self.assertEqual("^(?:TestPelicanGalleryReadAndSVGFailurePreview)$", selected["pattern"])
+        self.assertEqual(["unit"], selected["tags"])
+        self.assertFalse(selected["race"])
+        self.assertFalse(any(group in plan["groups"] for group in ("pelican", "pelican_db", "pelican_race", "renderer")))
+
+    def test_unmapped_shared_pelican_sources_block_even_with_race_marker(self):
+        for path in ("backend/internal/service/pelican_test_runner.go",
+                     "backend/internal/service/pelican_execution.go",
+                     "backend/internal/service/pelican_background.go",
+                     "backend/internal/repository/pelican_test_repo.go",
+                     "backend/internal/handler/admin/pelican_test_handler.go",
+                     "backend/migrations/280_pelican_evaluation.sql"):
+            with self.subTest(path=path):
+                plan = ci_plan.classify_paths([path])
+                self.assertFalse(plan["passed"])
+                self.assertIn("unclassified_input:" + path, plan["failures"])
+                self.assertFalse(plan["backend_tests"])
+
+    def test_reviewed_pelican_repository_inputs_select_only_their_own_integration(self):
+        for path, name in (
+            ("backend/internal/repository/pelican_deletion_repo.go", "TestPelicanDeletionIntegration"),
+            ("backend/migrations/279_pelican_test_deletion.sql", "TestPelicanDeletionIntegration"),
+            ("backend/internal/repository/pelican_background_repo.go", "TestPelicanBackgroundSummaryPaginationRetainsFullDetails"),
+        ):
+            with self.subTest(path=path):
+                plan = ci_plan.classify_paths([path])
+                self.assertTrue(plan["passed"], plan["failures"])
+                self.assertEqual(1, len(plan["backend_tests"]))
+                self.assertEqual("^(?:" + name + ")$", plan["backend_tests"][0]["pattern"])
+                self.assertEqual(["integration"], plan["backend_tests"][0]["tags"])
+
+    def test_renderer_source_keeps_only_its_explicit_runtime_risk(self):
+        plan = ci_plan.classify_paths(["backend/internal/service/pelican_renderer.go"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertIn("renderer", plan["groups"])
+        self.assertFalse(plan["backend_tests"])
+        self.assertNotIn("pelican", plan["groups"])
 
     def test_embedded_transport_reference_is_a_runtime_build_input(self):
         plan = ci_plan.classify_paths(["backend/internal/pkg/codextransport/reference.json"])

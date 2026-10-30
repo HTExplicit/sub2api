@@ -18,8 +18,6 @@ SCHEMA = "ci-plan/v1"
 RISK_RULES = (
     (r"backend/internal/(?:service/deepseek_reasoning[^/]*|handler/admin/deepseek_reasoning[^/]*|server/routes/deepseek_reasoning[^/]*)\.go$", ("deepseek",)),
     (r"backend/internal/(?:service|handler)/.*claude.*(?:signature|thinking)[^/]*\.go$", ("claude",)),
-    (r"backend/internal/(?:service|handler(?:/admin)?)/pelican[^/]*\.go$", ("pelican",)),
-    (r"backend/internal/repository/pelican[^/]*\.go$|backend/migrations/(?:275|276|279|280|281)_[^/]*\.sql$", ("pelican", "pelican_db")),
     (r"backend/internal/service/pelican_(?:test_runner|execution|repeats|background)[^/]*\.go$", ("pelican_race",)),
     (r"backend/internal/service/account_test_sse_keepalive[^/]*\.go$", ("keepalive_race",)),
     (r"backend/internal/service/openai_account_runtime_block_fastpath[^/]*\.go$", ("probe_race",)),
@@ -33,8 +31,28 @@ RISK_RULES = (
     (r"backend/migrations/236_[^/]*\.sql$|backend/internal/repository/(?:audit_log|system_log)[^/]*\.go$", ("repository_audit",)),
     (r"backend/internal/pkg/codextransport/[^/]+$|backend/cmd/codex-transport-probe/[^/]+\.go$|\.github/scripts/(?:verify|capture)_codex_transport\.py$", ("transport",)),
     (r"backend/internal/(?:pkg/apicompat/[^/]+\.go|web/(?:agent[^/]*\.go|testdata/agent_cache_fixture\.js))$|\.github/scripts/test_agent_protocol\.sh$", ("agent_protocol",)),
-    (r"backend/internal/service/pelican_(?:chromium|renderer)[^/]*\.go$", ("renderer",)),
+    (r"backend/internal/service/pelican_renderer\.go$", ("renderer",)),
 )
+
+# A shared feature prefix is not a test boundary. Only reviewed source inputs
+# may select these exact test files; new shared inputs require their own rule.
+SOURCE_TEST_FILES = {
+    "backend/internal/handler/admin/pelican_gallery_handler.go": (
+        "backend/internal/handler/admin/pelican_gallery_handler_test.go",
+    ),
+    "backend/internal/repository/pelican_deletion_repo.go": (
+        "backend/internal/repository/pelican_deletion_repo_integration_test.go",
+    ),
+    "backend/internal/repository/pelican_background_repo.go": (
+        "backend/internal/repository/pelican_background_repo_integration_test.go",
+    ),
+    "backend/migrations/279_pelican_test_deletion.sql": (
+        "backend/internal/repository/pelican_deletion_repo_integration_test.go",
+    ),
+    "backend/migrations/281_pelican_repeat_samples.sql": (
+        "backend/internal/repository/pelican_repeats_repo_integration_test.go",
+    ),
+}
 
 DEPLOY_RULES = {
     "deploy/apple-container.sh": ["deploy/tests/apple-container-test.sh"],
@@ -174,6 +192,18 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             failures.append("linked_input:" + relative)
             continue
         known = False
+        source_tests = SOURCE_TEST_FILES.get(relative, ())
+        if source_tests:
+            known = True
+            for target in source_tests:
+                selected = _go_test(repo / target, target)
+                if selected is None:
+                    failures.append("source_test_selection_requires_mapping:" + relative)
+                    known = False
+                    continue
+                selected["reason"] = relative
+                tests.append(selected)
+                select("backend_focused", relative)
         if relative.startswith("docs/legal/") and path.suffix == ".md":
             select("static_docs", relative)
             select("frontend_validate", relative)
@@ -269,7 +299,11 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             elif matched:
                 for group in matched:
                     select(group, relative)
-                known = True
+                # A shared Pelican runner also owns ordinary behavior; a race
+                # marker alone cannot claim that behavior has been validated.
+                if not (relative.startswith("backend/internal/service/pelican_") and
+                        all(group.endswith("_race") for group in matched)):
+                    known = True
             else:
                 target = relative if relative.endswith("_test.go") else relative[:-3] + "_test.go"
                 selected = _go_test(repo / target, target)
