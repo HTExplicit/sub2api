@@ -67,10 +67,12 @@ class SelectedExecutionTests(unittest.TestCase):
             directory = root / "backend/internal/service"
             directory.mkdir(parents=True)
             (directory / "pelican_test.go").write_text("//go:build unit\npackage service\nfunc TestPelicanOrdinary(t *testing.T) {}\nfunc TestPelicanRepeatModelOne(t *testing.T) {}\n", encoding="utf-8")
-            plan = {"groups": ["pelican", "pelican_race"]}
+            plan = {"groups": ["backend_focused", "pelican_race"], "backend_tests": [
+                {"packages": ["./internal/service"], "pattern": "^TestPelican", "tags": ["unit"], "race": False},
+            ]}
             with patch.object(ci_run, "ROOT", root):
                 ci_run.resolve_go_checks(plan)
-            ordinary = plan["go_checks"]["pelican"][0]["pattern"]
+            ordinary = plan["go_checks"]["backend_focused"][0]["pattern"]
             raced = plan["go_checks"]["pelican_race"][0]["pattern"]
             self.assertIn("TestPelicanOrdinary", ordinary)
             self.assertNotIn("TestPelicanRepeatModelOne", ordinary)
@@ -79,7 +81,7 @@ class SelectedExecutionTests(unittest.TestCase):
     def test_empty_mapping_fails_instead_of_go_zero_test_success(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(ci_run, "ROOT", Path(temporary)):
             with self.assertRaisesRegex(ValueError, "matches_no_functions"):
-                ci_run.resolve_go_checks({"groups": ["pelican"]})
+                ci_run.resolve_go_checks({"groups": ["pelican_race"]})
 
     def test_embed_and_negative_unit_tags_follow_selected_build(self):
         with tempfile.TemporaryDirectory() as temporary:

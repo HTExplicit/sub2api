@@ -25,7 +25,7 @@ OWNERS = {
     "release-helpers": {"generic_release_contracts"},
     "Downstream backend": {
         "static_docs", "ci_contracts", "release_contracts", "upstream_contracts",
-        "transport", "agent_protocol", "deepseek", "claude", "pelican", "pelican_db",
+        "transport", "agent_protocol", "deepseek", "claude",
         "pelican_race", "keepalive_race", "probe_race", "management_race",
         "request_body", "account_jobs", "taxonomy_db", "retirement_migration", "repository_audit",
         "model_list", "turn_state",
@@ -36,7 +36,6 @@ OWNERS = {
     "frontend-security": {"frontend_security"},
 }
 EXTERNAL = {"backend_lint", "candidate_image", "renderer"}
-INTEGRATION = {"pelican_db", "taxonomy_db", "retirement_migration", "repository_audit"}
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -152,8 +151,6 @@ def go_test(packages: list[str], pattern: str, tags=(), race: bool = False) -> l
 GO_GROUPS = {
     "deepseek": (["./internal/service", "./internal/handler/admin", "./internal/server/routes"], "^TestDeepSeekDefault", ("unit",), False),
     "claude": (["./internal/service", "./internal/handler"], "^TestClaude(ThinkingSignatureError|Signature|OpsErrorLogger)|^TestGatewayService_Forward_(PreOutputSSE|PostOutputSSE)", ("unit",), False),
-    "pelican": (["./internal/service", "./internal/repository", "./internal/handler", "./internal/handler/admin", "./internal/server/routes"], "^Test(Pelican|AccountObservation|ObservedAccountLease)", ("unit",), False),
-    "pelican_db": (["./internal/repository"], "^TestPelican(TestRepositoryIntegrationLifecycle|DeletionIntegration|RepeatSamplesIntegration|OriginalHTMLGalleryIntegration)$", ("integration",), False),
     "pelican_race": (["./internal/service"], "^TestPelican(RunnerCancellationStopsQueuedAndInflightAndRetainsRawOutput|RepeatModel.*|AccountWaitReleases.*)$", ("unit",), True),
     "keepalive_race": (["./internal/service"], "^TestAccountTestKeepalive", ("unit",), True),
     "probe_race": (["./internal/service"], "TestOpenAIRuntimeBreaker_(APIKeySameAccountRetryDoesNotUseRedisLease|OAuthSameAccountRetryTransfersProbeUntilFinalFailure|SuppressedRetryReleasesSelectionClaim)", ("unit",), True),
