@@ -1,0 +1,130 @@
+name: Select changed risks
+description: Select and reuse only checks required by actual changed inputs
+inputs:
+  context:
+    description: Existing required check name
+    required: true
+  workflow:
+    description: Trusted workflow path for receipt verification
+    required: true
+outputs:
+  needs-go:
+    description: Selected checks need the repository Go toolchain
+    value: ${{ steps.plan.outputs.needs_go }}
+  needs-node:
+    description: Selected checks need frontend dependencies
+    value: ${{ steps.plan.outputs.needs_node }}
+  needs-lint:
+    description: Selected Go packages need lint
+    value: ${{ steps.plan.outputs.needs_lint }}
+  needs-candidate:
+    description: Changed image inputs need an OCI candidate
+    value: ${{ steps.plan.outputs.needs_candidate }}
+  needs-renderer:
+    description: Changed rendering inputs need the candidate runtime check
+    value: ${{ steps.plan.outputs.needs_renderer }}
+  lint-args:
+    description: Explicit selected Go package arguments
+    value: ${{ steps.plan.outputs.lint_args }}
+runs:
+  using: composite
+  steps:
+    - id: plan
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CHECK_CONTEXT: ${{ inputs.context }}
+        CHECK_WORKFLOW: ${{ inputs.workflow }}
+      run: python3 -B .github/scripts/ci_run.py prepare --directory "$RUNNER_TEMP/selective-ci" --context "$CHECK_CONTEXT" --workflow "$CHECK_WORKFLOW"
+    - if: steps.plan.outputs.needs_go == 'true'
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version-file: backend/go.mod
+        check-latest: false
+        cache: true
+        cache-dependency-path: backend/go.sum
+    - if: steps.plan.outputs.needs_node == 'true'
+      uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      with:
+        version: 9.15.9
+    - if: steps.plan.outputs.needs_node == 'true'
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version: '20'
+        cache: pnpm
+        cache-dependency-path: frontend/pnpm-lock.yaml
+    - if: steps.plan.outputs.needs_node == 'true'
+      shell: bash
+      working-directory: frontend
+      run: pnpm install --frozen-lockfile
+    - id: selected
+      shell: bash
+      run: python3 -B .github/scripts/ci_run.py run --directory "$RUNNER_TEMP/selective-ci"
+    - id: lint
+      if: steps.plan.outputs.needs_lint == 'true'
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.14.0
+        args: ${{ steps.plan.outputs.lint_args }}
+        working-directory: backend
+    - if: steps.plan.outputs.needs_candidate == 'true'
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      with:
+        driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+        buildkitd-config: .github/buildkitd.toml
+    - name: Build selected candidate
+      id: build
+      if: steps.plan.outputs.needs_candidate == 'true'
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      with:
+        context: .
+        file: Dockerfile
+        platforms: linux/amd64
+        push: false
+        tags: sub2api-pelican-candidate:check
+        outputs: |
+          type=oci,dest=/tmp/sub2api-candidate.tar
+          type=docker,name=sub2api-pelican-candidate:check
+        build-args: |
+          VERSION=0.0.0-candidate
+          COMMIT=${{ github.sha }}
+          GOPROXY=https://proxy.golang.org,direct
+          GOSUMDB=sum.golang.org
+        cache-from: type=gha,scope=sub2api-candidate-amd64
+        cache-to: type=gha,mode=max,scope=sub2api-candidate-amd64
+    - name: Verify selected renderer inside candidate
+      id: render
+      if: steps.plan.outputs.needs_renderer == 'true'
+      shell: bash
+      working-directory: backend
+      run: |
+        CGO_ENABLED=0 go test -c -tags unit -o "$RUNNER_TEMP/pelican-render.test" ./internal/service
+        docker run --rm --init --network none --memory 768m --user 1000:1000 \
+          --mount "type=bind,src=$RUNNER_TEMP/pelican-render.test,dst=/tmp/pelican-render.test,readonly" \
+          -e PELICAN_RENDER_TEST=1 --entrypoint /tmp/pelican-render.test \
+          sub2api-pelican-candidate:check -test.run '^TestPelicanChromiumRenderer$' -test.v
+    - name: Upload selected candidate
+      if: steps.build.outcome == 'success'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: sub2api-candidate-linux-amd64-${{ github.sha }}
+        path: /tmp/sub2api-candidate.tar
+        retention-days: 3
+        if-no-files-found: error
+    - name: Record executed, reused and inapplicable checks
+      id: finish
+      if: always() && steps.plan.outcome == 'success'
+      shell: bash
+      env:
+        LINT_OUTCOME: ${{ steps.lint.outcome }}
+        BUILD_OUTCOME: ${{ steps.build.outcome }}
+        RENDER_OUTCOME: ${{ steps.render.outcome }}
+      run: python3 -B .github/scripts/ci_run.py finish --directory "$RUNNER_TEMP/selective-ci"
+    - name: Upload verifiable receipt
+      if: success() && steps.finish.outcome == 'success'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: ci-receipt-${{ inputs.context }}
+        path: ${{ runner.temp }}/selective-ci/receipt.json
+        retention-days: 30
+        if-no-files-found: error

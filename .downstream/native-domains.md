@@ -1,305 +1,199 @@
 # Settings, stored data and rollback
 
+Current native contracts are maintained here. Account tests and system prompts
+are in [models and prompts](gpt6-models-and-prompts.md); source and release rules
+are in [DOWNSTREAM.md](../DOWNSTREAM.md).
+
 ## Settings
 
-All paths below are relative to `/api/v1`. Settings writes retain administrator
-authentication and the existing step-up policy.
+Paths are relative to `/api/v1`; writes retain administrator authentication,
+audit and existing step-up policy.
 
 | Interface | Contract |
 | --- | --- |
-| `GET/PUT /admin/settings/codex-runtime` | Codex request body compression switch (`request_zstd`; a missing key is on). |
-| `GET/PUT /admin/settings/observability` | Console theme switch (`theme_enabled`; a missing key is on). |
+| `GET/PUT /admin/settings/codex-runtime` | `request_zstd` compression switch. Without a stored row, `gateway.openai_codex_request_zstd` applies. |
+| `GET/PUT /admin/settings/observability` | `theme_enabled` console switch; missing key defaults on. |
 
-Each of the two is stored as one `settings` row holding a JSON object of
-boolean switches; `GET` and `PUT` answer with the switches in the standard
-response envelope. A `PUT` body that is not a JSON object, or that carries any
-other key or a non-boolean value (including `null`), returns HTTP 400 and stores
-nothing. While no Codex runtime row is stored,
-`gateway.openai_codex_request_zstd` decides the compression switch.
+Each uses one JSON `settings` row and standard response envelopes. PUT requires
+an object containing only the documented boolean switch; extra keys, nulls and
+non-booleans return 400 without writes. Codex advanced settings live at
+`/admin/codex/advanced`; old runtime URLs redirect there.
 
 ## DeepSeek default reasoning effort
 
-Extensions exposes `/admin/deepseek-reasoning`. Administrator-only
-`GET/PUT /api/v1/admin/deepseek-reasoning` uses the standard response envelope
-and audit middleware. The complete configuration is
-`{"enabled":false,"effort":"max"}`, stored as one JSON `settings` row named
-`deepseek_reasoning_config`; effort accepts `low`, `high` or `max`. No stored
-row means disabled with Max selected. Saving updates the local snapshot
-immediately; other processes refresh in the background within one minute.
-Forwarding reads memory only and freezes the configuration per request.
-An initial read failure leaves requests unchanged; refresh failures retain the
-last valid snapshot. No schema migration or historical usage rewrite is needed.
+`/admin/deepseek-reasoning` uses administrator-only
+`GET/PUT /api/v1/admin/deepseek-reasoning`, audit and standard envelopes.
+`settings.deepseek_reasoning_config` holds `{"enabled":false,"effort":"max"}`;
+effort accepts `low`, `high`, `max`. Missing configuration is disabled/Max.
+Saving refreshes memory immediately; other processes refresh within one minute.
+Requests freeze a memory snapshot. Initial read failure leaves requests unchanged;
+refresh failure retains the last valid snapshot. No migration or usage rewrite.
 
-After channel/account mapping, DeepSeek Flash and V4 model families receive
-the configured effort only when it is absent, null or empty. Namespaced model
-IDs are recognized. Other DeepSeek models require model-catalog support for
-the selected effort. Explicit effort, unknown nonempty values, malformed
-fields, disabled thinking and existing effort aliases retain existing behavior.
-The new value passes through group mappings, ceilings and deny rules once.
-Every attempt uses its clean request, so failover to a different model does
-not inherit an injected effort.
-
-Responses, Chat Completions and Messages, including the existing bridges,
-carry the value in their native effort field. Requests retain other reasoning
-fields and request-integrity comparisons replay the same default and policy.
-Usage records keep the actual forwarded effort while an internal defaulted
-flag preserves absent client effort instead of inventing an explicit request.
-Responses-shaped bodies on the Chat Completions URL use their Responses field.
-Compact and count-tokens operations retain their existing behavior. Turning the
-setting off restores the original omitted-effort behavior.
+After mappings, Flash/V4 receive the default only for absent/null/empty effort;
+other DeepSeek models require catalog support. Namespaces are recognized.
+Explicit or malformed values, disabled thinking and existing aliases remain.
+Group ceilings/deny rules apply once, and clean failover attempts never inherit
+another model's injection. Responses, Chat and Messages retain their native
+fields and other reasoning options. Usage records forwarded effort without
+inventing explicit client effort. Compact/count-tokens remain unchanged;
+disabling restores ordinary omitted-effort behavior.
 
 ## Model catalog interfaces
 
-The official model-capacity and client-catalog behavior is described in
-[model discovery and client catalogs](../DOWNSTREAM.md#model-discovery-capacity-and-client-catalogs).
-The downstream account capacity editor, preview/read interfaces and settings
-catalog endpoint are retired: `POST /admin/accounts/models/context-capacities-preview`,
-`GET /admin/accounts/:id/models/context-capacities`, and
-`GET /admin/settings/model-context-catalog` no longer exist. Account create/edit
-and bulk forms no longer write custom model context overrides. Historical SQL,
-stored override/source identity values and diagnostic records are retained.
-Manual upstream model sync, confirmation picker, native model metadata, test
-plans and actual effort options remain independent; no data cleanup or settings
-migration accompanies removal of the custom resolver.
+[Model discovery](../DOWNSTREAM.md#model-discovery-capacity-and-client-catalogs)
+owns current official behavior. Custom capacity forms and
+`POST /admin/accounts/models/context-capacities-preview`,
+`GET /admin/accounts/:id/models/context-capacities` and
+`GET /admin/settings/model-context-catalog` are retired. Historical SQL,
+stored overrides/source values and diagnostics remain. Native sync, confirmation
+picker, metadata and test/effort plans remain independent; no data cleanup.
 
 ## Codex fingerprint simulation
 
-The Extensions sidebar owns one Codex entry. `/admin/codex` redirects to
-`/admin/codex/identity`; `/admin/codex/advanced` owns manual UA/version,
-identifier modes and compression. Previous runtime and fingerprint URLs retain
-their redirects. Full saved/effective identity fields remain available in
-keyboard-accessible disclosures. General settings and account create/edit/bulk
-forms do not submit fingerprint configuration.
-`GET/PUT /admin/settings/codex-fingerprint` uses `enabled`, `user_agent`,
-`client_version` and `version_auto_sync_enabled`; all four fields are required
-on PUT. GET also returns the synced and effective simulation versions and the
-default UA. Existing UA/version/sync setting keys remain authoritative; only
-`codex_fingerprint_enabled` is new. Without that key the startup identity flag
-provides the default. Writes use existing admin authentication and audit, with
-no additional step-up. Legacy settings APIs use the same keys.
+The Codex sidebar opens `/admin/codex/identity`; `/admin/codex` redirects there.
+`/admin/codex/advanced` owns UA/version, identifier modes and compression. Old
+runtime/fingerprint addresses redirect. Saved/effective fields remain available
+in accessible disclosures; general settings/account forms do not write identity.
 
-`GET/PUT /admin/accounts/:id/codex-fingerprint` applies only to OpenAI OAuth and
-setup-token accounts. GET computes effective identity through the forwarding
-selector, including credential shadows. PUT accepts only `mode`; bulk changes
-use ordinary account jobs with explicit frozen IDs and only that extra key.
-GET and the PUT response also include read-only `device_identity`,
-`effective_device` and `identifier_policy`. Saved/seed-derived device fields
-are separate from fields parsed from the selected UA; unparseable UA fields
-remain null, and disabled simulation has no effective client device. Identifier
-rules distinguish fixed values, request-derived handling and passthrough;
-request-dependent threads, parent references and window indexes are not
-invented from an empty request. Reads never persist identities or timestamps.
-The page loads full identities automatically, limits detail reads to three,
-rejects obsolete page/policy/mode responses, and retains unsaved mode drafts.
-General account edits preserve the latest stored mode when it is omitted.
-Existing seeds and persisted device identities are retained, and new accounts still
-default to `device`.
+`GET/PUT /admin/settings/codex-fingerprint` requires `enabled`, `user_agent`,
+`client_version`, `version_auto_sync_enabled` on PUT; existing UA/version/sync
+keys remain authoritative and `codex_fingerprint_enabled` falls back to the
+startup flag. GET includes synced/effective versions, default UA and source.
+Writes use existing administrator authentication/audit without extra step-up.
 
-Enabled simulation uses one randomly seed-derived, fixed credential-source device
-with independent real conversations. The final outbound identity uses official
-`codex_cli_rs` normalization for both originator and User-Agent, including the
-per-account device path. Stored device fields, OS/architecture/terminal, effective
-version and conversation identities retain their existing selection. Persisted
-TUI values remain stored; normalization does not regenerate the device.
-Stored `session` / `full` values and API inputs remain
-compatible but have effective mode `device`; the UI offers only `off` and
-fixed-device/multiple-conversation mode. Their stored raw values are not migrated.
-Every enabled mode scopes session/thread/parent/window identities one-to-one by
-credential source and API key, preserving UUIDv7 timestamps and real root/child/fork
-relationships. Explicit custom cache keys remain untouched; default session cache
-keys follow the same mapping. Real turns, timestamps, permission and sandbox
-metadata are retained. Calls without a client conversation get one synthetic UUIDv7
-root per logical request (shared by its attempts), never a permanent account root.
+`GET/PUT /admin/accounts/:id/codex-fingerprint` applies to OpenAI OAuth/setup-token
+accounts, including credential shadows. PUT accepts only `mode`; bulk jobs use
+frozen IDs and only that extra key. Read-only `device_identity`,
+`effective_device` and `identifier_policy` distinguish saved/derived fields from
+UA parsing. Reads never persist identity or timestamps. Details load at most
+three concurrently; obsolete responses are rejected and unsaved drafts retained.
+General edits preserve omitted modes, existing seeds/devices remain, and new
+accounts default to `device`.
 
-The valid embedded body turn metadata is canonical; flat fields and bounded
-HTTP/WS headers are compatibility projections. Malformed core metadata returns a
-request-scoped 400. Unknown metadata, including large JSON numbers, is retained.
-Original field conflicts are recorded when canonical projection resolves them.
-Ordinary/compaction account tests use the same projection and synthetic root
-lifecycle, including credential shadows; wire status distinguishes configured
-policy, actually sent identity and negotiated TLS/ALPN.
+Enabled simulation uses one random seed-derived fixed credential-source device
+and independent real conversations. Final originator/UA uses official
+`codex_cli_rs` normalization without regenerating the device. Stored `session`
+and `full` stay compatible but act as `device`; UI offers off/device. Mapping
+scopes session/thread/parent/window by credential source and API key, preserving
+UUIDv7 time and real root/child/fork relationships. Explicit cache keys remain;
+default cache keys follow the mapping. Real turns, timestamps, permissions and
+sandbox metadata remain. A request without a conversation gets one synthetic
+UUIDv7 root shared across its attempts, never a permanent account root.
 
-The verified client baseline is official Codex `rust-v0.162.1`, commit
-`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`. The transport reference in
-`backend/internal/pkg/codextransport/reference.json` records fixed official-release archive
-digests, binary/capture digests and loopback sample runs for Windows x86_64,
-Linux x86_64 and macOS arm64/x86_64. These captures use an isolated custom CA
-configuration; verification is for that official-client transport variant, not
-an assertion that every native trust-store configuration is identical. TLS
-extensions are permuted as observed. HTTP/2 settings/flow/pseudo-header order,
-HTTP/1 header order/spelling and WebSocket offers are verified against actual
-wire captures. Native reconnect samples did not resume TLS sessions; the current
-profile therefore uses fresh TLS handshakes and does not share session tickets.
+Embedded turn metadata is canonical; flat fields and bounded HTTP/WS headers are
+projections. Malformed core metadata returns request-scoped 400; unknown fields
+and large numbers remain, and resolved conflicts are recorded. Tests/compaction
+use the same projection; wire status separates policy, sent identity and TLS/ALPN.
 
-Strict transport applies to enabled simulation: an unavailable profile or failed
-transport does not fall back to the generic Go client or replay an uncertain POST.
-Existing explicit upstream protocol-error recovery remains separate. Third-party
-plugins that own transmission cannot be used under strict simulation without a
-matching attested profile; their configuration is retained and a clear error is
-returned. API-key/other-provider paths and master-off behavior retain their clients.
-Codex HTTP, WS, refresh and model-list clients isolate their pools by credential
-source, proxy and profile. The Codex-only WebSocket adapter retains upstream
-coder/websocket v1.8.14 and its license, adding actual bounded deflate-window support;
+The verified transport reference is official `rust-v0.162.1`, commit
+`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`.
+`backend/internal/pkg/codextransport/reference.json` owns archive/binary/capture
+hashes and samples for Windows x86_64, Linux x86_64 and macOS arm64/x86_64.
+The sampled isolated custom-CA variant does not prove all native trust stores.
+It records TLS permutation, HTTP/2 order/flow, HTTP/1 headers and WS offers;
+handshakes are fresh without shared session tickets.
+
+Strict simulation never falls back to generic Go transport or replays an
+uncertain POST. Existing explicit protocol recovery remains separate. Plugins
+owning transmission need a matching attested profile or fail clearly while
+retaining configuration. API-key/other-provider/master-off paths keep their
+clients. HTTP/WS/refresh/catalog pools isolate credential source, proxy/profile.
+The Codex WS adapter retains coder/websocket v1.8.14 notices and bounded deflate;
 other services use the original dependency.
 
-Version discovery runs every six hours and directly advances the effective client
-identity. Precedence is a normalized manual version, the discovered stable version,
-then the built-in default (subject to the existing minimum version). Client releases
-are not gated on transport sampling. The transport retains its recorded reference
-version and source; `Binding.client_version` records the actual requested identity
-and participates in pool keys. `Binding.version` and `validated` describe the sampled
-transport reference, not validation of a later client release. Settings GET adds
-`version_source` (`manual`, `synced`, `builtin`); `verified_version` retains the
-reference version and the compatibility `version_pending_validation` is false.
-The four-field settings write payload is unchanged. Existing device seeds and
-persisted hardware identities are retained. The identity page shows the effective
-and discovered versions with their source, with full UA/reference details available
-in disclosures. No new sampling or per-client-release publishing pipeline is required.
+Version discovery runs every six hours: normalized manual version, discovered
+stable, then built-in default, subject to the minimum. New client identities do
+not await new transport samples. `Binding.client_version` records the requested
+identity in pool keys; `Binding.version`/`validated` describe sampled transport.
+Settings `version_source` is manual/synced/builtin; `verified_version` retains
+the reference and compatibility `version_pending_validation` is false. The
+four-field PUT contract, seeds and persisted hardware remain unchanged.
 
-One immutable policy/identity selection is shared by each attempt's headers, body
-and transport. New requests freeze the compression choice too. WS pool compatibility
-includes actual header and body device/session/thread/window identity even for
-`device` / `off`, plus client and policy revision. Changed identity is applied after
-the current turn by requiring a new handshake, never by reusing an old conversation's
-handshake. Account mode edits invalidate only that account's subsequent connections.
+Every attempt shares one frozen identity/header/body/transport policy and
+compression choice. WS reuse also checks actual device/session/thread/window,
+client and policy revision, including off/device modes. Changed identity needs
+a new handshake after the current turn; mode edits invalidate only that
+account's subsequent connections.
 
 ## Independent Pelican tests
 
-`/admin/pelican-tests` opens a paginated gallery of observations from the last
-24 hours with Works and Tasks views. Account name/ID search, model and verdict are
-primary filters; effort, execution and legacy scene remain in More filters. Active
-filters are removable. URL query keys retain the view (`gallery`, `tasks`, `new`),
-selected `task`, `page`, `task_page` and existing gallery filters (`account_id`,
-`model`, `effort`, `scene`, `verdict`, `status`). Four-to-three previews use one
-column below 768px, two from 768px, three from 1280px and four from 1920px.
-The single-page new-task composer shows account selection and model configuration
-side by side on wide screens, with a sticky launch summary. It loads accounts in
-pages of 50, retains cross-page selections and explicit current-page/all-matching
-scopes. Selected account groups are paginated in sets of 20 without changing the
-submitted selection. Per-user session drafts retain configuration on navigation or
-rejected submissions and are cleared only on accepted creation or explicit clear.
-Task cards expose progress and open the task gallery; the comparison tray remains
-at the bottom. Work details group the preview, summary, results and complete raw
-evidence; comparisons collapse detailed evidence by default. Models use locally saved mappings and catalogs;
-searchable dropdowns accept catalog choices only. Backend defaults prefer
-`gpt-6.1-sol` for OpenAI and `claude-opus-5-5` for Anthropic, falling back to the
-first text-capable local choice. Effort defaults to the model default.
-Known unsupported choices and duplicate account/model rows must be corrected or
-removed before submission; an old choice missing from today's catalog must be
-reselected rather than silently replaced. Existing API consumers retain manual
-concrete-model compatibility.
-Bulk configuration preserves incompatible rows. Text capability and generation
-use the same local resolver, including the already integrated Cline/Command Code
-senders. No new provider protocol is introduced.
+`/admin/pelican-tests` has Works/Tasks views for the last 24 hours. Account
+name/ID, model and verdict are primary filters; effort/status/legacy scene are
+secondary. Removable filters, view/task/pages persist in URL. Four-to-three
+previews use 1/2/3/4 columns at widths below 768/768/1280/1920px. The composer
+loads 50 accounts per page, preserves cross-page scopes and paginates selected
+groups by 20; a sticky launch summary and per-user session draft retain rejected
+submissions and clear on accepted creation or explicit reset.
 
-`POST /admin/pelican-tests/tasks` returns 202 and starts a server-owned job.
-Optional `repeat_count` defaults to one; each unique account/model target produces
-that many independent results. A task permits at most 5000 expanded results.
-The composer shows combinations x repeats and preserves one effort per model.
-Each result carries `repeat_index` and `repeat_count` in summaries and details.
-The GET list, snapshot (`/:id`), paginated summaries (`/:id/results`), full single
-result (`/:id/results/:result_id`), and SSE (`/:id/events`) never start generation.
-Only `POST /:id/cancel` cancels a background job. Disconnecting observers or
-closing the page leaves it running. Repeated client UUIDs with identical normalized
-parameters return the existing snapshot; conflicting parameters fail. Restart and
-shutdown preserve completed works, mark unfinished work interrupted, and never
-replay uncertain model calls. The existing task/result tables remain in place.
+Models use saved mappings/catalogs, including Cline/Command Code; OpenAI defaults
+to `gpt-6.1-sol`, Anthropic to `claude-opus-5-5`, otherwise first text-capable
+local choice. Effort uses the model default. Unsupported/duplicate rows require
+correction, missing old choices require reselection, and bulk edits preserve
+incompatible rows. Existing APIs retain concrete-model compatibility.
 
-The original `/tests` SSE endpoint retains request-bound cancellation and its
-request/response contract. Both APIs use the same runner, history and execution
-capacity. Summary SQL does not load raw responses, answers or HTML; details retain
-complete administrator evidence. The page supports 2–4 same/cross-task comparisons,
-filters, enlargement, downloads and parameter copying. Whole-task, single-result
-and failed-item retests directly create a new task with original model/effort
-parameters and budget. Cross-task selected retries create one task per source,
-preserving each source budget. Retests copy each selected result once, preserving
-its sample index and count, using the original fixed prompt; they never multiply
-by the task repeat count again. Parameter copying merges repeated model rows
-and restores the saved repeat count. New submissions retain UUID replay protection;
-history, browsing, reconnecting and comparison are read-only. Background task
-snapshots update gallery metadata quietly. Mounted previews retain their document
-for the same result when read capabilities rotate, preserving animation playback;
-switching results or reopening a preview uses the current capability.
-New manual tasks select Pelican and/or candy (the UI defaults to both). Every
-generation, including repeats and retests, sends the original prompt verbatim:
+`POST /admin/pelican-tests/tasks` returns 202 and owns a background job.
+`repeat_count` defaults to one, expands each unique account/model, and caps a
+task at 5000 results. `repeat_index`/`repeat_count` remain in details/summaries.
+List/snapshot/results/detail/SSE are read-only. Only explicit cancel stops a
+background job; closing observers does not. Identical UUID/parameters replay the
+snapshot, conflicts fail, and restart marks unfinished work interrupted without
+replaying uncertain model calls. Original `/tests` SSE keeps request cancellation.
+
+Whole-task/result/failed-only retests preserve model/effort/budget, copying each
+selected sample once; cross-task selections create one new task per source.
+Parameter copying merges repeated model rows and restores the saved count.
+New tasks select Pelican and/or candy (UI defaults both). Every generation and
+retest sends the original prompt verbatim:
 `创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试`.
-No scene, style, anatomy, color, verification code or format constraints are added.
-Deprecated scene inputs remain accepted for replay compatibility but do not affect
-new generation. Historical scene/nonce/prompt/verdict evidence is never rewritten.
-New results use opaque HTML previews, including minimally wrapped bare SVG, and
-retain inline scripts and original source. Saved works remain previewable after
-candy or review failure. Existing standalone SVG works keep image previews.
-The actual sending path, credentials,
-identity, model mapping, proxy, TLS and protocol remain owned by each account. No API Key, group policy, model score or fallback account
-is manufactured for a test.
+No scene/nonce/style/format constraint is added. Deprecated scene inputs only
+support replay; historical prompts, scenes, nonces and verdicts are immutable.
+Account-owned credentials, identity, proxy, mappings and protocol remain;
+no fallback account, group policy or score is manufactured.
 
-Candy (90 seconds), HTML/SVG generation (the saved generation budget, with the existing 64000-token
-output budget or a smaller explicitly selected limit), rendering
-(30 seconds after renderer admission), and same-model visual review (180 seconds)
-run as distinct stages. Candy failure does not prevent generation. Review uses
-four 960x640 frames at 0/0.23/0.51/0.79 of the sampled CSS/SMIL animation cycle.
-Script-driven works use the same fractions of a three-second real-time observation
-window and retain actual sampling times without rewriting scripts. Review checks
-pelican/bicycle/riding/motion, and keeps true/false/null judgments. Unsupported
-image input is unreviewed. Only all selected checks passing gives a passed verdict;
-execution status is independent. Stage evidence retains raw bytes as Base64 in
-detail JSON. Generation checks extractable HTML/SVG rather than animation
-declarations or a nonce. A single on-demand Chromium process renders HTML with
-inline scripts; all network/local-file requests are blocked. Nested document
-creation and page navigation terminate rendering with a stage error.
-The browser is released after each render.
+Candy (90s), generation (saved budget, existing 64000 output-token ceiling or an
+explicit smaller limit), rendering (30s after admission) and same-model visual
+review (180s) are separate. Candy failure does not prevent generation. Review
+uses four 960x640 frames at 0/0.23/0.51/0.79 of a CSS/SMIL cycle or a three-second
+script window, retaining sample times. Pelican/bicycle/riding/motion verdicts
+are true/false/null; unsupported image input is unreviewed. All selected checks
+must pass; execution status is separate. Detail evidence preserves raw bytes as
+Base64 and complete administrator output. Generation requires extractable
+HTML/SVG, not a nonce or animation declaration.
 
-All batches share ten model request execution slots. Different models on one
-account may run concurrently, subject to the unchanged business account capacity.
-A process-wide account/model turn serializes the entire selected test flow,
-including repeats in sample order and matching models in other tasks. Waiting
-for a model turn, account capacity, or rendering holds no outbound execution slot.
-If account admission fails, its global slot is released before retrying admission. Generation starts after preparation and admission; its default
-budget is 600 seconds, configurable from 60 to 1800 seconds. Queue, preparation
-and generation durations are recorded separately. Observed business account slots
-renew every 30 seconds; lost capacity cancels the operation. Existing credential
-refresh remains available, while account health, quota, scheduling, affinity,
-usage and billing writes are suppressed, including background callbacks.
+One on-demand Chromium renderer permits inline scripts but blocks network and
+local-file requests; nested documents/navigation fail rendering. It is released
+after each render. All tasks share ten model-request slots. Different models
+on an account may run concurrently within business capacity; each account/model
+serializes complete test flows and ordered repeats across tasks. Waiting for
+turns/account/rendering holds no outbound slot, and failed admission releases it.
+Generation budget defaults to 600s (60–1800); queue/preparation/generation times
+are distinct. Observed leases renew every 30s and lost capacity cancels work.
+Credential refresh remains; health/quota/scheduling/affinity/usage/billing writes,
+including callbacks, are suppressed.
 
-Submission IDs are timestamped UUIDv7 values. Expired/future IDs are rejected and replay
-cannot dispatch again. Migration 275 owns the task/result tables; migration 276
-adds budgets, execution phases and actual invocation metadata in place, preserving
-old records and raw BYTEA output. Migration 281 adds sample indexes, defaults
-existing rows to one, and replaces the account/model unique key with a sample key.
-Single-run hashes remain compatible with existing submissions; omitted and
-explicit one-repeat requests are equivalent. Existing records retain their 90-second budget.
-Records expire 24 hours after task creation, immediately disappear from reads,
-and are removed by scoped minute cleanup. Administrators can explicitly delete a
-finished task or one of its results through `DELETE /tasks/:id` and
-`DELETE /tasks/:id/results/:result_id`. Running parents return 409. Result deletes
-serialize on the parent and update remaining counts; deleting the last result
-also removes the empty task. Migration 279 adds `deleted_at` to the task table:
-deleted tasks keep their original submission identity/hash and expiry, but purge
-child output and task errors. Reads and submission replays return 410; old preview
-capabilities can no longer resolve removed results. Repeated deletes are
-idempotent. Output/errors of retained results preserve original bytes;
-binary upstream envelopes use lossless Base64. Truncated or incomplete output is
-recorded without another generation or automatic repair.
+Submission IDs are timestamped UUIDv7; expired/future IDs fail and cannot
+dispatch again. Migrations 275/276/280/281 preserve tables and raw bytes while
+adding budgets, phases, evidence/config and sample indexes. Legacy rows retain
+their 90s budget; missing/one repeat hashes stay compatible. Records expire
+24h after creation and are removed by scoped minute cleanup. Finished tasks or
+results can be explicitly deleted; running parents return 409. Deletes serialize
+on the parent and remove it when the last result disappears. Migration 279 keeps
+deleted UUID/hash/expiry but purges child output/errors; reads/replays return 410
+and old preview capabilities fail. Repeated deletes are idempotent; retained
+raw errors/output are never rewritten or automatically regenerated.
 
-`GET /admin/pelican-tests/results` reads only gallery summaries.
-`POST /admin/pelican-tests/tasks/:id/retest` accepts a new client UUID, optional
-result IDs or failed-only selection, preserves source configuration/scenes and
-budget, and creates fresh verification codes. Replays compare the retest source
-and selection before consulting source records. Migration 280 adds task config,
-small evaluation metadata and byte-backed evidence/SVG/review image in place.
-Old records remain unscored and are never automatically re-executed.
-
-New SVG previews use `scene.svg` image capabilities and a no-script CSP.
-Gallery and preview SQL do not read original answers, upstream envelopes or review
-images. An already generated SVG remains viewable after candy/review failure.
-Legacy HTML result previews use short random capability URLs under
-`/pelican-tests/preview/` only,
-expire within 30 minutes and the task's remaining lifetime, and use an opaque
-script-enabled sandbox and their own
-response CSP. Inline animation and external scripts/styles/fonts/images are
-allowed. Preview documents receive no administrator token or UI bridge.
-Adaptation sources and retained notices are in
-[third-party notices](../THIRD_PARTY_NOTICES.md).
+`GET /admin/pelican-tests/results` reads gallery summaries without raw answers,
+envelopes or images. Retest accepts a new UUID and optional result/failed-only
+selection, checking replay source/selection before reading old records. Saved
+works remain viewable after candy/review failure. New HTML and minimally wrapped
+SVG use opaque script-enabled capability previews under `/pelican-tests/preview/`,
+expiring within 30 minutes and task lifetime. Existing standalone SVG keeps
+`scene.svg` and no-script CSP. Browser previews permit inline animation and
+external assets under their own CSP but receive no admin token or UI bridge;
+server review rendering retains the stricter network block above. Mounted
+previews do not reload when capabilities rotate; reopening uses the new URL.
+Details, downloads and 2–4 cross-task comparisons retain full evidence. Sources
+and licenses remain in [third-party notices](../THIRD_PARTY_NOTICES.md).
 
 ## Retired gateway borrowing
 
@@ -448,9 +342,7 @@ and gradient resolves through a CSS variable whose fallback is the upstream valu
 colours), `frontend/src/style.css` (upstream recipes plus a `flat-theme` block
 that restates them for the console) and the shared components and layout. Text
 uses the OS UI font stack of `frontend/src/styles/theme.css`, as upstream does; no
-web fonts are shipped or loaded. Page files keep upstream class strings; after
-upstream merges, re-run the ops-repo de-sweep
-(`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling pages.
+web fonts are shipped or loaded. Page files keep upstream class strings; upstream integrations retain this central styling boundary.
 
 ## Login protection
 

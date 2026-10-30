@@ -1,262 +1,169 @@
 # HTExplicit Sub2API Downstream
 
 This fork maintains the `codexrip` patch set over official Sub2API releases.
+Read [AGENTS.md](AGENTS.md) on every task. Keep current contracts here, detailed
+native contracts in [native domains](.downstream/native-domains.md), and historical
+integration decisions in the versioned reviews. Operational production records
+belong to the operator workspace; source admission or a Release alone does not
+prove deployment.
 
 ## Source baseline
 
-- Integrated official baseline: the release recorded in `.downstream/upstream-base`.
-- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.19.md).
-- The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
+- The integrated official release is recorded in [.downstream/upstream-base](.downstream/upstream-base).
+- Current integration decisions are in the [v0.2.19 review](.downstream/upstream-review-v0.2.19.md).
+- The risk report and historical reviews retain their original paths and input records.
 
 ## Settings and account operations
 
-The Codex runtime and console theme settings interfaces, the conditions on
-which migrations 264 and 272 stop startup, the stored data the migrations
-removed and the rollback boundary are described in
-[settings, stored data and rollback](.downstream/native-domains.md).
+[Native domains](.downstream/native-domains.md#settings) owns settings interfaces,
+Codex identity, Pelican, login protection, stored data and rollback boundaries.
+[Models and prompts](.downstream/gpt6-models-and-prompts.md) owns system-prompt
+injection and account connection-test details.
 
-Account bulk operations remain HTTP 202 jobs with progress, cancellation and
-failed-item retry. Both edit entries use the frozen selected IDs whenever there
-is a selection; without a selection, filter-based updates retain their existing
-semantics. A late select-all response cannot replace a newer manual selection.
-Invalid nonempty ID lists cannot fall back to all filter results.
+Account bulk operations are HTTP 202 jobs with progress, cancellation and
+failed-item retry. Both edit entries freeze selected IDs when a selection exists;
+without one, existing filter semantics apply. Late select-all responses cannot
+replace newer selections; invalid nonempty IDs never fall back to all results.
+An item whose saved target is missing fails with `target_missing`. Folder/tag
+filters, explicit field clearing and preservation of untouched fields remain.
 
-Folder/tag filters, explicit field clearing and untouched-field preservation
-remain supported. A bulk-update item without a saved target account fails with
-`target_missing` rather than selecting a fresh set of accounts.
-
-Platform and status filters follow the official single-select controls and
-`account-filter-values` localStorage object (`platform`, `status`). The page has
-one filter state for both controls and requests. Legacy `platforms` / `statuses`
-URL conditions are ignored; the backend's existing plural-parameter API remains.
-Other filters retain their current URL or session storage. The official
-five-minute upstream billing-rate timer retains the official `immediate: false`
-option and is not started by the page.
-
-Vertex service accounts use the official quota limits, progress and reset
-behavior. The Gemini/Vertex usage region uses the official template rather than
-the former downstream common quota bars and loading-with-old-values condition.
-Upstream model synchronization and system-prompt binding remain independent.
-
-The Codex runtime setting is one switch, request body compression for the
-streaming `/responses` turns of OpenAI OAuth accounts; its contract is in
-[settings, stored data and rollback](.downstream/native-domains.md).
+Platform/status controls use official single selection and the
+`account-filter-values` localStorage object. Legacy plural URL conditions are
+ignored; the backend plural-parameter API and other URL/session filters remain.
+Filters stay inline in both theme modes. The official five-minute billing-rate
+timer retains `immediate: false` and is not started by the account page.
+Vertex/Gemini quota layout follows official behavior; model sync and prompt
+bindings remain independent.
 
 ## Official behavior and downstream contracts
 
-OpenCode Zen/GO, site billing states, WebSocket execution scope and pooling,
-Responses Lite namespaces, native Codex Images, model metadata/provider filters,
-batch administration and Ollama asynchronous quota reset follow official behavior.
+OpenCode Zen/GO, billing states, WebSocket execution/pooling, Responses Lite,
+Codex Images, provider metadata filters, batch administration and Ollama quota
+reset follow the integrated official release.
 
-Cindy accounts are ordinary OpenAI API-key accounts (`https://api.laxarouter.ai`):
-their models come from model sync and the account model mapping, and their prices
-from the ordinary `Cindy Catalog` channel. On any OpenAI-compatible account, a
-`budget_exceeded` HTTP 429 or terminal stream event puts the account into the error
-state with the upstream message; the structured `model_not_supported` 400 cools
-only that account/model. The account option `openai_prompt_cache_key_mode`
-(`passthrough` by default, or `sha256_64`) replaces a prompt cache key longer than
-64 characters with its SHA-256 hex. Continuation, refusal recovery and
-destination-specific reasoning summaries remain supported. Account test model
-choices persist; API-key reveal requires the configured password. The account test
-dialog keeps list position.
+Cindy uses ordinary OpenAI API-key accounts at `https://api.laxarouter.ai`, model
+mappings and the ordinary `Cindy Catalog` channel. Any OpenAI-compatible account
+receiving `budget_exceeded` as HTTP 429 or a terminal stream event enters error
+with the upstream message; structured `model_not_supported` 400 cools only that
+account/model. `openai_prompt_cache_key_mode` defaults to `passthrough`;
+`sha256_64` hashes keys longer than 64 characters. Continuation,
+refusal recovery and destination-specific reasoning summaries remain.
 
-Quota storage, aggregation, cleanup and resets follow official semantics. Missing
-quota rows represent unlimited access; rows with three NULL limits are purged by
-the official migration.
-The three `238_*` migrations retain separate filenames and checksums.
-
-Account creation, detail reads and schedulable changes use the official
-`accountTransactionScope`. Inside a transaction, Create/SetSchedulable outbox
-write failures follow official logging-and-continue behavior; the caller owns
-the surrounding commit result. The downstream immediate-return exception is
-retired.
-
-Scheduler snapshots use the official decoded in-process memo, revision
-invalidation, original key names and batch Pipeline writes. The downstream v2
-namespace, legacy-key cleanup and extra batch transactions are retired. Account
-metadata still carries the fields required by the independent downstream
-features. Startup and periodic snapshot rebuilds follow official behavior;
-the update adds no cache migration or Redis clearing.
+Quota aggregation, cleanup and reset use official semantics: absent rows mean
+unlimited access; the official migration purges rows with three NULL limits.
+The three `238_*` files keep distinct names/checksums. Account creation, reads
+and schedulable changes use official `accountTransactionScope`; transactional
+Create/SetSchedulable outbox failures log and continue, with commit owned by
+the caller. Scheduler snapshots use official in-process memoization, revision
+invalidation, original keys and batch Pipeline writes. Independent account
+metadata remains; no custom namespace cleanup or Redis clearing is added.
 
 ## Model discovery, capacity and client catalogs
 
-Model capacity, upstream metadata, generated Codex descriptors and OpenCode
-limits follow official v0.2.19. The downstream evidence resolver, custom window
-overrides, source-priority and source-identity policy, group minimum projection,
-capacity interfaces and automatic refresh service are retired. Official defaults
-and metadata enrichment now apply; the former "unknown stays unknown" and
-"locally generated descriptors have no capacity defaults" rules no longer apply.
-Historical SQL and stored account extra values are retained without a cleanup
-migration. Native upstream metadata synchronization, official models.dev
-supplementation and Grok catalog observation remain active.
+Capacity defaults, metadata enrichment, model templates, manifests, ETags and
+client exports follow official v0.2.19. The downstream evidence resolver,
+overrides/source identity, group projection, capacity interfaces and automatic
+refresh are retired. Historical SQL, stored extras and diagnostic snapshots
+remain. Native metadata sync, models.dev enrichment and Grok diagnostics remain.
+Cindy's separate registry request/cache/write path is removed.
 
-Cindy uses the ordinary OpenAI model-sync path. The separate Cindy model-access
-registry request, enrichment cache and identity/revision-controlled write path
-are removed. Its account model mapping and ordinary channel pricing remain.
+The account test picker resolves raw upstream IDs through saved mappings and
+retains `view=plan`, actual forwarded effort and saved test choices. Manual sync
+opens a confirmation picker; cancel changes nothing, and account Save persists
+the confirmed models. A Grok configured fallback warns without opening the
+picker. Source/account changes invalidate stale requests. API-key reveal remains
+password-gated with no-store responses; closing tests preserves list position.
 
-The account test picker still reads raw upstream IDs and applies the saved
-mapping itself. Its `view=plan`, actual forwarded-effort metadata and saved test
-model choices remain. Manual model synchronization opens a confirmation picker;
-only confirmation applies models and synced candidates to the form, and the
-account dialog's Save still persists it. Cancel discards the result without
-changing the whitelist. A Grok configured fallback warns without opening the
-picker; saved-account sync completion refreshes its diagnostics. API-key reveal
-still requires the configured password and returns the existing no-store wrapper;
-the account test dialog keeps list position.
-
-Codex manifest fetching, synthesis, metadata completion, cache behavior and
-account selection follow official v0.2.19. The manifest-specific downstream
-scheduling/failover retry adapter is removed. Credential-source fixed devices
-and strict transport remain in the actual fetch path. Native manifest metadata,
-model discovery and pinned group catalogs remain available.
-
-The Use Key catalog panel, fetch and download follow official behavior. Remote
-configuration uses `model_catalog_url = "{root}/v1/models"`; download uses
-`{root}/v1/models?client_version=0.158.0`. File mode uses the downloaded
-`model_catalog_json`, and a response over 1 MiB switches remote configuration to
-that mode. OpenCode limits use the official client export and do not trigger a
-Codex catalog fetch. No second capacity projection or registry is added.
+Codex manifests use official selection, retries and caching. Fixed
+credential-source devices and strict transport apply at the actual fetch;
+strict failures do not select another transport. Use Key remote configuration
+uses `{root}/v1/models`; downloads append `?client_version=0.158.0`. File mode uses
+`model_catalog_json`, including the official over-1-MiB fallback. OpenCode exports
+use official limits without an additional Codex fetch or capacity projection.
 
 ## Claude streaming failures and signature recovery
 
-Ordinary Claude Messages and Anthropic compatibility streams follow official
-v0.2.18 SSE error handling: an `overloaded_error` before output is recorded as
-529; other stream error events use 403. The downstream type-based SSE classifier,
-pre-message buffering and same-account SSE thinking repair are retired. Official
-HTTP 400 thinking-signature repair and its existing tool fallback remain.
-
-Historical Ops diagnostics, including the optional actual HTTP status and SSE
-signature-recovery fields, remain readable. The update does not rewrite records
-or add a new recovery path. The official compatibility reader collects observed
-usage after client disconnect and reports upstream stream interruption according
-to the selected protocol.
+Claude Messages and Anthropic compatibility streams use official v0.2.18 SSE
+handling: `overloaded_error` before output records 529; other stream errors use
+403. The downstream type classifier, pre-message buffering and same-account SSE
+thinking repair are retired. Official HTTP 400 signature repair and its tool
+fallback remain. Historical actual-status/signature diagnostics remain readable
+without rewriting records. Official compatibility readers retain observed usage
+after disconnect and report interruption according to the selected protocol.
 
 ## OpenAI forwarding and model identity
 
-Explicit `reasoning.effort=none` is preserved on OpenAI-wire accounts, including
-compatible hosts, subject to the selected model's validation. Downstream effort
-accounting preserves the requested canonical effort rather than substituting the
-provider-normalized value. Explicit cross-protocol normalization retains `max`,
-except that legacy GPT-5.4/5.5 models map it to `xhigh`. GPT-6 Sol's Codex catalog
-keeps the six-level workflow including `ultra`; Luna keeps five levels.
+Explicit `reasoning.effort=none` is retained on OpenAI-wire accounts subject to
+model validation. Requested effort accounting keeps the canonical client value;
+cross-protocol `max` remains `max` except legacy GPT-5.4/5.5 mapping to `xhigh`.
+Sol keeps six effort levels including `ultra`, Luna five. Model normalization and
+pricing prefixes follow official v0.2.19, including Terra and dated names;
+the GPT-5.6 named-family match still precedes its numeric-family match.
 
-Codex model-name normalization and pricing-prefix selection follow official
-v0.2.19, including GPT-6.1 Terra. The former downstream dated-name passthrough
-and unknown GPT-6 price early-return exceptions are retired. The independent
-GPT-5.6 named-family match remains ahead of its numeric-family match.
+Responses requires an authoritative terminal event; Chat requires a supported
+`finish_reason`. `[DONE]` or EOF alone cannot make an incomplete stream succeed.
+Raw Chat records the resolved target separately from response-declared models
+and conflicts. WebSocket composite scheduling uses the resolved target. Window
+rollover removes the previous response ID without inventing an anchor; owner,
+identity and verified-replay checks remain.
 
-Responses streams require an authoritative terminal event. Chat Completions
-streams require a supported `finish_reason`; `[DONE]` and transport EOF alone
-cannot turn an incomplete stream into success. Raw Chat Completions does not
-write Ops `upstream_model` before dispatch: the forwarding result keeps the
-resolved target and separately records the model declared by the response and
-any conflicting response declarations. WebSocket composite routing uses the
-resolved forward target for scheduling. A Codex WebSocket window rollover removes
-the previous response ID without inferring an anchor from the old window; owner,
-identity and verified-replay checks remain in force.
-
-Streaming Responses-to-Chat tool handling and its callers follow official
-v0.2.18. The downstream tool-parameter/call-ID/final-snapshot consistency guard
-and its dedicated error frames are retired. Buffered compatibility reads,
-terminal error handling, failed-response reconstruction and Grok model auditing
-follow official v0.2.19; raw terminal-payload retention and the downstream bare
-error/pending-signature branches are removed. Independent buffered response
-reconstruction still supplements completed arguments by the actual call ID.
-The special downstream classification of HTTP 400 `upstream_error` wrappers is
-also retired; error classification, account effects and capacity Retry-After
-waiting follow official behavior.
+Streaming Responses-to-Chat tools use official behavior. Buffered compatibility
+reading, errors, reconstruction and Grok auditing follow official v0.2.19;
+the downstream consistency guard, dedicated error frames, raw terminal retention
+and pending-signature branches are retired. Independent buffered reconstruction
+still supplements completed arguments by actual call ID. Special HTTP 400
+`upstream_error` classification/failover is retired; official account effects,
+Retry-After waiting and disconnected-stream billing apply.
 
 ## Release and production deployment
 
-- `main` is admitted through the normal required PR checks.
-- `.downstream/upstream-base` records the integrated official release.
-- New releases use immutable `vX.Y.Z-codexrip.N` tags on `main`.
-- Images use the tag without `v`: `ghcr.io/htexplicit/sub2api:X.Y.Z-codexrip.N`.
-- Downstream Release authenticates to GHCR, verifies source/build materials and
-  publishes the image digest and provenance. It reuses PR validation.
-- Production Deploy resolves the fixed digest through the existing restricted SSH
-  updater. Its only inputs are `release_tag` and `confirmation=DEPLOY`; the host
-  retains runtime settings and resources, naturally drains requests, and rebuilds
-  only Sub2API. An older tag uses the same form and requires compatible migrations.
-- Ordinary updates do not run business backups, canaries, long observation or
-  automatic rollback. A failure preserves the runtime state for diagnosis.
-- SSH identity checks, fixed image validation, mutual exclusion and command error
-  reporting remain required. Other services, networking, accounts, subscriptions
-  and manual routing stay within their existing configuration.
-- Container/public health confirms availability, not actual model functionality.
+- Normal required PR checks admit `main`; verification follows [AGENTS.md](AGENTS.md).
+- Immutable `vX.Y.Z-codexrip.N` tags on admitted `main` build
+  `ghcr.io/htexplicit/sub2api:X.Y.Z-codexrip.N` with digest and provenance.
+- Downstream Release verifies source/build materials and reuses PR validation.
+  Production Deploy takes only `release_tag` and `confirmation=DEPLOY`, resolves
+  the fixed digest and uses the restricted SSH updater.
+- Deployment retains configuration/resources, naturally drains and rebuilds only
+  Sub2API. Other services, networking, accounts, subscriptions and routing retain
+  their existing boundaries. Older tags require compatible migrations; see
+  [rollback limits](.downstream/native-domains.md#release-and-rollback-boundary).
+- Ordinary updates add no business backup, canary, long observation or automatic
+  rollback. Failures preserve runtime state. SSH identity, fixed-image validation,
+  mutual exclusion and command error reporting remain required.
+- Health confirms availability, not model functionality. The operator production
+  pointer and completed delivery evidence own the actual running version.
 
 ## OpenAI encrypted-content recovery
 
-HTTP and WebSocket encrypted-content recovery follows official v0.2.15,
-including the official session lineage memory. The former downstream targeted
-stripping, persistent rejection memory, SSE repair, missing-item-id repair and
-special account failovers are retired. The global recovery page and its
-`GET/PUT /api/v1/admin/reasoning-recovery` interface are removed. Stored settings,
-historical SQL and diagnostic records remain intact; ordinary Claude thinking
-signature recovery for HTTP 400 remains independent and available.
+HTTP/WS recovery follows official v0.2.15, including official lineage memory.
+Downstream targeted stripping, persistent rejection memory, SSE/missing-ID repair
+and special failovers are retired. The global page and
+`GET/PUT /api/v1/admin/reasoning-recovery` are removed; stored settings,
+historical SQL and diagnostic ledgers remain. Claude HTTP 400 signature repair
+and the independent `previous_response_not_found` terminal guard remain.
 
-Cline and Command Code share the existing system-prompt insertion points.
-Connection-test reasoning options require declared model support and a wire
-path that retains the chosen effort; unsupported and `ultra` options remain
-unavailable. The inline account filters retain tags, proxy, plan and count
-controls in both console-theme modes; platform/status selection is described
-under account operations above.
-
-Official migration 242 removes platform CHECK constraints. Immutable downstream
-251, 260 and 265 restore the quota constraint during a fresh installation, so
-277 repeats the final removal after them. No historical checksum or existing
-quota/route row is changed by 242 or 277.
+Cline/Command Code use existing prompt insertion points. Connection-test effort
+requires declared model support and a path that retains it; unsupported options
+and `ultra` remain unavailable. Official migration 242 removes platform CHECKs;
+277 removes the two restored by immutable downstream 251/260/265 on new installs.
+Existing quota/route rows and historical SQL names/checksums remain intact.
 
 ## Upstream updates
 
-Scheduled discovery may identify newer official releases. It cannot deploy
-production. Each integration records its selected official commit, conflicts and
-retained downstream contracts before a new immutable release is published.
+[Release-channel rules](.downstream/README.md) own discovery, risk labels,
+promotion and production approval. Discovery never deploys by itself. Each
+integration records its official commit and retained contracts. The current
+risk report compares v0.2.18 to v0.2.19 against downstream
+`6ac28b7ecf2e247b1dbe5985b6ad115016aa514f`; its gate recomputes those exact inputs.
+The [current review](.downstream/upstream-review-v0.2.19.md) records all 28 initial
+conflicts and resolutions. Promotion requires completed review, no unresolved
+conflicts and `upstream-reviewed` where review is required.
 
-`.downstream/upstream-risk.json` records the v0.2.18-to-v0.2.19 integration against
-downstream commit `6ac28b7ecf2e247b1dbe5985b6ad115016aa514f`. The risk gate
-recomputes those exact inputs. The 28 initial conflict files and operator-selected
-resolutions are recorded in the [v0.2.19 review](.downstream/upstream-review-v0.2.19.md).
-The candidate requires a completed review, no unresolved conflicts and the
-`upstream-reviewed` label before promotion.
-
-Scoped administrator API keys, per-image billing for OpenAI/Composite groups,
-GPT-6.1 Terra, Gemini defaults/retry configuration and Grok catalog diagnostics
-follow v0.2.19. Image-count billing defaults off. Official migrations
-`247_scoped_admin_api_keys.sql` and `248_group_image_count_billing.sql` retain
-complete filenames and checksums alongside historical downstream migrations.
-DeepSeek pricing, its time-based policy and cache-hit usage accounting follow
-the official implementation; the downstream pricing registry, forced catalog
-rewrite and common time-pricing hooks are retired. Generic pricing override-file
-support and independent default reasoning effort remain.
-
-Vertex quota limits, disconnected-stream billing, shared snapshot reuse,
-Cloudflare 1010 handling, Gemini tool-schema fixes, DeepSeek image normalization
-and public-only image-storage downloads follow v0.2.18. Official migration
-`246_enable_gemini_image_generation_groups.sql` enables image generation on
-existing Gemini/Antigravity groups. Composite groups retain their stored switch;
-Gemini image requests are rejected when that switch is off. The migration keeps
-its original filename and checksum alongside `246_plugin_extension_state.sql`.
-Go follows official 1.27.3. Frontend overrides follow official v0.2.18, including
-DOMPurify 3.4.17 and follow-redirects 1.16.1; redundant nanoid/Vue constraints are
-removed, while the independent xlsx 0.20.3 author-distribution dependency remains.
-
-Gemini 4 Argon, thinking summaries, Vertex error handling, payment fixes and
-workspace-aware Codex imports follow v0.2.17. GPT-5.5 retirement applies to
-ChatGPT subscription upstream targets; API keys and explicit replacement mappings
-remain supported. Account filters remain inline in both console-theme modes.
-`gateway.min_output_tokens` defaults to
-128, with a minimum of 16. Antigravity model metadata follows the official
-synchronization and descriptor behavior.
-
-Gemini explicit caches follow the official account/key binding, storage billing,
-mutation lease and recovery rules. Vertex API-key authentication and service-account
-model discovery, account/model temporary-unschedulable scopes and group display
-translations follow v0.2.16. Existing unconfigured accounts and rules retain their
-stored behavior. Official migrations 242 through 245 keep their original filenames
-and coexist with downstream migrations of the same numeric prefixes.
-
-Haiku 5.5 uses adaptive thinking and medium default effort. Its limits and local
-Codex descriptor defaults follow the official model catalog.
-Sol's subscription model-card long-context exemption follows the actual credential
-and upstream model; API-key and custom-interval pricing keep their own policies.
+Official v0.2.19 owns scoped administrator keys, image-count billing (default
+off), Terra, Gemini/Grok fixes and DeepSeek Pro/Flash/time-based pricing and
+cache-hit accounting. The downstream price registry is retired; generic override
+files and independent DeepSeek default reasoning remain. Earlier integrations'
+Gemini/Vertex, quota, payment, scheduling and dependency decisions are recorded
+in their versioned reviews. Immutable official and downstream migration files
+with the same numeric prefix coexist under their complete filenames/checksums.
+Current build versions come from manifests and workflows, not this handbook.
