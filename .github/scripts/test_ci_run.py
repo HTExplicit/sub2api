@@ -48,6 +48,19 @@ class SelectedExecutionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "link_to_removed_document"):
                     ci_run.static_docs({"deleted_static_files": ["old.md"]})
 
+    def test_document_titles_ignore_bash_comments_and_match_fence_types(self):
+        document = "# Development guide\n\n```bash\n# Build backend\nmake build-backend\n```\n\n~~~sh\n# Build frontend\n~~~\n"
+        self.assertEqual((1, True), ci_run.markdown_structure(document))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "DEV_GUIDE.md").write_text(document, encoding="utf-8", newline="\n")
+            with patch.object(ci_run, "ROOT", root):
+                ci_run.static_docs({"static_files": ["DEV_GUIDE.md"]})
+        self.assertEqual((1, True), ci_run.markdown_structure("# Guide\n  ````sh\n```\n# comment\n  ````` \n"))
+        for document in ("# Guide\n```sh\n~~~\n", "# Guide\n~~~~\n~~~\n", "# Guide\n```sh\n``` trailing\n"):
+            with self.subTest(document=document):
+                self.assertEqual((1, False), ci_run.markdown_structure(document))
+
     def test_race_covers_duplicate_normal_function_once(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

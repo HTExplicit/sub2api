@@ -228,6 +228,24 @@ def resolve_go_checks(plan: dict) -> None:
     plan["go_checks"] = checks
 
 
+def markdown_structure(text: str) -> tuple[int, bool]:
+    """Count document titles outside correctly matched Markdown code fences."""
+    headings = 0
+    fence = ""
+    for line in text.splitlines():
+        if fence:
+            if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*", line):
+                fence = ""
+            continue
+        opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if opening and (opening[1][0] != "`" or "`" not in opening[2]):
+            fence = opening[1]
+            continue
+        if re.match(r"^ {0,3}#(?:[ \t]+|$)", line):
+            headings += 1
+    return headings, not fence
+
+
 def static_docs(plan: dict) -> None:
     errors = []
     for relative in plan.get("static_files", []):
@@ -238,7 +256,8 @@ def static_docs(plan: dict) -> None:
             errors.append(relative + ":format")
         if path.suffix != ".md":
             continue
-        if len(re.findall(r"(?m)^# ", text)) != 1 or len(re.findall(r"(?m)^```", text)) % 2:
+        headings, closed_fences = markdown_structure(text)
+        if headings != 1 or not closed_fences:
             errors.append(relative + ":headings_or_fences")
         for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", text):
             target = target.strip("<>")
