@@ -15,13 +15,12 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: upstream-risk-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: upstream-risk-${{ inputs.pr_number || github.event.pull_request.number }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   classify:
     name: Upstream risk gate
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.pull_request.head.ref, 'sync/upstream-')
     runs-on: ubuntu-latest
     steps:
       - name: Resolve immutable candidate metadata
@@ -30,16 +29,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
+          if [[ "$EVENT_NAME" != workflow_dispatch && "$HEAD_BRANCH" != sync/upstream-* ]]; then
+            echo 'candidate=false' >> "$GITHUB_OUTPUT"
+            echo 'not_applicable: this PR is not an upstream candidate; no risk tests executed.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
           [[ "$(jq -r .head.sha <<<"$pr")" == "$EXPECTED_SHA" ]]
+          if [[ "$(jq -r .head.ref <<<"$pr")" != sync/upstream-* ]]; then
+            echo 'candidate=false' >> "$GITHUB_OUTPUT"
+            echo 'not_applicable: this PR is not an upstream candidate; no risk tests executed.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           [[ "$(jq -r .head.repo.full_name <<<"$pr")" == "$GITHUB_REPOSITORY" ]]
+          echo 'candidate=true' >> "$GITHUB_OUTPUT"
           echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
           echo "repository=$(jq -r .head.repo.full_name <<<"$pr")" >> "$GITHUB_OUTPUT"
           echo "labels=$(jq -c '[.labels[].name]' <<<"$pr")" >> "$GITHUB_OUTPUT"
       - name: Check out trusted gate implementation
+        if: steps.pr.outputs.candidate == 'true'
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
@@ -47,6 +60,7 @@ jobs:
           path: trusted
 
       - name: Check out candidate as data only
+        if: steps.pr.outputs.candidate == 'true'
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: ${{ steps.pr.outputs.repository }}
@@ -55,6 +69,7 @@ jobs:
           path: candidate
 
       - name: Recompute and enforce risk decision
+        if: steps.pr.outputs.candidate == 'true'
         env:
           HEAD_REPOSITORY: ${{ steps.pr.outputs.repository }}
           LABELS_JSON: ${{ steps.pr.outputs.labels }}

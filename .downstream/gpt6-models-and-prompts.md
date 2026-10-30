@@ -1,69 +1,50 @@
 # GPT-6 模型、Codex 运行与提示词
 
-官方基线见 [upstream-base](upstream-base)。模型名称、定价、模板、容量和客户端目录采用该固定官方版本；当前下游边界见 [模型目录契约](../DOWNSTREAM.md#model-discovery-capacity-and-client-catalogs)。
+官方基线见 [upstream-base](upstream-base)。源码当前行为见 [DOWNSTREAM.md](../DOWNSTREAM.md)，设置、身份与回滚边界见 [原生契约](native-domains.md)。本页仅维护提示词和账号测试的细则。
 
 ## 模型同步与容量
 
-账号模型管理的“同步最新支持模型”补齐内置列表；“同步上游支持的模型”请求账号目录并保存官方原生 metadata。同步结果通过挑选器确认增删，取消不改变表单，保存账号后才持久化白名单与映射。
+模型名称、模板、容量、metadata、manifest／ETag 和客户端目录采用固定官方版本；本站容量解析器、覆盖、来源绑定、自动刷新及 Cindy 专属 registry 已退役。完整规则见 [模型目录契约](../DOWNSTREAM.md#model-discovery-capacity-and-client-catalogs)，历史 SQL、已存值与诊断记录保留。
 
-同步返回的 `model_list_source` 标明型号名单来自实时上游还是配置回退。Anthropic 与 Gemini 目录继续按页获取；Grok 使用官方诊断、完成事件与配置兜底提示。账号、连接来源变化和卸载会使旧请求失效。
-
-容量默认值、metadata 合并、manifest 内容与 ETag、下载 URL 和 OpenCode 静态容量均采用官方实现。本站覆盖、参考表、来源身份与修订号规则、分组最小值投影、自动刷新及管理界面和专属接口已退役；历史迁移、已存覆盖与快照不主动清理。Cindy 只使用通用模型同步，不再请求专属 registry。
-
-Terra、Sol、Luna 使用官方前缀归一，包含把对应日期后缀型号归为基名。模型模板与基础 instructions 使用官方内置版本，不再维护 Sol／Luna 专属提取文件或固定参考表。推理档位、请求侧模型映射和实际线路能力继续独立保留；鹈鹕采用已有 64000 默认输出预算，显式更小预算仍生效。
-
-目录请求使用官方简单选号、错误处理及受换号上限约束的流程；实际出口保留固定随机设备和严格传输，严格传输失败不另行换路。固定发现账号、手动同步、远程／文件模式和官方目录缓存继续保留。
+手动同步先经挑选器确认增删，取消不改表单，保存账号后才持久化；来源或账号变化使旧请求失效。推理档位按实际型号与转发线路能力保留；鹈鹕仍用已有 64000 默认输出预算或显式更小值。
 
 ## Codex 流式响应
 
-ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流式响应发送 `Content-Type`。网关对声明接受 SSE 的 200 响应补回 `text/event-stream`。
+对于接受 SSE 的 `/backend-api/codex/responses` 请求，上游 200 响应缺少 `Content-Type` 时补为 `text/event-stream`。终态及协议转换以 [转发契约](../DOWNSTREAM.md#openai-forwarding-and-model-identity) 为准。
 
 ## 系统提示词
 
-侧栏“扩展功能 → 系统提示词”：一个全局开关、一个站点默认提示词和提示词库（名称、正文 ≤64 KiB、位置 prepend/append、角色 auto/system/developer，最多 50 条）。整份配置存为 `settings.system_prompts` 一行 JSON；`GET/PUT /api/v1/admin/system-prompts` 读写整份配置并返回账号使用统计，删除仍被自定义账号使用的提示词返回 409。
+“扩展功能 → 系统提示词”维护全局开关、一个站点默认和最多 50 条库项（名称、正文 ≤64 KiB、prepend/append、auto/system/developer）。`settings.system_prompts` 存整份 JSON；`GET/PUT /api/v1/admin/system-prompts` 读写配置并返回使用统计，删除仍被自定义账号引用的项返回 409。默认关闭且无默认项，不产生注入；生产开关状态由运维记录维护。
 
-账号绑定存于 `accounts.extra.system_prompt`（`inherit`、`off`、`custom` + `prompt_id`，缺省为继承）。账号编辑、行菜单和批量栏（≤1000 个）通过 `PUT /api/v1/admin/system-prompts/bindings` 写入，普通账号编辑保留该键。继承的账号使用站点默认；全局开关关闭时一律不注入。
+账号的 `accounts.extra.system_prompt` 为 inherit/off/custom＋prompt_id，缺省继承。账号编辑、行菜单与批量栏（≤1000）只通过 `PUT /api/v1/admin/system-prompts/bindings` 写绑定。普通编辑保留该键，批量 extra 合并不写；创建、导入和复制只保留有注入点平台的有效绑定。
 
-绑定只属于请求有注入点的平台，即 `service.SystemPromptPlatforms` 的十个平台（下表四种最终协议）。TypeSafe 只走 System One，请求没有 system / instructions 字段，转发时原样发送，所以它的账号不注入、不计入使用统计、不持有绑定：
+支持范围以 `service.SystemPromptPlatforms` 为准，包含 Cline／Command Code。TypeSafe 的 System One 无注入位置，不提供入口、不计使用统计、不持有绑定；绑定接口跳过并返回实际写入数。批量选择含未加载账号时保留入口并提示跳过不支持平台。迁移 268 只清理无注入位置平台的旧绑定。
 
-- 账号编辑和行菜单不提供该入口；批量栏在选中的账号都已加载且都不可注入时也不提供。选中的是一组 ID，可以包含其他页、全部结果或导入结果里未加载的账号，这类选择保留入口，批量弹窗提示 TypeSafe 账号会被跳过。
-- 绑定接口跳过这类账号并返回实际写入的账号数。
-- 创建账号（数据导入、复制账号同此路径）时丢弃这类账号带入的 `extra.system_prompt`；批量编辑和 extra 合并接口在任何平台都不写该键，已有账号的绑定只由绑定接口写入。
-- 迁移 `268_purge_system_prompt_bindings_without_insertion_point.sql` 一次性删除它们已存的绑定。
-
-提示词库里 259 随旧默认规则一起带入的“先抓取远程规则文件”块已失效：它指向 `/skills/security-research/current/`，这条公开路由随远程 Skill 注册表在 #206 删除，现在落到前端回退页并返回 HTML，模型读不到 Markdown 原文。迁移 `269_strip_removed_remote_rules_bootstrap_from_system_prompts.sql` 只按形状删除该块（含该路径的代码围栏段、其后仍提到 `REMOTE_ROOT` 的段落，以及紧邻其前的简短抓取说明）；路径出现在其他位置，或去掉该块后正文为空的提示词原样保留并输出通知。其余段落、库顺序、全局开关、默认提示词和其他设置不动，没有该路径的配置不写入，可重复执行。
-
-请求路径只读内存快照（保存即替换，60 秒后台刷新以同步多实例）和调度账号自带的绑定，不查询数据库；配置不可用时不注入并告警，不向客户端返回错误。每个最终协议只注入一次：
+请求只读内存快照和调度账号绑定，不查库；保存立即替换快照，其他进程在 60 秒内刷新。读取失败不注入并告警。全局关闭一律零注入；每个最终协议最多注入一次：
 
 | 最终协议 | 投递 |
 | --- | --- |
-| Responses | auto/system 追加到 `instructions` 前/后（空行分隔）；developer 作为 developer 输入项放最前，或放在开头 system/developer 之后。Codex Responses Lite 与 compact 请求不注入。 |
-| Chat Completions | 在开头或开头 system/developer 之后插入一条消息；上游只接受 system 时 developer 按 system 发送。 |
-| Anthropic Messages | 顶层 system 前/后（developer 按 system）。Claude OAuth 伪装前注入，随客户端 system 一起迁入 `[System Instructions]`。 |
-| Gemini / Antigravity | `systemInstruction` parts 前/后。 |
+| Responses | auto/system 加入 instructions 前/后；developer 输入项放最前或开头 system/developer 之后。Lite、compact 不注入。 |
+| Chat Completions | 在消息开头或开头 system/developer 后插入；上游仅支持 system 时 developer 转 system。 |
+| Anthropic Messages | 顶层 system 前/后，developer 转 system；Claude OAuth 伪装前注入，随原 system 迁入 `[System Instructions]`。 |
+| Gemini／Antigravity | systemInstruction parts 前/后。 |
 
-count_tokens / countTokens 不注入。`prompt_cache_key` 不改写。响应中回显的 `instructions`（JSON、SSE、WS）还原为客户端原值（未传则为 null）。
+count_tokens／countTokens 不注入，`prompt_cache_key` 不改写。JSON/SSE/WS 回显的 instructions 还原客户端原值，未传为 null。Claude OAuth 伪装块只由上游网关设置及块编辑器维护。
 
-Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `enable_claude_oauth_system_prompt_injection`、`claude_oauth_system_prompt` 与 `claude_oauth_system_prompt_blocks` 块编辑器。
-
-迁移 `259_system_prompt_library.sql` 把旧 v2 规则里的纯文本正文导入提示词库（开关关闭、无默认，请求行为不变），启用的旧 Claude 规则只在与设置不同时写回设置，`prompt_skills` 的 off 转为新键，并删除 12 张旧提示词/Skill 表及其保护函数。旧模板、版本、历史、Skill 注册表与 `/skills/security-research/current/` 均已删除；回滚到旧镜像需先恢复这些表的备份。
+迁移 259 导入旧纯文本正文，默认关闭、无默认项，并删除旧提示词／Skill 表；旧模板、版本、Skill 注册表及 `/skills/security-research/current/` 已删除，旧镜像回退须有对应表的迁移前备份。迁移 269 仅按形状移除引用已删除远程规则路径的 bootstrap 块；其他正文、顺序与设置保留，清除后为空或不符合形状时不改写。
 
 ## Codex 运行设置
 
-侧栏“Codex 运行设置”（`/admin/codex-runtime`）有一个开关“压缩 Codex Responses 请求体”：开启时 OAuth 账号发往 ChatGPT Codex 后端的流式 `/responses` 请求体以 zstd 压缩发送，compact、models 等其他请求保持明文。保存沿用 TOTP 二次验证，对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约与未保存时的默认值见 [Settings, stored data and rollback](native-domains.md)。
+当前入口为“Codex → 高级设置” `/admin/codex/advanced`；旧 `/admin/codex-runtime` 兼容跳转。压缩开关只用于 OAuth 发往 Codex 后端的流式 Responses，compact／models 保持明文；保存沿用 TOTP。`GET/PUT /api/v1/admin/settings/codex-runtime` 的 request_zstd 及缺省规则见 [设置契约](native-domains.md#settings)。
 
 ## 失效推理密文恢复
 
-侧栏“扩展功能 → 推理恢复”（`/admin/reasoning-recovery`）：一个全局开关和保存按钮，默认开启，没有账号级选项；页面打开时读取一次，读取失败时显示错误、不显示开关。存为 `settings.reasoning_recovery_config` 一行 JSON（`{"enabled": <bool>}`），没有该行即开启；`GET/PUT /api/v1/admin/reasoning-recovery` 以标准响应封装读写 `{"enabled": <bool>}`，管理员认证、无二次验证，保存记入操作审计，请求体不是严格的 `{"enabled": <bool>}` 时返回 400 且不保存。请求路径只读内存中的布尔值（保存即替换，60 秒后台刷新以同步多实例），不查询数据库，每次转发开始时读取一次。启动时读取失败或存储值不是严格的 `{"enabled": <bool>}` 则停止启动；运行中刷新失败保留当前值。
-
-开启时，OpenAI 平台的 API Key、OAuth 和 Setup Token 账号（含自动透传）在原生 Responses（含 compact）与 Chat Completions 转 Responses 的 HTTP 请求上生效：上游以结构化错误码 `invalid_encrypted_content` 或 `thinking_signature_invalid` 拒绝、且尚无语义输出时，去掉推理项的 `encrypted_content`，在同一账号重发一次：上游用 `input[N]` 指明条目时只去掉该项，否则去掉请求里全部推理项的密文。上游未用 `input[N]` 指明条目、而请求里还有其他密文载体（压缩项、多智能体 `agent_message` 的正文段）时，只有上游错误消息按条目 id 点名的是带密文的推理项才恢复，否则不恢复；这条点名规则只在推理项 id 随请求发出的路径上成立（API Key 账号与自动透传），OAuth / Setup Token 的非透传请求发出前会去掉推理项 id，遇到其他密文载体仍不恢复。其他载体的密文任何情况下都不改动。被去掉的密文按来源在 Redis 记忆 24 小时，期间同源请求发送前即去掉；记忆按每批 64 条读写，读与写共用每个请求 100 毫秒的 I/O 预算。去掉密文后留下的推理项仍带着 `id`，官方上游可能把它当作对已存储条目的引用去查，查不到时返回 `Item with id '<id>' not found`（官方为 HTTP 404；生产上只见于 `rs_` 加 32 位十六进制的 id，推断由中转签发，OpenAI 自己签发的 id 留着被接受）。上游的错误消息这样点名、且被点名的正是本次尝试去掉过密文的推理项时，把本次尝试去掉过密文的推理项的 `id` 一并去掉（条目和其余字段保留；没有 `summary` 的条目去掉 `id` 后会被上游拒收，所以它保留 `id`，被点名的是它时不修），在同一账号再发一次。这一次与上面的去密文重发各算各的、各自最多一次，所以一次转发尝试里推理恢复最多让同一账号多收两次（去密文、去 id）；转发层其他的同账号重发（被拒字段的兼容重试、compact 模型回退、Agent Identity 任务恢复）另计，且只发生在去密文重发之前；处理器对同一账号做同账号重试时，新的一次尝试从原样请求重新开始，这两次也重新计；先去 id 再遇到密文被拒时，仍可去密文重发一次，届时被去密文的条目同时去掉 `id`。状态为 401/402/403/407/429 时不修；其他 4xx/5xx 只要消息点名了这样的条目就修（中转可能改写状态码）。流内失败不触发。这一步不写任何记忆：同一会话之后的每次转发尝试仍先按原样发出、被拒后再修一次，即每次受影响的尝试多一次很快被拒的上传。被修掉的那个错误应答不影响账号健康；修正后的请求若仍失败，按它所处的位置处理（未做过去密文重发时按首次发送，做过时按去密文重发的规则）。原生 Responses、自动透传以及 Chat Completions 端点上的 Responses 形状请求都适用。Ops 记为 `retry_without_item_ids`，续接诊断的 `recovery.item_ids_removed` 是被去掉 `id` 的条目数，`disposition` 仍只描述去密文的那一次重发。官方 API 是否接受不带 `id` 的无密文推理项未用真实上游验证过（Codex OAuth 后端已验证接受）；不接受时修正后的请求以新的错误结束，结果不比修之前差。本账号修不好时换号：在 `POST /v1/responses`（含 compact 与自动透传）上，上游报告请求里的密文无法解密或校验（结构化错误码、同类错误消息，或 `could not be decrypted` 的措辞），而本账号无法修复（不能恢复，或去掉推理密文后的重发、发送前已去掉密文的请求仍得到这类拒绝），且客户端尚未收到本次尝试的任何输出时，请求原样交给分组里的下一个账号——密文只能由签发它的上游组织解开，别的账号可能直接接受。每个请求最多因此换号 3 次（同时计入正常换号预算），下一个账号各自按上述规则恢复一次；被换下的账号不计健康惩罚，也不做同账号重试。换号上限或可选账号用尽时，客户端收到第一个报告密文问题的账号的那个错误；途中某个账号给出自己的终态（例如读得懂密文但请求本身无效）或网关侧容量限制时，返回该结果。没有账号给出回答时，被这次换号挪到后续账号上的粘性绑定回到第一个报告密文问题的账号，调度器保留在别处的绑定不动；有账号接受或已开始输出时，会话留在该账号。普通的请求校验错误、带 `previous_response_id` 或 `conversation` 的请求、上游状态为 401/402/403/407/429 时不换号；先试过透传账号再换到非透传账号时，沿用既有规则整块去掉加密推理项。经原生 Responses 路径转发的其他平台账号同样适用；Chat Completions 转 Responses 不换号。Ops 续接诊断用 `recovery.account_mismatch` 标出因密文读不了而交给下一个账号的尝试。恢复重发因账号自身的原因失败时也换号（同样只在 `POST /v1/responses`，含 compact 与自动透传；Chat Completions 转 Responses 不换号）：重发已发出、失败属于该路径首次发送时就会换号的那一类，且客户端尚未收到本次尝试的任何输出时，请求按普通账号失败交给下一个账号——下一个账号收到原样请求，本账号不再重试，换号预算同普通换号。哪些失败算这一类以各路径首次发送的换号规则为准：非透传包括额度用尽、限流、鉴权失败、5xx 与流内的上游失败；自动透传的规则更窄，OAuth / Setup Token 透传的普通 5xx、不带账号状态信息的 401/403 等不在其内，仍在本账号结束。Ops 续接诊断用 `recovery.account_failure` 标出这样交给下一个账号的尝试。账号健康：失败的分类与首次发送相同（请求预算被拒 402/403 `balance_insufficient` 只算本次请求，结构化的 `model_not_supported` 只算该账号与模型，`budget_exceeded` 429 算账号，其余池模式可重试的状态不计入 API Key 健康熔断），调度失败照常上报，流内失败照常写入账号状态；重发的 HTTP 错误应答则不执行转发层在首次发送时的账号状态写入（标记限流、置为错误、停用、预算用尽标记、API Key 的瞬时失败计数），也不开启 OAuth 429 的同账号重试窗口，留给之后的首次发送处理，其中首次发送因同时停用账号而把池模式可重试状态计入账号的情形按不计入处理。处理器侧同账号重试用尽后的冷却照常调用，它只对 OAuth / Setup Token 账号起作用（硬额度 429 会写入额度状态）；OpenAI API Key 账号在 HTTP 错误应答下不被冷却，下一个请求仍可能先发给它，由那次首次发送写入状态。重发遇到请求校验错误、拒绝类结果、传输错误、响应头超时或未归类为可换号的错误时，仍在本账号结束；重发再次被报告密文无法解密时，按上文的密文规则换号。Messages 桥接与 WebSocket 不恢复。关闭时不重发也不预先去除，签名拒绝仍作为请求级终态返回，不切换账号。
-
-迁移 `267_purge_account_reasoning_options.sql` 一次性删除各账号 `extra` 中原有的两个账号级推理选项键（键名见该文件）；此后没有代码读写它们，已存的账号级取值不带入全局开关。Chat Completions 转 Responses 的请求只由客户端消息转换而来，网关不保存响应中的推理项。
+采用官方 HTTP／WS 恢复；本站去密文、24 小时拒绝记忆、额外 SSE／缺失 ID 修复及专用换号均已退役，独立页面与 `GET/PUT /api/v1/admin/reasoning-recovery` 已删除。旧设置、历史 SQL 与诊断账本保留，不再控制转发。现行边界见 [密文恢复契约](../DOWNSTREAM.md#openai-encrypted-content-recovery)。
 
 ## 账号连接测试与批量测试
 
-单账号、批量和定时测试共用同一测试路径，错误按上游 v0.2.8 原样显示：`API returned <状态码>: <原始响应>`、`Request failed: <错误>` 及流内 `error`/`response.failed` 的上游 message；服务日志 `Account test error:` 与界面文本相同。成功仍要求有效协议终态和可见文本，失败终态附上游原始内容，例如 `stream ended before terminal (last event: …)`、`completed without visible text (finish_reason=…)`、`finish_reason=…`。
+单号、批量与定时测试显示上游原文错误及失败终态，不额外脱敏或截断；成功要求有效协议终态与可见文本。Codex 另列实际发出的请求头，不含 Authorization。测试计划和实际 effort 按型号及实际线路能力标注，不为不支持的路径提供选项。
 
-批量测试移植上游 PR #6522：`POST /api/v1/admin/accounts/batch-test`（`account_ids`，`model_id` 可空）以 SSE 逐账号返回 `batch_start`/`account_started`/`account_result`/`batch_complete`，含首字延迟、上游实际模型和原始错误；关闭窗口或页面即停止。下游只增加：同时最多 10 个、同一上游主机（base_url 主机，无则平台+类型）最多 3 个、每账号 90 秒上限、15 秒 SSE 保活；`model_id` 为空时由服务端逐账号选模型——账号支持平台默认测试模型时用它，否则取模型列表或映射中第一个文本对话模型（排除图像、音频、嵌入、实时、语音和 `codex-auto-review`），单账号测试弹窗的默认模型用同一规则。结果只保存在页面和浏览器本地快照；重试即重新提交失败账号。
+`POST /api/v1/admin/accounts/batch-test` 接受 account_ids 和可空 model_id，以 SSE 返回 batch_start／account_started／account_result／batch_complete，包含首字延迟、实际模型和原始错误。关闭窗口或页面即停；并发 10、同一上游主机 3、单号 90 秒、保活 15 秒。空 model_id 使用平台默认，账号不支持时取首个文本对话型号；单号弹窗共用解析规则。
 
-测试成功后走上游 `RecoverAccountState`：清除 error 状态及可恢复的限流和临时不可调度，不改手动停用和调度开关。
+结果保留在页面及本地快照，重试只重新提交失败账号。成功后用官方 RecoverAccountState 清除可恢复错误／限流，不改变手动停用或调度开关。关闭测试不刷新列表，保留位置，既有自动刷新延后 15 秒继续。

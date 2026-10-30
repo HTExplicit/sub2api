@@ -97,11 +97,14 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         verify = (ROOT / ".github/workflows/downstream-verify.yml").read_text(encoding="utf-8")
         for name in ("Downstream backend", "Downstream frontend", "Candidate OCI image"):
             self.assertRegex(verify, rf"(?m)^    name: {re.escape(name)}$")
-        specs = re.findall(r"(?m)^\s+(src/\S+\.spec\.ts)(?:\s+\\)?$", verify)
-        self.assertTrue(specs, "the frontend gate must select real spec files")
-        self.assertEqual(len(specs), len(set(specs)), "do not repeat identical frontend specs")
-        for spec in specs:
-            self.assertTrue((ROOT / "frontend" / spec).is_file(), spec)
+        self.assertIn("uses: ./.github/actions/selective-ci", verify)
+        from ci_plan import classify_paths
+        spec = "src/components/admin/account/__tests__/AccountTestModal.spec.ts"
+        plan = classify_paths(["frontend/" + spec])
+        self.assertTrue(plan["passed"])
+        self.assertEqual([spec], plan["frontend_tests"])
+        self.assertEqual([], plan["frontend_related"])
+        self.assertNotIn("candidate_image", plan["groups"])
 
     def test_bot_chain_is_explicit_and_does_not_overwrite_manual_resolutions(self):
         self.assertIn("upstream_tag:", self.sync)
