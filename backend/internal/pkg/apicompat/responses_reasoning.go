@@ -1,6 +1,9 @@
 package apicompat
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // UnmarshalJSON retains raw members alongside the known string options. Keeping
 // json.RawMessage instead of map[string]any is important: a provider extension
@@ -86,4 +89,23 @@ func (r ResponsesReasoning) knownFields() map[string]string {
 		"context":          r.Context,
 		"generate_summary": r.GenerateSummary,
 	}
+}
+
+// responsesReasoningText prefers the visible summary, falling back to raw
+// reasoning text from compatible upstreams that leave the summary empty.
+func responsesReasoningText(item ResponsesOutput) string {
+	var text strings.Builder
+	for _, part := range item.Summary {
+		if part.Type == "summary_text" {
+			_, _ = text.WriteString(part.Text)
+		}
+	}
+	if text.Len() == 0 {
+		for _, part := range item.Content {
+			if part.Type == "reasoning_text" {
+				_, _ = text.WriteString(part.Text)
+			}
+		}
+	}
+	return text.String()
 }

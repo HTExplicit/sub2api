@@ -10,7 +10,7 @@ prove deployment.
 ## Source baseline
 
 - The integrated official release is recorded in [.downstream/upstream-base](.downstream/upstream-base).
-- Current integration decisions are in the [v0.2.19 review](.downstream/upstream-review-v0.2.19.md).
+- Current integration decisions are in the [v0.2.20 review](.downstream/upstream-review-v0.2.20.md).
 - The risk report and historical reviews retain their original paths and input records.
 
 ## Settings and account operations
@@ -61,7 +61,7 @@ metadata remains; no custom namespace cleanup or Redis clearing is added.
 ## Model discovery, capacity and client catalogs
 
 Capacity defaults, metadata enrichment, model templates, manifests, ETags and
-client exports follow official v0.2.19. The downstream evidence resolver,
+client exports follow official v0.2.20. The downstream evidence resolver,
 overrides/source identity, group projection, capacity interfaces and automatic
 refresh are retired. Historical SQL, stored extras and diagnostic snapshots
 remain. Native metadata sync, models.dev enrichment and Grok diagnostics remain.
@@ -97,7 +97,7 @@ Explicit `reasoning.effort=none` is retained on OpenAI-wire accounts subject to
 model validation. Requested effort accounting keeps the canonical client value;
 cross-protocol `max` remains `max` except legacy GPT-5.4/5.5 mapping to `xhigh`.
 Sol keeps six effort levels including `ultra`, Luna five. Model normalization and
-pricing prefixes follow official v0.2.19, including Terra and dated names;
+pricing prefixes follow official v0.2.20, including Terra and dated names;
 the GPT-5.6 named-family match still precedes its numeric-family match.
 
 Responses requires an authoritative terminal event; Chat requires a supported
@@ -108,12 +108,27 @@ rollover removes the previous response ID without inventing an anchor; owner,
 identity and verified-replay checks remain.
 
 Streaming Responses-to-Chat tools use official behavior. Buffered compatibility
-reading, errors, reconstruction and Grok auditing follow official v0.2.19;
+reading, errors, reconstruction and Grok auditing follow official v0.2.20;
 the downstream consistency guard, dedicated error frames, raw terminal retention
 and pending-signature branches are retired. Independent buffered reconstruction
 still supplements completed arguments by actual call ID. Special HTTP 400
 `upstream_error` classification/failover is retired; official account effects,
 Retry-After waiting and disconnected-stream billing apply.
+
+## Management MCP and request boundaries
+
+Management MCP, OAuth grants and administrator permission catalogs follow the
+official release. An empty `MCP_PUBLIC_URL` disables MCP; integration does not
+enable MCP or full-access compatibility mode, or rewrite existing grants.
+
+Gateway buffering, per-operation read/write deadlines and bounded upstream
+draining use the official implementation and defaults documented in
+[edge security](deploy/EDGE_SECURITY.md). Successful reads/writes clear their
+deadline; model thinking is not a whole-response timeout. Post-disconnect drain
+expiry can lose usage that arrives later. Existing deployment body limits and
+resources remain authoritative. Lenient JSON input retains complete-document
+recovery after a lone unexpected EOF within the same memory-budgeted reader;
+other read failures and incomplete JSON remain errors.
 
 ## Release and production deployment
 
@@ -153,14 +168,14 @@ Existing quota/route rows and historical SQL names/checksums remain intact.
 [Release-channel rules](.downstream/README.md) own discovery, risk labels,
 promotion and production approval. Discovery never deploys by itself. Each
 integration records its official commit and retained contracts. The current
-risk report compares v0.2.18 to v0.2.19 against downstream
-`6ac28b7ecf2e247b1dbe5985b6ad115016aa514f`; its gate recomputes those exact inputs.
-The [current review](.downstream/upstream-review-v0.2.19.md) records all 28 initial
+risk report compares v0.2.19 to v0.2.20 against downstream
+`8dea2b7681ea56e85fe818400e85a8a6e89904a7`; its gate recomputes those exact inputs.
+The [current review](.downstream/upstream-review-v0.2.20.md) records all 33 initial
 conflicts and resolutions. Promotion requires completed review, no unresolved
 conflicts and `upstream-reviewed` where review is required.
 
-Official v0.2.19 owns scoped administrator keys, image-count billing (default
-off), Terra, Gemini/Grok fixes and DeepSeek Pro/Flash/time-based pricing and
+Official v0.2.20 owns management MCP, scoped administrator keys, image-count
+billing (default off), Terra, Gemini/Grok fixes and DeepSeek Pro/Flash/time-based pricing and
 cache-hit accounting. The downstream price registry is retired; generic override
 files and independent DeepSeek default reasoning remain. Earlier integrations'
 Gemini/Vertex, quota, payment, scheduling and dependency decisions are recorded

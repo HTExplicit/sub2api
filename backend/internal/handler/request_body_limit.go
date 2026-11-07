@@ -1,61 +1,29 @@
 package handler
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
-func extractMaxBytesError(err error) (*http.MaxBytesError, bool) {
-	var maxErr *http.MaxBytesError
-	if errors.As(err, &maxErr) {
-		return maxErr, true
+// handleRequestBodyReadError handles cancellation and temporary capacity errors
+// before callers classify malformed or oversized request bodies.
+//
+// A read deadline on HTTP/1 also cancels the request context, so a body read
+// timeout is left to requestBodyReadFailure (408) instead of being reported as
+// a client that went away (499).
+func handleRequestBodyReadError(c *gin.Context, reqLog *zap.Logger, err error) bool {
+	if err != nil && !pkghttputil.IsRequestBodyReadTimeout(err) && failoverClientGone(c) {
+		logRequestBodyReadFailure(reqLog, pkghttputil.DescribeRequestBodyReadFailure(c.Request, err))
+		c.Abort()
+		return true
 	}
-	return nil, false
-}
-
-func classifyRequestBodyReadError(err error) string {
-	switch {
-	case errors.Is(err, io.ErrUnexpectedEOF):
-		return "unexpected_eof"
-	case errors.Is(err, io.EOF):
-		return "eof"
-	case errors.Is(err, context.Canceled):
-		return "context_canceled"
-	case errors.Is(err, context.DeadlineExceeded):
-		return "deadline_exceeded"
-	default:
-		return "other"
-	}
-}
-
-func requestBodyReadMetrics(err error) (stage string, receivedBytes, decodedBytes int64) {
-	var readErr *pkghttputil.RequestBodyReadError
-	if !errors.As(err, &readErr) {
-		return "unknown", -1, -1
-	}
-	return readErr.Stage, readErr.ReceivedBytes, readErr.DecodedBytes
-}
-
-func classifyRequestContentEncoding(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "identity":
-		return "identity"
-	case "zstd":
-		return "zstd"
-	case "gzip", "x-gzip":
-		return "gzip"
-	case "deflate":
-		return "deflate"
-	default:
-		return "other"
-	}
+	return middleware2.RejectRequestBodyMemoryOverload(c, err)
 }
 
 func formatBodyLimit(limit int64) string {

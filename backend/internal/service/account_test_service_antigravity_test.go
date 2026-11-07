@@ -80,3 +80,39 @@ func TestAntigravityShouldUseGeminiTestBuilder_UsesMappedModel(t *testing.T) {
 	require.False(t, shouldUseAntigravityGeminiTestRequest("gemini-alias", "claude-sonnet-4-6"))
 	require.False(t, shouldUseAntigravityGeminiTestRequest("claude-sonnet-4-6", "claude-sonnet-4-6"))
 }
+
+// Text probes preserve the administrator's prompt and reserve enough output for
+// visible text; blank probes retain the downstream default and smaller budget.
+func TestAntigravityBuildGeminiTestRequest_UsesPromptAndRoomToAnswer(t *testing.T) {
+	t.Parallel()
+
+	svc := &AntigravityGatewayService{}
+	for _, tc := range []struct {
+		prompt, want string
+		limit        int
+	}{{"hello there", "hello there", 1024}, {"", "Reply with OK.", 256}, {"   ", "Reply with OK.", 256}} {
+		raw, err := svc.buildGeminiTestRequestWithPrompt("proj-123", "gemini-4-argon-high", tc.prompt)
+		require.NoError(t, err)
+		var v1Req map[string]any
+		require.NoError(t, json.Unmarshal(raw, &v1Req))
+		inner := v1Req["request"].(map[string]any)
+		parts := inner["contents"].([]any)[0].(map[string]any)["parts"].([]any)
+		require.Equal(t, tc.want, parts[0].(map[string]any)["text"], "prompt %q", tc.prompt)
+		genCfg := inner["generationConfig"].(map[string]any)
+		require.EqualValues(t, tc.limit, genCfg["maxOutputTokens"])
+	}
+}
+
+func TestAntigravityBuildClaudeTestRequest_UsesPromptAndRoomToAnswer(t *testing.T) {
+	t.Parallel()
+
+	svc := &AntigravityGatewayService{}
+	raw, err := svc.buildClaudeTestRequest("proj-123", "claude-sonnet-4-6", "hello there")
+	require.NoError(t, err)
+	require.Contains(t, string(raw), "hello there")
+	require.NotContains(t, string(raw), `"text":"."`)
+
+	raw, err = svc.buildClaudeTestRequest("proj-123", "claude-sonnet-4-6", "")
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"Reply with OK."`)
+}

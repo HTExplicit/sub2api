@@ -4,6 +4,8 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  // Vitest related strips ?raw while tracing dependencies; Markdown remains an asset.
+  assetsInclude: ['**/*.md'],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

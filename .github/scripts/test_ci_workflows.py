@@ -35,6 +35,7 @@ class WorkflowSelectionTests(unittest.TestCase):
         self.assertIn("BUILD_OUTCOME: ${{ steps.build.outcome }}", source)
         self.assertIn("if: always() && steps.plan.outcome == 'success'", source)
         self.assertIn("name: ci-receipt-${{ inputs.context }}", source)
+        self.assertIn("node-version: '24'", source)
 
     def test_upstream_gate_ordinary_pr_has_real_result_and_candidate_stays_trusted(self):
         source = (ROOT / ".github/workflows/upstream-risk-gate.yml").read_text(encoding="utf-8")

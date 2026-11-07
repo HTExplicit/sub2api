@@ -23,6 +23,19 @@ class SelectedExecutionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci_run.selected_groups({"groups": ["new_unreviewed_suite"]}, "test")
 
+    def test_docker_deploy_contracts_run_once_on_the_linux_owner(self):
+        portable = "deploy/tests/docker-runtime-resources-test.sh"
+        docker = "deploy/tests/docker-compose-simple-mode-env-test.sh"
+        plan = {"groups": ["deploy_contracts", "deploy_docker_contracts"], "deploy_tests": [portable, docker]}
+        self.assertEqual(["deploy_contracts"], ci_run.selected_groups(plan, "shell"))
+        self.assertEqual(["deploy_docker_contracts"], ci_run.selected_groups(plan, "Downstream backend"))
+        with patch.object(ci_run, "command") as run:
+            ci_run.run_group("deploy_contracts", plan)
+            run.assert_called_once_with(["bash", portable])
+        with patch.object(ci_run, "command") as run:
+            ci_run.run_group("deploy_docker_contracts", plan)
+            run.assert_called_once_with(["bash", docker])
+
     def test_frontend_related_names_direct_specs_and_sources_once(self):
         plan = {"frontend_tests": ["src/a.spec.ts"], "frontend_related": ["src/a.ts", "src/a.ts"]}
         with patch.object(ci_run, "command") as run:
@@ -83,12 +96,29 @@ class SelectedExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "matches_no_functions"):
                 ci_run.resolve_go_checks({"groups": ["pelican_race"]})
 
+    def test_exact_files_in_one_build_configuration_share_one_go_invocation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "backend/internal/service"
+            directory.mkdir(parents=True)
+            for name in ("First", "Second"):
+                (directory / (name + "_test.go")).write_text(
+                    "//go:build unit\npackage service\nfunc Test" + name + "(t *testing.T) {}\n", encoding="utf-8")
+            plan = {"groups": ["backend_focused"], "backend_tests": [
+                {"packages": ["./internal/service"], "pattern": "^Test" + name + "$", "tags": ["unit"]}
+                for name in ("First", "Second")
+            ]}
+            with patch.object(ci_run, "ROOT", root):
+                ci_run.resolve_go_checks(plan)
+            self.assertEqual(1, len(plan["go_checks"]["backend_focused"]))
+            self.assertEqual("^(?:TestFirst|TestSecond)$", plan["go_checks"]["backend_focused"][0]["pattern"])
+
     def test_embed_and_negative_unit_tags_follow_selected_build(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             directory = root / "backend/internal/web"
             directory.mkdir(parents=True)
-            for name, tag in (("embedded", "embed"), ("plain", "!unit")):
+            for name, tag in (("embedded", "embed"), ("plain", "!unit"), ("sdk", "mcp_go_client_oauth")):
                 (directory / (name + "_test.go")).write_text(f"//go:build {tag}\npackage web\nfunc Test{name}(t *testing.T) {{}}\n", encoding="utf-8", newline="\n")
             definitions = {"fixture": (["./internal/web"], "^Test", ("unit", "embed"), False)}
             with patch.object(ci_run, "ROOT", root), patch.dict(ci_run.GO_GROUPS, definitions):

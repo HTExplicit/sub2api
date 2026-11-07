@@ -91,6 +91,8 @@ func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *serv
 		emailQueueSvc,
 		billingCacheSvc,
 		&service.UsageRecordWorkerPool{},
+		service.ProvideBalanceNotifyService(nil, nil, nil, nil),
+		service.NewDigestSessionStore(),
 		&service.SubscriptionService{},
 		oauthSvc,
 		openAIOAuthSvc,

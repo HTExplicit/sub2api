@@ -2457,3 +2457,72 @@ func TestOpenAIWSHTTPBridge_IdleTimeoutClosesClientSession(t *testing.T) {
 	}
 	require.Len(t, upstream.bodies, 1, "an idle client must not leave a continuation request running")
 }
+
+func TestProxyOpenAIWSHTTPBridgeTurn_StagesCodexFingerprint(t *testing.T) {
+	fingerprintPolicyTestState(t)
+	policy := fingerprintTestPolicy(true, "0.162.1")
+	publishedCodexFingerprintPolicy.Store(policy)
+	gin.SetMode(gin.TestMode)
+	run := func(account, source *Account, session string) (*http.Request, []byte) {
+		t.Helper()
+		sse := `data: {"type":"response.completed","response":{"id":"resp_fp","model":"gpt-5.5","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n"
+		upstream := &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(sse)),
+		}}
+		svc := &OpenAIGatewayService{
+			cfg:          &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+			httpUpstream: upstream,
+		}
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+		c.Request.Header.Set("session-id", session)
+		c.Set(codexAccountIdentitySourceContextKey, source)
+		c.Set(codexFingerprintPolicyContextKey, stagedCodexFingerprintPolicy{accountID: account.ID, policy: policy})
+		payload := []byte(`{"type":"response.create","model":"gpt-5.5","store":false,"input":"hi","prompt_cache_key":"explicit-cache"}`)
+		if session != "" {
+			payload = []byte(fmt.Sprintf(`{"type":"response.create","model":"gpt-5.5","store":false,"input":"hi","prompt_cache_key":"explicit-cache","client_metadata":{"session_id":%q,"thread_id":%q}}`, session, session))
+			var err error
+			payload, _, err = svc.scopeCodexRequestMetadataRaw(c, account, payload)
+			require.NoError(t, err)
+			payload, err = svc.stageCodexFingerprintForWSFrame(c, account, payload)
+			require.NoError(t, err)
+		}
+		// A setting edit after ingress must not replace this turn's frozen policy.
+		publishedCodexFingerprintPolicy.Store(fingerprintTestPolicy(false, "0.163.0"))
+		_, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+			context.Background(), c, account, "test-token", payload, len(payload),
+			"gpt-5.5", "", "", "", "", 1,
+			func([]byte) error { return nil },
+		)
+		require.NoError(t, err)
+		require.NotNil(t, upstream.lastReq)
+		return upstream.lastReq, upstream.lastBody
+	}
+
+	full := newTestOAuthAccount(7101, map[string]any{"codex_fingerprint_mode": "full"})
+	first, firstBody := run(full, full, "")
+	second, secondBody := run(full, full, "")
+	require.NotEmpty(t, first.Header.Get("session-id"))
+	require.Equal(t, first.Header.Get("session-id"), gjson.GetBytes(firstBody, "client_metadata.session_id").String())
+	require.Empty(t, first.Header.Get("x-codex-installation-id"))
+	require.NotEmpty(t, gjson.GetBytes(firstBody, "client_metadata.x-codex-installation-id").String())
+	require.Empty(t, first.Header.Get("session_id"))
+	require.Equal(t, gjson.GetBytes(firstBody, "client_metadata.x-codex-installation-id").String(), gjson.GetBytes(secondBody, "client_metadata.x-codex-installation-id").String())
+	require.NotEqual(t, first.Header.Get("session-id"), second.Header.Get("session-id"), "independent bridge requests retain distinct conversations")
+	require.Equal(t, "explicit-cache", gjson.GetBytes(firstBody, "prompt_cache_key").String())
+
+	parent := newTestOAuthAccount(7103, map[string]any{codexFingerprintSeedExtraKey: "22222222-2222-4222-8222-222222222222"})
+	shadowReq, shadowBody := run(full, parent, "client-session")
+	repeatReq, _ := run(full, parent, "client-session")
+	require.Equal(t, resolveConvergedInstallationID(parent, "22222222-2222-4222-8222-222222222222"), gjson.GetBytes(shadowBody, "client_metadata.x-codex-installation-id").String())
+	require.NotEqual(t, "client-session", shadowReq.Header.Get("session-id"))
+	require.Equal(t, shadowReq.Header.Get("session-id"), gjson.GetBytes(shadowBody, "client_metadata.session_id").String())
+	require.Equal(t, shadowReq.Header.Get("session-id"), repeatReq.Header.Get("session-id"))
+
+	off := newTestOAuthAccount(7102, map[string]any{"codex_fingerprint_mode": "off"})
+	offReq, offBody := run(off, off, "")
+	require.Empty(t, offReq.Header.Get("x-codex-installation-id"))
+	require.False(t, gjson.GetBytes(offBody, "client_metadata").Exists())
+}

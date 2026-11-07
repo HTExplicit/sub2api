@@ -25,6 +25,7 @@ OWNERS = {
     "release-helpers": {"generic_release_contracts"},
     "Downstream backend": {
         "static_docs", "ci_contracts", "release_contracts", "upstream_contracts",
+        "deploy_docker_contracts",
         "transport", "agent_protocol", "deepseek", "claude",
         "pelican_race", "keepalive_race", "probe_race", "management_race",
         "request_body", "account_jobs", "taxonomy_db", "retirement_migration", "repository_audit",
@@ -90,7 +91,7 @@ def prepare(context: str, workflow: str, directory: Path) -> dict:
     plan.update(source_base_sha=source_base, source_head_sha=source_head, event_name=name)
     environment = {key: os.environ.get(key, "") for key in
                    ("RUNNER_OS", "RUNNER_ARCH", "ImageOS", "ImageVersion")}
-    environment.update(python=list(sys.version_info[:3]), expected_node="20", expected_pnpm="9.15.9",
+    environment.update(python=list(sys.version_info[:3]), expected_node="24", expected_pnpm="9.15.9",
                        expected_go=re.search(r"(?m)^go (\S+)", (ROOT / "backend/go.mod").read_text()).group(1))
     plan["environment_sha256"] = hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()
     if name == "schedule":
@@ -108,7 +109,7 @@ def prepare(context: str, workflow: str, directory: Path) -> dict:
                                                "pending": pending, "probe": probe})
     outputs = {
         "needs_go": any(x in pending for x in OWNERS["Downstream backend"] -
-                         {"static_docs", "ci_contracts", "release_contracts", "upstream_contracts"})
+                         {"static_docs", "ci_contracts", "release_contracts", "upstream_contracts", "deploy_docker_contracts"})
                     or bool(set(pending) & {"backend_focused", "backend_compile", "backend_lint", "backend_security", "renderer"}),
         "needs_node": bool(set(pending) & {"frontend_focused", "frontend_validate", "frontend_security"}),
         "needs_lint": "backend_lint" in pending,
@@ -180,32 +181,37 @@ def resolve_go_checks(plan: dict) -> None:
                 {"packages": ["./internal/pkg/apicompat"], "pattern": "Test(Agent|Stream_|.*Chat.*Responses|.*Responses.*Chat|ResponsesAgentMessageCapability)", "tags": []},
                 {"packages": ["./internal/service", "./internal/handler"], "pattern": "Test(Agent|ForwardResponses_.*(Chat|Reasoning)|ForwardAsAnthropic_ForceChatCompletions|ForwardAsRawChatCompletions|ForwardAsChatCompletionsForGrokStreaming|OpenAIRawStreamTerminalState|ResponsesAgentMessageRoutingPreservesChatEligibility|.*NoAccount|.*SelectionFailure)", "tags": ["unit"]},
             ]
-    checks, assigned = {}, set()
+    checks, assigned, package_tests = {}, set(), {}
     # A race execution covers the same function in the same build configuration.
     ordered = sorted(descriptions, key=lambda group: (not any(x.get("race") for x in descriptions[group]),
                                                      group != "backend_focused", group))
     for group in ordered:
-        selected = []
+        selected = {}
         for description in descriptions[group]:
             regex, tags = re.compile(description["pattern"]), description.get("tags", [])
             found = False
             for package in description["packages"]:
                 names = set()
                 directory = ROOT / "backend" / package.removeprefix("./")
-                for path in directory.glob("*_test.go"):
-                    content = path.read_text(encoding="utf-8")
-                    build = re.search(r"(?m)^//go:build\s+(.+)$", content)
-                    if build:
-                        expression = build.group(1).strip()
-                        if expression in ("unit", "integration", "e2e", "embed") and expression not in tags:
+                if package not in package_tests:
+                    inventory = []
+                    for path in directory.glob("*_test.go"):
+                        content = path.read_text(encoding="utf-8")
+                        build = re.search(r"(?m)^//go:build\s+(.+)$", content)
+                        inventory.append((build.group(1).strip() if build else "",
+                                          re.findall(r"(?m)^func\s+(Test[A-Za-z0-9_]+)\s*\(", content)))
+                    package_tests[package] = inventory
+                for expression, file_names in package_tests[package]:
+                    if expression:
+                        if expression in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth") and expression not in tags:
                             continue
                         if expression.startswith("!") and expression[1:] in tags:
                             continue
-                        if expression not in ("unit", "integration", "e2e", "embed", "!unit"):
-                            if any(regex.search(name) for name in re.findall(r"(?m)^func\s+(Test[A-Za-z0-9_]+)\s*\(", content)):
+                        if expression not in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth", "!unit"):
+                            if any(regex.search(name) for name in file_names):
                                 raise ValueError("mapped_test_build_tags_require_review:" + group)
                             continue
-                    for name in re.findall(r"(?m)^func\s+(Test[A-Za-z0-9_]+)\s*\(", content):
+                    for name in file_names:
                         if name != "TestMain" and regex.search(name):
                             found = True
                             identity = (package, name, tuple(sorted(tags)))
@@ -213,12 +219,16 @@ def resolve_go_checks(plan: dict) -> None:
                                 assigned.add(identity)
                                 names.add(name)
                 if names:
-                    selected.append({"packages": [package], "pattern": "^(?:" + "|".join(sorted(names)) + ")$",
-                                     "tags": tags, "race": description.get("race", False)})
+                    configuration = (package, tuple(tags), description.get("race", False))
+                    selected.setdefault(configuration, set()).update(names)
             if not found:
                 raise ValueError("mapped_test_pattern_matches_no_functions:" + group)
         if selected:
-            checks[group] = selected
+            checks[group] = [
+                {"packages": [package], "pattern": "^(?:" + "|".join(sorted(names)) + ")$",
+                 "tags": list(tags), "race": race}
+                for (package, tags, race), names in sorted(selected.items())
+            ]
         else:
             plan["groups"].remove(group)
             plan.setdefault("covered_by_other_groups", []).append(group)
@@ -290,16 +300,18 @@ def run_group(group: str, plan: dict) -> None:
     elif group == "upstream_contracts":
         command([sys.executable, "-B", ".github/scripts/test_upstream_risk.py"])
         command([sys.executable, "-B", ".github/scripts/test_upstream_automation_contract.py"])
-    elif group == "deploy_contracts":
-        for test in plan.get("deploy_tests", []):
+    elif group in ("deploy_contracts", "deploy_docker_contracts"):
+        tests = [test for test in plan.get("deploy_tests", [])
+                 if (test in ci_plan.DEPLOY_DOCKER_TESTS) == (group == "deploy_docker_contracts")]
+        for test in tests:
             command(["bash", test])
-        if not plan.get("deploy_tests"):
+        if not tests:
             raise ValueError("deployment_test_selection_empty")
     elif group == "backend_focused" or group in GO_GROUPS or group == "agent_protocol":
         tests = plan.get("go_checks", {}).get(group, [])
         if not tests:
             raise ValueError("backend_test_selection_empty")
-        if group == "agent_protocol":
+        if group == "agent_protocol" or any("embed" in item.get("tags", []) for item in tests):
             destination = ROOT / "backend/internal/web/dist"
             destination.mkdir(parents=True, exist_ok=True)
             for source, name in (("frontend/index.html", "index.html"), ("frontend/public/logo.svg", "logo.svg")):

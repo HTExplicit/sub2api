@@ -188,6 +188,9 @@ func (s *OpenAIGatewayService) tempUnscheduleOpenAITransportError(ctx context.Co
 	if s == nil || !IsOpenAIOfficialHTTPFailover(ctx, account) {
 		return
 	}
+	if s.cfg != nil && s.cfg.Gateway.DisableOpenAITransportErrorCooldown {
+		return
+	}
 	until := time.Now().Add(openAITransportErrorTempUnschedDuration)
 	reason := "upstream transport error (proxy/network): " + safeErr
 	// Mark this as a DB-cooldown mirror, so later authoritative recovery can

@@ -4,38 +4,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
-
-// RequestBodyReadError records where request-body consumption failed without
-// retaining or exposing the request content itself.
-type RequestBodyReadError struct {
-	Stage         string
-	ReceivedBytes int64
-	DecodedBytes  int64
-	Err           error
-}
-
-func (e *RequestBodyReadError) Error() string {
-	return fmt.Sprintf(
-		"%s request body after %d received bytes and %d decoded bytes: %v",
-		e.Stage,
-		e.ReceivedBytes,
-		e.DecodedBytes,
-		e.Err,
-	)
-}
-
-func (e *RequestBodyReadError) Unwrap() error {
-	return e.Err
-}
 
 const (
 	requestBodyReadInitCap    = 512
@@ -43,7 +22,8 @@ const (
 	jsonUTF8BOMLen            = 3
 	// maxDecompressedBodySize limits the decompressed request body to 64 MB
 	// to prevent decompression bomb attacks.
-	maxDecompressedBodySize = 64 << 20
+	maxDecompressedBodySize  = 64 << 20
+	maxRequestZstdWindowSize = 8 << 20
 )
 
 // PrereadBody 回填已读取完成的请求体：作为 io.ReadCloser 可被再次顺序消费
@@ -88,11 +68,47 @@ func (p *PrereadBody) Bytes() []byte {
 // 已由 PrereadBody 回填的请求体直接返回其完整切片（零拷贝），不检查内部
 // reader 是否已被消费——见 PrereadBody 的文档说明。
 func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
+	body, err := readRequestBodyWithBudget(req)
+	if err != nil && isOnlyUnexpectedEOF(err) {
+		// Keep the original bytes only when the existing lenient JSON reader
+		// can recover a complete document from this lone transport EOF.
+		normalized, normalizeErr := normalizeLenientJSONRequestBody(req.Context(), body.data, int64(len(body.data))*6)
+		complete := normalizeErr == nil && json.Valid(normalized.data)
+		normalized.release(req.Context())
+		if !complete {
+			body.release(req.Context())
+			if normalizeErr != nil {
+				return nil, normalizeErr
+			}
+			return nil, err
+		}
+	}
+	return body.data, err
+}
+
+// requestBodyBuffer carries only allocations owned by the current helper.
+// Borrowed input (notably PrereadBody) has no charge to release: its original
+// owner may still retain it even if normalization creates a replacement.
+type requestBodyBuffer struct {
+	data    []byte
+	charged int64
+}
+
+func (b *requestBodyBuffer) release(ctx context.Context) {
+	charged := b.charged
+	*b = requestBodyBuffer{}
+	releaseRequestBodyMemory(ctx, charged)
+}
+
+func readRequestBodyWithBudget(req *http.Request) (requestBodyBuffer, error) {
 	if req == nil || req.Body == nil {
-		return nil, nil
+		return requestBodyBuffer{}, nil
+	}
+	if err := req.Context().Err(); err != nil {
+		return requestBodyBuffer{}, err
 	}
 	if preread, ok := req.Body.(*PrereadBody); ok {
-		return preread.Bytes(), nil
+		return requestBodyBuffer{data: preread.Bytes()}, nil
 	}
 
 	capHint := requestBodyReadInitCap
@@ -107,102 +123,139 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 		}
 	}
 
-	buf := bytes.NewBuffer(make([]byte, 0, capHint))
-	receivedBytes, readErr := io.Copy(buf, req.Body)
-	raw := buf.Bytes()
+	startedAt := time.Now()
+	raw, err := readRequestBodyChunksWithBudget(req.Context(), req.Body, capHint, req.ContentLength)
+	if err != nil {
+		var readErr *RequestBodyReadError
+		if errors.As(err, &readErr) {
+			readErr.Elapsed = time.Since(startedAt)
+		}
+		if !isOnlyUnexpectedEOF(err) {
+			return requestBodyBuffer{}, err
+		}
+	}
 
 	enc := strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Encoding")))
 	if enc == "" || enc == "identity" {
-		if readErr != nil {
-			// Recover only a complete JSON document after a lone transport EOF.
-			// Retain the transport error; lenient JSON callers may accept the
-			// validated document, while other readers still fail closed.
-			normalized, normalizeErr := NormalizeLenientJSONRequestBody(raw, int64(len(raw))*6)
-			if isOnlyUnexpectedEOF(readErr) && normalizeErr == nil && json.Valid(normalized) {
-				return raw, &RequestBodyReadError{
-					Stage:         "read",
-					ReceivedBytes: receivedBytes,
-					DecodedBytes:  int64(len(raw)),
-					Err:           readErr,
-				}
-			}
-			return nil, &RequestBodyReadError{
-				Stage:         "read",
-				ReceivedBytes: receivedBytes,
-				DecodedBytes:  int64(len(raw)),
-				Err:           readErr,
-			}
-		}
-		return raw, nil
-	}
-	if readErr != nil && !isOnlyUnexpectedEOF(readErr) {
-		return nil, &RequestBodyReadError{
-			Stage:         "read",
-			ReceivedBytes: receivedBytes,
-			Err:           readErr,
-		}
+		return raw, err
 	}
 
-	decoded, decodeErr := decompressRequestBody(enc, raw)
+	defer raw.release(req.Context())
+	decoded, decodeErr := decompressRequestBodyWithBudget(req.Context(), enc, raw.data)
 	if decodeErr != nil {
-		wrappedDecodeErr := fmt.Errorf("decode Content-Encoding %q: %w", enc, decodeErr)
+		decodeErr = fmt.Errorf("decode Content-Encoding %q: %w", enc, decodeErr)
 		if !isOnlyUnexpectedEOF(decodeErr) {
-			return nil, &RequestBodyReadError{
-				Stage:         "decode",
-				ReceivedBytes: receivedBytes,
-				DecodedBytes:  int64(len(decoded)),
-				Err:           wrappedDecodeErr,
+			return requestBodyBuffer{}, decodeErr
+		}
+	}
+
+	req.Header.Del("Content-Encoding")
+	req.Header.Del("Content-Length")
+	req.ContentLength = int64(len(decoded.data))
+
+	return decoded, errors.Join(err, decodeErr)
+}
+
+// Read bounded chunks as bytes arrive, then assemble the exact-size result.
+// This avoids doubling large buffers or eagerly allocating an untrusted
+// Content-Length before the corresponding bytes have arrived.
+func readRequestBodyChunksWithBudget(ctx context.Context, reader io.Reader, initialCapacity int, contentLength int64) (result requestBodyBuffer, err error) {
+	var reserved int64
+	defer func() {
+		// Chunks and the EOF probe are temporary once the final buffer is
+		// assembled. On failure there is no result, so refund all allocations.
+		releaseRequestBodyMemory(ctx, reserved-result.charged)
+	}()
+	capacity := initialCapacity
+	var chunks [][]byte
+	total := 0
+	for {
+		chunkCapacity := capacity
+		if remaining := contentLength - int64(total); remaining >= 0 && remaining < int64(chunkCapacity) {
+			chunkCapacity = int(remaining) + 1
+		}
+		if err := reserveRequestBodyMemory(ctx, int64(chunkCapacity)); err != nil {
+			return requestBodyBuffer{}, err
+		}
+		reserved += int64(chunkCapacity)
+		chunk := make([]byte, chunkCapacity)
+		n := 0
+		var err error
+		for n < len(chunk) && err == nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return requestBodyBuffer{}, &RequestBodyReadError{Err: ctxErr, BytesRead: int64(total + n)}
+			}
+			var read int
+			read, err = reader.Read(chunk[n:])
+			n += read
+		}
+		// Report the read error before the context: on HTTP/1 a read deadline
+		// also cancels the request context, which would hide the timeout.
+		if err != nil && err != io.EOF && !isOnlyUnexpectedEOF(err) {
+			return requestBodyBuffer{}, &RequestBodyReadError{Err: err, BytesRead: int64(total + n)}
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return requestBodyBuffer{}, &RequestBodyReadError{Err: ctxErr, BytesRead: int64(total + n)}
+		}
+		if n > 0 {
+			chunks = append(chunks, chunk[:n])
+			total += n
+		}
+		if err != nil {
+			var readErr error
+			if err != io.EOF {
+				readErr = &RequestBodyReadError{Err: err, BytesRead: int64(total)}
+			}
+			if len(chunks) == 0 {
+				return requestBodyBuffer{}, readErr
+			}
+			if len(chunks) == 1 {
+				return requestBodyBuffer{data: chunks[0], charged: int64(cap(chunks[0]))}, readErr
+			}
+			if err := reserveRequestBodyMemory(ctx, int64(total)); err != nil {
+				return requestBodyBuffer{}, err
+			}
+			reserved += int64(total)
+			body := make([]byte, total)
+			offset := 0
+			for _, part := range chunks {
+				offset += copy(body[offset:], part)
+			}
+			return requestBodyBuffer{data: body, charged: int64(total)}, readErr
+		}
+		if capacity < requestBodyReadMaxInitCap {
+			capacity *= 2
+			if capacity > requestBodyReadMaxInitCap {
+				capacity = requestBodyReadMaxInitCap
 			}
 		}
-		combinedErr := wrappedDecodeErr
-		stage := "decode"
-		if readErr != nil {
-			combinedErr = errors.Join(readErr, wrappedDecodeErr)
-			stage = "read_decode"
-		}
-		updateDecodedRequestMetadata(req, len(decoded))
-		return decoded, &RequestBodyReadError{
-			Stage:         stage,
-			ReceivedBytes: receivedBytes,
-			DecodedBytes:  int64(len(decoded)),
-			Err:           combinedErr,
-		}
 	}
-
-	updateDecodedRequestMetadata(req, len(decoded))
-	if readErr != nil {
-		return decoded, &RequestBodyReadError{
-			Stage:         "read",
-			ReceivedBytes: receivedBytes,
-			DecodedBytes:  int64(len(decoded)),
-			Err:           readErr,
-		}
-	}
-
-	return decoded, nil
 }
 
 // ReadLenientJSONRequestBodyWithPrealloc reads a request body and normalizes
 // JSON string control bytes before strict validation.
 func ReadLenientJSONRequestBodyWithPrealloc(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
-	body, readErr := ReadRequestBodyWithPrealloc(req)
+	if req == nil {
+		return nil, nil
+	}
+	body, readErr := readRequestBodyWithBudget(req)
 	if readErr != nil && !isOnlyUnexpectedEOF(readErr) {
 		return nil, readErr
 	}
-	normalized, normalizeErr := NormalizeLenientJSONRequestBody(body, maxNormalizedBytes)
-	if normalizeErr != nil {
-		return nil, normalizeErr
+	normalized, err := normalizeLenientJSONRequestBody(req.Context(), body.data, maxNormalizedBytes)
+	if err != nil {
+		body.release(req.Context())
+		return nil, err
 	}
-	if readErr != nil && !json.Valid(normalized) {
+	if readErr != nil && !json.Valid(normalized.data) {
+		normalized.release(req.Context())
+		body.release(req.Context())
 		return nil, readErr
 	}
-	return normalized, nil
-}
-
-func updateDecodedRequestMetadata(req *http.Request, decodedBytes int) {
-	req.Header.Del("Content-Encoding")
-	req.Header.Del("Content-Length")
-	req.ContentLength = int64(decodedBytes)
+	if normalized.charged > 0 {
+		body.release(req.Context())
+	}
+	return normalized.data, nil
 }
 
 // isOnlyUnexpectedEOF accepts a transport/decompressor EOF only when the
@@ -245,40 +298,51 @@ func isOnlyUnexpectedEOF(err error) bool {
 }
 
 func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
+	body, err := decompressRequestBodyWithBudget(context.Background(), encoding, raw)
+	return body.data, err
+}
+
+func decompressRequestBodyWithBudget(ctx context.Context, encoding string, raw []byte) (requestBodyBuffer, error) {
+	var reader io.Reader
 	switch encoding {
 	case "zstd":
-		dec, err := zstd.NewReader(bytes.NewReader(raw))
+		if err := reserveRequestBodyMemory(ctx, maxRequestZstdWindowSize); err != nil {
+			return requestBodyBuffer{}, err
+		}
+		defer releaseRequestBodyMemory(ctx, maxRequestZstdWindowSize)
+		dec, err := zstd.NewReader(bytes.NewReader(raw),
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxWindow(maxRequestZstdWindowSize),
+			zstd.WithDecoderMaxMemory(maxDecompressedBodySize))
 		if err != nil {
-			return nil, err
+			return requestBodyBuffer{}, err
 		}
 		defer dec.Close()
-		return readDecompressedBodyWithLimit(dec, maxDecompressedBodySize)
+		reader = dec
 	case "gzip", "x-gzip":
 		gr, err := gzip.NewReader(bytes.NewReader(raw))
 		if err != nil {
-			return nil, err
+			return requestBodyBuffer{}, err
 		}
 		defer func() { _ = gr.Close() }()
-		return readDecompressedBodyWithLimit(gr, maxDecompressedBodySize)
+		reader = gr
 	case "deflate":
 		zr, err := zlib.NewReader(bytes.NewReader(raw))
 		if err != nil {
-			return nil, err
+			return requestBodyBuffer{}, err
 		}
 		defer func() { _ = zr.Close() }()
-		return readDecompressedBodyWithLimit(zr, maxDecompressedBodySize)
+		reader = zr
 	default:
-		return nil, errors.New("unsupported Content-Encoding")
+		return requestBodyBuffer{}, errors.New("unsupported Content-Encoding")
 	}
-}
-
-func readDecompressedBodyWithLimit(reader io.Reader, limit int64) ([]byte, error) {
-	if limit <= 0 {
-		return io.ReadAll(reader)
+	decoded, err := readRequestBodyChunksWithBudget(ctx, io.LimitReader(reader, maxDecompressedBodySize+1), requestBodyReadInitCap, -1)
+	if err != nil && !isOnlyUnexpectedEOF(err) {
+		return requestBodyBuffer{}, err
 	}
-	decoded, err := io.ReadAll(io.LimitReader(reader, limit+1))
-	if int64(len(decoded)) > limit {
-		return decoded[:limit], &http.MaxBytesError{Limit: limit}
+	if len(decoded.data) > maxDecompressedBodySize {
+		decoded.release(ctx)
+		return requestBodyBuffer{}, &http.MaxBytesError{Limit: maxDecompressedBodySize}
 	}
 	return decoded, err
 }
@@ -286,35 +350,35 @@ func readDecompressedBodyWithLimit(reader io.Reader, limit int64) ([]byte, error
 // NormalizeLenientJSONRequestBody escapes raw control bytes that broken
 // OpenAI-compatible clients sometimes place inside JSON strings.
 func NormalizeLenientJSONRequestBody(body []byte, maxNormalizedBytes int64) ([]byte, error) {
+	normalized, err := normalizeLenientJSONRequestBody(context.Background(), body, maxNormalizedBytes)
+	return normalized.data, err
+}
+
+func normalizeLenientJSONRequestBody(ctx context.Context, body []byte, maxNormalizedBytes int64) (requestBodyBuffer, error) {
+	if err := ctx.Err(); err != nil {
+		return requestBodyBuffer{}, err
+	}
 	if maxNormalizedBytes <= 0 {
 		maxNormalizedBytes = maxDecompressedBodySize
 	}
 
 	body = trimUTF8BOM(body)
 	if len(body) == 0 {
-		return body, nil
+		return requestBodyBuffer{data: body}, nil
 	}
 	if int64(len(body)) > maxNormalizedBytes {
-		return nil, &http.MaxBytesError{Limit: maxNormalizedBytes}
+		return requestBodyBuffer{}, &http.MaxBytesError{Limit: maxNormalizedBytes}
 	}
 
-	var out []byte
+	normalizedSize := int64(len(body))
 	inString := false
 	escaped := false
-	for i, b := range body {
+	for _, b := range body {
 		if inString && isJSONControlByte(b) {
-			if out == nil {
-				capHint := len(body) + 6
-				if int64(capHint) > maxNormalizedBytes {
-					capHint = int(maxNormalizedBytes)
-				}
-				out = make([]byte, 0, capHint)
-				out = append(out, body[:i]...)
+			if maxNormalizedBytes-normalizedSize < 5 {
+				return requestBodyBuffer{}, &http.MaxBytesError{Limit: maxNormalizedBytes}
 			}
-			if int64(len(out)+6) > maxNormalizedBytes {
-				return nil, &http.MaxBytesError{Limit: maxNormalizedBytes}
-			}
-			out = appendJSONUnicodeEscape(out, b)
+			normalizedSize += 5
 			escaped = false
 			continue
 		}
@@ -327,18 +391,41 @@ func NormalizeLenientJSONRequestBody(body []byte, maxNormalizedBytes int64) ([]b
 		case b == '"':
 			inString = !inString
 		}
-
-		if out != nil {
-			if int64(len(out)+1) > maxNormalizedBytes {
-				return nil, &http.MaxBytesError{Limit: maxNormalizedBytes}
-			}
-			out = append(out, b)
+	}
+	if err := ctx.Err(); err != nil {
+		return requestBodyBuffer{}, err
+	}
+	if normalizedSize == int64(len(body)) {
+		return requestBodyBuffer{data: body}, nil
+	}
+	if err := reserveRequestBodyMemory(ctx, normalizedSize); err != nil {
+		return requestBodyBuffer{}, err
+	}
+	// Allocate once after counting expansion, so escaped control bytes cannot
+	// bypass the ingress budget through append's geometric capacity growth.
+	out := make([]byte, 0, int(normalizedSize))
+	inString, escaped = false, false
+	for _, b := range body {
+		if inString && isJSONControlByte(b) {
+			out = appendJSONUnicodeEscape(out, b)
+			escaped = false
+			continue
 		}
+		switch {
+		case escaped:
+			escaped = false
+		case inString && b == '\\':
+			escaped = true
+		case b == '"':
+			inString = !inString
+		}
+		out = append(out, b)
 	}
-	if out != nil {
-		return out, nil
+	if err := ctx.Err(); err != nil {
+		releaseRequestBodyMemory(ctx, normalizedSize)
+		return requestBodyBuffer{}, err
 	}
-	return body, nil
+	return requestBodyBuffer{data: out, charged: normalizedSize}, nil
 }
 
 func trimUTF8BOM(body []byte) []byte {

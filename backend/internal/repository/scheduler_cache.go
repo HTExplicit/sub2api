@@ -1314,6 +1314,8 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		// 走网关报 no available accounts"。
 		"openai_passthrough",
 		"openai_oauth_passthrough",
+		// 生图尺寸档位在候选过滤阶段按本投影判定，裁掉后受限账号会接到不允许的档位。
+		service.AccountExtraOpenAIImageSizeTiers,
 		"codex_fingerprint_mode",
 		"codex_fingerprint_seed",
 		// 请求完整性检查的账号级覆盖（off|observe|enforce）在转发阶段读取，不投影则对

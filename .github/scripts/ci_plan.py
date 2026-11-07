@@ -10,6 +10,8 @@ import re
 import subprocess
 from typing import Iterable
 
+from ci_source_tests import COMPILE_ONLY_FILES, SOURCE_TEST_FILES as REVIEWED_SOURCE_TEST_FILES
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = "ci-plan/v1"
 
@@ -53,6 +55,14 @@ SOURCE_TEST_FILES = {
         "backend/internal/repository/pelican_repeats_repo_integration_test.go",
     ),
 }
+SOURCE_TEST_FILES.update(REVIEWED_SOURCE_TEST_FILES)
+
+# Partner artwork is documentation-only and has no executable test surface.
+DOCUMENT_ASSETS = {
+    "assets/partners/logos/aigocode-dark.png", "assets/partners/logos/aigocode.png",
+    "assets/partners/logos/apimart.jpg", "assets/partners/logos/marucode.jpg",
+    "assets/partners/logos/massivetokens.jpg",
+}
 
 DEPLOY_RULES = {
     "deploy/apple-container.sh": ["deploy/tests/apple-container-test.sh"],
@@ -62,7 +72,11 @@ DEPLOY_RULES = {
     "deploy/docker-compose.standalone.yml": ["deploy/tests/docker-compose-simple-mode-env-test.sh"],
     "deploy/Caddyfile": ["deploy/test-caddyfile-cache.sh"],
     "deploy/install.sh": ["deploy/tests/install-github-token-test.sh"],
+    "deploy/.env.example": ["deploy/tests/docker-compose-gateway-env-test.sh"],
+    "deploy/docker-compose.dev.yml": ["deploy/tests/docker-compose-gateway-env-test.sh"],
+    "deploy/docker-compose.local.yml": ["deploy/tests/docker-compose-gateway-env-test.sh"],
 }
+DEPLOY_DOCKER_TESTS = {"deploy/tests/docker-compose-simple-mode-env-test.sh"}
 
 # Only reviewed leaf helpers may derive their unit selector from a sibling.
 # Shared service/handler/repository entries require the explicit risk rules.
@@ -130,10 +144,10 @@ def _go_test(path: Path, relative: str) -> dict | None:
         return None
     build = re.search(r"(?m)^//go:build\s+(.+)$", content)
     expression = build.group(1) if build else ""
-    tags = [name for name in ("unit", "integration", "e2e")
+    tags = [name for name in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth")
             if re.search(rf"(?<![\w!]){name}\b", expression)]
     # E2E and nontrivial tag expressions need an explicit reviewed command.
-    if "e2e" in tags or (expression and expression not in ("unit", "integration")):
+    if "e2e" in tags or (expression and expression not in ("unit", "integration", "embed", "mcp_go_client_oauth")):
         return None
     return {"packages": ["./" + str(PurePosixPath(relative).parent.relative_to("backend"))],
             "pattern": "^(?:" + "|".join(sorted(set(names))) + ")$", "tags": tags,
@@ -191,7 +205,12 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
         if any(item.is_symlink() for item in [disk_path, *list(disk_path.parents)[:len(path.parts)-1]]):
             failures.append("linked_input:" + relative)
             continue
-        known = False
+        known = relative in DOCUMENT_ASSETS or relative in COMPILE_ONLY_FILES
+        if relative in COMPILE_ONLY_FILES:
+            select("candidate_image", relative)
+            if path.suffix == ".go":
+                packages.add("./" + str(path.parent.relative_to("backend")))
+                select("backend_compile", relative)
         source_tests = SOURCE_TEST_FILES.get(relative, ())
         if source_tests:
             known = True
@@ -204,6 +223,8 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
                 selected["reason"] = relative
                 tests.append(selected)
                 select("backend_focused", relative)
+            if relative.startswith("backend/") and path.suffix != ".go":
+                select("candidate_image", relative)
         if relative.startswith("docs/legal/") and path.suffix == ".md":
             select("static_docs", relative)
             select("frontend_validate", relative)
@@ -241,8 +262,10 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
                 select("renderer", relative)
             known = True
         elif relative in DEPLOY_RULES or (relative.startswith("deploy/tests/") and path.suffix == ".sh") or relative == "deploy/test-caddyfile-cache.sh":
-            select("deploy_contracts", relative)
-            deploy_tests.update(DEPLOY_RULES.get(relative, [relative]))
+            selected = DEPLOY_RULES.get(relative, [relative])
+            for test in selected:
+                select("deploy_docker_contracts" if test in DEPLOY_DOCKER_TESTS else "deploy_contracts", relative)
+            deploy_tests.update(selected)
             known = True
         elif relative in (".gitignore", ".gitattributes", ".editorconfig"):
             select("ci_contracts", relative)
@@ -257,6 +280,18 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             select("frontend_validate", relative)
             select("candidate_image", relative)
             typecheck = True
+            known = True
+        elif relative == "frontend/vite.config.ts":
+            select("frontend_validate", relative)
+            select("candidate_image", relative)
+            frontend_files.add("vite.config.ts")
+            typecheck = True
+            known = True
+        elif relative == "frontend/vitest.config.ts":
+            select("frontend_validate", relative)
+            select("frontend_focused", relative)
+            frontend_files.add("vitest.config.ts")
+            frontend_tests.add("src/__tests__/markdownAssets.spec.ts")
             known = True
         elif relative.startswith("frontend/src/") and path.suffix in (".vue", ".ts", ".tsx", ".js", ".jsx"):
             frontend_relative = relative.removeprefix("frontend/")
@@ -287,6 +322,8 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
                 if re.fullmatch(pattern, relative):
                     matched.extend(risk_groups)
             if relative.endswith("_test.go"):
+                if source_tests:
+                    continue
                 selected = _go_test(disk_path, relative)
                 if selected:
                     selected["race"] = any(group.endswith("_race") for group in matched)
@@ -331,6 +368,10 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             failures.append("missing_deploy_test:" + test_path)
     unique_tests = {json.dumps(test, sort_keys=True): test for test in tests}
     compile_packages = direct_importers(source_packages, repo) if source_packages else []
+    compile_packages = sorted(set(compile_packages) | {
+        "./" + str(PurePosixPath(relative).parent.relative_to("backend"))
+        for relative in files if relative in COMPILE_ONLY_FILES and relative.endswith(".go")
+    })
     if compile_packages:
         for package in sorted(source_packages):
             select("backend_compile", "direct-importers-of:" + package)

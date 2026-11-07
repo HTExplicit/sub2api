@@ -166,14 +166,18 @@ const icons = {
   chevronDoubleRight: 'm5.25 4.5 7.5 7.5-7.5 7.5m6-15 7.5 7.5-7.5 7.5',
   banknotes: 'M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z',
   chatBubbles: 'M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155',
-  logout: 'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75'
+  logout: 'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75',
+
+  // Brands
+  // Model Context Protocol logo (modelcontextprotocol.io), scaled to the 24px stroke grid.
+  mcp: 'M3.98 11.4L11.59 3.79C12.64 2.74 14.34 2.74 15.39 3.79C16.44 4.84 16.44 6.54 15.39 7.59L9.64 13.34M9.72 13.26L15.39 7.59C16.44 6.54 18.14 6.54 19.2 7.59L19.24 7.63C20.29 8.68 20.29 10.39 19.24 11.44L12.35 18.32C12 18.67 12 19.24 12.35 19.59L13.77 21M13.49 5.69L7.86 11.32C6.81 12.37 6.81 14.07 7.86 15.12C8.91 16.17 10.61 16.17 11.67 15.12L17.29 9.49'
 } as const
 
 const iconPath = computed(() => icons[props.name])
 
-// Console theme (utils/flatTheme.ts): the Lucide glyph for the same name (./lucide.ts); theme off keeps the path above.
-const lucide: Record<keyof typeof icons, LucideGlyph> = lucideIcons
-const lucideGlyph = computed(() => (flatThemeActive.value ? lucide[props.name] : undefined))
+// Console theme uses Lucide glyphs; the MCP brand keeps its official logo in either theme.
+const lucide: Record<Exclude<keyof typeof icons, 'mcp'>, LucideGlyph> = lucideIcons
+const lucideGlyph = computed(() => (flatThemeActive.value && props.name !== 'mcp' ? lucide[props.name] : undefined))
 
 const sizeClass = computed(() => ({
   xs: 'h-3 w-3',

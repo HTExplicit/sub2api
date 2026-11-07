@@ -28,8 +28,12 @@ func (r *compositeTerminalErrorReader) Read(p []byte) (int, error) {
 	if r.read {
 		return 0, r.err
 	}
-	r.read = true
 	n := copy(p, r.data)
+	r.data = r.data[n:]
+	if len(r.data) > 0 {
+		return n, nil
+	}
+	r.read = true
 	return n, r.err
 }
 
