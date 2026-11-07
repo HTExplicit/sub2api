@@ -76,6 +76,7 @@ DEPLOY_RULES = {
     "deploy/docker-compose.dev.yml": ["deploy/tests/docker-compose-gateway-env-test.sh"],
     "deploy/docker-compose.local.yml": ["deploy/tests/docker-compose-gateway-env-test.sh"],
 }
+DEPLOY_DOCKER_TESTS = {"deploy/tests/docker-compose-simple-mode-env-test.sh"}
 
 # Only reviewed leaf helpers may derive their unit selector from a sibling.
 # Shared service/handler/repository entries require the explicit risk rules.
@@ -261,8 +262,10 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
                 select("renderer", relative)
             known = True
         elif relative in DEPLOY_RULES or (relative.startswith("deploy/tests/") and path.suffix == ".sh") or relative == "deploy/test-caddyfile-cache.sh":
-            select("deploy_contracts", relative)
-            deploy_tests.update(DEPLOY_RULES.get(relative, [relative]))
+            selected = DEPLOY_RULES.get(relative, [relative])
+            for test in selected:
+                select("deploy_docker_contracts" if test in DEPLOY_DOCKER_TESTS else "deploy_contracts", relative)
+            deploy_tests.update(selected)
             known = True
         elif relative in (".gitignore", ".gitattributes", ".editorconfig"):
             select("ci_contracts", relative)
@@ -283,6 +286,12 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             select("candidate_image", relative)
             frontend_files.add("vite.config.ts")
             typecheck = True
+            known = True
+        elif relative == "frontend/vitest.config.ts":
+            select("frontend_validate", relative)
+            select("frontend_focused", relative)
+            frontend_files.add("vitest.config.ts")
+            frontend_tests.add("src/__tests__/markdownAssets.spec.ts")
             known = True
         elif relative.startswith("frontend/src/") and path.suffix in (".vue", ".ts", ".tsx", ".js", ".jsx"):
             frontend_relative = relative.removeprefix("frontend/")

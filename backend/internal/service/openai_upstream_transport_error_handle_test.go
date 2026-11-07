@@ -68,10 +68,11 @@ func TestHandleOpenAIUpstreamTransportError_DNSCooldownConfig(t *testing.T) {
 					if withRepo {
 						svc.accountRepo = repo
 					}
-					account := &Account{ID: 8541, Name: "shared-egress", Platform: PlatformOpenAI}
+					account := &Account{ID: 8541, Name: "shared-egress", Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+					ctx := WithOpenAIOfficialHTTPFailover(context.Background())
 					c, rec := newOpenAITransportErrTestContext()
 					before := time.Now()
-					retErr := svc.handleOpenAIUpstreamTransportError(context.Background(), c, account, transportErr, passthrough)
+					retErr := svc.handleOpenAIUpstreamTransportError(ctx, c, account, transportErr, passthrough)
 					after := time.Now()
 
 					var failover *UpstreamFailoverError
@@ -126,8 +127,9 @@ func TestTempUnscheduleOpenAITransportError_DisabledPreservesExistingState(t *te
 		t.Run(fmt.Sprintf("paused=%t", paused), func(t *testing.T) {
 			repo := &openaiTransportAccountRepoStub{}
 			svc := &OpenAIGatewayService{accountRepo: repo, cfg: &config.Config{}}
-			account := &Account{ID: 8541, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: !paused}
-			svc.tempUnscheduleOpenAITransportError(context.Background(), account, "previous failure")
+			account := &Account{ID: 8541, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: !paused}
+			ctx := WithOpenAIOfficialHTTPFailover(context.Background())
+			svc.tempUnscheduleOpenAITransportError(ctx, account, "previous failure")
 			require.Len(t, repo.tempUnschedCalls, 1)
 			previousCall := repo.tempUnschedCalls[0]
 			persistedUntil := previousCall.until
@@ -139,7 +141,7 @@ func TestTempUnscheduleOpenAITransportError_DisabledPreservesExistingState(t *te
 			previousGeneration, _ := svc.openaiAccountRuntimeBlockGeneration.Load(account.ID)
 
 			svc.cfg.Gateway.DisableOpenAITransportErrorCooldown = true
-			svc.tempUnscheduleOpenAITransportError(context.Background(), account, "new failure")
+			svc.tempUnscheduleOpenAITransportError(ctx, account, "new failure")
 
 			require.Equal(t, []tempUnschedCall{previousCall}, repo.tempUnschedCalls)
 			require.Equal(t, previousAccount, *account)

@@ -25,6 +25,7 @@ OWNERS = {
     "release-helpers": {"generic_release_contracts"},
     "Downstream backend": {
         "static_docs", "ci_contracts", "release_contracts", "upstream_contracts",
+        "deploy_docker_contracts",
         "transport", "agent_protocol", "deepseek", "claude",
         "pelican_race", "keepalive_race", "probe_race", "management_race",
         "request_body", "account_jobs", "taxonomy_db", "retirement_migration", "repository_audit",
@@ -108,7 +109,7 @@ def prepare(context: str, workflow: str, directory: Path) -> dict:
                                                "pending": pending, "probe": probe})
     outputs = {
         "needs_go": any(x in pending for x in OWNERS["Downstream backend"] -
-                         {"static_docs", "ci_contracts", "release_contracts", "upstream_contracts"})
+                         {"static_docs", "ci_contracts", "release_contracts", "upstream_contracts", "deploy_docker_contracts"})
                     or bool(set(pending) & {"backend_focused", "backend_compile", "backend_lint", "backend_security", "renderer"}),
         "needs_node": bool(set(pending) & {"frontend_focused", "frontend_validate", "frontend_security"}),
         "needs_lint": "backend_lint" in pending,
@@ -299,10 +300,12 @@ def run_group(group: str, plan: dict) -> None:
     elif group == "upstream_contracts":
         command([sys.executable, "-B", ".github/scripts/test_upstream_risk.py"])
         command([sys.executable, "-B", ".github/scripts/test_upstream_automation_contract.py"])
-    elif group == "deploy_contracts":
-        for test in plan.get("deploy_tests", []):
+    elif group in ("deploy_contracts", "deploy_docker_contracts"):
+        tests = [test for test in plan.get("deploy_tests", [])
+                 if (test in ci_plan.DEPLOY_DOCKER_TESTS) == (group == "deploy_docker_contracts")]
+        for test in tests:
             command(["bash", test])
-        if not plan.get("deploy_tests"):
+        if not tests:
             raise ValueError("deployment_test_selection_empty")
     elif group == "backend_focused" or group in GO_GROUPS or group == "agent_protocol":
         tests = plan.get("go_checks", {}).get(group, [])

@@ -75,6 +75,14 @@ class ChangeSelectionTests(unittest.TestCase):
         self.assertFalse(plan["frontend_tests"])
         self.assertFalse(plan["frontend_related"])
 
+    def test_vitest_config_selects_markdown_dependency_graph_fixture(self):
+        plan = ci_plan.classify_paths(["frontend/vitest.config.ts"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["frontend_focused", "frontend_validate"], plan["groups"])
+        self.assertEqual(["src/__tests__/markdownAssets.spec.ts"], plan["frontend_tests"])
+        self.assertFalse(plan["frontend_related"])
+        self.assertFalse(plan["backend_tests"])
+
     def test_shared_entry_cannot_claim_sibling_tests_are_complete(self):
         plan = ci_plan.classify_paths(["backend/internal/service/account_job.go",
                                        "backend/internal/service/gateway_service.go"])
@@ -254,6 +262,16 @@ class ChangeSelectionTests(unittest.TestCase):
         plan = ci_plan.classify_paths(["deploy/Caddyfile"])
         self.assertTrue(plan["passed"])
         self.assertEqual(["deploy/test-caddyfile-cache.sh"], plan["deploy_tests"])
+
+    def test_only_docker_dependent_deploy_tests_require_the_linux_group(self):
+        docker_test = "deploy/tests/docker-compose-simple-mode-env-test.sh"
+        plan = ci_plan.classify_paths(["deploy/docker-compose.standalone.yml"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["deploy_docker_contracts"], plan["groups"])
+        self.assertEqual([docker_test], plan["deploy_tests"])
+        plan = ci_plan.classify_paths(["deploy/tests/docker-runtime-resources-test.sh"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["deploy_contracts"], plan["groups"])
 
     def test_generic_release_tools_have_their_own_offline_contract(self):
         plan = ci_plan.classify_paths([".github/release-tools/release_matrix.py", ".goreleaser.yaml"])

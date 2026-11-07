@@ -23,6 +23,19 @@ class SelectedExecutionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci_run.selected_groups({"groups": ["new_unreviewed_suite"]}, "test")
 
+    def test_docker_deploy_contracts_run_once_on_the_linux_owner(self):
+        portable = "deploy/tests/docker-runtime-resources-test.sh"
+        docker = "deploy/tests/docker-compose-simple-mode-env-test.sh"
+        plan = {"groups": ["deploy_contracts", "deploy_docker_contracts"], "deploy_tests": [portable, docker]}
+        self.assertEqual(["deploy_contracts"], ci_run.selected_groups(plan, "shell"))
+        self.assertEqual(["deploy_docker_contracts"], ci_run.selected_groups(plan, "Downstream backend"))
+        with patch.object(ci_run, "command") as run:
+            ci_run.run_group("deploy_contracts", plan)
+            run.assert_called_once_with(["bash", portable])
+        with patch.object(ci_run, "command") as run:
+            ci_run.run_group("deploy_docker_contracts", plan)
+            run.assert_called_once_with(["bash", docker])
+
     def test_frontend_related_names_direct_specs_and_sources_once(self):
         plan = {"frontend_tests": ["src/a.spec.ts"], "frontend_related": ["src/a.ts", "src/a.ts"]}
         with patch.object(ci_run, "command") as run:
