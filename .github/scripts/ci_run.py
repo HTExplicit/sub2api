@@ -90,7 +90,7 @@ def prepare(context: str, workflow: str, directory: Path) -> dict:
     plan.update(source_base_sha=source_base, source_head_sha=source_head, event_name=name)
     environment = {key: os.environ.get(key, "") for key in
                    ("RUNNER_OS", "RUNNER_ARCH", "ImageOS", "ImageVersion")}
-    environment.update(python=list(sys.version_info[:3]), expected_node="20", expected_pnpm="9.15.9",
+    environment.update(python=list(sys.version_info[:3]), expected_node="24", expected_pnpm="9.15.9",
                        expected_go=re.search(r"(?m)^go (\S+)", (ROOT / "backend/go.mod").read_text()).group(1))
     plan["environment_sha256"] = hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()
     if name == "schedule":
@@ -185,7 +185,7 @@ def resolve_go_checks(plan: dict) -> None:
     ordered = sorted(descriptions, key=lambda group: (not any(x.get("race") for x in descriptions[group]),
                                                      group != "backend_focused", group))
     for group in ordered:
-        selected = []
+        selected = {}
         for description in descriptions[group]:
             regex, tags = re.compile(description["pattern"]), description.get("tags", [])
             found = False
@@ -197,11 +197,11 @@ def resolve_go_checks(plan: dict) -> None:
                     build = re.search(r"(?m)^//go:build\s+(.+)$", content)
                     if build:
                         expression = build.group(1).strip()
-                        if expression in ("unit", "integration", "e2e", "embed") and expression not in tags:
+                        if expression in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth") and expression not in tags:
                             continue
                         if expression.startswith("!") and expression[1:] in tags:
                             continue
-                        if expression not in ("unit", "integration", "e2e", "embed", "!unit"):
+                        if expression not in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth", "!unit"):
                             if any(regex.search(name) for name in re.findall(r"(?m)^func\s+(Test[A-Za-z0-9_]+)\s*\(", content)):
                                 raise ValueError("mapped_test_build_tags_require_review:" + group)
                             continue
@@ -213,12 +213,16 @@ def resolve_go_checks(plan: dict) -> None:
                                 assigned.add(identity)
                                 names.add(name)
                 if names:
-                    selected.append({"packages": [package], "pattern": "^(?:" + "|".join(sorted(names)) + ")$",
-                                     "tags": tags, "race": description.get("race", False)})
+                    configuration = (package, tuple(tags), description.get("race", False))
+                    selected.setdefault(configuration, set()).update(names)
             if not found:
                 raise ValueError("mapped_test_pattern_matches_no_functions:" + group)
         if selected:
-            checks[group] = selected
+            checks[group] = [
+                {"packages": [package], "pattern": "^(?:" + "|".join(sorted(names)) + ")$",
+                 "tags": list(tags), "race": race}
+                for (package, tags, race), names in sorted(selected.items())
+            ]
         else:
             plan["groups"].remove(group)
             plan.setdefault("covered_by_other_groups", []).append(group)
@@ -299,7 +303,7 @@ def run_group(group: str, plan: dict) -> None:
         tests = plan.get("go_checks", {}).get(group, [])
         if not tests:
             raise ValueError("backend_test_selection_empty")
-        if group == "agent_protocol":
+        if group == "agent_protocol" or any("embed" in item.get("tags", []) for item in tests):
             destination = ROOT / "backend/internal/web/dist"
             destination.mkdir(parents=True, exist_ok=True)
             for source, name in (("frontend/index.html", "index.html"), ("frontend/public/logo.svg", "logo.svg")):

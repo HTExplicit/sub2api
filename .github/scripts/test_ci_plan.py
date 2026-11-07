@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import ci_plan
 
@@ -49,7 +50,7 @@ class ChangeSelectionTests(unittest.TestCase):
 
     def test_unknown_source_or_dependency_blocks_without_broad_fallback(self):
         for path in ("backend/internal/service/new_gateway.go",
-                     "frontend/vite.config.ts", "deploy/new-helper.sh",
+                     "frontend/new-tool.config.ts", "deploy/new-helper.sh",
                      "Dockerfile.goreleaser"):
             with self.subTest(path=path):
                 plan = ci_plan.classify_paths([path])
@@ -76,10 +77,64 @@ class ChangeSelectionTests(unittest.TestCase):
 
     def test_shared_entry_cannot_claim_sibling_tests_are_complete(self):
         plan = ci_plan.classify_paths(["backend/internal/service/account_job.go",
-                                       "backend/internal/service/openai_gateway_service.go"])
+                                       "backend/internal/service/gateway_service.go"])
         self.assertFalse(plan["passed"])
         self.assertIn("account_jobs", plan["groups"])
-        self.assertIn("unclassified_input:backend/internal/service/openai_gateway_service.go", plan["failures"])
+        self.assertIn("unclassified_input:backend/internal/service/gateway_service.go", plan["failures"])
+
+    def test_reviewed_session_source_selects_its_cache_contract_only(self):
+        with patch.object(ci_plan, "direct_importers", return_value=[]):
+            plan = ci_plan.classify_paths(["backend/internal/service/openai_gateway_service.go"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(1, len(plan["backend_tests"]))
+        self.assertEqual("backend/internal/service/openai_gateway_service.go", plan["backend_tests"][0]["reason"])
+        self.assertIn("TestSessionMemoryCache", plan["backend_tests"][0]["pattern"])
+        self.assertNotIn("TestBillingNotification", plan["backend_tests"][0]["pattern"])
+
+    def test_reviewed_helpers_select_direct_contracts_without_running_benchmarks(self):
+        for path, expected in (
+            ("backend/internal/handler/admin/admin_service_stub_test.go", "TestEmailBlacklist"),
+            ("backend/internal/service/openai_request_patches_benchmark_test.go", "TestOpenAI"),
+        ):
+            with self.subTest(path=path):
+                plan = ci_plan.classify_paths([path])
+                self.assertTrue(plan["passed"], plan["failures"])
+                self.assertEqual(["backend_focused"], plan["groups"])
+                self.assertTrue(plan["backend_tests"])
+                self.assertNotIn("Benchmark", plan["backend_tests"][0]["pattern"])
+
+    def test_single_embed_and_mcp_sdk_tags_are_explicitly_supported(self):
+        for path, expected in (
+            ("backend/internal/web/embed_test.go", ["embed"]),
+            ("backend/internal/server/routes/mcp_oauth_sdk_test.go", ["mcp_go_client_oauth"]),
+        ):
+            with self.subTest(path=path):
+                plan = ci_plan.classify_paths([path])
+                self.assertTrue(plan["passed"], plan["failures"])
+                self.assertEqual(expected, plan["backend_tests"][0]["tags"])
+
+    def test_reviewed_wiring_is_compile_only(self):
+        with patch.object(ci_plan, "direct_importers", return_value=[]):
+            plan = ci_plan.classify_paths(["backend/internal/service/wire.go"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["./internal/service"], plan["backend_compile_packages"])
+        self.assertFalse(plan["backend_tests"])
+        self.assertIn("backend_compile", plan["groups"])
+        self.assertIn("candidate_image", plan["groups"])
+
+    def test_vite_config_uses_typecheck_and_build_without_feature_suites(self):
+        plan = ci_plan.classify_paths(["frontend/vite.config.ts"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["candidate_image", "frontend_validate"], plan["groups"])
+        self.assertTrue(plan["frontend_typecheck"])
+        self.assertFalse(plan["frontend_tests"])
+        self.assertFalse(plan["frontend_related"])
+
+    def test_reviewed_source_mappings_point_to_real_test_functions(self):
+        for source, tests in ci_plan.SOURCE_TEST_FILES.items():
+            for target in tests:
+                with self.subTest(source=source, target=target):
+                    self.assertIsNotNone(ci_plan._go_test(ci_plan.ROOT / target, target))
 
     def test_explicit_test_file_selects_only_its_actual_functions(self):
         path = "backend/internal/service/account_job_test.go"

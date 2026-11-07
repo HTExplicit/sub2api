@@ -165,18 +165,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {
-		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(reqModel, body); rejectReason != "" {
-			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
-			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
-			logOpenAIPassthroughInstructionsRejected(ctx, c, account, reqModel, rejectReason, body)
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": gin.H{
-					"type":    "forbidden_error",
-					"message": rejectMsg,
-				},
-			})
-			return nil, fmt.Errorf("openai passthrough rejected before upstream: %s", rejectReason)
-		}
 		if isOpenAICodexModel(reqModel) && !gjson.GetBytes(body, "instructions").Exists() {
 			nextBody, setErr := sjson.SetBytes(body, "instructions", defaultCodexSynthInstructions(reqModel))
 			if setErr != nil {
@@ -192,7 +180,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if normalized {
 			body = normalizedBody
 		}
-		reqStream = gjson.GetBytes(body, "stream").Bool()
+		// 上游 ChatGPT internal API 要求 stream=true，但下游响应形态必须遵循
+		// 客户端原始的 stream 标志：stream=false 时由非流式分支把上游 SSE
+		// 聚合为单个 JSON（#7978）。compact 请求始终为非流式。
+		if isOpenAIResponsesCompactPath(c) {
+			reqStream = false
+		}
 
 		// 账号作用域：body client_metadata / prompt_cache_key 与出站头共用同一映射，
 		// 否则头已按账号改写而 body 仍是客户端原值，同一请求会暴露两套身份。
@@ -396,6 +389,7 @@ retryUpstream:
 		reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, actualModel)
 		SetOpsUpstreamModel(c, actualModel)
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+		syncOpenAIResponsesInstructionsEcho(c, body)
 		upstreamReq, buildErr := s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token)
 		releaseUpstreamCtx()
 		if buildErr != nil {
@@ -497,7 +491,7 @@ retryUpstream:
 		if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
 			maxLineSize = s.cfg.Gateway.MaxLineSize
 		}
-		resp.Body = newGrokResponsesClientToolStreamBody(resp.Body, mapping, maxLineSize)
+		resp.Body = newGrokResponsesClientToolStreamBody(resp.Body, mapping, maxLineSize, s.cfg)
 	}
 
 	serviceTier := extractOpenAIServiceTierFromBody(body)
@@ -598,37 +592,6 @@ retryUpstream:
 		forwardResult.BillingModel = imageBillingModel
 	}
 	return forwardResult, nil
-}
-
-func logOpenAIPassthroughInstructionsRejected(
-	ctx context.Context,
-	c *gin.Context,
-	account *Account,
-	reqModel string,
-	rejectReason string,
-	body []byte,
-) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	accountID := int64(0)
-	accountName := ""
-	accountType := ""
-	if account != nil {
-		accountID = account.ID
-		accountName = strings.TrimSpace(account.Name)
-		accountType = strings.TrimSpace(string(account.Type))
-	}
-	fields := []zap.Field{
-		zap.String("component", "service.openai_gateway"),
-		zap.Int64("account_id", accountID),
-		zap.String("account_name", accountName),
-		zap.String("account_type", accountType),
-		zap.String("request_model", strings.TrimSpace(reqModel)),
-		zap.String("reject_reason", strings.TrimSpace(rejectReason)),
-	}
-	fields = appendCodexCLIOnlyRejectedRequestFields(fields, c, body)
-	logger.FromContext(ctx).With(fields...).Warn("OpenAI passthrough 本地拦截：Codex 请求缺少有效 instructions")
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
@@ -2181,6 +2144,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	}
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
+	scanner.Split(newBoundedSSESplit(s.cfg, maxLineSize, nil))
 	defer putSSEScannerBuf64K(scanBuf)
 	documentScanner := newOpenAISSEJSONDocumentScanner(scanner)
 
@@ -2270,6 +2234,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				if restoreErr != nil {
 					return resultWithUsage(), fmt.Errorf("restore OpenAI passthrough namespace response: %w", restoreErr)
 				}
+				restoredData = restoreCodexToolNamesFromSSEContext(c, restoredData, rawEventType)
+				restoredData = restoreOpenAIResponsesInstructionsEchoInEvent(c, restoredData)
 				if !bytes.Equal(restoredData, dataBytes) {
 					dataBytes = restoredData
 					trimmedData = strings.TrimSpace(string(restoredData))
@@ -2705,11 +2671,11 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, fmt.Errorf("restore OpenAI passthrough namespace response: %w", err)
 	}
-	if mapping, ok := openAIResponsesClientToolMapping(c); ok && json.Valid(body) {
-		body, _, err = apicompat.RestoreResponsesClientToolPayload(body, mapping)
-		if err != nil {
-			return nil, fmt.Errorf("restore OpenAI Responses client tools: %w", err)
-		}
+	body = restoreCodexToolNamesFromContext(c, body)
+	body = restoreOpenAIResponsesInstructionsEchoInResponse(c, body)
+	body, err = restoreOpenAIResponsesClientToolPayload(c, body)
+	if err != nil {
+		return nil, fmt.Errorf("restore OpenAI Responses client tools: %w", err)
 	}
 	if !cyberHit && isOpenAIRefusalRecoveryResponsesRequest(c) {
 		runtime := s.openAIRefusalRecoveryRuntime(ctx)
@@ -2772,6 +2738,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	if !ok && terminalOK {
+		finalResponse, ok = extractOpenAINonCompletedTerminalResponse(terminalType, terminalPayload)
+	}
 
 	usage := &OpenAIUsage{}
 	if ok {
@@ -2798,7 +2767,8 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		if restoreErr != nil {
 			return nil, fmt.Errorf("restore OpenAI passthrough namespace response: %w", restoreErr)
 		}
-		body = restoredBody
+		restoredBody = restoreCodexToolNamesFromContext(c, restoredBody)
+		body = restoreOpenAIResponsesInstructionsEchoInResponse(c, restoredBody)
 		if !cyberHit && isOpenAIRefusalRecoveryResponsesRequest(c) {
 			runtime := s.openAIRefusalRecoveryRuntime(c.Request.Context())
 			if runtime.RewriteEnabled() {
@@ -2831,6 +2801,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 			bodyText = s.replaceModelInSSEBody(bodyText, mappedModel, originalModel)
 		}
+		bodyText = restoreOpenAIResponsesInstructionsEchoInSSEBody(c, bodyText)
 		body = []byte(bodyText)
 	}
 

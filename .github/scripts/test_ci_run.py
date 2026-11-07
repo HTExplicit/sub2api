@@ -83,12 +83,29 @@ class SelectedExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "matches_no_functions"):
                 ci_run.resolve_go_checks({"groups": ["pelican_race"]})
 
+    def test_exact_files_in_one_build_configuration_share_one_go_invocation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "backend/internal/service"
+            directory.mkdir(parents=True)
+            for name in ("First", "Second"):
+                (directory / (name + "_test.go")).write_text(
+                    "//go:build unit\npackage service\nfunc Test" + name + "(t *testing.T) {}\n", encoding="utf-8")
+            plan = {"groups": ["backend_focused"], "backend_tests": [
+                {"packages": ["./internal/service"], "pattern": "^Test" + name + "$", "tags": ["unit"]}
+                for name in ("First", "Second")
+            ]}
+            with patch.object(ci_run, "ROOT", root):
+                ci_run.resolve_go_checks(plan)
+            self.assertEqual(1, len(plan["go_checks"]["backend_focused"]))
+            self.assertEqual("^(?:TestFirst|TestSecond)$", plan["go_checks"]["backend_focused"][0]["pattern"])
+
     def test_embed_and_negative_unit_tags_follow_selected_build(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             directory = root / "backend/internal/web"
             directory.mkdir(parents=True)
-            for name, tag in (("embedded", "embed"), ("plain", "!unit")):
+            for name, tag in (("embedded", "embed"), ("plain", "!unit"), ("sdk", "mcp_go_client_oauth")):
                 (directory / (name + "_test.go")).write_text(f"//go:build {tag}\npackage web\nfunc Test{name}(t *testing.T) {{}}\n", encoding="utf-8", newline="\n")
             definitions = {"fixture": (["./internal/web"], "^Test", ("unit", "embed"), False)}
             with patch.object(ci_run, "ROOT", root), patch.dict(ci_run.GO_GROUPS, definitions):

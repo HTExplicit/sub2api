@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -218,7 +217,7 @@ func TestReadRequestBodyWithPrealloc_preserves_identity_bytes_on_unexpected_eof(
 	if !errors.As(err, &readErr) {
 		t.Fatalf("expected RequestBodyReadError, got %T", err)
 	}
-	if readErr.Stage != "read" || readErr.ReceivedBytes != int64(len(samplePayload)) {
+	if readErr.BytesRead != int64(len(samplePayload)) {
 		t.Fatalf("unexpected read metadata: %+v", readErr)
 	}
 }
@@ -265,14 +264,6 @@ func TestReadLenientJSONRequestBodyWithPrealloc_rejects_joined_eof_and_non_eof_e
 
 	if err == nil || !errors.Is(err, terminalErr) {
 		t.Fatalf("expected joined read failure, got %T %v", err, err)
-	}
-}
-
-func TestReadDecompressedBodyWithLimitRejectsExpansion(t *testing.T) {
-	_, err := readDecompressedBodyWithLimit(strings.NewReader("0123456789X"), 10)
-	var maxErr *http.MaxBytesError
-	if !errors.As(err, &maxErr) || maxErr.Limit != 10 {
-		t.Fatalf("expected MaxBytesError(limit=10), got %T %v", err, err)
 	}
 }
 

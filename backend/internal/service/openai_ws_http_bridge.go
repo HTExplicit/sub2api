@@ -495,6 +495,29 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	if err != nil {
 		return nil, fmt.Errorf("prepare http bridge body: %w", err)
 	}
+	// Reuse the frozen credential-source identity for bridge headers and body.
+	if account.UsesOpenAICodexProtocol() {
+		var clientHeaders http.Header
+		if c != nil && c.Request != nil {
+			clientHeaders = c.Request.Header
+		}
+		fpIDs := stagedCodexFingerprintIDs(c, account)
+		if fpIDs == nil {
+			fpIDs = s.resolveStagedCodexFingerprintIDs(c, account, clientHeaders)
+		}
+		if fpIDs != nil {
+			fpBody, fpChanged, fpErr := applyCodexFingerprintClientMetadataRaw(body, fpIDs)
+			if fpErr != nil {
+				return nil, fmt.Errorf("apply http bridge codex fingerprint: %w", fpErr)
+			}
+			if fpChanged {
+				body = fpBody
+			}
+		}
+		stageCodexFingerprintIDs(c, fpIDs)
+	} else {
+		stageCodexFingerprintIDs(c, nil)
+	}
 	grokIntentSourceBody := append([]byte(nil), body...)
 	_, grokExplicitToolsField := openAIWSHTTPBridgeRawField(grokIntentSourceBody, "tools")
 	grokExplicitToolIntent := account.Platform == PlatformGrok && hasGrokResponsesToolIntent(grokIntentSourceBody)
@@ -812,11 +835,12 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		maxLineSize = s.cfg.Gateway.MaxLineSize
 	}
 	if hasResponsesClientToolMapping(clientToolMapping) {
-		resp.Body = newResponsesClientToolStreamBody(resp.Body, clientToolMapping, maxLineSize)
+		resp.Body = newResponsesClientToolStreamBody(resp.Body, clientToolMapping, maxLineSize, s.cfg)
 	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
+	scanner.Split(newBoundedSSESplit(s.cfg, maxLineSize, nil))
 	defer putSSEScannerBuf64K(scanBuf)
 
 	pendingSSEEventType := ""
