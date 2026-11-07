@@ -271,7 +271,7 @@ describe('GroupsView duplicate action', () => {
     await wrapper.get('#edit-group-form').trigger('submit')
     await flushPromises()
 
-    expect(updateGroup).toHaveBeenCalledWith(42, { name: 'Renamed group', description: '' })
+    expect(updateGroup).toHaveBeenCalledWith(42, { name: 'Renamed group', description: '', i18n: {} })
     expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('model_allowlist')
     expect(group.model_allowlist).toEqual({ enabled: true, models })
     expect(showError).not.toHaveBeenCalled()
