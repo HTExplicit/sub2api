@@ -115,7 +115,7 @@ func TestOpenAIGatewayHandlerImages_SizeTierRoutesToAllowedAccounts(t *testing.T
 	rec, _ := serveOpenAIImagesSizeRoutingRequest(handler, 3141, `{"model":"gpt-image-1","prompt":"draw a cat","size":"2880x2880"}`)
 
 	require.Equal(t, http.StatusBadGateway, rec.Code, "the stub upstream fails every attempt")
-	require.Equal(t, []int64{2, 3}, upstream.calls(), "4K requests fail over only across 4K accounts")
+	require.Equal(t, []int64{2, 2, 3, 3}, upstream.calls(), "4K requests retain one bounded same-account retry before switching to another 4K account")
 }
 
 func serveOpenAIResponsesSizeRoutingRequest(handler *OpenAIGatewayHandler, groupID int64, body string) (*httptest.ResponseRecorder, *gin.Context) {

@@ -180,7 +180,7 @@ def resolve_go_checks(plan: dict) -> None:
                 {"packages": ["./internal/pkg/apicompat"], "pattern": "Test(Agent|Stream_|.*Chat.*Responses|.*Responses.*Chat|ResponsesAgentMessageCapability)", "tags": []},
                 {"packages": ["./internal/service", "./internal/handler"], "pattern": "Test(Agent|ForwardResponses_.*(Chat|Reasoning)|ForwardAsAnthropic_ForceChatCompletions|ForwardAsRawChatCompletions|ForwardAsChatCompletionsForGrokStreaming|OpenAIRawStreamTerminalState|ResponsesAgentMessageRoutingPreservesChatEligibility|.*NoAccount|.*SelectionFailure)", "tags": ["unit"]},
             ]
-    checks, assigned = {}, set()
+    checks, assigned, package_tests = {}, set(), {}
     # A race execution covers the same function in the same build configuration.
     ordered = sorted(descriptions, key=lambda group: (not any(x.get("race") for x in descriptions[group]),
                                                      group != "backend_focused", group))
@@ -192,20 +192,25 @@ def resolve_go_checks(plan: dict) -> None:
             for package in description["packages"]:
                 names = set()
                 directory = ROOT / "backend" / package.removeprefix("./")
-                for path in directory.glob("*_test.go"):
-                    content = path.read_text(encoding="utf-8")
-                    build = re.search(r"(?m)^//go:build\s+(.+)$", content)
-                    if build:
-                        expression = build.group(1).strip()
+                if package not in package_tests:
+                    inventory = []
+                    for path in directory.glob("*_test.go"):
+                        content = path.read_text(encoding="utf-8")
+                        build = re.search(r"(?m)^//go:build\s+(.+)$", content)
+                        inventory.append((build.group(1).strip() if build else "",
+                                          re.findall(r"(?m)^func\s+(Test[A-Za-z0-9_]+)\s*\(", content)))
+                    package_tests[package] = inventory
+                for expression, file_names in package_tests[package]:
+                    if expression:
                         if expression in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth") and expression not in tags:
                             continue
                         if expression.startswith("!") and expression[1:] in tags:
                             continue
                         if expression not in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth", "!unit"):
-                            if any(regex.search(name) for name in re.findall(r"(?m)^func\s+(Test[A-Za-z0-9_]+)\s*\(", content)):
+                            if any(regex.search(name) for name in file_names):
                                 raise ValueError("mapped_test_build_tags_require_review:" + group)
                             continue
-                    for name in re.findall(r"(?m)^func\s+(Test[A-Za-z0-9_]+)\s*\(", content):
+                    for name in file_names:
                         if name != "TestMain" and regex.search(name):
                             found = True
                             identity = (package, name, tuple(sorted(tags)))
