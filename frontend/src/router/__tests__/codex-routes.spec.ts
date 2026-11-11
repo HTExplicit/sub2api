@@ -56,8 +56,6 @@ vi.mock('@/composables/useRoutePrefetch', () => ({
 vi.mock('@/router/title', () => ({ resolveRouteDocumentTitle: () => 'Sub2API' }))
 
 const codexRoutes = [
-  { path: '/admin/codex/identity', name: 'AdminCodexIdentity' },
-  { path: '/admin/codex/advanced', name: 'AdminCodexAdvanced' },
   { path: '/admin/pelican-tests', name: 'AdminPelicanTests' },
 ]
 
@@ -69,7 +67,7 @@ async function navigate(path: string) {
   return next
 }
 
-describe('Codex and Pelican page routes', () => {
+describe('Pelican and retired extension page routes', () => {
   beforeAll(async () => { await import('@/router') })
   beforeEach(() => {
     authStore.isAuthenticated = true
@@ -77,10 +75,8 @@ describe('Codex and Pelican page routes', () => {
     authStore.isSimpleMode = false
   })
 
-  it.each([['/admin/codex-runtime', '/admin/codex/advanced'], ['/admin/codex-fingerprint', '/admin/codex/identity'], ['/admin/codex', '/admin/codex/identity']])('redirects %s to the unified console', (path, destination) => {
-    const record = harness.routes.find(route => route.path === path)
-    expect(record?.redirect).toBe(destination)
-    expect(record?.meta).toMatchObject({ requiresAuth: true, requiresAdmin: true })
+  it.each(['/admin/codex', '/admin/codex/identity', '/admin/codex/advanced', '/admin/codex-runtime', '/admin/codex-fingerprint', '/admin/deepseek-reasoning'])('does not register retired extension %s', path => {
+    expect(harness.routes.some(route => route.path === path)).toBe(false)
   })
 
   it('does not register retired borrowing routes', () => {

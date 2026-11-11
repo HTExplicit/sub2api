@@ -11,6 +11,7 @@ import subprocess
 from typing import Iterable
 
 from ci_source_tests import COMPILE_ONLY_FILES, SOURCE_TEST_FILES as REVIEWED_SOURCE_TEST_FILES
+from ci_retired_inputs import RETIRED_INPUTS
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = "ci-plan/v1"
@@ -18,12 +19,9 @@ SCHEMA = "ci-plan/v1"
 # These are existing contracts, not a growing default regression suite. A rule
 # owns the risk of its source input; a new unowned input must add its own rule.
 RISK_RULES = (
-    (r"backend/internal/(?:service/deepseek_reasoning[^/]*|handler/admin/deepseek_reasoning[^/]*|server/routes/deepseek_reasoning[^/]*)\.go$", ("deepseek",)),
     (r"backend/internal/(?:service|handler)/.*claude.*(?:signature|thinking)[^/]*\.go$", ("claude",)),
     (r"backend/internal/service/pelican_(?:test_runner|execution|repeats|background)[^/]*\.go$", ("pelican_race",)),
     (r"backend/internal/service/account_test_sse_keepalive[^/]*\.go$", ("keepalive_race",)),
-    (r"backend/internal/service/openai_account_runtime_block_fastpath[^/]*\.go$", ("probe_race",)),
-    (r"backend/internal/handler/openai_management_isolation[^/]*\.go$", ("management_race",)),
     (r"backend/internal/(?:service|handler(?:/admin)?)/.*(?:available_models|models_handler)[^/]*\.go$", ("model_list",)),
     (r"backend/internal/(?:service|handler(?:/admin)?)/.*turn_state[^/]*\.go$", ("turn_state",)),
     (r"backend/internal/(?:pkg/httputil/|handler/request_body)[^/]*\.go$", ("request_body",)),
@@ -31,7 +29,6 @@ RISK_RULES = (
     (r"backend/internal/(?:service|repository|handler/admin)/.*(?:account_taxonomy|account_folder)[^/]*\.go$|backend/migrations/192_[^/]*\.sql$", ("taxonomy_db",)),
     (r"backend/migrations/274_[^/]*\.sql$", ("retirement_migration",)),
     (r"backend/migrations/236_[^/]*\.sql$|backend/internal/repository/(?:audit_log|system_log)[^/]*\.go$", ("repository_audit",)),
-    (r"backend/internal/pkg/codextransport/[^/]+$|backend/cmd/codex-transport-probe/[^/]+\.go$|\.github/scripts/(?:verify|capture)_codex_transport\.py$", ("transport",)),
     (r"backend/internal/(?:pkg/apicompat/[^/]+\.go|web/(?:agent[^/]*\.go|testdata/agent_cache_fixture\.js))$|\.github/scripts/test_agent_protocol\.sh$", ("agent_protocol",)),
     (r"backend/internal/service/pelican_renderer\.go$", ("renderer",)),
 )
@@ -189,6 +186,7 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
     static_files: set[str] = set()
     deleted_static_files: set[str] = set()
     deploy_tests: set[str] = set()
+    retired_compile_packages: set[str] = set()
     typecheck = False
     backend_dependency_graph = False
 
@@ -204,6 +202,24 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
         disk_path = repo.joinpath(*path.parts)
         if any(item.is_symlink() for item in [disk_path, *list(disk_path.parents)[:len(path.parts)-1]]):
             failures.append("linked_input:" + relative)
+            continue
+        if relative in RETIRED_INPUTS and not disk_path.exists():
+            # Only this reviewed retirement set can select build validation for
+            # a removed input; arbitrary deletions still require ownership.
+            if path.suffix == ".md":
+                select("static_docs", relative)
+                deleted_static_files.add(relative)
+            if relative.startswith("backend/"):
+                select("candidate_image", relative)
+                select("backend_compile", relative)
+                package = "./" + str(path.parent.relative_to("backend"))
+                retired_compile_packages.add(package if any(disk_path.parent.glob("*.go")) else "./cmd/server")
+            elif relative.startswith("frontend/"):
+                select("frontend_validate", relative)
+                select("candidate_image", relative)
+                typecheck = True
+            else:
+                select("ci_contracts", relative)
             continue
         known = relative in DOCUMENT_ASSETS or relative in COMPILE_ONLY_FILES
         if relative in COMPILE_ONLY_FILES:
@@ -281,6 +297,10 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             select("candidate_image", relative)
             typecheck = True
             known = True
+        elif relative == "frontend/src/styles/console/pages/settings-ops-public.css":
+            select("frontend_validate", relative)
+            select("candidate_image", relative)
+            known = True
         elif relative == "frontend/vite.config.ts":
             select("frontend_validate", relative)
             select("candidate_image", relative)
@@ -355,8 +375,7 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
                     for group in risk_groups:
                         select(group, relative)
                     known = True
-        if known and (relative == "backend/internal/pkg/codextransport/reference.json" or
-                      (relative.startswith("backend/migrations/") and path.suffix == ".sql")):
+        if known and relative.startswith("backend/migrations/") and path.suffix == ".sql":
             select("candidate_image", relative)
         if known and relative.startswith("backend/") and path.suffix == ".go" and not relative.endswith("_test.go"):
             select("backend_security", relative)
@@ -368,7 +387,7 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             failures.append("missing_deploy_test:" + test_path)
     unique_tests = {json.dumps(test, sort_keys=True): test for test in tests}
     compile_packages = direct_importers(source_packages, repo) if source_packages else []
-    compile_packages = sorted(set(compile_packages) | {
+    compile_packages = sorted(set(compile_packages) | retired_compile_packages | {
         "./" + str(PurePosixPath(relative).parent.relative_to("backend"))
         for relative in files if relative in COMPILE_ONLY_FILES and relative.endswith(".go")
     })

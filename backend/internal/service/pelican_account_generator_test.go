@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -97,32 +96,6 @@ func (r *pelicanTerminalReadError) Read(p []byte) (int, error) {
 		err = r.err
 	}
 	return n, err
-}
-
-func TestPelicanAccountGeneratorQueuePreservesSharedFirstOutputPolicy(t *testing.T) {
-	clock := time.Now().UTC()
-	state := newPelicanExecutionState(context.Background(), newPelicanExecutionCoordinator(1), 10*time.Minute, func() time.Time { return clock })
-	defer state.finish()
-	ctx := context.WithValue(state.parent, pelicanExecutionContextKey{}, state)
-	account := &Account{ID: 70, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "local-key", "base_url": "http://fake.example"}}
-	upstream := &pelicanGeneratorUpstream{body: pelicanResponsesSSE("gpt-6.1-sol", "completed", "</html>")}
-	svc, _ := newPelicanGeneratorForTest(account, upstream)
-	svc.openaiGatewayService.cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 20
-	var policy *pelicanFirstOutputPolicy
-	upstream.beforeSend = func(req *http.Request) {
-		policy, _ = req.Context().Value(pelicanFirstOutputPolicyContextKey{}).(*pelicanFirstOutputPolicy)
-		require.NotNil(t, policy)
-		require.Equal(t, 20*time.Second, policy.timeout)
-		require.Nil(t, policy.guard, "account/global admission precedes the normal header guard")
-		require.True(t, state.generationAt.IsZero())
-		clock = clock.Add(8 * time.Minute)
-		require.NoError(t, req.Context().Err())
-	}
-	result, err := svc.GeneratePelican(ctx, account.ID, "gpt-6.1-sol", "high")
-	require.NoError(t, err)
-	require.Equal(t, "complete", result.Status, result.Error)
-	require.Equal(t, clock, policy.startedAt)
-	require.Equal(t, clock, state.generationAt)
 }
 
 func newPelicanGeneratorForTest(account *Account, upstream *pelicanGeneratorUpstream) (*AccountTestService, *pelicanGeneratorAccountRepo) {
@@ -315,49 +288,4 @@ func TestPelicanHTTPRequestOrdinaryRequestsAreNoops(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, resp, actual)
 
-}
-
-func TestPelicanFirstOutputPolicyStartsAfterQueueAndPreservesNilReplay(t *testing.T) {
-	now := time.Now().UTC()
-	clock := now
-	state := newPelicanExecutionState(context.Background(), newPelicanExecutionCoordinator(1), 10*time.Minute, func() time.Time { return clock })
-	defer state.finish()
-	capture := &pelicanGenerationCapture{account: &Account{ID: 67, Platform: PlatformOpenAI}, fallbackModel: "gpt-6.1-sol-high", fallbackEffort: "medium"}
-	ctx := context.WithValue(state.parent, pelicanExecutionContextKey{}, state)
-	ctx = context.WithValue(ctx, pelicanGenerationContextKey{}, capture)
-	var armedDeadline time.Time
-	policy := &pelicanFirstOutputPolicy{timeout: 30 * time.Second, newGuard: func(ctx context.Context, release context.CancelFunc, deadline time.Time) (context.Context, *openAIFirstOutputHeaderGuard) {
-		armedDeadline = deadline
-		return newOpenAIFirstOutputHeaderGuard(ctx, release, time.Now().Add(time.Hour))
-	}}
-	ctx = context.WithValue(ctx, pelicanFirstOutputPolicyContextKey{}, policy)
-	BeginPelicanPreparation(ctx)
-	clock = clock.Add(8 * time.Minute) // A modeled queue, never a wall-clock sleep.
-	require.True(t, state.generationAt.IsZero())
-	require.Nil(t, policy.guard, "queued work must not arm the upstream header guard")
-	body := `{"model":"gpt-6.1-sol","reasoning":{"effort":"high"},"input":"fixed","stream":true}`
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://fake.example/responses", strings.NewReader(body))
-	require.NoError(t, err)
-	req.GetBody = nil // The normal reasoning-recovery dispatch contract.
-	prepared, finish, err := PreparePelicanHTTPRequest(req, 67, 1, "http")
-	require.NoError(t, err)
-	defer policy.guard.close()
-	require.Equal(t, clock.Add(policy.timeout), armedDeadline)
-	require.Equal(t, clock, PelicanFirstOutputStart(prepared.Context(), now))
-	require.Nil(t, prepared.GetBody, "observation must not enable transport replay")
-	actualBody, err := io.ReadAll(prepared.Body)
-	require.NoError(t, err)
-	require.Equal(t, body, string(actualBody))
-	require.Equal(t, "gpt-6.1-sol", capture.attempts[0].model)
-	require.Equal(t, "high", capture.attempts[0].effort)
-	_, err = finish(nil, nil)
-	require.NoError(t, err)
-	require.False(t, policy.stopHeaderWait(), "header completion is safe to query again by Forward")
-	ordinaryPolicy := &pelicanFirstOutputPolicy{timeout: time.Minute}
-	ordinaryCtx := context.WithValue(context.Background(), pelicanFirstOutputPolicyContextKey{}, ordinaryPolicy)
-	req = req.WithContext(ordinaryCtx)
-	prepared, _, err = PreparePelicanHTTPRequest(req, 67, 1, "http")
-	require.NoError(t, err)
-	require.Same(t, req, prepared)
-	require.Nil(t, ordinaryPolicy.guard, "ordinary requests keep their existing guard owner")
 }

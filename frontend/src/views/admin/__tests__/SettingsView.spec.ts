@@ -849,150 +849,18 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(showSuccess).toHaveBeenCalled();
   });
 
-  it("edits and saves OpenAI refusal recovery settings", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      cyber_session_block_enabled: false,
-      openai_refusal_recovery_enabled: true,
-      openai_cyber_failover_enabled: true,
-      openai_refusal_rewrite_enabled: true,
-      openai_refusal_keywords: ["cannot"],
-      openai_refusal_replacement: "Continue the task.",
-    });
+  it("does not expose or submit retired OpenAI refusal recovery settings", async () => {
     const wrapper = mountView();
-
     await flushPromises();
     await openFeaturesTab(wrapper);
-
-    expect(
-      wrapper.findAll('[data-testid="openai-refusal-keyword-tag"]'),
-    ).toHaveLength(1);
-    const input = wrapper.get(
-      '[data-testid="openai-refusal-keyword-input"]',
-    );
-    await input.setValue("I cannot");
-    await input.trigger("keydown", { key: "Enter" });
-    await wrapper
-      .get('[data-testid="openai-refusal-replacement"]')
-      .setValue("Keep working.");
+    expect(wrapper.find('[data-testid="openai-refusal-recovery-toggle"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="openai-cyber-failover-toggle"]').exists()).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
-
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        openai_refusal_recovery_enabled: true,
-        openai_cyber_failover_enabled: true,
-        openai_refusal_rewrite_enabled: true,
-        openai_refusal_keywords: ["cannot", "I cannot"],
-        openai_refusal_replacement: "Keep working.",
-      }),
-    );
-  });
-
-  it("deduplicates OpenAI refusal keywords without case sensitivity", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      openai_refusal_recovery_enabled: true,
-      openai_refusal_rewrite_enabled: true,
-      openai_refusal_keywords: ["cannot"],
-      openai_refusal_replacement: "Continue the task.",
-    });
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openFeaturesTab(wrapper);
-    const input = wrapper.get('[data-testid="openai-refusal-keyword-input"]');
-    await input.setValue("CANNOT");
-    await input.trigger("keydown", { key: "Enter" });
-
-    expect(
-      wrapper.findAll('[data-testid="openai-refusal-keyword-tag"]'),
-    ).toHaveLength(1);
-  });
-
-  it("validates Cyber failover independently from refusal recovery", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      cyber_session_block_enabled: true,
-      openai_refusal_recovery_enabled: true,
-      openai_cyber_failover_enabled: false,
-      openai_refusal_rewrite_enabled: false,
-      openai_refusal_keywords: ["cannot"],
-      openai_refusal_replacement: "",
-    });
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openFeaturesTab(wrapper);
-    await wrapper
-      .get('[data-testid="openai-cyber-failover-toggle"]')
-      .setValue(true);
-    updateSettings.mockClear();
-    showError.mockClear();
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(showError).toHaveBeenCalled();
-    expect(updateSettings).not.toHaveBeenCalled();
-
-    await wrapper
-      .get('[data-testid="openai-refusal-recovery-toggle"]')
-      .setValue(false);
-    showError.mockClear();
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(showError).toHaveBeenCalled();
-    expect(updateSettings).not.toHaveBeenCalled();
-
-    await wrapper
-      .get('[data-testid="openai-cyber-failover-toggle"]')
-      .setValue(false);
-    showError.mockClear();
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(showError).not.toHaveBeenCalled();
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        openai_refusal_recovery_enabled: false,
-        openai_cyber_failover_enabled: false,
-      }),
-    );
-  });
-
-  it("renders and saves Cyber failover while refusal recovery is disabled", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      cyber_session_block_enabled: false,
-      openai_refusal_recovery_enabled: false,
-      openai_cyber_failover_enabled: true,
-      openai_refusal_rewrite_enabled: true,
-      openai_refusal_keywords: ["cannot"],
-      openai_refusal_replacement: "Continue the task.",
-    });
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openFeaturesTab(wrapper);
-
-    expect(
-      wrapper.find('[data-testid="openai-cyber-failover-toggle"]').exists(),
-    ).toBe(true);
-    expect(
-      wrapper.find('[data-testid="openai-refusal-keyword-input"]').exists(),
-    ).toBe(false);
-
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        openai_refusal_recovery_enabled: false,
-        openai_cyber_failover_enabled: true,
-        openai_refusal_rewrite_enabled: true,
-      }),
-    );
+    const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    for (const key of ["openai_refusal_recovery_enabled", "openai_cyber_failover_enabled", "openai_refusal_rewrite_enabled", "openai_refusal_keywords", "openai_refusal_replacement"]) {
+      expect(payload).not.toHaveProperty(key);
+    }
   });
 
   it("does not render legacy visible payment method controls", async () => {
@@ -1223,17 +1091,19 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("leaves Codex fingerprint configuration to the extension page when saving general settings", async () => {
-    getSettings.mockResolvedValueOnce({ ...baseSettingsResponse, openai_codex_client_version: "0.145.0", openai_codex_client_version_synced: "0.146.0", openai_codex_version_auto_sync_enabled: false });
+  it("edits official Codex fingerprint configuration in general settings", async () => {
+    getSettings.mockResolvedValueOnce({ ...baseSettingsResponse, openai_codex_user_agent: "codex-test/0.145.0", openai_codex_client_version: "0.145.0", openai_codex_client_version_synced: "0.146.0", openai_codex_version_auto_sync_enabled: false });
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
-    expect(wrapper.find('[data-testid="openai-codex-client-version-input"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="openai-codex-version-auto-sync-toggle"]').exists()).toBe(false);
+    const version = wrapper.get('input[placeholder="admin.settings.gatewayForwarding.openaiCodexClientVersionPlaceholder"]');
+    expect((version.element as HTMLInputElement).value).toBe("0.145.0");
+    await version.setValue("0.146.0");
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
     const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    for (const key of ["openai_codex_user_agent", "openai_codex_client_version", "openai_codex_client_version_synced", "openai_codex_version_auto_sync_enabled"]) expect(payload).not.toHaveProperty(key);
+    expect(payload).toMatchObject({ openai_codex_user_agent: "codex-test/0.145.0", openai_codex_client_version: "0.146.0", openai_codex_version_auto_sync_enabled: false });
+    expect(payload).not.toHaveProperty("openai_codex_client_version_synced");
   });
 
   it("disables passkey sign-in when the RP configuration is unavailable", async () => {

@@ -19,9 +19,6 @@ vi.mock('@/stores', () => ({
   useAppStore: () => ({ showError: vi.fn() })
 }))
 
-vi.mock('@/components/admin/codex/CodexContinuationDiagnostics.vue', () => ({
-  default: { name: 'CodexContinuationDiagnostics', props: ['errorId'], template: '<div />' }
-}))
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
@@ -109,7 +106,6 @@ describe('OpsErrorDetailModal', () => {
     expect(wrapper.text()).toContain('429')
     expect(wrapper.findAll('pre')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('admin.ops.errorDetail.payloads.upstream_detail')
-    expect(wrapper.findComponent({ name: 'CodexContinuationDiagnostics' }).props('errorId')).toBe(1)
   })
 
   it.each([400, 529])('separates stream error %i from the actual upstream HTTP response', async (semanticStatus) => {

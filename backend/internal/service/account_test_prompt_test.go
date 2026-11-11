@@ -108,13 +108,12 @@ func TestAccountTestPromptOAuthMappedModelReportsFinalWire(t *testing.T) {
 	svc := &AccountTestService{httpUpstream: upstream}
 	c, rec := newTestContext()
 	prompt := "你的知识库库截止日期是什么时间,直接回复不要联网"
-	enableCodexRequestZstd(t)
 	require.NoError(t, svc.testOpenAIAccountConnection(c, a, "alias", prompt, ""))
 	require.Len(t, upstream.requests, 1)
 	req := upstream.requests[0]
 	raw, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
-	body := zstdDecodeForTest(t, raw)
+	body := raw
 	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(body, "model").String())
 	require.Equal(t, prompt, gjson.GetBytes(body, "input.0.content.0.text").String())
 	// The reported wire headers leave out Authorization: the access token went

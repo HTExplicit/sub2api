@@ -12,13 +12,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *testing.T) {
-	previousForce := codexForceCLI.Load()
-	SetCodexForceCLIEnabled(true)
-	t.Cleanup(func() { SetCodexForceCLIEnabled(previousForce) })
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -37,13 +33,7 @@ func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *tes
 			)),
 		},
 	}
-	// 图像探针原本不经过插件；不可用的绑定不应改变直接 Do 的成功路径。
-	manager := &PluginManager{}
-	manager.route.Store(&pluginRoute{pluginID: 1, rolloutPercent: 100, unavailable: "test unavailable"})
-	svc := &AccountTestService{
-		httpUpstream:  upstream,
-		pluginManager: manager,
-	}
+	svc := &AccountTestService{httpUpstream: upstream}
 	account := &Account{
 		ID:       53,
 		Name:     "openai-oauth",
@@ -51,20 +41,13 @@ func TestAccountTestService_OpenAIImageOAuthHandlesOutputItemDoneFallback(t *tes
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
 			"access_token": "token-123",
-			"user_agent":   "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown",
 		},
 	}
 
-	enableCodexRequestZstd(t)
 	err := svc.testOpenAIImageOAuth(c, context.Background(), account, "gpt-image-1", "draw a cat")
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
-	// Force 优先于自定义 UA；无种子账号使用规范身份。压缩后仍是 image_generation 工具调用。
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
-	require.Equal(t, "zstd", upstream.lastReq.Header.Get("Content-Encoding"))
-	require.Equal(t, "image_generation", gjson.GetBytes(zstdDecodeForTest(t, upstream.lastBody), "tools.0.type").String())
 	require.Contains(t, rec.Body.String(), "Calling Codex /responses image tool")
 	require.Contains(t, rec.Body.String(), "data:image/png;base64,aGVsbG8=")
 	require.Contains(t, rec.Body.String(), "\"success\":true")

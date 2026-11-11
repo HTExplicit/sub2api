@@ -1,4 +1,4 @@
-# GPT-6 模型、Codex 运行与提示词
+# 模型、账号测试与系统提示词
 
 官方基线见 [upstream-base](upstream-base)。源码当前行为见 [DOWNSTREAM.md](../DOWNSTREAM.md)，设置、身份与回滚边界见 [原生契约](native-domains.md)。本页仅维护提示词和账号测试的细则。
 
@@ -7,10 +7,6 @@
 模型名称、模板、容量、metadata、manifest／ETag 和客户端目录采用固定官方版本；本站容量解析器、覆盖、来源绑定、自动刷新及 Cindy 专属 registry 已退役。完整规则见 [模型目录契约](../DOWNSTREAM.md#model-discovery-capacity-and-client-catalogs)，历史 SQL、已存值与诊断记录保留。
 
 手动同步先经挑选器确认增删，取消不改表单，保存账号后才持久化；来源或账号变化使旧请求失效。推理档位按实际型号与转发线路能力保留；鹈鹕仍用已有 64000 默认输出预算或显式更小值。
-
-## Codex 流式响应
-
-对于接受 SSE 的 `/backend-api/codex/responses` 请求，上游 200 响应缺少 `Content-Type` 时补为 `text/event-stream`。终态及协议转换以 [转发契约](../DOWNSTREAM.md#openai-forwarding-and-model-identity) 为准。
 
 ## 系统提示词
 
@@ -33,18 +29,18 @@ count_tokens／countTokens 不注入，`prompt_cache_key` 不改写。JSON/SSE/W
 
 迁移 259 导入旧纯文本正文，默认关闭、无默认项，并删除旧提示词／Skill 表；旧模板、版本、Skill 注册表及 `/skills/security-research/current/` 已删除，旧镜像回退须有对应表的迁移前备份。迁移 269 仅按形状移除引用已删除远程规则路径的 bootstrap 块；其他正文、顺序与设置保留，清除后为空或不符合形状时不改写。
 
-## Codex 运行设置
+## 官方业务边界
 
-当前入口为“Codex → 高级设置” `/admin/codex/advanced`；旧 `/admin/codex-runtime` 兼容跳转。压缩开关只用于 OAuth 发往 Codex 后端的流式 Responses，compact／models 保持明文；保存沿用 TOTP。`GET/PUT /api/v1/admin/settings/codex-runtime` 的 request_zstd 及缺省规则见 [设置契约](native-domains.md#settings)。
+转发、终态、恢复、effort、身份与传输采用 [官方核心契约](../DOWNSTREAM.md#official-business-core)。本站 Codex 运行／指纹与 DeepSeek 默认 effort 专用页面和 API 已退役；历史 row、extra、种子和诊断不清除。官方一般设置及账号四种指纹选项保留，默认 off；不再由本页规定第二套传输或协议行为。
 
-## 失效推理密文恢复
-
-采用官方 HTTP／WS 恢复；本站去密文、24 小时拒绝记忆、额外 SSE／缺失 ID 修复及专用换号均已退役，独立页面与 `GET/PUT /api/v1/admin/reasoning-recovery` 已删除。旧设置、历史 SQL 与诊断账本保留，不再控制转发。现行边界见 [密文恢复契约](../DOWNSTREAM.md#openai-encrypted-content-recovery)。
+系统提示词只负责上述最终协议注入和回显，不恢复请求完整性校验、拒绝字段修复或独立重试。Pelican／Candy 的严格结果验收限于评测作用域，观察隔离见 [Pelican 契约](native-domains.md#independent-pelican-tests)。
 
 ## 账号连接测试与批量测试
 
-单号、批量与定时测试显示上游原文错误及失败终态，不额外脱敏或截断；成功要求有效协议终态与可见文本。Codex 另列实际发出的请求头，不含 Authorization。测试计划和实际 effort 按型号及实际线路能力标注，不为不支持的路径提供选项。
+单号、批量与定时测试显示上游原文错误及测试结果，不额外脱敏或截断；Codex 另列实际发出的请求头，不含 Authorization。测试计划和实际 effort 按型号及实际线路能力标注，不为不支持的路径提供选项。测试专用验收不改变业务请求的官方终态与计量行为。
 
 `POST /api/v1/admin/accounts/batch-test` 接受 account_ids 和可空 model_id，以 SSE 返回 batch_start／account_started／account_result／batch_complete，包含首字延迟、实际模型和原始错误。关闭窗口或页面即停；并发 10、同一上游主机 3、单号 90 秒、保活 15 秒。空 model_id 使用平台默认，账号不支持时取首个文本对话型号；单号弹窗共用解析规则。
 
 结果保留在页面及本地快照，重试只重新提交失败账号。成功后用官方 RecoverAccountState 清除可恢复错误／限流，不改变手动停用或调度开关。关闭测试不刷新列表，保留位置，既有自动刷新延后 15 秒继续。
+
+Antigravity 测试保留管理员提示词、`Reply with OK.` 缺省、自定义／默认输出预算、可见文本要求和 `OutputLimited` 结果。官方发送管理员提示词的实现不以固定 256 token 覆盖这些测试参数。
