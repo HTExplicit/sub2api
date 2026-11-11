@@ -216,7 +216,7 @@ func TestFailoverOpenAIUpstreamHTTPError_NilContextSkipsTempUnschedulablePolicy(
 
 	got := svc.failoverOpenAIUpstreamHTTPError(
 		context.Background(), nil, account, resp, body,
-		"gpt-5.4",
+		"Custom temporary outage.", "gpt-5.4",
 	)
 
 	require.Nil(t, got)
@@ -762,7 +762,7 @@ func (c *stubGatewayCache) GetSessionAccountID(ctx context.Context, groupID int6
 	if id, ok := c.sessionBindings[sessionHash]; ok {
 		return id, nil
 	}
-	return 0, ErrStickySessionNotFound
+	return 0, errors.New("not found")
 }
 
 func (c *stubGatewayCache) SetSessionAccountID(ctx context.Context, groupID int64, sessionHash string, accountID int64, ttl time.Duration) error {
@@ -787,13 +787,6 @@ func (c *stubGatewayCache) DeleteSessionAccountID(ctx context.Context, groupID i
 	c.deletedSessions[sessionHash]++
 	delete(c.sessionBindings, sessionHash)
 	return nil
-}
-
-func (c *stubGatewayCache) DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error) {
-	if c.sessionBindings == nil || c.sessionBindings[sessionHash] != expectedAccountID {
-		return false, nil
-	}
-	return true, c.DeleteSessionAccountID(ctx, groupID, sessionHash)
 }
 
 func (c *stubGatewayCache) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
@@ -1123,7 +1116,6 @@ func TestOpenAISelectAccountForModelWithExclusions_NoModelSupport(t *testing.T) 
 	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4", nil)
 	if err == nil {
 		t.Fatalf("expected error for unsupported model")
-		return
 	}
 	if acc != nil {
 		t.Fatalf("expected nil account for unsupported model")
@@ -1405,7 +1397,6 @@ func TestOpenAISelectAccountForModelWithExclusions_NoAccounts(t *testing.T) {
 	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "", nil)
 	if err == nil {
 		t.Fatalf("expected error for no accounts")
-		return
 	}
 	if acc != nil {
 		t.Fatalf("expected nil account")
@@ -1451,7 +1442,7 @@ func TestOpenAISelectAccountWithLoadAwareness_AllFullWaitPlan(t *testing.T) {
 	cache := &stubGatewayCache{}
 	concurrencyCache := stubConcurrencyCache{
 		loadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, CurrentConcurrency: 1, LoadRate: 100},
+			1: {AccountID: 1, LoadRate: 100},
 		},
 	}
 
@@ -1509,7 +1500,7 @@ func TestOpenAISelectAccountWithLoadAwareness_MissingLoadInfo(t *testing.T) {
 	cache := &stubGatewayCache{}
 	concurrencyCache := stubConcurrencyCache{
 		loadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, CurrentConcurrency: 1, LoadRate: 50},
+			1: {AccountID: 1, LoadRate: 50},
 		},
 		skipDefaultLoad: true,
 	}
@@ -1804,7 +1795,6 @@ func TestOpenAIStreamingTerminalAndClientCancellationDoNotQuarantineProxy(t *tes
 			reader: strings.NewReader(strings.Join([]string{
 				"event: response.completed",
 				`data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}`,
-				"",
 				"",
 			}, "\n")),
 			err: io.ErrUnexpectedEOF,
@@ -2779,7 +2769,7 @@ func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t 
 	require.Equal(t, 1, result.usage.CacheReadInputTokens)
 }
 
-func TestOpenAIStreamingPassthroughResponseIncompletePreservesFailureAndUsage(t *testing.T) {
+func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucceeds(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{
 		Gateway: config.GatewayConfig{
@@ -2806,7 +2796,7 @@ func TestOpenAIStreamingPassthroughResponseIncompletePreservesFailureAndUsage(t 
 
 	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "")
 	_ = pr.Close()
-	require.ErrorContains(t, err, "incomplete")
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.usage)
 	require.Equal(t, 2, result.usage.InputTokens)
@@ -3254,7 +3244,7 @@ func TestOpenAIBuildUpstreamRequestOAuthMessagesBridgeUsesSessionOnly(t *testing
 
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, body, "token", true, "anthropic-metadata-session-1", false)
 	require.NoError(t, err)
-	require.Empty(t, req.Header.Get("Session_Id"), "真实 Codex 不发下划线 session_id")
+	require.NotEmpty(t, req.Header.Get("Session_Id"))
 	require.Empty(t, req.Header.Get("Conversation_Id"))
 	require.Empty(t, req.Header.Get("OpenAI-Beta"))
 	require.Empty(t, req.Header.Get("originator"))
@@ -3355,7 +3345,7 @@ func TestOpenAIBuildUpstreamRequestPreservesCodexIdentityHeaders(t *testing.T) {
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, body, "token", false, "", true)
 	require.NoError(t, err)
 	require.Equal(t, "window-http", req.Header.Get("X-Codex-Window-ID"))
-	require.Empty(t, req.Header.Get("X-Codex-Installation-ID"), "installation id 只在 body client_metadata")
+	require.Equal(t, "installation-http", req.Header.Get("X-Codex-Installation-ID"))
 	require.Empty(t, req.Header.Get("X-Test"))
 	require.True(t, openai.EvaluateEngineFingerprint(req.Header, body, openai.DefaultEngineFingerprintSignals))
 }
@@ -3947,7 +3937,7 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 	require.Equal(t, "draw a cat", gjson.Get(rec.Body.String(), "output.0.revised_prompt").String())
 }
 
-func TestHandleSSEToJSON_NoFinalResponseRejectsIncompleteStream(t *testing.T) {
+func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -3964,12 +3954,11 @@ func TestHandleSSEToJSON_NoFinalResponseRejectsIncompleteStream(t *testing.T) {
 	}, "\n"))
 
 	usage, err := svc.handleSSEToJSON(resp, c, nil, body, "gpt-4o", "gpt-4o")
-	require.Error(t, err)
-	require.Nil(t, usage, "a missing terminal is not a zero-usage success")
-	require.Equal(t, http.StatusBadGateway, rec.Code)
-	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
-	require.True(t, gjson.Get(rec.Body.String(), "error").IsObject())
-	require.NotContains(t, rec.Body.String(), "response.in_progress")
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, 0, usage.InputTokens)
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Contains(t, rec.Body.String(), `data: {"type":"response.in_progress"`)
 }
 
 // 无账号时没有可换的对象：newOpenAIStreamFailoverError 要拿 account 记录 ops 归属与

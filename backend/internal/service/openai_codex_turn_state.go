@@ -53,7 +53,6 @@ func (s *OpenAIGatewayService) relayOpenAICodexTurnState(c *gin.Context, account
 	state := extractOpenAICodexTurnState(upstream)
 	if state == "" {
 		c.Writer.Header().Del(canonical)
-		s.clearOpenAICodexTurnStateProvenance(c)
 		return
 	}
 	c.Writer.Header().Set(canonical, state)
@@ -86,10 +85,8 @@ func stageOpenAICodexTurnState(dst *http.Header, upstream http.Header) {
 // noteStagedOpenAICodexTurnStateCommitted 在暂存响应头真正写入下游时记录
 // 铸造账号——只有此刻客户端才确定收到了该 blob，溯源表才与客户端持有的
 // 值一致（否则被 failover 丢弃的 attempt 会污染溯源，导致后续误剥离）。
-// 成功提交但无 state 表示上一来源已失效，必须清除旧 provenance。
 func (s *OpenAIGatewayService) noteStagedOpenAICodexTurnStateCommitted(c *gin.Context, account *Account, staged http.Header) {
 	if staged == nil || strings.TrimSpace(staged.Get(openAICodexTurnStateHeader)) == "" {
-		s.clearOpenAICodexTurnStateProvenance(c)
 		return
 	}
 	s.noteOpenAICodexTurnStateProvenance(c, account)
@@ -118,93 +115,32 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context
 	s.sweepOpenAICodexTurnStateOrigins()
 }
 
-func (s *OpenAIGatewayService) clearOpenAICodexTurnStateProvenance(c *gin.Context) {
-	if s == nil {
-		return
-	}
-	if seed := openAICodexTurnStateSeed(c); seed != "" {
-		s.openaiCodexTurnStateOrigins.Delete(seed)
-	}
-}
-
-// commitOpenAIWSSessionTurnState updates the server-side WS fallback state at
-// the same commit boundary as the downstream response. An empty successful
-// state invalidates every previous owner for the session; a failed attempt
-// must never call this helper.
-func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
-	c *gin.Context,
-	account *Account,
-	stateStore OpenAIWSStateStore,
-	groupID int64,
-	sessionHash string,
-	turnState string,
-) {
-	if c != nil && c.Request != nil && IsAccountObservation(c.Request.Context()) {
-		return
-	}
-	turnState = strings.TrimSpace(turnState)
-	if stateStore != nil && sessionHash != "" {
-		if turnState == "" {
-			stateStore.DeleteSessionTurnState(groupID, sessionHash)
-		} else if account != nil && account.ID > 0 {
-			stateStore.BindSessionTurnState(groupID, sessionHash, account.ID, turnState, s.openAIWSSessionStickyTTL())
-		}
-	}
-	if turnState == "" {
-		s.clearOpenAICodexTurnStateProvenance(c)
-		return
-	}
-	s.noteOpenAICodexTurnStateProvenance(c, account)
-}
-
-// guardOpenAICodexTurnStateEcho matches ranxi v2.10.5: strip a client's state
-// only when a live provenance record identifies another account. Process-local
-// record loss after restart or expiry is not evidence of a foreign state.
-// 只剥离已知跨账号值、不注入——
+// guardOpenAICodexTurnStateEcho 出站守卫：客户端回带的 turn-state 若已知由
+// 其他账号铸造则剥离，同账号或无溯源记录时保持原样。只剥离、不注入——
 // /responses 路径的客户端是真实 Codex，会按自身回合语义自行回带；服务端
 // 注入是 Claude 兼容桥（无法回带的客户端）的专属行为。
 func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, account *Account, h http.Header) {
-	if h == nil {
+	if s == nil || h == nil || account == nil {
 		return
 	}
 	if strings.TrimSpace(h.Get(openAICodexTurnStateHeader)) == "" {
 		return
 	}
-	if s == nil || account == nil || account.ID <= 0 {
-		h.Del(openAICodexTurnStateHeader)
-		return
-	}
-	// Native HTTP clients own their opaque continuation state. WS and its HTTP
-	// bridge retain the existing stricter anchor/provenance contract.
-	preserveUnknown := GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP ||
-		(GetOpenAIClientTransport(c) == OpenAIClientTransportUnknown && c != nil && c.Request != nil && c.Request.Method == http.MethodPost)
 	seed := openAICodexTurnStateSeed(c)
 	if seed == "" {
-		if !preserveUnknown {
-			h.Del(openAICodexTurnStateHeader)
-		}
 		return
 	}
 	raw, ok := s.openaiCodexTurnStateOrigins.Load(seed)
 	if !ok {
-		if !preserveUnknown {
-			h.Del(openAICodexTurnStateHeader)
-		}
 		return
 	}
 	origin, ok := raw.(openAICodexTurnStateOrigin)
 	if !ok {
 		s.openaiCodexTurnStateOrigins.Delete(seed)
-		if !preserveUnknown {
-			h.Del(openAICodexTurnStateHeader)
-		}
 		return
 	}
 	if !origin.expiresAt.IsZero() && time.Now().After(origin.expiresAt) {
 		s.openaiCodexTurnStateOrigins.Delete(seed)
-		if !preserveUnknown {
-			h.Del(openAICodexTurnStateHeader)
-		}
 		return
 	}
 	if origin.accountID != account.ID {

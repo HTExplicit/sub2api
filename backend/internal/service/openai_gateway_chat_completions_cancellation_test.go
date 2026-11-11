@@ -4,7 +4,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -114,40 +113,4 @@ func TestForwardAsChatCompletions_CancelsUpstreamBeforeClosingBody(t *testing.T)
 	case <-time.After(time.Second):
 		t.Fatal("ForwardAsChatCompletions did not cancel upstream before closing the body")
 	}
-}
-
-type contextBoundChatRecoveryUpstream struct {
-	httpUpstreamRecorder
-	cancelRecovery               context.CancelFunc
-	recoveryCancellationObserved bool
-}
-
-func (u *contextBoundChatRecoveryUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
-	if len(u.responses) > 0 {
-		if body, ok := u.responses[0].Body.(*contextBoundBlockingReadCloser); ok {
-			body.ctx = req.Context()
-		}
-	}
-	resp, err := u.httpUpstreamRecorder.Do(req, proxyURL, accountID, accountConcurrency)
-	if err != nil {
-		return nil, err
-	}
-	if err := req.Context().Err(); err != nil {
-		return nil, err
-	}
-	if len(u.requests) == 2 && u.cancelRecovery != nil {
-		u.cancelRecovery()
-		select {
-		case <-req.Context().Done():
-			u.recoveryCancellationObserved = true
-			return nil, req.Context().Err()
-		case <-time.After(time.Second):
-			return nil, errors.New("reasoning recovery lost client cancellation")
-		}
-	}
-	return resp, nil
-}
-
-func (u *contextBoundChatRecoveryUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
-	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }

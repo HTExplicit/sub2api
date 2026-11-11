@@ -189,13 +189,15 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	// Calculate cost
 	tokens := UsageTokens{
-		InputTokens:          actualInputTokens,
-		ImageInputTokens:     max(result.Usage.ImageInputTokens-result.Usage.ImageCacheReadTokens, 0),
-		ImageCacheReadTokens: result.Usage.ImageCacheReadTokens,
-		OutputTokens:         result.Usage.OutputTokens,
-		CacheCreationTokens:  result.Usage.CacheCreationInputTokens,
-		CacheReadTokens:      result.Usage.CacheReadInputTokens,
-		ImageOutputTokens:    result.Usage.ImageOutputTokens,
+		InputTokens:            actualInputTokens,
+		ImageInputTokens:       max(result.Usage.ImageInputTokens-result.Usage.ImageCacheReadTokens, 0),
+		ImageCacheReadTokens:   result.Usage.ImageCacheReadTokens,
+		OutputTokens:           result.Usage.OutputTokens,
+		CacheCreationTokens:    result.Usage.CacheCreationInputTokens,
+		CacheCreation30mTokens: result.Usage.CacheCreation30mInputTokens,
+		CacheCreation12hTokens: result.Usage.CacheCreation12hInputTokens,
+		CacheReadTokens:        result.Usage.CacheReadInputTokens,
+		ImageOutputTokens:      result.Usage.ImageOutputTokens,
 	}
 
 	// Get rate multiplier
@@ -397,12 +399,14 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		UpstreamModelMismatch:    upstreamModelMismatch(sentModel, result.UpstreamResponseModel),
 		ServiceTier:              result.ServiceTier,
 		ReasoningEffort:          result.ReasoningEffort,
-		RequestedReasoningEffort: requestedEffortForPersistence(result.RequestedReasoningEffort, result.ReasoningEffort, result.ReasoningEffortDefaulted),
+		RequestedReasoningEffort: coalesceRequestedReasoningEffort(result.RequestedReasoningEffort, result.ReasoningEffort),
 		InboundEndpoint:          optionalTrimmedStringPtr(input.InboundEndpoint),
 		UpstreamEndpoint:         optionalTrimmedStringPtr(input.UpstreamEndpoint),
 		InputTokens:              actualInputTokens,
 		OutputTokens:             result.Usage.OutputTokens,
 		CacheCreationTokens:      result.Usage.CacheCreationInputTokens,
+		CacheCreation30mTokens:   result.Usage.CacheCreation30mInputTokens,
+		CacheCreation12hTokens:   result.Usage.CacheCreation12hInputTokens,
 		CacheReadTokens:          result.Usage.CacheReadInputTokens,
 		ImageInputTokens:         result.Usage.ImageInputTokens,
 		ImageOutputTokens:        result.Usage.ImageOutputTokens,
@@ -510,39 +514,26 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
 
-	var applied bool
-	billingErr := func() error {
-		var err error
-		applied, err = applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
-			Cost:                       cost,
-			User:                       user,
-			APIKey:                     apiKey,
-			Account:                    account,
-			Subscription:               subscription,
-			RequestPayloadHash:         resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
-			IsSubscriptionBill:         isSubscriptionBilling && !simpleModeKeyRateLimitOnly,
-			AccountRateMultiplier:      accountRateMultiplier,
-			APIKeyService:              input.APIKeyService,
-			Platform:                   quotaPlatform,
-			SimpleModeKeyRateLimitOnly: simpleModeKeyRateLimitOnly,
-		}, s.billingDeps(), s.usageBillingRepo)
-		return err
-	}()
+	_, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+		Cost:                       cost,
+		User:                       user,
+		APIKey:                     apiKey,
+		Account:                    account,
+		Subscription:               subscription,
+		RequestPayloadHash:         resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
+		IsSubscriptionBill:         isSubscriptionBilling && !simpleModeKeyRateLimitOnly,
+		AccountRateMultiplier:      accountRateMultiplier,
+		APIKeyService:              input.APIKeyService,
+		Platform:                   quotaPlatform,
+		SimpleModeKeyRateLimitOnly: simpleModeKeyRateLimitOnly,
+	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
 		usageLog.ActualCost = 0
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		return billingErr
 	}
-	if applied {
-		if s.usageCache != nil && account != nil {
-			s.usageCache.InvalidateAccount(account.ID)
-		}
-	}
-	logPersisted := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
-	if applied && logPersisted && s.usageCommitObserver != nil && account != nil {
-		s.usageCommitObserver(account.ID)
-	}
+	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil
 }
@@ -771,8 +762,11 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			DisableModelLongContextPricing: modelLongContextExempt,
 		})
 	}
-	return s.billingService.calculateCostInternalWithPolicy(
-		billingModel, tokens, multiplier, serviceTier, nil,
+	return s.billingService.calculateCostWithServiceTierPolicy(
+		billingModel,
+		tokens,
+		multiplier,
+		serviceTier,
 		(longContextBillingGate == nil || *longContextBillingGate) && !modelLongContextExempt,
 	)
 }
@@ -1123,17 +1117,7 @@ func buildCodexUsageExtraUpdates(snapshot *OpenAICodexUsageSnapshot, fallbackNow
 	if snapshot.PrimaryOverSecondaryPercent != nil {
 		updates["codex_primary_over_secondary_percent"] = *snapshot.PrimaryOverSecondaryPercent
 	}
-	updates["codex_usage_updated_at"] = baseTime.Format(time.RFC3339Nano)
-	for _, window := range snapshot.Windows(baseTime) {
-		prefix := "codex_" + window.ID + "_"
-		updates[prefix+"observed_at"] = baseTime.Format(time.RFC3339Nano)
-		if window.ResetsAt != nil {
-			updates[prefix+"reset_at"] = window.ResetsAt.UTC().Format(time.RFC3339Nano)
-		} else {
-			// A missing countdown must not be rebound to a newer sampling time.
-			updates[prefix+"reset_after_seconds"] = nil
-		}
-	}
+	updates["codex_usage_updated_at"] = baseTime.Format(time.RFC3339)
 
 	// 归一化到 5h/7d 规范字段
 	if normalized := snapshot.Normalize(); normalized != nil {

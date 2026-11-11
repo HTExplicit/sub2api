@@ -125,33 +125,6 @@ func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
 	response.Success(c, req)
 }
 
-// GetCodexRuntimeSettings returns the Codex request compression switch this
-// process applies.
-// GET /api/v1/admin/settings/codex-runtime
-func (h *SettingHandler) GetCodexRuntimeSettings(c *gin.Context) {
-	response.Success(c, service.EffectiveCodexRuntimeConfig())
-}
-
-// UpdateCodexRuntimeSettings saves the Codex request compression switch. An
-// omitted switch is on.
-// PUT /api/v1/admin/settings/codex-runtime
-func (h *SettingHandler) UpdateCodexRuntimeSettings(c *gin.Context) {
-	req := service.CodexRuntimeConfig{RequestZstd: true}
-	raw, err := c.GetRawData()
-	if err == nil {
-		err = service.DecodeSwitchSettings(raw, &req, "request_zstd")
-	}
-	if err != nil {
-		response.BadRequest(c, "Invalid Codex runtime settings: "+err.Error())
-		return
-	}
-	if err := h.settingService.UpdateCodexRuntimeConfig(c.Request.Context(), req); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, req)
-}
-
 // GetSettings 获取所有系统设置
 // GET /api/v1/admin/settings
 func (h *SettingHandler) GetSettings(c *gin.Context) {
@@ -321,11 +294,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CyberSessionBlockEnabled:                               settings.CyberSessionBlockEnabled,
 		CyberPolicyUserAllowlist:                               settings.CyberPolicyUserAllowlist,
 		CyberSessionBlockTTLSeconds:                            settings.CyberSessionBlockTTLSeconds,
-		OpenAIRefusalRecoveryEnabled:                           settings.OpenAIRefusalRecoveryEnabled,
-		OpenAICyberFailoverEnabled:                             settings.OpenAICyberFailoverEnabled,
-		OpenAIRefusalRewriteEnabled:                            settings.OpenAIRefusalRewriteEnabled,
-		OpenAIRefusalKeywords:                                  append([]string(nil), settings.OpenAIRefusalKeywords...),
-		OpenAIRefusalReplacement:                               settings.OpenAIRefusalReplacement,
 		AffiliateRebateRate:                                    settings.AffiliateRebateRate,
 		AffiliateRebateFreezeHours:                             settings.AffiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:                            settings.AffiliateRebateDurationDays,

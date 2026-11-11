@@ -23,7 +23,6 @@ func TestEffortLevelsForModel(t *testing.T) {
 		{model: "us.anthropic.claude-haiku-5-5", want: []string{"low", "medium", "high", "xhigh", "max"}},
 		{model: "us.anthropic.claude-sonnet-5-5", want: []string{"low", "medium", "high", "xhigh", "max"}},
 		{model: "claude-opus-4-5-20251101", want: []string{"low", "medium", "high"}},
-		{model: "claude-opus-4-5@20251101", want: []string{"low", "medium", "high"}},
 		{model: "claude-haiku-4-5-20251001", want: nil},
 		{model: "gpt-5.6", want: nil},
 	}
@@ -33,17 +32,6 @@ func TestEffortLevelsForModel(t *testing.T) {
 			require.Equal(t, tt.want, EffortLevelsForModel(tt.model))
 		})
 	}
-}
-
-func TestEffortThinkingModeAndDefault(t *testing.T) {
-	t.Parallel()
-	require.True(t, EffortUsesAdaptiveThinking("claude-opus-4-7"))
-	require.True(t, EffortUsesAdaptiveThinking("anthropic/claude-haiku-5.5"))
-	require.Equal(t, "medium", DefaultEffortForModel("claude-haiku-5-5"))
-	require.False(t, EffortUsesAdaptiveThinking("claude-opus-4-5-20251101"), "Opus 4.5 thinks only with budget_tokens")
-	require.Equal(t, "medium", DefaultEffortForModel("claude-opus-5-5"))
-	require.Equal(t, "high", DefaultEffortForModel("claude-opus-4-8"))
-	require.Empty(t, DefaultEffortForModel("claude-haiku-4-5-20251001"))
 }
 
 func TestIsOpus55OpenRouterExactAlias(t *testing.T) {

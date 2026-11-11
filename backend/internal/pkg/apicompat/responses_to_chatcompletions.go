@@ -498,11 +498,12 @@ func generateChatCmplID() string {
 // ---------------------------------------------------------------------------
 
 type bufferedFuncCall struct {
-	OutputIndex int
-	CallID      string
-	Name        string
-	Args        strings.Builder
-	ArgsDone    bool
+	OutputIndex           int
+	CallID                string
+	Name                  string
+	Namespace             string
+	EncryptedFunctionArgs json.RawMessage
+	Args                  strings.Builder
 }
 
 // BufferedResponseAccumulator collects content from Responses SSE delta events
@@ -541,16 +542,17 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 			idx := len(a.funcCalls)
 			a.outputIndexToFuncIdx[event.OutputIndex] = idx
 			a.funcCalls = append(a.funcCalls, bufferedFuncCall{
-				OutputIndex: event.OutputIndex,
-				CallID:      event.Item.CallID,
-				Name:        event.Item.Name,
+				OutputIndex:           event.OutputIndex,
+				CallID:                event.Item.CallID,
+				Name:                  event.Item.Name,
+				Namespace:             event.Item.Namespace,
+				EncryptedFunctionArgs: event.Item.EncryptedFunctionArgs,
 			})
 		}
 	case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
 		if event.Delta != "" {
 			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok {
 				_, _ = a.funcCalls[idx].Args.WriteString(event.Delta)
-				a.funcCalls[idx].ArgsDone = false
 			}
 		}
 	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
@@ -562,7 +564,6 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok {
 				a.funcCalls[idx].Args.Reset()
 				_, _ = a.funcCalls[idx].Args.WriteString(completed)
-				a.funcCalls[idx].ArgsDone = event.Type == "response.custom_tool_call_input.done" || json.Valid([]byte(completed))
 			}
 		}
 	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
@@ -610,10 +611,12 @@ func (a *BufferedResponseAccumulator) BuildOutput() []ResponsesOutput {
 
 	for i := range a.funcCalls {
 		out = append(out, ResponsesOutput{
-			Type:      "function_call",
-			CallID:    a.funcCalls[i].CallID,
-			Name:      a.funcCalls[i].Name,
-			Arguments: a.funcCalls[i].Args.String(),
+			Type:                  "function_call",
+			CallID:                a.funcCalls[i].CallID,
+			Name:                  a.funcCalls[i].Name,
+			Namespace:             a.funcCalls[i].Namespace,
+			EncryptedFunctionArgs: a.funcCalls[i].EncryptedFunctionArgs,
+			Arguments:             a.funcCalls[i].Args.String(),
 		})
 	}
 
@@ -659,15 +662,8 @@ func (a *BufferedResponseAccumulator) SupplementResponseOutput(resp *ResponsesRe
 		}
 		for funcIndex := range a.funcCalls {
 			call := &a.funcCalls[funcIndex]
-			if !call.ArgsDone || (item.Name != "" && call.Name != "" && item.Name != call.Name) {
-				continue
-			}
-			// A concrete call ID takes precedence over array position: terminal
-			// output arrays may compact sparse indexes or reorder actual calls.
-			if item.CallID != "" && item.CallID != call.CallID {
-				continue
-			}
-			if item.CallID == "" && call.OutputIndex != outputIndex {
+			matchesCallID := item.CallID != "" && item.CallID == call.CallID
+			if !matchesCallID && call.OutputIndex != outputIndex {
 				continue
 			}
 			if call.Args.Len() > 0 {

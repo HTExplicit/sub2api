@@ -196,7 +196,7 @@ func TestHandleStreamingResponse_GrokKeepsUpstreamCreatedAtBytes(t *testing.T) {
 func TestHandleStreamingResponse_BareErrorSynthesizedFailedCarriesCreatedAt(t *testing.T) {
 	body := `data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_bare","object":"response","created_at":1700000000,"status":"in_progress","output":[]}}` + "\n\n" +
 		`data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"partial"}` + "\n\n" +
-		`data: {"type":"error","sequence_number":2,"error":{"code":"invalid_request","message":"bad request"}}` + "\n\n" +
+		`data: {"type":"error","sequence_number":2,"error":{"code":"server_is_overloaded","message":"busy"}}` + "\n\n" +
 		"data: [DONE]\n\n"
 	recorder := newOpenAIResponseFlushRecorder()
 
@@ -212,7 +212,7 @@ func TestHandleStreamingResponse_BareErrorSynthesizedFailedCarriesCreatedAt(t *t
 			failed = payload
 		}
 	}
-	require.NotEmpty(t, failed, "必须合成 response.failed: %s; error=%v", gotBody, err)
+	require.NotEmpty(t, failed, "必须合成 response.failed: %s", gotBody)
 	require.EqualValues(t, 1700000000, gjson.Get(failed, "response.created_at").Int())
 	require.EqualValues(t, 2, gjson.Get(failed, "sequence_number").Int())
 	require.Equal(t, "resp_bare", gjson.Get(failed, "response.id").String())

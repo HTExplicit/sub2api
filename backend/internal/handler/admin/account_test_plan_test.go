@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -133,15 +132,21 @@ func TestAccountTestModelsCarryReasoningOnEveryPlatform(t *testing.T) {
 	require.NoError(t, json.Unmarshal(read(anthropic, ""), &raw))
 	require.ElementsMatch(t, plan.Models, raw, "the raw list carries the same rows")
 
-	// OpenAI rows keep the openai.Model reasoning fields they had before.
+	// The management test rows expose account-local reasoning metadata without
+	// extending the official OpenAI model descriptor.
 	openAI := &service.Account{ID: 42, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
 		Credentials: map[string]any{"model_mapping": map[string]any{"friendly": "gpt-6-astra"}}}
+	reasoning := true
+	openAI.SetUpstreamModelMetadataSnapshot(service.UpstreamModelMetadataSnapshot{Models: map[string]service.UpstreamModelMetadata{
+		"gpt-6-astra": {ID: "gpt-6-astra", Reasoning: &reasoning, SupportedReasoningLevels: []string{"low", "high"}, DefaultReasoningLevel: "high"},
+	}})
 	levels, defaultLevel := service.AccountTestReasoningOptions(openAI, "friendly")
-	require.NotEmpty(t, levels)
-	var openAIRows []openai.Model
+	require.Equal(t, []string{"low", "high"}, levels)
+	require.Equal(t, "high", defaultLevel)
+	var openAIRows []map[string]any
 	require.NoError(t, json.Unmarshal(read(openAI, ""), &openAIRows))
-	require.Equal(t, []openai.Model{{ID: "friendly", Object: "model", Type: "model", DisplayName: "friendly",
-		ReasoningEfforts: levels, DefaultReasoningEffort: defaultLevel}}, openAIRows)
+	require.Equal(t, []map[string]any{{"id": "friendly", "object": "model", "type": "model", "display_name": "friendly",
+		"created": float64(0), "owned_by": "", "reasoning_efforts": []any{"low", "high"}, "default_reasoning_effort": "high"}}, openAIRows)
 }
 
 func TestAccountTestPlanAnthropicDefaultFollowsTestModelPreference(t *testing.T) {

@@ -87,7 +87,7 @@ const DefaultCacheControlTTL = "5m"
 //
 // ⚠️ 读取实际生效的版本号请用 CLIVersion()，它会叠加 SUB2API_CLAUDE_CLI_VERSION 覆盖。
 // 直接引用本常量只在"表达内置基线"时才正确（例如覆盖值的下限校验）。
-const CLICurrentVersion = "2.1.258"
+const CLICurrentVersion = "2.1.321"
 
 // FullClaudeCodeMimicryBetas 返回最"像"真实 Claude Code CLI 的完整 beta 列表，
 // 用于 OAuth 账号伪装成 Claude Code 时使用。
@@ -145,6 +145,18 @@ type Model struct {
 
 // DefaultModels Claude Code 客户端支持的默认模型列表
 var DefaultModels = []Model{
+	{
+		ID:          "claude-fable-5-2",
+		Type:        "model",
+		DisplayName: "Claude Fable 5.2",
+		CreatedAt:   "2026-11-09T00:00:00Z",
+	},
+	{
+		ID:          "claude-mythos-5-2",
+		Type:        "model",
+		DisplayName: "Claude Mythos 5.2",
+		CreatedAt:   "2026-11-09T00:00:00Z",
+	},
 	{
 		ID:          "claude-fable-5-1",
 		Type:        "model",
@@ -240,12 +252,8 @@ func DefaultModelIDs() []string {
 	return ids
 }
 
-// DefaultTestModel 测试时使用的默认模型：Anthropic 为已弃用的
-// claude-sonnet-4-5-20250929（2026-09-30 弃用，2026-11-30 下线）指定的替代。
-const DefaultTestModel = "claude-sonnet-5-5"
-
-// DefaultTestModelFallback 是账号不提供 DefaultTestModel 时的默认测试模型。
-const DefaultTestModelFallback = "claude-opus-5-5"
+// DefaultTestModel 测试时使用的默认模型
+const DefaultTestModel = "claude-sonnet-4-5-20250929"
 
 // ModelIDOverrides Claude OAuth 请求需要的模型 ID 映射
 var ModelIDOverrides = map[string]string{

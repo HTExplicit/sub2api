@@ -127,25 +127,9 @@ type UsageCache struct {
 	grokProbeCache    sync.Map           // accountID -> last billing probe attempt
 }
 
-// UsageCommitObserver runs only after this process owns the billing CAS and
-// the usage log is confirmed persisted. Failed or uncertain log writes do not
-// notify log-backed statistics consumers.
-type UsageCommitObserver func(accountID int64)
-
 // NewUsageCache 创建 UsageCache 实例
 func NewUsageCache() *UsageCache {
 	return &UsageCache{}
-}
-
-// InvalidateAccount drops persisted usage snapshots after a successful commit.
-// It is intentionally account-scoped so unrelated account caches remain warm.
-func (c *UsageCache) InvalidateAccount(accountID int64) {
-	if c == nil || accountID <= 0 {
-		return
-	}
-	c.windowStatsCache.Delete(accountID)
-	c.apiCache.Delete(accountID)
-	c.antigravityCache.Delete(accountID)
 }
 
 // WindowStats 窗口期统计
@@ -213,19 +197,18 @@ type AICredit struct {
 
 // UsageInfo 账号使用量信息
 type UsageInfo struct {
-	QuotaWindows       []AccountQuotaWindow `json:"quota_windows,omitempty"`
-	Source             string               `json:"source,omitempty"`               // "passive" or "active"
-	UpdatedAt          *time.Time           `json:"updated_at,omitempty"`           // 更新时间
-	FiveHour           *UsageProgress       `json:"five_hour"`                      // 5小时窗口
-	SevenDay           *UsageProgress       `json:"seven_day,omitempty"`            // 7天窗口
-	SevenDaySonnet     *UsageProgress       `json:"seven_day_sonnet,omitempty"`     // 7天Sonnet窗口
-	SevenDayFable      *UsageProgress       `json:"seven_day_fable,omitempty"`      // 7天Fable窗口（响应头 7d_oi）
-	GeminiSharedDaily  *UsageProgress       `json:"gemini_shared_daily,omitempty"`  // Gemini shared pool RPD (Google One / Code Assist)
-	GeminiProDaily     *UsageProgress       `json:"gemini_pro_daily,omitempty"`     // Gemini Pro 日配额
-	GeminiFlashDaily   *UsageProgress       `json:"gemini_flash_daily,omitempty"`   // Gemini Flash 日配额
-	GeminiSharedMinute *UsageProgress       `json:"gemini_shared_minute,omitempty"` // Gemini shared pool RPM (Google One / Code Assist)
-	GeminiProMinute    *UsageProgress       `json:"gemini_pro_minute,omitempty"`    // Gemini Pro RPM
-	GeminiFlashMinute  *UsageProgress       `json:"gemini_flash_minute,omitempty"`  // Gemini Flash RPM
+	Source             string         `json:"source,omitempty"`               // "passive" or "active"
+	UpdatedAt          *time.Time     `json:"updated_at,omitempty"`           // 更新时间
+	FiveHour           *UsageProgress `json:"five_hour"`                      // 5小时窗口
+	SevenDay           *UsageProgress `json:"seven_day,omitempty"`            // 7天窗口
+	SevenDaySonnet     *UsageProgress `json:"seven_day_sonnet,omitempty"`     // 7天Sonnet窗口
+	SevenDayFable      *UsageProgress `json:"seven_day_fable,omitempty"`      // 7天Fable窗口（响应头 7d_oi）
+	GeminiSharedDaily  *UsageProgress `json:"gemini_shared_daily,omitempty"`  // Gemini shared pool RPD (Google One / Code Assist)
+	GeminiProDaily     *UsageProgress `json:"gemini_pro_daily,omitempty"`     // Gemini Pro 日配额
+	GeminiFlashDaily   *UsageProgress `json:"gemini_flash_daily,omitempty"`   // Gemini Flash 日配额
+	GeminiSharedMinute *UsageProgress `json:"gemini_shared_minute,omitempty"` // Gemini shared pool RPM (Google One / Code Assist)
+	GeminiProMinute    *UsageProgress `json:"gemini_pro_minute,omitempty"`    // Gemini Pro RPM
+	GeminiFlashMinute  *UsageProgress `json:"gemini_flash_minute,omitempty"`  // Gemini Flash RPM
 
 	// Antigravity 多模型配额
 	AntigravityQuota map[string]*AntigravityModelQuota `json:"antigravity_quota,omitempty"`
@@ -413,7 +396,7 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 
 	// Antigravity 平台：使用 AntigravityQuotaFetcher 获取额度
 	if account.Platform == PlatformAntigravity {
-		usage, err := s.getAntigravityUsage(ctx, account)
+		usage, err := s.getAntigravityUsage(ctx, account, forceProbe)
 		if err == nil {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
@@ -824,37 +807,22 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 		}
 	}
 
-	usage.QuotaWindows = OpenAIQuotaWindows(account.Extra, now)
-	usage.FiveHour, usage.SevenDay = nil, nil
-	for i := range usage.QuotaWindows {
-		window := &usage.QuotaWindows[i]
-		window.Estimate = &QuotaEstimate{Status: "insufficient_data"}
-		if store, ok := s.accountRepo.(QuotaEstimateRepository); ok && s.openAIQuotaService != nil && window.PeriodKey() != "" {
-			if basis, known := s.openAIQuotaService.estimateBasis(ctx, account); known {
-				if base, latest, err := store.ReadQuotaEstimate(ctx, account.ID, basis, window.PeriodKey()); err == nil {
-					window.Estimate = EstimateQuotaValue(base, latest, *window)
-				}
-			}
+	if s.usageLogRepo == nil {
+		return usage, nil
+	}
+
+	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.FiveHour, 5*time.Hour, now)); err == nil {
+		if usage.FiveHour == nil {
+			usage.FiveHour = &UsageProgress{Utilization: 0}
 		}
-		if start := window.StatsStart(); start != nil && s.usageLogRepo != nil {
-			if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, *start); err == nil {
-				window.WindowStats = windowStatsFromAccountStats(stats)
-			}
+		usage.FiveHour.WindowStats = windowStatsFromAccountStats(stats)
+	}
+
+	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.SevenDay, 7*24*time.Hour, now)); err == nil {
+		if usage.SevenDay == nil {
+			usage.SevenDay = &UsageProgress{Utilization: 0}
 		}
-		progress := &UsageProgress{Utilization: window.Utilization, ResetsAt: window.ResetsAt,
-			RemainingSeconds: window.RemainingSeconds, WindowStats: window.WindowStats}
-		if window.Expired {
-			progress.Utilization = 0
-		}
-		// Compatibility fields describe only the period named by their contract.
-		switch window.WindowMinutes {
-		case 300:
-			usage.FiveHour = progress
-		case 10080:
-			usage.SevenDay = progress
-		case 43200:
-			usage.ThirtyDay = progress
-		}
+		usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
 	}
 
 	return usage, nil
@@ -921,12 +889,6 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	if account == nil || !account.IsOAuth() {
 		return nil, nil
 	}
-	if s.openAIQuotaService != nil {
-		var finish func()
-		ctx, finish = s.openAIQuotaService.activity.Attach(ctx)
-		ObserveQuotaAccount(ctx, account.ID)
-		defer finish()
-	}
 	accessToken := ""
 	if !account.IsOpenAIAgentIdentity() {
 		accessToken = account.GetOpenAIAccessToken()
@@ -976,7 +938,7 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	// 与真实转发一致：账号级自定义 UA 同样作为管理员显式配置传入。
 	// 上面写进 header 的指纹缓存 UA 只在强制统一被关闭时才参与配对（保持回滚后的历史语义）；
 	// 强制统一开启时客户端身份不参与构造，探针与真实转发用同一套规范身份出站。
-	enforceCodexIdentityHeadersForAccount(req.Header, account, codexAccountIdentityOverrideUA(account))
+	enforceCodexIdentityHeadersWithUA(req.Header, account.GetOpenAIUserAgent())
 	setOpenAIChatGPTAccountHeaders(req.Header, account)
 
 	proxyURL := ""
@@ -987,20 +949,11 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 		ProxyURL:              proxyURL,
 		Timeout:               15 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
-		// 与 OpenAI HTTPUpstream 传输一致：不让 Go 自动协商 Accept-Encoding: gzip，
-		// 真实 Codex 客户端不发该头。
-		DisableCompression: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build openai probe client: %w", err)
 	}
-	// 与推理面同一 zstd 压缩边界：探针同样是发往 /backend-api/codex/responses 的 OAuth POST；
-	// 本服务拿不到网关配置，开关取进程级快照。
-	wire, err := prepareOpenAICodexWireRequest(req, account)
-	if err != nil {
-		return nil, fmt.Errorf("openai codex probe request failed: %w", err)
-	}
-	resp, err := client.Do(wire)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("openai codex probe request failed: %w", err)
 	}
@@ -1138,41 +1091,45 @@ func (s *AccountUsageService) getGeminiUsage(ctx context.Context, account *Accou
 	return usage, nil
 }
 
-// getAntigravityUsage 获取 Antigravity 账户额度
-func (s *AccountUsageService) getAntigravityUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
+// cachedAntigravityUsage returns the account's cached usage while it is fresh, unless force is
+// set: a manual refresh (the usage cell's query button, force=true) must reach Google, or an
+// account upgraded or reset upstream keeps showing the old figures for the cache TTL.
+func (s *AccountUsageService) cachedAntigravityUsage(accountID int64, force bool) (*UsageInfo, bool) {
+	if force {
+		return nil, false
+	}
+	cached, ok := s.cache.antigravityCache.Load(accountID)
+	if !ok {
+		return nil, false
+	}
+	cache, ok := cached.(*antigravityUsageCache)
+	if !ok || time.Since(cache.timestamp) >= antigravityCacheTTL(cache.usageInfo) {
+		return nil, false
+	}
+	usage := cache.usageInfo
+	// 重新计算 RemainingSeconds，避免返回过时的剩余秒数
+	recalcAntigravityRemainingSeconds(usage)
+	return usage, true
+}
+
+// getAntigravityUsage 获取 Antigravity 账户额度；force 跳过缓存（仍经 singleflight 合并并发请求）。
+func (s *AccountUsageService) getAntigravityUsage(ctx context.Context, account *Account, force bool) (*UsageInfo, error) {
 	if s.antigravityQuotaFetcher == nil || !s.antigravityQuotaFetcher.CanFetch(account) {
 		now := time.Now()
 		return &UsageInfo{UpdatedAt: &now}, nil
 	}
 
 	// 1. 检查缓存
-	if cached, ok := s.cache.antigravityCache.Load(account.ID); ok {
-		if cache, ok := cached.(*antigravityUsageCache); ok {
-			ttl := antigravityCacheTTL(cache.usageInfo)
-			if time.Since(cache.timestamp) < ttl {
-				usage := cache.usageInfo
-				if usage.FiveHour != nil && usage.FiveHour.ResetsAt != nil {
-					usage.FiveHour.RemainingSeconds = int(time.Until(*usage.FiveHour.ResetsAt).Seconds())
-				}
-				return usage, nil
-			}
-		}
+	if usage, ok := s.cachedAntigravityUsage(account.ID, force); ok {
+		return usage, nil
 	}
 
 	// 2. singleflight 防止并发击穿
 	flightKey := fmt.Sprintf("ag-usage:%d", account.ID)
 	result, flightErr, _ := s.cache.antigravityFlight.Do(flightKey, func() (any, error) {
 		// 再次检查缓存（等待期间可能已被填充）
-		if cached, ok := s.cache.antigravityCache.Load(account.ID); ok {
-			if cache, ok := cached.(*antigravityUsageCache); ok {
-				ttl := antigravityCacheTTL(cache.usageInfo)
-				if time.Since(cache.timestamp) < ttl {
-					usage := cache.usageInfo
-					// 重新计算 RemainingSeconds，避免返回过时的剩余秒数
-					recalcAntigravityRemainingSeconds(usage)
-					return usage, nil
-				}
-			}
+		if usage, ok := s.cachedAntigravityUsage(account.ID, force); ok {
+			return usage, nil
 		}
 
 		// 使用独立 context，避免调用方 cancel 导致所有共享 flight 的请求失败
@@ -1666,6 +1623,13 @@ func buildCodexUsageProgressFromExtra(extra map[string]any, window string, now t
 	}
 
 	return progress
+}
+
+func codexWindowStatsStart(progress *UsageProgress, fallbackWindow time.Duration, now time.Time) time.Time {
+	if progress != nil && progress.ResetsAt != nil && now.Before(*progress.ResetsAt) {
+		return progress.ResetsAt.Add(-fallbackWindow)
+	}
+	return now.Add(-fallbackWindow)
 }
 
 func (s *AccountUsageService) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.AccountUsageStatsResponse, error) {

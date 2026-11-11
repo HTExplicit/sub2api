@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -121,10 +122,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
-	retryState := newOpenAIFailoverRetryState()
 	var lastFailoverErr *service.UpstreamFailoverError
-	var oauth429FailoverState service.OpenAIOAuth429FailoverState
-	var sameAccountRetrySelection *service.AccountSelectionResult
 	switchCount := 0
 	maxAccountSwitches := h.maxAccountSwitches
 	if maxAccountSwitches <= 0 {
@@ -137,27 +135,19 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	c.Request = c.Request.WithContext(embPricingCtx)
 
 	for {
-		retryingSameAccount := sameAccountRetrySelection != nil
-		var selection *service.AccountSelectionResult
-		var err error
-		if retryingSameAccount {
-			selection, err = h.gatewayService.ReacquireOpenAISameAccountSelection(c.Request.Context(), sameAccountRetrySelection)
-			sameAccountRetrySelection = nil
-		} else {
-			selection, _, err = h.gatewayService.SelectAccountWithSchedulerForCapability(
-				c.Request.Context(),
-				apiKey.GroupID,
-				"",
-				"",
-				forwardModel,
-				failedAccountIDs,
-				service.OpenAIUpstreamTransportHTTPSSE,
-				service.OpenAIEndpointCapabilityEmbeddings,
-				false,
-				false,
-				true,
-			)
-		}
+		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+			c.Request.Context(),
+			apiKey.GroupID,
+			"",
+			"",
+			forwardModel,
+			failedAccountIDs,
+			service.OpenAIUpstreamTransportHTTPSSE,
+			service.OpenAIEndpointCapabilityEmbeddings,
+			false,
+			false,
+			true,
+		)
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai_embeddings.account_select_aborted_client_disconnected", zap.Error(err))
@@ -193,13 +183,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		var accountReleaseFunc func()
-		var slotResult openAISlotAcquireResult
-		if retryingSameAccount {
-			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlotForSameAccountRetry(c, apiKey.GroupID, "", selection, false, &streamStarted, reqLog)
-		} else {
-			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &streamStarted, reqLog)
-		}
+		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &streamStarted, reqLog)
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号；否决次数达上限则按无可用账号终止。
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
@@ -209,14 +193,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
-			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
-				c, account, account.GetMappedModel(reqModel), lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState,
-				"embeddings", reqLog, true,
-				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
-			) {
-				continue
-			}
 			return
 		}
 
@@ -249,45 +225,18 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, reqModel, false, result), false, nil, err)
 				if failoverClientGone(c) {
-					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 					reqLog.Info("openai_embeddings.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
 					)
 					return
 				}
-				if !failoverErr.ShouldRetryNextAccount() {
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
-					h.handleFailoverExhausted(c, failoverErr, false)
-					return
-				}
-				retryAction := retryState.Handle(
-					c.Request.Context(),
-					h.gatewayService,
-					account,
-					account.GetMappedModel(reqModel),
-					failoverErr,
-					true,
-					sameAccountRetryDelay,
-					"embeddings",
-				)
-				finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, retryAction)
-				switch retryAction {
-				case openAIFailoverRetrySameAccount:
-					sameAccountRetrySelection = selection
-					lastFailoverErr = failoverErr
-					continue
-				case openAIFailoverRetryCanceled:
-					return
-				case openAIFailoverRetryStop:
-					h.handleFailoverExhausted(c, failoverErr, false)
-					return
-				}
+				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {
@@ -295,11 +244,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					return
 				}
 				switchCount++
-				h.gatewayService.RecordOpenAIAccountSwitch()
-				if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
-					h.handleFailoverExhausted(c, failoverErr, false)
-					return
-				}
 				reqLog.Warn("openai_embeddings.upstream_failover_switching",
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),
@@ -308,7 +252,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				)
 				continue
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, reqModel, false, result), false, nil, err)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
@@ -318,27 +262,40 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			)
 			return
 		}
-		if !shouldSubmitOpenAIUsage(err, result) {
-			return
-		}
 
-		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), true, nil)
-		usageSnapshot := snapshotOpenAIUsageMetadata(c, apiKey, account, subscription, channelMapping, reqModel, result, body)
-		usageSnapshot.upstreamEndpoint = GetUpstreamEndpoint(c, account.Platform)
-		usageInput := usageSnapshot.Input(result, h.apiKeyService, pricingAt)
-		usageAPIKeyID := usageInput.APIKey.ID
-		usageGroupID := usageInput.APIKey.GroupID
-		usageAccountID := usageInput.Account.ID
+		h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, reqModel, false, result), true, nil)
+		userAgent := c.GetHeader("User-Agent")
+		clientIP := ip.GetClientIP(c)
+		inboundEndpoint := GetInboundEndpoint(c)
+		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		sessionID := service.ExtractClientSessionID(c)
 
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, usageInput); err != nil {
+			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+				Result:             result,
+				APIKey:             apiKey,
+				User:               apiKey.User,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				IPAddress:          clientIP,
+				APIKeyService:      h.apiKeyService,
+				QuotaPlatform:      quotaPlatform,
+				SessionID:          sessionID,
+				ChannelUsageFields: channelUsageFields,
+				PricingAt:          pricingAt,
+			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.openai_gateway.embeddings"),
 					zap.Int64("user_id", subject.UserID),
-					zap.Int64("api_key_id", usageAPIKeyID),
-					zap.Any("group_id", usageGroupID),
+					zap.Int64("api_key_id", apiKey.ID),
+					zap.Any("group_id", apiKey.GroupID),
 					zap.String("model", reqModel),
-					zap.Int64("account_id", usageAccountID),
+					zap.Int64("account_id", account.ID),
 				).Error("openai_embeddings.record_usage_failed", zap.Error(err))
 			}
 		})

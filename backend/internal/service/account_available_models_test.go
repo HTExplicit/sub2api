@@ -63,7 +63,7 @@ func TestAccountAvailableModelsProjectsDiscoveryWithoutChangingCache(t *testing.
 
 func TestAccountAvailableModelsProjectsOAuthDiscovery(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"Case/OAuth-A","display_name":"upstream descriptor"},{"slug":"oauth-second"}]}`)
-	gateway := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	gateway := &OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()}
 	svc := &AccountTestService{}
 	svc.SetOpenAIGatewayService(gateway)
 	account := newCodexModelsTestAccount()

@@ -1,7 +1,6 @@
 package claude
 
 import (
-	"slices"
 	"strings"
 	"unicode"
 )
@@ -12,94 +11,35 @@ var (
 	effortLowMediumHighXHighMax = []string{"low", "medium", "high", "xhigh", "max"}
 )
 
-type effortFamily struct {
+var effortFamilies = []struct {
 	family string
 	levels []string
-	// adaptive pairs output_config.effort with thinking {type: "adaptive"}.
-	// Opus 4.5 thinks only through enabled+budget_tokens; Mythos Preview's
-	// thinking mode is unverified.
-	adaptive bool
-}
-
-var effortFamilies = []effortFamily{
+}{
 	{family: "claude-mythos-preview", levels: effortLowMediumHighMax},
-	{family: "claude-mythos-5", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-fable-5", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-sonnet-4-6", levels: effortLowMediumHighMax, adaptive: true},
-	{family: "claude-sonnet-5-5", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-sonnet-5", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-opus-4-8", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-opus-4-7", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-opus-4-6", levels: effortLowMediumHighMax, adaptive: true},
+	{family: "claude-mythos-5", levels: effortLowMediumHighXHighMax},
+	{family: "claude-fable-5", levels: effortLowMediumHighXHighMax},
+	{family: "claude-sonnet-4-6", levels: effortLowMediumHighMax},
+	{family: "claude-sonnet-5-5", levels: effortLowMediumHighXHighMax},
+	{family: "claude-sonnet-5", levels: effortLowMediumHighXHighMax},
+	{family: "claude-opus-4-8", levels: effortLowMediumHighXHighMax},
+	{family: "claude-opus-4-7", levels: effortLowMediumHighXHighMax},
+	{family: "claude-opus-4-6", levels: effortLowMediumHighMax},
 	{family: "claude-opus-4-5", levels: effortLowMediumHigh},
-	{family: "claude-opus-5-5", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-opus-5", levels: effortLowMediumHighXHighMax, adaptive: true},
-	{family: "claude-haiku-5-5", levels: effortLowMediumHighXHighMax, adaptive: true},
-}
-
-func findEffortFamily(model string) *effortFamily {
-	id := normalizeEffortModelID(model)
-	for i := range effortFamilies {
-		if entry := &effortFamilies[i]; id == entry.family || strings.HasPrefix(id, entry.family+"-") {
-			return entry
-		}
-	}
-	return nil
+	{family: "claude-opus-5-5", levels: effortLowMediumHighXHighMax},
+	{family: "claude-opus-5", levels: effortLowMediumHighXHighMax},
+	{family: "claude-haiku-5-5", levels: effortLowMediumHighXHighMax},
 }
 
 // EffortLevelsForModel returns the output_config.effort values accepted by a
 // Claude model, ordered from the lightest to the deepest reasoning level.
 func EffortLevelsForModel(model string) []string {
-	if entry := findEffortFamily(model); entry != nil {
-		return append([]string(nil), entry.levels...)
-	}
-	return nil
-}
-
-// EffortLevelForModel returns the output_config.effort level a Claude model
-// accepts for effort: effort itself when the model lists it, otherwise the
-// nearest deeper level, otherwise the model's deepest level. It returns ""
-// when the model has no effort levels or effort is not an effort level.
-func EffortLevelForModel(model, effort string) string {
-	entry := findEffortFamily(model)
-	rank := slices.Index(effortLowMediumHighXHighMax, effort)
-	if entry == nil || rank < 0 {
-		return ""
-	}
-	for _, level := range entry.levels {
-		if slices.Index(effortLowMediumHighXHighMax, level) >= rank {
-			return level
+	id := normalizeEffortModelID(model)
+	for _, entry := range effortFamilies {
+		if id == entry.family || strings.HasPrefix(id, entry.family+"-") {
+			return append([]string(nil), entry.levels...)
 		}
 	}
-	return entry.levels[len(entry.levels)-1]
-}
-
-// EffortUsesAdaptiveThinking reports whether a Claude model pairs
-// output_config.effort with thinking {type: "adaptive"}.
-func EffortUsesAdaptiveThinking(model string) bool {
-	entry := findEffortFamily(model)
-	return entry != nil && entry.adaptive
-}
-
-// IsClaudeModel reports whether model is a Claude model ID after
-// provider/local suffix normalization, including models without effort levels.
-func IsClaudeModel(model string) bool {
-	return strings.HasPrefix(normalizeEffortModelID(model), "claude-")
-}
-
-// DefaultEffortForModel returns the effort a Claude model applies when
-// output_config.effort is omitted, or "" when the model has no effort levels.
-func DefaultEffortForModel(model string) string {
-	entry := findEffortFamily(model)
-	switch {
-	case entry == nil:
-		return ""
-	case entry.family == "claude-opus-5-5" || entry.family == "claude-haiku-5-5":
-		// Opus and Haiku 5.5 default to medium effort.
-		return "medium"
-	default:
-		return "high"
-	}
+	return nil
 }
 
 // IsOpus55 identifies the fixed Opus 5.5 ID after provider/local suffix normalization.
@@ -117,6 +57,16 @@ func IsHaiku55(model string) bool {
 	return normalizeEffortModelID(model) == "claude-haiku-5-5"
 }
 
+// IsFable52 identifies Fable 5.2 after provider/local suffix normalization.
+func IsFable52(model string) bool {
+	return normalizeEffortModelID(model) == "claude-fable-5-2"
+}
+
+// IsMythos52 identifies Mythos 5.2 after provider/local suffix normalization.
+func IsMythos52(model string) bool {
+	return normalizeEffortModelID(model) == "claude-mythos-5-2"
+}
+
 func normalizeEffortModelID(model string) string {
 	id := strings.ToLower(strings.TrimSpace(model))
 	id = strings.TrimPrefix(id, "models/")
@@ -128,25 +78,23 @@ func normalizeEffortModelID(model string) string {
 	}
 	id = strings.TrimPrefix(id, "anthropic.")
 	id = strings.TrimSuffix(id, "-thinking")
-	// OpenRouter spells minor versions with a dot (claude-opus-4.7) where
-	// Anthropic IDs use a hyphen. Normalize them before effort, thinking, and
-	// billing family lookups.
-	if strings.Contains(id, ".") {
-		b := []byte(id)
-		for i := 1; i+1 < len(b); i++ {
-			if b[i] == '.' && '0' <= b[i-1] && b[i-1] <= '9' && '0' <= b[i+1] && b[i+1] <= '9' {
-				b[i] = '-'
-			}
-		}
-		id = string(b)
+	// OpenRouter uses dotted minor versions for some models. Normalize them
+	// before effort, thinking, and billing family lookups.
+	if id == "claude-opus-5.5" {
+		id = "claude-opus-5-5"
+	}
+	if id == "claude-sonnet-5.5" {
+		id = "claude-sonnet-5-5"
+	}
+	if id == "claude-haiku-5.5" {
+		id = "claude-haiku-5-5"
 	}
 	if mapped, ok := ModelIDReverseOverrides[id]; ok {
 		id = mapped
 	}
-	// Dated snapshots: "-YYYYMMDD" (Anthropic API) and "@YYYYMMDD" (Vertex AI).
 	if len(id) >= 9 {
 		suffix := id[len(id)-9:]
-		if suffix[0] == '-' || suffix[0] == '@' {
+		if suffix[0] == '-' {
 			digits := true
 			for _, r := range suffix[1:] {
 				if !unicode.IsDigit(r) {

@@ -368,14 +368,10 @@ type UpdateSettingsRequest struct {
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
 
 	// cyber 会话屏蔽开关 + TTL
-	CyberSessionBlockEnabled     *bool     `json:"cyber_session_block_enabled"`
-	CyberPolicyUserAllowlist     *string   `json:"cyber_policy_user_allowlist"`
-	CyberSessionBlockTTLSeconds  *int      `json:"cyber_session_block_ttl_seconds"`
-	OpenAIRefusalRecoveryEnabled *bool     `json:"openai_refusal_recovery_enabled"`
-	OpenAICyberFailoverEnabled   *bool     `json:"openai_cyber_failover_enabled"`
-	OpenAIRefusalRewriteEnabled  *bool     `json:"openai_refusal_rewrite_enabled"`
-	OpenAIRefusalKeywords        *[]string `json:"openai_refusal_keywords"`
-	OpenAIRefusalReplacement     *string   `json:"openai_refusal_replacement"`
+	CyberSessionBlockEnabled    *bool   `json:"cyber_session_block_enabled"`
+	CyberPolicyUserAllowlist    *string `json:"cyber_policy_user_allowlist"`
+	CyberSessionBlockTTLSeconds *int    `json:"cyber_session_block_ttl_seconds"`
+
 	// OpenAI fast/flex policy (optional, only updated when provided)
 	OpenAIFastPolicySettings *dto.OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
@@ -2045,21 +2041,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.CyberSessionBlockTTLSeconds
 		}(),
-		OpenAIRefusalRecoveryEnabled: boolValueOrDefault(req.OpenAIRefusalRecoveryEnabled, previousSettings.OpenAIRefusalRecoveryEnabled),
-		OpenAICyberFailoverEnabled:   boolValueOrDefault(req.OpenAICyberFailoverEnabled, previousSettings.OpenAICyberFailoverEnabled),
-		OpenAIRefusalRewriteEnabled:  boolValueOrDefault(req.OpenAIRefusalRewriteEnabled, previousSettings.OpenAIRefusalRewriteEnabled),
-		OpenAIRefusalKeywords: func() []string {
-			if req.OpenAIRefusalKeywords != nil {
-				return append([]string(nil), (*req.OpenAIRefusalKeywords)...)
-			}
-			return append([]string(nil), previousSettings.OpenAIRefusalKeywords...)
-		}(),
-		OpenAIRefusalReplacement: func() string {
-			if req.OpenAIRefusalReplacement != nil {
-				return *req.OpenAIRefusalReplacement
-			}
-			return previousSettings.OpenAIRefusalReplacement
-		}(),
 	}
 
 	// req.AuthSourceXxxPlatformQuotas 为 nil 表示本次请求未包含该 source 的 quota 配置（保留 previousAuthSourceDefaults 中的值）；
@@ -2472,17 +2453,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 
-		RiskControlEnabled:           updatedSettings.RiskControlEnabled,
-		CyberSessionBlockEnabled:     updatedSettings.CyberSessionBlockEnabled,
-		CyberPolicyUserAllowlist:     updatedSettings.CyberPolicyUserAllowlist,
-		CyberSessionBlockTTLSeconds:  updatedSettings.CyberSessionBlockTTLSeconds,
-		OpenAIRefusalRecoveryEnabled: updatedSettings.OpenAIRefusalRecoveryEnabled,
-		OpenAICyberFailoverEnabled:   updatedSettings.OpenAICyberFailoverEnabled,
-		OpenAIRefusalRewriteEnabled:  updatedSettings.OpenAIRefusalRewriteEnabled,
-		OpenAIRefusalKeywords:        append([]string(nil), updatedSettings.OpenAIRefusalKeywords...),
-		OpenAIRefusalReplacement:     updatedSettings.OpenAIRefusalReplacement,
-		AccountSchedulingThresholds:  updatedSettings.AccountSchedulingThresholds,
-		AllowUserViewErrorRequests:   updatedSettings.AllowUserViewErrorRequests}
+		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
+		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,
+		CyberPolicyUserAllowlist:    updatedSettings.CyberPolicyUserAllowlist,
+		CyberSessionBlockTTLSeconds: updatedSettings.CyberSessionBlockTTLSeconds,
+		AccountSchedulingThresholds: updatedSettings.AccountSchedulingThresholds,
+		AllowUserViewErrorRequests:  updatedSettings.AllowUserViewErrorRequests,
+	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
 	} else if fastPolicy != nil {

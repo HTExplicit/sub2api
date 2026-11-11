@@ -81,7 +81,7 @@ func TestChatCompletionsToResponsesStream_CreatedAtStableAcrossEvents(t *testing
 
 	var chunk ChatCompletionsChunk
 	require.NoError(t, json.Unmarshal(
-		[]byte(`{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}`), &chunk))
+		[]byte(`{"choices":[{"index":0,"delta":{"content":"hi"}}]}`), &chunk))
 
 	events := ChatCompletionsChunkToResponsesEvents(&chunk, state)
 	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)

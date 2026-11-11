@@ -93,7 +93,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if parsed == nil {
 		return nil, fmt.Errorf("parse request: empty request")
 	}
-	signatureRecovery := newClaudeSignatureRecoveryState(parsed.Body.Bytes())
 	// API-key mappings and OAuth native IDs are resolved before mimicry.
 	validationModel := parsed.Model
 	if account != nil {
@@ -104,21 +103,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		} else if account.Type == AccountTypeAPIKey {
 			validationModel = account.GetMappedModel(validationModel)
 		}
-	}
-	defaultBody, defaulted, _, defaultErr := s.deepseekReasoning.prepare(c, account, parsed.Body.Bytes(), validationModel, APIProtocolAnthropic)
-	if defaultErr != nil {
-		return nil, defaultErr
-	}
-	if defaulted {
-		if err := parsed.ReplaceBody(defaultBody); err != nil {
-			return nil, err
-		}
-		defer func() {
-			if result != nil {
-				result.ReasoningEffortDefaulted = true
-				result.ReasoningEffort = NormalizeClaudeOutputEffort(parsed.OutputEffort)
-			}
-		}()
 	}
 	if account != nil && account.Platform == PlatformAnthropic {
 		if err := validateClaude55Request(parsed.Body.Bytes(), validationModel); err != nil {
@@ -142,6 +126,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if account != nil && s.shouldEmulateWebSearch(ctx, account, parsed.GroupID, parsed.Body.Bytes()) {
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
+
 	if err := s.applySystemPromptToParsed(c, account, parsed); err != nil {
 		return nil, err
 	}
@@ -416,7 +401,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 		// 记录本次实际发送的 wire body；只有请求成功后才写回 ParsedRequest，避免 400 retry 基于已签名 CCH 再改写。
 		lastWireBody = wireBody
-		signatureRecovery.observeFirstWire(wireBody)
 
 		// 发送请求
 		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
@@ -435,8 +419,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			if readErr == nil {
 				_ = resp.Body.Close()
 
-				if ShouldRectifyThinkingSignatureError(reqModel) && s.claudeSignatureErrorCandidate(ctx, account, respBody) {
-					recoveryDiagnostic := signatureRecovery.diagnostic("http_400", false)
+				if s.shouldRectifySignatureError(ctx, account, respBody, reqModel) {
 					appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 						ProxyID:            opsUpstreamProxyID(account),
 						ProxyName:          opsUpstreamProxyName(account),
@@ -448,7 +431,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 						UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
 						Kind:               "signature_error",
 						Message:            extractUpstreamErrorMessage(respBody),
-						SignatureRecovery:  recoveryDiagnostic,
 						Detail: func() string {
 							if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 								return truncateString(string(respBody), s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes)
@@ -456,11 +438,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 							return ""
 						}(),
 					})
-					if !s.claudeSignatureRecoveryEnabled(ctx, account, reqModel) {
-						recoveryDiagnostic.Reason = "disabled"
-						resp.Body = io.NopCloser(bytes.NewReader(respBody))
-						break
-					}
 
 					looksLikeToolSignatureError := func(msg string) bool {
 						m := strings.ToLower(msg)
@@ -472,120 +449,114 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 							strings.Contains(m, "function_response")
 					}
 
+					// 避免在重试预算已耗尽时再发起额外请求
+					if time.Since(retryStart) >= maxRetryElapsed {
+						resp.Body = io.NopCloser(bytes.NewReader(respBody))
+						break
+					}
+					logger.LegacyPrintf("service.gateway", "[warn] Account %d: thinking blocks have invalid signature, retrying with filtered blocks", account.ID)
+
 					// Conservative two-stage fallback:
 					// 1) Disable thinking + thinking->text (preserve content)
 					// 2) Only if upstream still errors AND error message points to tool/function signature issues:
 					//    also downgrade tool_use/tool_result blocks to text.
 
-					var retryReq *http.Request
-					retryResp, retryWireBody, retryErr := signatureRecovery.run(ctx, recoveryDiagnostic, body, reqModel,
-						func(filteredBody []byte) (*http.Request, []byte, error) {
-							retryCtx, releaseRetryCtx := detachStreamUpstreamContext(ctx, reqStream)
-							defer releaseRetryCtx()
-							var wire []byte
-							var buildErr error
-							retryReq, wire, buildErr = s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
-							return retryReq, wire, buildErr
-						},
-						func(req *http.Request) (*http.Response, error) {
-							return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
-						})
-					if retryResp != nil && retryErr == nil {
-						if retryResp.StatusCode < 400 {
-							// 重试请求被上游接受后同步 ParsedRequest，保证 usage/日志看到真实请求体。
-							lastWireBody = retryWireBody
-							if err := replaceBody(retryWireBody); err != nil {
-								_ = retryResp.Body.Close()
-								return nil, err
+					filteredBody := FilterThinkingBlocksForRetry(body, reqModel)
+					retryCtx, releaseRetryCtx := detachStreamUpstreamContext(ctx, reqStream)
+					retryReq, retryWireBody, buildErr := s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
+					releaseRetryCtx()
+					if buildErr == nil {
+						retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
+						if retryErr == nil {
+							if retryResp.StatusCode < 400 {
+								// 重试请求被上游接受后同步 ParsedRequest，保证 usage/日志看到真实请求体。
+								lastWireBody = retryWireBody
+								if err := replaceBody(retryWireBody); err != nil {
+									_ = retryResp.Body.Close()
+									return nil, err
+								}
+								logger.LegacyPrintf("service.gateway", "Account %d: thinking block retry succeeded (blocks downgraded)", account.ID)
+								resp = retryResp
+								break
 							}
-							logger.LegacyPrintf("service.gateway", "Account %d: thinking block retry succeeded (blocks downgraded)", account.ID)
-							resp = retryResp
-							break
-						}
 
-						retryRespBody, retryReadErr := s.readUpstreamErrorBody(retryResp)
-						_ = retryResp.Body.Close()
-						if retryReadErr != nil {
-							recoveryDiagnostic.Outcome, recoveryDiagnostic.Reason = "response_read_failed", "response_read_failed"
-							resp.Body = io.NopCloser(bytes.NewReader(respBody))
-							break
-						}
-						if retryReadErr == nil && retryResp.StatusCode == 400 && s.isSignatureErrorPattern(ctx, account, retryRespBody) {
-							appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-								ProxyID:            opsUpstreamProxyID(account),
-								ProxyName:          opsUpstreamProxyName(account),
-								Platform:           account.Platform,
-								AccountID:          account.ID,
-								AccountName:        account.Name,
-								UpstreamStatusCode: retryResp.StatusCode,
-								UpstreamRequestID:  retryResp.Header.Get("x-request-id"),
-								UpstreamURL:        safeUpstreamURL(retryReq.URL.String()),
-								Kind:               "signature_retry_thinking",
-								Message:            extractUpstreamErrorMessage(retryRespBody),
-								Detail: func() string {
-									if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-										return truncateString(string(retryRespBody), s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes)
-									}
-									return ""
-								}(),
-							})
-							msg2 := extractUpstreamErrorMessage(retryRespBody)
-							if looksLikeToolSignatureError(msg2) && time.Since(retryStart) < maxRetryElapsed {
-								logger.LegacyPrintf("service.gateway", "Account %d: signature retry still failing and looks tool-related, retrying with tool blocks downgraded", account.ID)
-								filteredBody2 := FilterSignatureSensitiveBlocksForRetry(body, reqModel)
-								retryCtx2, releaseRetryCtx2 := detachStreamUpstreamContext(ctx, reqStream)
-								retryReq2, retryWireBody2, buildErr2 := s.buildUpstreamRequest(retryCtx2, c, account, filteredBody2, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
-								releaseRetryCtx2()
-								if buildErr2 == nil {
-									recoveryDiagnostic.Attempts++
-									retryResp2, retryErr2 := s.httpUpstream.DoWithTLS(retryReq2, proxyURL, account.ID, account.Concurrency, tlsProfile)
-									if retryErr2 == nil {
-										recoveryDiagnostic.Outcome = "upstream_rejected"
-										if retryResp2.StatusCode < 400 {
-											recoveryDiagnostic.Outcome = "accepted"
-											// 二阶段工具块降级成功时也必须更新当前 body。
-											lastWireBody = retryWireBody2
-											if err := replaceBody(retryWireBody2); err != nil {
-												_ = retryResp2.Body.Close()
-												return nil, err
-											}
+							retryRespBody, retryReadErr := s.readUpstreamErrorBody(retryResp)
+							_ = retryResp.Body.Close()
+							if retryReadErr == nil && retryResp.StatusCode == 400 && s.isSignatureErrorPattern(ctx, account, retryRespBody) {
+								appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+									ProxyID:            opsUpstreamProxyID(account),
+									ProxyName:          opsUpstreamProxyName(account),
+									Platform:           account.Platform,
+									AccountID:          account.ID,
+									AccountName:        account.Name,
+									UpstreamStatusCode: retryResp.StatusCode,
+									UpstreamRequestID:  retryResp.Header.Get("x-request-id"),
+									UpstreamURL:        safeUpstreamURL(retryReq.URL.String()),
+									Kind:               "signature_retry_thinking",
+									Message:            extractUpstreamErrorMessage(retryRespBody),
+									Detail: func() string {
+										if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+											return truncateString(string(retryRespBody), s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes)
 										}
-										resp = retryResp2
-										break
+										return ""
+									}(),
+								})
+								msg2 := extractUpstreamErrorMessage(retryRespBody)
+								if looksLikeToolSignatureError(msg2) && time.Since(retryStart) < maxRetryElapsed {
+									logger.LegacyPrintf("service.gateway", "Account %d: signature retry still failing and looks tool-related, retrying with tool blocks downgraded", account.ID)
+									filteredBody2 := FilterSignatureSensitiveBlocksForRetry(body, reqModel)
+									retryCtx2, releaseRetryCtx2 := detachStreamUpstreamContext(ctx, reqStream)
+									retryReq2, retryWireBody2, buildErr2 := s.buildUpstreamRequest(retryCtx2, c, account, filteredBody2, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
+									releaseRetryCtx2()
+									if buildErr2 == nil {
+										retryResp2, retryErr2 := s.httpUpstream.DoWithTLS(retryReq2, proxyURL, account.ID, account.Concurrency, tlsProfile)
+										if retryErr2 == nil {
+											if retryResp2.StatusCode < 400 {
+												// 二阶段工具块降级成功时也必须更新当前 body。
+												lastWireBody = retryWireBody2
+												if err := replaceBody(retryWireBody2); err != nil {
+													_ = retryResp2.Body.Close()
+													return nil, err
+												}
+											}
+											resp = retryResp2
+											break
+										}
+										if retryResp2 != nil && retryResp2.Body != nil {
+											_ = retryResp2.Body.Close()
+										}
+										appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+											ProxyID:            opsUpstreamProxyID(account),
+											ProxyName:          opsUpstreamProxyName(account),
+											Platform:           account.Platform,
+											AccountID:          account.ID,
+											AccountName:        account.Name,
+											UpstreamStatusCode: 0,
+											UpstreamURL:        safeUpstreamURL(retryReq2.URL.String()),
+											Kind:               "signature_retry_tools_request_error",
+											Message:            sanitizeUpstreamErrorMessage(retryErr2.Error()),
+										})
+										logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry failed: %v", account.ID, retryErr2)
+									} else {
+										logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry build failed: %v", account.ID, buildErr2)
 									}
-									if retryResp2 != nil && retryResp2.Body != nil {
-										_ = retryResp2.Body.Close()
-									}
-									recoveryDiagnostic.Outcome, recoveryDiagnostic.Reason = "transport_failed", "transport_failed"
-									appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-										ProxyID:            opsUpstreamProxyID(account),
-										ProxyName:          opsUpstreamProxyName(account),
-										Platform:           account.Platform,
-										AccountID:          account.ID,
-										AccountName:        account.Name,
-										UpstreamStatusCode: 0,
-										UpstreamURL:        safeUpstreamURL(retryReq2.URL.String()),
-										Kind:               "signature_retry_tools_request_error",
-										Message:            sanitizeUpstreamErrorMessage(retryErr2.Error()),
-									})
-									logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry failed: %v", account.ID, retryErr2)
-								} else {
-									recoveryDiagnostic.Outcome, recoveryDiagnostic.Reason = "build_failed", "build_failed"
-									logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry build failed: %v", account.ID, buildErr2)
 								}
 							}
-						}
 
-						// Fall back to the original retry response context.
-						resp = &http.Response{
-							StatusCode: retryResp.StatusCode,
-							Header:     retryResp.Header.Clone(),
-							Body:       io.NopCloser(bytes.NewReader(retryRespBody)),
+							// Fall back to the original retry response context.
+							resp = &http.Response{
+								StatusCode: retryResp.StatusCode,
+								Header:     retryResp.Header.Clone(),
+								Body:       io.NopCloser(bytes.NewReader(retryRespBody)),
+							}
+							break
 						}
-						break
-					}
-					if retryErr != nil {
-						logger.LegacyPrintf("service.gateway", "Account %d: signature recovery failed (%s): %v", account.ID, recoveryDiagnostic.Reason, retryErr)
+						if retryResp != nil && retryResp.Body != nil {
+							_ = retryResp.Body.Close()
+						}
+						logger.LegacyPrintf("service.gateway", "Account %d: signature error retry failed: %v", account.ID, retryErr)
+					} else {
+						logger.LegacyPrintf("service.gateway", "Account %d: signature error retry build request failed: %v", account.ID, buildErr)
 					}
 
 					// Retry failed: restore original response body and continue handling.
@@ -905,7 +876,7 @@ func anthropicSpeedModel(parsed *ParsedRequest, result *ForwardResult) string {
 
 // anthropicSpeedServiceTier 把 Anthropic 的 speed=fast 归一成可计费的 "fast" tier。
 //
-// Fast mode 目前只在 Claude Opus 5 / Opus 4.8 上存在，且不支持 Bedrock 等第三方
+// Fast mode 支持 Claude Fable/Mythos 5.2、Opus 5 / Opus 4.8，且不支持 Bedrock 等第三方
 // 承载（Opus 4.7 的 fast mode 已被移除，传 speed=fast 会直接报错）。这里按模型和
 // 平台收紧，避免上游根本没跑 fast 时仍然按 2x 计费——宁可漏收也不能多收。
 //
@@ -923,8 +894,11 @@ func anthropicSpeedServiceTier(account *Account, speed, model string) *string {
 	return &tier
 }
 
-// modelSupportsAnthropicFastMode 判断模型是否属于支持 fast mode 的 Opus 5 / Opus 4.8。
+// modelSupportsAnthropicFastMode 判断模型是否支持 Anthropic fast mode。
 func modelSupportsAnthropicFastMode(model string) bool {
+	if claude.IsFable52(model) || claude.IsMythos52(model) {
+		return true
+	}
 	modelLower := strings.ToLower(strings.TrimSpace(model))
 	if !strings.Contains(modelLower, "opus") {
 		return false

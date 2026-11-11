@@ -162,6 +162,12 @@ func TestAccountHandlerGetAvailableModels_ConfiguredModelWildcards(t *testing.T)
 		t.Run(tc.name, func(t *testing.T) {
 			account := service.Account{ID: 601, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 				Credentials: map[string]any{"api_key": "mock-key", "base_url": "https://models.example/v1", "model_mapping": tc.mapping}}
+			providerMetadata := service.UpstreamModelMetadata{ID: "case/two", DisplayName: "Provider Two", Description: "Provider description", ContextWindow: 321000, MaxOutputTokens: 1234}
+			if tc.name == "live" {
+				account.SetUpstreamModelMetadataSnapshot(service.UpstreamModelMetadataSnapshot{Models: map[string]service.UpstreamModelMetadata{
+					providerMetadata.ID: providerMetadata,
+				}})
+			}
 			before, err := json.Marshal(account.Credentials)
 			require.NoError(t, err)
 			upstream := &configuredModelsUpstream{body: tc.body, status: tc.status}
@@ -178,7 +184,10 @@ func TestAccountHandlerGetAvailableModels_ConfiguredModelWildcards(t *testing.T)
 			require.NoError(t, err)
 			require.Equal(t, before, after)
 			if tc.name == "live" {
-				require.Equal(t, openai.Model{ID: "case/two", DisplayName: "Provider Two", Type: "provider-model", Object: "model", Created: 123, OwnedBy: "provider", Description: "Provider description"}, models[2])
+				require.Equal(t, openai.Model{ID: "case/two", DisplayName: "Provider Two", Type: "provider-model", Object: "model", Created: 123, OwnedBy: "provider"}, models[2])
+				metadata, found := adminSvc.account.GetUpstreamModelMetadata(providerMetadata.ID)
+				require.True(t, found)
+				require.Equal(t, providerMetadata, metadata, "building the picker must preserve the account's upstream description and capability metadata")
 				for id, target := range map[string]string{"case/special-one": "exact-target", "case/special-two": "specific-target", "case/two": "broad-target"} {
 					mapped, matched := adminSvc.account.ResolveMappedModel(id)
 					require.True(t, matched)

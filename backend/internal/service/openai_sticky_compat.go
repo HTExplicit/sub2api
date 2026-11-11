@@ -199,11 +199,8 @@ func (s *OpenAIGatewayService) refreshStickySessionTTL(ctx context.Context, grou
 	return err
 }
 
-func (s *OpenAIGatewayService) deleteStickySessionAccountIDIfMatches(ctx context.Context, groupID *int64, sessionHash string, expectedAccountID int64) error {
+func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string) error {
 	if s == nil || s.cache == nil {
-		return nil
-	}
-	if expectedAccountID <= 0 {
 		return nil
 	}
 	primaryKey := s.openAISessionCacheKey(sessionHash)
@@ -211,22 +208,14 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountIDIfMatches(ctx context
 		return nil
 	}
 
-	deleteIfMatches := func(key string) error {
-		if key == "" {
-			return nil
-		}
-		_, err := s.cache.DeleteSessionAccountIDIfMatches(ctx, derefGroupID(groupID), key, expectedAccountID)
-		return err
-	}
-
-	err := deleteIfMatches(primaryKey)
+	err := s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), primaryKey)
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {
 		return err
 	}
 
 	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
 	if legacyKey != "" {
-		_ = deleteIfMatches(legacyKey)
+		_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), legacyKey)
 	}
 	return err
 }

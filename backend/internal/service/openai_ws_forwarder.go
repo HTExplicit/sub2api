@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"math/rand"
 	"strings"
 	"time"
@@ -81,9 +80,6 @@ func (e *openAIWSFallbackError) Unwrap() error {
 }
 
 func wrapOpenAIWSFallback(reason string, err error) error {
-	if codextransport.IsFailure(err) {
-		return codexStrictClientError(err)
-	}
 	return &openAIWSFallbackError{Reason: strings.TrimSpace(reason), Err: err}
 }
 
@@ -165,31 +161,22 @@ func wrapOpenAIWSIngressTurnError(stage string, cause error, wroteDownstream boo
 }
 
 func isOpenAIWSIngressTurnRetryable(err error) bool {
-	_, ok := openAIWSIngressTurnTransportCause(err)
-	return ok
-}
-
-func openAIWSIngressTurnTransportCause(err error) (error, bool) {
 	var turnErr *openAIWSIngressTurnError
 	if !errors.As(err, &turnErr) || turnErr == nil {
-		return nil, false
+		return false
 	}
 	if errors.Is(turnErr.cause, context.Canceled) || errors.Is(turnErr.cause, context.DeadlineExceeded) {
-		return nil, false
+		return false
 	}
 	if turnErr.wroteDownstream {
-		return nil, false
+		return false
 	}
 	switch turnErr.stage {
 	case "write_upstream", "read_upstream":
-		return turnErr.cause, true
+		return true
 	default:
-		return nil, false
+		return false
 	}
-}
-
-func shouldRetryOpenAIWSIngressTurn(turn, retryCount int, err error) bool {
-	return turn == 1 && retryCount < 1 && isOpenAIWSIngressTurnRetryable(err)
 }
 
 func openAIWSIngressTurnRetryReason(err error) string {
@@ -201,34 +188,6 @@ func openAIWSIngressTurnRetryReason(err error) string {
 		return "unknown"
 	}
 	return turnErr.stage
-}
-
-const openAIWSNonInitialTurnRetryCloseReason = "upstream websocket turn failed; please reconnect"
-
-// normalizeOpenAIWSNonInitialTurnError prevents a failure after the first turn
-// from escaping to the handler as a cross-account failover. The handler only
-// has the original first frame, so restarting there would replay stale input
-// and lose the live connection's continuation state.
-func normalizeOpenAIWSNonInitialTurnError(turn int, err error) error {
-	if turn <= 1 || err == nil {
-		return err
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	var closeErr *OpenAIWSClientCloseError
-	if errors.As(err, &closeErr) {
-		return err
-	}
-	// Request-scoped terminal errors (most importantly continuation-state
-	// failures) already carry the no-replay and no-health-penalty contract.
-	// Preserve that type so the handler can emit its stable response.failed
-	// event instead of turning it into an opaque websocket close.
-	var failoverErr *UpstreamFailoverError
-	if errors.As(err, &failoverErr) && failoverErr != nil && !failoverErr.ShouldRetryNextAccount() {
-		return err
-	}
-	return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, openAIWSNonInitialTurnRetryCloseReason, err)
 }
 
 func isOpenAIWSIngressPreviousResponseNotFound(err error) bool {

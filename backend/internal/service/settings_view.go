@@ -171,11 +171,6 @@ type SystemSettings struct {
 	CyberSessionBlockEnabled     bool
 	CyberPolicyUserAllowlist     string
 	CyberSessionBlockTTLSeconds  int
-	OpenAIRefusalRecoveryEnabled bool
-	OpenAICyberFailoverEnabled   bool
-	OpenAIRefusalRewriteEnabled  bool
-	OpenAIRefusalKeywords        []string
-	OpenAIRefusalReplacement     string
 	AffiliateEnabled             bool
 	AffiliateRebateRate          float64
 	AffiliateRebateFreezeHours   int

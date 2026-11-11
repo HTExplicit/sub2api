@@ -44,18 +44,7 @@ type OpenAIImagesUpstreamError struct {
 	// with words instead of an image"), not the account — see
 	// shouldCoolOpenAIImagesToolForError.
 	SynthesizedFromModelText bool
-	// ModelText is the model's complete plain-text answer behind an error
-	// inferred from it. Message keeps the bounded client text; Ops and the
-	// administrator's connection test see ModelText.
-	ModelText string
 }
-
-// openAIImagesModelTextClientLimit is the window of model text that is
-// classified and returned to the client; administrators get the full text.
-const openAIImagesModelTextClientLimit = 600
-
-// openAIImagesModelTextOpsLimit bounds the streamed model text kept for Ops.
-const openAIImagesModelTextOpsLimit = 64 << 10
 
 func (e *OpenAIImagesUpstreamError) Error() string {
 	if e == nil {
@@ -96,17 +85,6 @@ func (e *OpenAIImagesUpstreamError) clientErrorType() string {
 		return trimmed
 	}
 	return "upstream_error"
-}
-
-// opsMessage is what administrators see for this error: the model's complete
-// words when the error was inferred from them, otherwise the client message.
-func (e *OpenAIImagesUpstreamError) opsMessage() string {
-	if e != nil {
-		if text := strings.TrimSpace(e.ModelText); text != "" {
-			return sanitizeUpstreamErrorMessage(text)
-		}
-	}
-	return e.clientMessage()
 }
 
 func (e *OpenAIImagesUpstreamError) clientMessage() string {
@@ -667,12 +645,9 @@ func openAIImagesUpstreamErrorFromSSEPayload(payload []byte) *OpenAIImagesUpstre
 	}
 }
 
-// extractOpenAIImagesModelRefusal 从上游 SSE 响应体提取「模型未出图、改用文字拒绝」
-// 的拒绝文本（内容审核场景）。
-//
-// 上游 response.completed 无图时，模型常以 output_text / message 形式输出拒绝说明
-// （如“被安全系统判定为不适合生成”）。这类失败是内容策略拦截，重试/换账号均无效，
-// 应把该文本作为内容策略错误透传给客户端。返回空串表示无文字输出（真空响应）。
+// extractOpenAIImagesModelText collects textual terminal output from an image
+// request. A text response is evidence that the image tool did not produce an
+// image; its semantics still need classification before choosing a client error.
 func extractOpenAIImagesModelText(body []byte) string {
 	var b strings.Builder
 	collect := func(s string) {
@@ -683,16 +658,14 @@ func extractOpenAIImagesModelText(body []byte) string {
 			_, _ = b.WriteString(s)
 		}
 	}
-	forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
+	consumePayload := func(payload []byte) {
 		if !gjson.ValidBytes(payload) {
 			return
 		}
 		switch gjson.GetBytes(payload, "type").String() {
 		case "response.output_text.delta":
-			// 流式文本增量。
 			collect(gjson.GetBytes(payload, "delta").String())
 		case "response.completed", "response.output_item.done":
-			// 终态里的 message/output_text。
 			gjson.GetBytes(payload, "response.output").ForEach(func(_, item gjson.Result) bool {
 				if item.Get("type").String() == "message" {
 					item.Get("content").ForEach(func(_, part gjson.Result) bool {
@@ -713,10 +686,18 @@ func extractOpenAIImagesModelText(body []byte) string {
 				})
 			}
 		}
-	})
-	// The complete text: callers that answer the client bound it themselves
-	// (openAIImagesTextFallbackErrorForWindow); Ops and connection tests keep it.
-	return strings.TrimSpace(b.String())
+	}
+	if gjson.ValidBytes(body) {
+		consumePayload(body)
+	} else {
+		forEachOpenAISSEDataPayload(string(body), consumePayload)
+	}
+	text := strings.TrimSpace(b.String())
+	const maxText = 600
+	if len(text) > maxText {
+		return text[:maxText]
+	}
+	return text
 }
 
 func isOpenAIImagesContentPolicyRefusal(text string) bool {
@@ -733,19 +714,10 @@ func isOpenAIImagesContentPolicyRefusal(text string) bool {
 	return false
 }
 
-// openAIImagesModelTextClientWindow cuts model text to the byte window the
-// client answer has always used; callers trim it afterwards, as before.
-func openAIImagesModelTextClientWindow(text string) string {
-	if len(text) > openAIImagesModelTextClientLimit {
-		return text[:openAIImagesModelTextClientLimit]
-	}
-	return text
-}
-
 // extractOpenAIImagesModelRefusal returns only text with an explicit safety or
 // moderation signal. Plain prompt suggestions are capability failures instead.
 func extractOpenAIImagesModelRefusal(body []byte) string {
-	text := openAIImagesModelTextClientWindow(extractOpenAIImagesModelText(body))
+	text := extractOpenAIImagesModelText(body)
 	if !isOpenAIImagesContentPolicyRefusal(text) {
 		return ""
 	}
@@ -753,26 +725,20 @@ func extractOpenAIImagesModelRefusal(body []byte) string {
 }
 
 func openAIImagesTextFallbackError(body []byte) *OpenAIImagesUpstreamError {
-	modelText := extractOpenAIImagesModelText(body)
-	return openAIImagesTextFallbackErrorForWindow(openAIImagesModelTextClientWindow(modelText), modelText)
+	return openAIImagesTextFallbackErrorForText(extractOpenAIImagesModelText(body))
 }
 
-// openAIImagesTextFallbackErrorForWindow classifies and answers the client from
-// window exactly as the gateway always has; modelText is the complete text
-// kept in ModelText for administrators.
-func openAIImagesTextFallbackErrorForWindow(window, modelText string) *OpenAIImagesUpstreamError {
-	text := strings.TrimSpace(window)
+func openAIImagesTextFallbackErrorForText(text string) *OpenAIImagesUpstreamError {
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
 	}
-	modelText = strings.TrimSpace(modelText)
 	if isOpenAIImagesContentPolicyRefusal(text) {
 		return &OpenAIImagesUpstreamError{
 			StatusCode: http.StatusBadRequest,
 			ErrorType:  "image_generation_user_error",
 			Code:       "content_policy_violation",
 			Message:    sanitizeUpstreamErrorMessage(text),
-			ModelText:  modelText,
 		}
 	}
 	return &OpenAIImagesUpstreamError{
@@ -784,7 +750,6 @@ func openAIImagesTextFallbackErrorForWindow(window, modelText string) *OpenAIIma
 		// good enough to fail this turn over to another account, not evidence that
 		// this account's image tool is down for the next 30 minutes.
 		SynthesizedFromModelText: true,
-		ModelText:                modelText,
 	}
 }
 
@@ -820,10 +785,11 @@ func summarizeOpenAIImagesNoOutputBody(body []byte) string {
 	if incompleteReason != "" {
 		fmt.Fprintf(&b, " incomplete_reason=%s", incompleteReason)
 	}
-	// The body itself, up to what Ops stores for an upstream detail.
+	// 附 body 截断片段（脱敏后），上限 1KB，避免日志膨胀。
 	snippet := strings.TrimSpace(string(body))
-	if len(snippet) > opsMaxStoredErrorBodyBytes {
-		snippet = truncateString(snippet, opsMaxStoredErrorBodyBytes) + "...(truncated)"
+	const maxSnippet = 1024
+	if len(snippet) > maxSnippet {
+		snippet = snippet[:maxSnippet] + "...(truncated)"
 	}
 	if snippet != "" {
 		fmt.Fprintf(&b, " body=%s", snippet)
@@ -951,14 +917,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
-	if isOpenAIRequestScopedSafetyRejection(body) {
-		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
-		message := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
-		setOpsUpstreamError(c, resp.StatusCode, message, truncateString(string(body), 2048))
-		upErr := openAIImagesUpstreamErrorFromHTTP(resp.StatusCode, resp.Header, body)
-		writeOpenAIImagesUpstreamErrorResponse(c, upErr)
-		return nil, upErr
-	}
 
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
 	upstreamDetail := ""
@@ -1040,8 +998,18 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 		modelForCooldown = strings.TrimSpace(requestedModel[0])
 	}
 	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, modelForCooldown)
+	failoverErr := s.newOpenAIAccountFailoverError(
+		account,
+		resp.StatusCode,
+		resp.Header,
+		body,
+		upstreamMsg,
+		shouldDisable,
+		false,
+	)
+	shouldFailover := shouldDisable || (account.IsOpenAIOAuthLike() && resp.StatusCode == http.StatusTooManyRequests && failoverErr.RetryableOnSameAccount)
 	kind := "http_error"
-	if shouldDisable {
+	if shouldFailover {
 		kind = "failover"
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -1056,12 +1024,8 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 		Message:            upstreamMsg,
 		Detail:             upstreamDetail,
 	})
-	if shouldDisable {
-		return nil, &UpstreamFailoverError{
-			StatusCode:             resp.StatusCode,
-			ResponseBody:           body,
-			RetryableOnSameAccount: false,
-		}
+	if shouldFailover {
+		return nil, failoverErr
 	}
 
 	// Surface the real upstream error to the client.
@@ -1415,12 +1379,13 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 			return OpenAIUsage{}, 0, nil, upstreamErr
 		}
 		if textFallbackErr := openAIImagesTextFallbackError(body); textFallbackErr != nil {
-			setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.opsMessage(), summarizeOpenAIImagesNoOutputBody(body))
+			setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(body))
 			if !IsOpenAIImagesRetryableUpstreamError(textFallbackErr) {
 				writeOpenAIImagesUpstreamErrorResponse(c, textFallbackErr)
 			}
 			return OpenAIUsage{}, 0, nil, textFallbackErr
 		}
+		// 真空响应：既无图也无文字输出。它保持短暂可重试语义，优先同账号重试。
 		// (B) 真空响应：记录上游诊断摘要到 ops（last_event/status/model/body 片段）便于
 		// 排查，并返回 UpstreamFailoverError 触发重试。因实测为「同账号概率性失败」，优先
 		// RetryableOnSameAccount 同账号快速重试（默认 3 次，大概率某次正常出图），用尽后
@@ -1478,15 +1443,12 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	pendingResults := make([]openAIResponsesImageResult, 0, 1)
 	pendingSeen := make(map[string]struct{})
 	streamMeta := openAIResponsesImageResult{Model: strings.TrimSpace(fallbackModel)}
-	// fallbackText keeps the streamed model text for Ops. The client answer
-	// uses its first openAIImagesModelTextClientLimit bytes, the exact text the
-	// gateway accumulated before.
 	var fallbackText strings.Builder
 	appendFallbackText := func(text string) {
-		if text == "" || fallbackText.Len() >= openAIImagesModelTextOpsLimit {
+		if text == "" || fallbackText.Len() >= 600 {
 			return
 		}
-		remaining := openAIImagesModelTextOpsLimit - fallbackText.Len()
+		remaining := 600 - fallbackText.Len()
 		if len(text) > remaining {
 			text = text[:remaining]
 		}
@@ -1585,14 +1547,13 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			}
 			reconcileOpenAIResponsesImageResultSizes(finalResults, nil)
 			if len(finalResults) == 0 {
-				streamedText := fallbackText.String()
-				textFallbackErr := openAIImagesTextFallbackErrorForWindow(openAIImagesModelTextClientWindow(streamedText), streamedText)
+				textFallbackErr := openAIImagesTextFallbackErrorForText(fallbackText.String())
 				if textFallbackErr == nil {
 					textFallbackErr = openAIImagesTextFallbackError(dataBytes)
 				}
 				if textFallbackErr != nil {
 					retryable := IsOpenAIImagesRetryableUpstreamError(textFallbackErr)
-					setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.opsMessage(), summarizeOpenAIImagesNoOutputBody(dataBytes))
+					setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(dataBytes))
 					if !retryable && !clientDisconnected {
 						s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBodyFromUpstream(textFallbackErr))
 					}
@@ -1601,8 +1562,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 					return
 				}
 				outputErr := fmt.Errorf("upstream did not return image output")
-				// 软失败：response.completed 事件里没有图片。记录上游诊断摘要到 ops，
-				// 与非流式路径保持一致，避免上游响应信息丢失。
 				setOpsUpstreamError(c, http.StatusBadGateway, "upstream did not return image output", summarizeOpenAIImagesNoOutputBody(dataBytes))
 				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(outputErr.Error()))
 				processDataErr = outputErr
@@ -1916,6 +1875,8 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		return nil, err
 	}
 	upstreamCtx = withOpenAIImagesSelfBuiltRequest(upstreamCtx)
+	responsesBody = normalizeDeepSeekResponsesRequestBody(account, responsesBody)
+	responsesBody = s.finalizeResponsesForSend(c, account, responsesBody)
 	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, parsed.StickySessionSeed(), false)
 	if err != nil {
 		return nil, err
@@ -1941,20 +1902,27 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		proxyURL = account.Proxy.URL()
 	}
 	upstreamStart := time.Now()
-	// 非 direct 分支是发往 /backend-api/codex/responses 的 OAuth POST，与其他 Responses
-	// 端点同一发送入口（含 zstd 压缩边界）；direct-images URL 不满足门控，保持明文。
-	resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
+	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		return nil, s.handleOpenAIImagesUpstreamTransportError(upstreamCtx, c, account, err, upstreamReq.URL.String())
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, 0, safeErr, "")
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			ProxyID:            opsUpstreamProxyID(account),
+			ProxyName:          opsUpstreamProxyName(account),
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: 0,
+			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+			Kind:               "request_error",
+			Message:            safeErr,
+		})
+		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 	}
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
-		if isOpenAIRequestScopedSafetyRejection(respBody) {
-			resp.Body = io.NopCloser(bytes.NewReader(s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)))
-			return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, requestModel)
-		}
 		respBody = s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)
 		if direct && !requiresCodexDirectImages(upstreamModel) && (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) {
 			return s.forwardOpenAIImagesOAuth(withOpenAIImagesForceResponses(ctx), c, account, parsed, channelMappedModel)
@@ -2115,6 +2083,9 @@ func shouldCoolOpenAIImagesToolForError(upstreamErr *OpenAIImagesUpstreamError) 
 }
 
 func (s *OpenAIGatewayService) coolOpenAIImagesOAuthTool(ctx context.Context, account *Account) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || s.accountRepo == nil || account == nil || account.Platform != PlatformOpenAI {
 		return
 	}
@@ -2175,8 +2146,15 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 		}
 		responseBody := []byte(fmt.Sprintf(`{"error":{"type":"upstream_error","code":%q,"message":%q}}`, code, message))
 		shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, headers, responseBody, requestedModel)
-		return &UpstreamFailoverError{StatusCode: statusCode, ResponseBody: responseBody, ResponseHeaders: headers,
-			RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode)}
+		return s.newOpenAIAccountFailoverError(
+			account,
+			statusCode,
+			headers,
+			responseBody,
+			message,
+			shouldDisable,
+			!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode),
+		)
 	}
 	var upstreamErr *OpenAIImagesUpstreamError
 	if !errors.As(err, &upstreamErr) {
@@ -2219,10 +2197,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 		Message:            upstreamErr.clientMessage(),
 	})
 
-	if !retryable || responseWritten {
-		return err
-	}
-
 	responseBody := openAIImagesUpstreamErrorResponseBody(upstreamErr)
 	if upstreamErr.Code == "image_generation_unavailable" {
 		if shouldCoolOpenAIImagesToolForError(upstreamErr) {
@@ -2241,11 +2215,17 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 			false,
 		)
 	}
-	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, upstreamErr.StatusCode, headers, responseBody, requestedModel)
-	return &UpstreamFailoverError{
-		StatusCode:             upstreamErr.StatusCode,
-		ResponseBody:           responseBody,
-		ResponseHeaders:        headers,
-		RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode),
+	if !retryable || responseWritten {
+		return err
 	}
+	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, upstreamErr.StatusCode, headers, responseBody, requestedModel)
+	return s.newOpenAIAccountFailoverError(
+		account,
+		upstreamErr.StatusCode,
+		headers,
+		responseBody,
+		upstreamErr.clientMessage(),
+		shouldDisable,
+		!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode),
+	)
 }

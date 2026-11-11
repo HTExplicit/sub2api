@@ -31,13 +31,12 @@ func TestResolveOpenAIWSClientFirstMessageTimeout(t *testing.T) {
 	require.Equal(t, 120*time.Second, ResolveOpenAIWSClientFirstMessageTimeout(cfg))
 }
 
-func TestPrepareOpenAIWSHTTPBridgeBodyPreservesResponsesAnchor(t *testing.T) {
-	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-	body, err := prepareOpenAIWSHTTPBridgeBody(account, []byte(`{"type":"response.create","generate":true,"model":"gpt-5","stream":false,"previous_response_id":"resp_prev","input":"hi","sequence":900719925474099312345}`))
+func TestPrepareOpenAIWSHTTPBridgeBodyStripsWSFields(t *testing.T) {
+	body, err := prepareOpenAIWSHTTPBridgeBody(nil, []byte(`{"type":"response.create","generate":true,"model":"gpt-5","stream":false,"previous_response_id":"resp_prev","input":"hi","sequence":900719925474099312345}`))
 	require.NoError(t, err)
 	require.False(t, gjson.GetBytes(body, "type").Exists())
 	require.False(t, gjson.GetBytes(body, "generate").Exists())
-	require.Equal(t, "resp_prev", gjson.GetBytes(body, "previous_response_id").String())
+	require.False(t, gjson.GetBytes(body, "previous_response_id").Exists())
 	require.Equal(t, "gpt-5", gjson.GetBytes(body, "model").String())
 	require.True(t, gjson.GetBytes(body, "stream").Bool())
 	require.Equal(t, "hi", gjson.GetBytes(body, "input").String())
@@ -46,7 +45,7 @@ func TestPrepareOpenAIWSHTTPBridgeBodyPreservesResponsesAnchor(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestPrepareOpenAIWSHTTPBridgeBodyPreservesExplicitNoneForCompatibleEndpoint(t *testing.T) {
+func TestPrepareOpenAIWSHTTPBridgeBodyStripsNoneReasoningForCompatibleEndpoint(t *testing.T) {
 	payload := []byte(`{"type":"response.create","model":"company-coding-model","reasoning":{"effort":"none"},"input":"hi"}`)
 	compatible := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://compat.example/v1",
@@ -54,7 +53,8 @@ func TestPrepareOpenAIWSHTTPBridgeBodyPreservesExplicitNoneForCompatibleEndpoint
 
 	body, err := prepareOpenAIWSHTTPBridgeBody(compatible, payload)
 	require.NoError(t, err)
-	require.Equal(t, "none", gjson.GetBytes(body, "reasoning.effort").String())
+	require.False(t, gjson.GetBytes(body, "reasoning.effort").Exists())
+	require.False(t, gjson.GetBytes(body, "reasoning").Exists())
 
 	officialBody, err := prepareOpenAIWSHTTPBridgeBody(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, payload)
 	require.NoError(t, err)
@@ -500,11 +500,14 @@ func TestOpenAIWSHTTPBridgeAPIKeyReusesClientToolMappingWhenFollowupOmitsTools(t
 	require.Equal(t, "function", secondTools[0].Get("type").String())
 	require.Equal(t, "exec", secondTools[0].Get("name").String())
 	secondInput := gjson.GetBytes(upstream.bodies[1], "input").Array()
-	require.Equal(t, "resp_custom_first", gjson.GetBytes(upstream.bodies[1], "previous_response_id").String())
-	require.Len(t, secondInput, 1, "native HTTP retains its anchor instead of repeating prior state")
-	require.Equal(t, "function_call_output", secondInput[0].Get("type").String())
-	require.Equal(t, "call_custom_1", secondInput[0].Get("call_id").String())
-	require.False(t, secondInput[0].Get("id").Exists())
+	require.Len(t, secondInput, 3)
+	require.Equal(t, "run pwd", secondInput[0].String())
+	require.Equal(t, "function_call", secondInput[1].Get("type").String())
+	require.Equal(t, "fc_custom_1", secondInput[1].Get("id").String())
+	require.JSONEq(t, `{"input":"pwd"}`, secondInput[1].Get("arguments").String())
+	require.False(t, secondInput[1].Get("input").Exists())
+	require.Equal(t, "function_call_output", secondInput[2].Get("type").String())
+	require.False(t, secondInput[2].Get("id").Exists())
 }
 
 func TestOpenAIWSHTTPBridgeFullCustomToolHistoryWithoutPreviousResponseIDDoesNotReplay(t *testing.T) {
@@ -595,11 +598,9 @@ func TestOpenAIWSHTTPBridgeFullCustomToolHistoryWithoutPreviousResponseIDDoesNot
 
 	require.Len(t, upstream.bodies, 4)
 	orphanInput := gjson.GetBytes(upstream.bodies[1], "input").Array()
-	require.Len(t, orphanInput, 3, "an unfinished call is retained until the upstream validates it")
+	require.Len(t, orphanInput, 2)
 	require.Equal(t, "run pwd", orphanInput[0].String())
-	require.Equal(t, "custom_tool_call", orphanInput[1].Get("type").String())
-	require.Equal(t, "call_1", orphanInput[1].Get("call_id").String())
-	require.Equal(t, "user", orphanInput[2].Get("role").String())
+	require.Equal(t, "user", orphanInput[1].Get("role").String())
 	for _, body := range upstream.bodies[2:] {
 		input := gjson.GetBytes(body, "input").Array()
 		require.Len(t, input, 3)
@@ -810,15 +811,9 @@ func TestProxyOpenAIWSHTTPBridgeTurnTransportErrorFailoverSafety(t *testing.T) {
 				require.False(t, errors.As(err, &failoverErr))
 			}
 			require.Len(t, writes, tt.wantWrites)
-			// A delivered error event is a client-visible failure (upstream
-			// v0.2.8); a hidden failover is not.
-			streamErr, marked := GetOpsStreamError(c)
-			require.Equal(t, tt.wantWrites > 0, marked)
 			if tt.wantWrites > 0 {
 				require.Equal(t, "error", gjson.GetBytes(writes[0], "type").String())
 				require.Equal(t, int64(http.StatusBadGateway), gjson.GetBytes(writes[0], "status").Int())
-				require.True(t, streamErr.CountTowardsSLA)
-				require.Equal(t, http.StatusBadGateway, streamErr.IntendedStatus)
 			}
 		})
 	}
@@ -873,37 +868,14 @@ func TestProxyOpenAIWSHTTPBridgeTurnHTTPStatusFailoverSafety(t *testing.T) {
 				require.False(t, errors.As(err, &failoverErr))
 			}
 			require.Len(t, writes, tt.wantWrites)
-			streamErr, marked := GetOpsStreamError(c)
-			require.Equal(t, tt.wantWrites > 0, marked)
-			if tt.wantWrites > 0 {
-				require.Equal(t, "temporary upstream failure", streamErr.Message)
-				require.Equal(t, tt.status, streamErr.IntendedStatus)
-			}
 		})
 	}
 }
 
 func TestProxyOpenAIWSHTTPBridgeTurnRetriesRejectedFieldBeforeClientOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, tt := range []struct {
-		name      string
-		ownerID   int64
-		wantState string
-	}{
-		{name: "bridge_owned_state", ownerID: 91, wantState: "owned-turn-state"},
-		{name: "different_account_state", ownerID: 92},
-		{name: "unproven_state"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			testProxyOpenAIWSHTTPBridgeRejectedFieldRetryState(t, tt.ownerID, tt.wantState)
-		})
-	}
-}
 
-func testProxyOpenAIWSHTTPBridgeRejectedFieldRetryState(t *testing.T, ownerID int64, wantState string) {
-	t.Helper()
-
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+	upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{
 		{
 			StatusCode: http.StatusBadRequest,
 			Header:     make(http.Header),
@@ -924,27 +896,22 @@ func testProxyOpenAIWSHTTPBridgeRejectedFieldRetryState(t *testing.T, ownerID in
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
-	c.Request.Header.Set(openAIWSTurnStateHeader, "untrusted-client-state")
 	payload := []byte(`{"type":"response.create","model":"gpt-5","input":"hi","truncation":"auto"}`)
 	var writes [][]byte
 
 	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
 		context.Background(), c, account, "sk-test", payload, len(payload),
-		"gpt-5", "", "", "", "", 2,
+		"gpt-5", "", "", "", "", 1,
 		func(message []byte) error {
 			writes = append(writes, append([]byte(nil), message...))
 			return nil
 		},
-		openAIWSHTTPBridgeTurnState{accountID: ownerID, value: "owned-turn-state"},
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Len(t, upstream.requests, 2)
+	require.Equal(t, 2, upstream.callCount)
 	require.Len(t, upstream.bodies, 2)
-	for _, request := range upstream.requests {
-		require.Equal(t, wantState, request.Header.Get(openAIWSTurnStateHeader), "rebuilt requests must retain only the same bridge/account's proven state")
-	}
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "truncation").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "truncation").Exists())
 	require.Len(t, writes, 1)
@@ -985,80 +952,6 @@ func TestProxyOpenAIWSHTTPBridgeTurnSSEErrorFailoverSafety(t *testing.T) {
 			require.ErrorAs(t, err, &failoverErr)
 			require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 			require.Empty(t, writes)
-		})
-	}
-}
-
-func TestProxyOpenAIWSHTTPBridgeTurnBudgetExceededWriteOrdering(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for index, tc := range []struct {
-		name         string
-		body         string
-		wantFailover bool
-	}{
-		{
-			name: "preamble_then_balance_failure",
-			body: "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\"}}\n\n" +
-				"data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"type\":\"budget_exceeded\",\"code\":\"429\",\"message\":\"sensitive upstream detail\"}}}\n\n",
-			wantFailover: true,
-		},
-		{
-			name: "semantic_output_then_balance_failure",
-			body: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n" +
-				"data: {\"type\":\"error\",\"error\":{\"type\":\"budget_exceeded\",\"code\":\"429\",\"message\":\"sensitive upstream detail\"}}\n\n",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			upstream := &httpUpstreamRecorder{resp: &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-				Body:       io.NopCloser(strings.NewReader(tc.body)),
-			}}
-			repo := &budgetExceededAccountRepoStub{}
-			rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
-			gateway := &OpenAIGatewayService{
-				cfg:              &config.Config{},
-				httpUpstream:     upstream,
-				toolCorrector:    NewCodexToolCorrector(),
-				rateLimitService: rateLimitService,
-			}
-			rateLimitService.SetAccountRuntimeBlocker(gateway)
-			account := newBudgetRelayAccount(int64(8540+index), true)
-			account.Concurrency = 1
-			recorder := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(recorder)
-			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
-			payload := []byte(`{"type":"response.create","model":"gpt-5.6-luna","input":"hi"}`)
-			var writes [][]byte
-
-			_, err := gateway.proxyOpenAIWSHTTPBridgeTurn(
-				context.Background(), c, account, "sk-test", payload, len(payload),
-				"gpt-5.6-luna", "", "", "", "", 1,
-				func(message []byte) error {
-					writes = append(writes, append([]byte(nil), message...))
-					return nil
-				},
-			)
-
-			var failoverErr *UpstreamFailoverError
-			if tc.wantFailover {
-				require.ErrorAs(t, err, &failoverErr)
-				require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-				require.Equal(t, NextAccountRetry, failoverErr.NextAccountAction)
-				require.Empty(t, writes)
-			} else {
-				require.Error(t, err)
-				require.False(t, errors.As(err, &failoverErr), "semantic output makes account replay unsafe")
-				require.Len(t, writes, 2)
-				require.Equal(t, "response.output_text.delta", gjson.GetBytes(writes[0], "type").String())
-				require.Contains(t, string(writes[1]), "upstream_retry_exhausted")
-			}
-			for _, written := range writes {
-				require.NotContains(t, string(written), "budget_exceeded")
-				require.NotContains(t, string(written), "sensitive upstream detail")
-			}
-			require.Equal(t, 1, repo.setErrorCalls, "a budget terminal puts the account into the error state")
-			require.Equal(t, "sensitive upstream detail (type=budget_exceeded, code=429)", repo.lastErrorMsg, "the account keeps the upstream message with its type and code")
 		})
 	}
 }
@@ -1154,8 +1047,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnBareErrorUsesAuthoritativeFailed(t *testing.
 	require.NotNil(t, result)
 	require.Equal(t, 9, result.Usage.InputTokens)
 	require.Equal(t, 2, result.Usage.OutputTokens)
-	require.Zero(t, repo.setErrorCalls, "API key failures must not persist legacy account error state")
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 1, repo.setErrorCalls)
 	require.Len(t, writes, 2)
 	require.Equal(t, "response.output_text.delta", gjson.GetBytes(writes[0], "type").String())
 	require.Equal(t, "response.failed", gjson.GetBytes(writes[1], "type").String())
@@ -1866,7 +1758,7 @@ func TestProxyResponsesWebSocketFromClientForGrokUsesXAIHTTPBridgeAndPreservesMa
 			"",
 			`data: {"type":"response.output_text.delta","response":{"id":"` + responseID + `"},"delta":"ok"}`,
 			"",
-			`data: {"type":"response.completed","response":{"id":"` + responseID + `","model":"grok-4.3","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":4,"output_tokens":2,"input_tokens_details":{"cached_tokens":` + fmt.Sprintf("%d", cachedTokens) + `}}}}`,
+			`data: {"type":"response.completed","response":{"id":"` + responseID + `","model":"grok-4.3","usage":{"input_tokens":4,"output_tokens":2,"input_tokens_details":{"cached_tokens":` + fmt.Sprintf("%d", cachedTokens) + `}}}}`,
 			"",
 		}, "\n")
 		return &http.Response{
@@ -2201,7 +2093,7 @@ func TestOpenAIWSHTTPBridgeAcceptsFirstFrameAboveLegacy16MiB(t *testing.T) {
 	require.Equal(t, "gpt-5", gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
-func TestOpenAIWSHTTPBridgePreservesNativeHTTPContinuationAnchor(t *testing.T) {
+func TestOpenAIWSHTTPBridgeKeepsContinuationFramesOnHTTPWithoutPreviousResponseID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstSSEBody := strings.Join([]string{
@@ -2344,11 +2236,14 @@ func TestOpenAIWSHTTPBridgePreservesNativeHTTPContinuationAnchor(t *testing.T) {
 
 	require.Len(t, upstream.bodies, 2, "进入 HTTP bridge 后同一客户端 WS 连接内应保持 HTTP/SSE bridge")
 	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
-	require.Equal(t, "resp_bridge_first", gjson.GetBytes(upstream.bodies[1], "previous_response_id").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
 	secondInput := gjson.GetBytes(upstream.bodies[1], "input").Array()
-	require.Len(t, secondInput, 1)
-	require.Equal(t, "function_call_output", secondInput[0].Get("type").String())
-	require.Equal(t, "call_bridge_1", secondInput[0].Get("call_id").String())
+	require.Len(t, secondInput, 3)
+	require.Equal(t, "first", secondInput[0].String())
+	require.Equal(t, "function_call", secondInput[1].Get("type").String())
+	require.Equal(t, "call_bridge_1", secondInput[1].Get("call_id").String())
+	require.Equal(t, "function_call_output", secondInput[2].Get("type").String())
+	require.Equal(t, "call_bridge_1", secondInput[2].Get("call_id").String())
 	require.Equal(t, 0, captureDialer.DialCount())
 	require.Empty(t, captureConn.writes)
 }
@@ -2459,12 +2354,8 @@ func TestOpenAIWSHTTPBridge_IdleTimeoutClosesClientSession(t *testing.T) {
 }
 
 func TestProxyOpenAIWSHTTPBridgeTurn_StagesCodexFingerprint(t *testing.T) {
-	fingerprintPolicyTestState(t)
-	policy := fingerprintTestPolicy(true, "0.162.1")
-	publishedCodexFingerprintPolicy.Store(policy)
 	gin.SetMode(gin.TestMode)
-	run := func(account, source *Account, session string) (*http.Request, []byte) {
-		t.Helper()
+	run := func(account *Account) *http.Request {
 		sse := `data: {"type":"response.completed","response":{"id":"resp_fp","model":"gpt-5.5","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n"
 		upstream := &httpUpstreamRecorder{resp: &http.Response{
 			StatusCode: http.StatusOK,
@@ -2477,20 +2368,7 @@ func TestProxyOpenAIWSHTTPBridgeTurn_StagesCodexFingerprint(t *testing.T) {
 		}
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
-		c.Request.Header.Set("session-id", session)
-		c.Set(codexAccountIdentitySourceContextKey, source)
-		c.Set(codexFingerprintPolicyContextKey, stagedCodexFingerprintPolicy{accountID: account.ID, policy: policy})
-		payload := []byte(`{"type":"response.create","model":"gpt-5.5","store":false,"input":"hi","prompt_cache_key":"explicit-cache"}`)
-		if session != "" {
-			payload = []byte(fmt.Sprintf(`{"type":"response.create","model":"gpt-5.5","store":false,"input":"hi","prompt_cache_key":"explicit-cache","client_metadata":{"session_id":%q,"thread_id":%q}}`, session, session))
-			var err error
-			payload, _, err = svc.scopeCodexRequestMetadataRaw(c, account, payload)
-			require.NoError(t, err)
-			payload, err = svc.stageCodexFingerprintForWSFrame(c, account, payload)
-			require.NoError(t, err)
-		}
-		// A setting edit after ingress must not replace this turn's frozen policy.
-		publishedCodexFingerprintPolicy.Store(fingerprintTestPolicy(false, "0.163.0"))
+		payload := []byte(`{"type":"response.create","model":"gpt-5.5","store":false,"input":"hi"}`)
 		_, err := svc.proxyOpenAIWSHTTPBridgeTurn(
 			context.Background(), c, account, "test-token", payload, len(payload),
 			"gpt-5.5", "", "", "", "", 1,
@@ -2498,31 +2376,18 @@ func TestProxyOpenAIWSHTTPBridgeTurn_StagesCodexFingerprint(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NotNil(t, upstream.lastReq)
-		return upstream.lastReq, upstream.lastBody
+		return upstream.lastReq
 	}
 
 	full := newTestOAuthAccount(7101, map[string]any{"codex_fingerprint_mode": "full"})
-	first, firstBody := run(full, full, "")
-	second, secondBody := run(full, full, "")
-	require.NotEmpty(t, first.Header.Get("session-id"))
-	require.Equal(t, first.Header.Get("session-id"), gjson.GetBytes(firstBody, "client_metadata.session_id").String())
-	require.Empty(t, first.Header.Get("x-codex-installation-id"))
-	require.NotEmpty(t, gjson.GetBytes(firstBody, "client_metadata.x-codex-installation-id").String())
-	require.Empty(t, first.Header.Get("session_id"))
-	require.Equal(t, gjson.GetBytes(firstBody, "client_metadata.x-codex-installation-id").String(), gjson.GetBytes(secondBody, "client_metadata.x-codex-installation-id").String())
-	require.NotEqual(t, first.Header.Get("session-id"), second.Header.Get("session-id"), "independent bridge requests retain distinct conversations")
-	require.Equal(t, "explicit-cache", gjson.GetBytes(firstBody, "prompt_cache_key").String())
-
-	parent := newTestOAuthAccount(7103, map[string]any{codexFingerprintSeedExtraKey: "22222222-2222-4222-8222-222222222222"})
-	shadowReq, shadowBody := run(full, parent, "client-session")
-	repeatReq, _ := run(full, parent, "client-session")
-	require.Equal(t, resolveConvergedInstallationID(parent, "22222222-2222-4222-8222-222222222222"), gjson.GetBytes(shadowBody, "client_metadata.x-codex-installation-id").String())
-	require.NotEqual(t, "client-session", shadowReq.Header.Get("session-id"))
-	require.Equal(t, shadowReq.Header.Get("session-id"), gjson.GetBytes(shadowBody, "client_metadata.session_id").String())
-	require.Equal(t, shadowReq.Header.Get("session-id"), repeatReq.Header.Get("session-id"))
+	ids := resolveCodexFingerprintIDsFromRequest(full, nil)
+	require.NotNil(t, ids)
+	first := run(full)
+	require.Equal(t, ids.sessionID, first.Header.Get("session_id"))
+	require.Equal(t, ids.installationID, first.Header.Get("x-codex-installation-id"))
+	// Every bridge request carries the same account-level session_id, keeping upstream cache routing stable
+	require.Equal(t, first.Header.Get("session_id"), run(full).Header.Get("session_id"))
 
 	off := newTestOAuthAccount(7102, map[string]any{"codex_fingerprint_mode": "off"})
-	offReq, offBody := run(off, off, "")
-	require.Empty(t, offReq.Header.Get("x-codex-installation-id"))
-	require.False(t, gjson.GetBytes(offBody, "client_metadata").Exists())
+	require.Empty(t, run(off).Header.Get("session_id"), "accounts without convergence get no session_id")
 }

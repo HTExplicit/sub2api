@@ -207,9 +207,6 @@ func (c *comboCacheAndStore) RefreshSessionTTL(_ context.Context, _ int64, _ str
 func (c *comboCacheAndStore) DeleteSessionAccountID(_ context.Context, _ int64, _ string) error {
 	return nil
 }
-func (c *comboCacheAndStore) DeleteSessionAccountIDIfMatches(_ context.Context, _ int64, _ string, _ int64) (bool, error) {
-	return false, nil
-}
 
 func (c *comboCacheAndStore) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
 	return nil

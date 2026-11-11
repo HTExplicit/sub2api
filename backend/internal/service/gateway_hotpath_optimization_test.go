@@ -728,10 +728,9 @@ func TestGetAvailableModels_GlobalListPreservesMappedModelsWithOpenAIPassthrough
 		byGroup: map[int64][]Account{
 			groupID: {
 				{
-					ID:          1,
-					Platform:    PlatformOpenAI,
-					Credentials: map[string]any{"model_mapping": map[string]any{"stale-model": "upstream-model"}},
-					Extra:       map[string]any{"openai_passthrough": true},
+					ID:       1,
+					Platform: PlatformOpenAI,
+					Extra:    map[string]any{"openai_passthrough": true},
 				},
 				{
 					ID:          2,

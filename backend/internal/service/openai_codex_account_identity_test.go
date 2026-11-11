@@ -24,8 +24,8 @@ func (s *codexAccountIdentityRepoStub) GetByID(_ context.Context, _ int64) (*Acc
 
 func TestCodexRequestBodyIdentityNamespaceIsStablePerOAuthAccount(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-codex","prompt_cache_key":"client-session","client_metadata":{"x-codex-installation-id":"client-installation","session_id":"client-session","thread_id":"client-thread","x-codex-window-id":"client-window","x-codex-turn-metadata":"{\"installation_id\":\"client-installation\",\"session_id\":\"client-session\",\"thread_id\":\"client-thread\",\"turn_id\":\"client-turn\",\"window_id\":\"client-window\"}"}}`)
-	account11 := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{codexFingerprintModeExtraKey: "session"}, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-11"}}
-	account19 := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{codexFingerprintModeExtraKey: "session"}, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-19"}}
+	account11 := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-11"}}
+	account19 := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-19"}}
 
 	first, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account11, 77)
 	require.NoError(t, err)
@@ -55,9 +55,7 @@ func TestCodexRequestBodyIdentityNamespaceIsStablePerOAuthAccount(t *testing.T) 
 	var embeddedSecond map[string]any
 	require.NoError(t, json.Unmarshal([]byte(gjson.GetBytes(first, "client_metadata.x-codex-turn-metadata").String()), &embeddedFirst))
 	require.NoError(t, json.Unmarshal([]byte(gjson.GetBytes(second, "client_metadata.x-codex-turn-metadata").String()), &embeddedSecond))
-	require.Equal(t, "client-turn", embeddedFirst["turn_id"], "logical turns are preserved")
-	require.Equal(t, "client-turn", embeddedSecond["turn_id"])
-	for _, field := range []string{"installation_id", "session_id", "thread_id", "window_id"} {
+	for _, field := range []string{"installation_id", "session_id", "thread_id", "turn_id", "window_id"} {
 		require.NotEqual(t, embeddedFirst[field], embeddedSecond[field], field)
 	}
 }
@@ -116,9 +114,7 @@ func TestCodexAccountIdentitySourceResolvesShadowAndOverwritesFailoverContext(t 
 		"token", true, "client-session", true,
 	)
 	require.NoError(t, err)
-	require.Equal(t, resolveCodexOutboundIdentityForAccount(parent, "").userAgent, req.Header.Get("user-agent"), "影子账号使用凭据账号的身份")
-	require.Empty(t, req.Header.Get("session_id"))
-	require.Equal(t, "client-session", req.Header.Get("session-id"), "缺失连字符会话头时以最终 prompt_cache_key 补齐")
+	require.Equal(t, isolateOpenAIUpstreamSessionID(0, parent, "client-session"), req.Header.Get("session_id"))
 
 	next := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{
 		"chatgpt_account_id": "other-account",
@@ -137,13 +133,12 @@ func TestBuildOpenAIWSHeadersNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
 	c.Set("api_key_id", int64(77))
 	c.Request.Header.Set("x-codex-installation-id", "client-installation")
-	c.Request.Header.Set("session-id", "client-session")
 	c.Request.Header.Set("thread-id", "client-thread")
 	c.Request.Header.Set("x-codex-window-id", "client-window")
 	c.Request.Header.Set("x-client-request-id", "client-request")
 
-	account11 := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{codexFingerprintModeExtraKey: "session"}, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-11"}}
-	account19 := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{codexFingerprintModeExtraKey: "session"}, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-19"}}
+	account11 := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-11"}}
+	account19 := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-19"}}
 	service := &OpenAIGatewayService{}
 	build := func(account *Account) http.Header {
 		headers, _, err := service.buildOpenAIWSHeaders(
@@ -158,22 +153,19 @@ func TestBuildOpenAIWSHeadersNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 	first := build(account11)
 	firstAgain := build(account11)
 	second := build(account19)
-	for _, header := range []string{"session-id", "thread-id", "x-codex-window-id", "x-client-request-id"} {
+	for _, header := range []string{"session_id", "x-codex-installation-id", "thread-id", "x-codex-window-id", "x-client-request-id"} {
 		require.NotEmpty(t, first.Get(header), header)
 		require.Equal(t, first.Get(header), firstAgain.Get(header), header)
 		require.NotEqual(t, first.Get(header), second.Get(header), header)
 	}
-	require.Empty(t, first.Get("x-codex-installation-id"), "installation id never travels as a header")
-	require.Empty(t, first.Get("session_id"), "no underscore session header on the Codex path")
 
-	scopedBody := []byte(`{"model":"gpt-5.6-codex","stream":true,"prompt_cache_key":"` + scopeCodexAccountIdentityValue(account11, 77, "client-session") + `"}`)
 	httpRequest, err := service.buildUpstreamRequest(
 		context.Background(), c, account11,
-		scopedBody,
+		[]byte(`{"model":"gpt-5.6-codex","stream":true,"prompt_cache_key":"client-session"}`),
 		"token", true, "client-session", true,
 	)
 	require.NoError(t, err)
-	require.Equal(t, httpRequest.Header.Get("session-id"), first.Get("session-id"), "HTTP and WS must derive the same identity from the raw client key")
+	require.Equal(t, httpRequest.Header.Get("session_id"), first.Get("session_id"), "HTTP and WS must derive the same identity from the raw client key")
 }
 
 func TestBuildUpstreamRequestNamespacesCodexIdentityByOAuthAccount(t *testing.T) {
@@ -199,7 +191,6 @@ func TestBuildUpstreamRequestNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 			ID:       accountID,
 			Platform: PlatformOpenAI,
 			Type:     AccountTypeOAuth,
-			Extra:    map[string]any{codexFingerprintModeExtraKey: "session"},
 			Credentials: map[string]any{
 				"chatgpt_account_id": chatgptAccountID,
 			},

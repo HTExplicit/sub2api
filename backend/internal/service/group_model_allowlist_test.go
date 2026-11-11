@@ -103,13 +103,6 @@ func TestGroupModelAllowlistAllows(t *testing.T) {
 		{name: "gemini models/ prefix stripped", model: "models/gemini-2.5-pro", want: true},
 		{name: "gemini models/ prefix not in list", model: "models/gemini-2.5-flash", want: false},
 		{name: "openai reasoning suffix normalizes to base model", model: "gpt-5.5-codex-high", want: true},
-		{name: "legacy codex base without effort remains distinct", model: "gpt-5.5-codex", want: false},
-		{name: "legacy codex unrecognized max token remains distinct", model: "gpt-5.5-codex-max", want: false},
-		{name: "unknown family suffix is not guessed", model: "gpt-5.5-custom-high", want: false},
-		{name: "legacy codex nested suffix is not guessed", model: "gpt-5.5-codex-preview-high", want: false},
-		{name: "legacy codex repeated effort is not guessed", model: "gpt-5.5-codex-high-low", want: false},
-		{name: "provider owned namespace is not stripped", model: "vendor/gpt-5.5-codex-high", want: false},
-		{name: "nested openai namespace is not stripped", model: "openai/vendor/gpt-5.5-codex-high", want: false},
 		{name: "openai reasoning suffix on unlisted model", model: "gpt-4.1-low", want: false},
 		{name: "trailing wildcard prefix match", model: "grok-4.6", want: true},
 		{name: "trailing wildcard requires prefix", model: "grok", want: false},
@@ -159,24 +152,6 @@ func TestGroupModelAllowlistAllows(t *testing.T) {
 			t.Fatal("bare wildcard must allow all models")
 		}
 	})
-}
-
-func TestGroupModelAllowlistLegacyOpenAIReasoningEquivalenceIsMatcherOnly(t *testing.T) {
-	allowlist := GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5.5"}}
-	models := []string{"OPENAI/GPT-5.5-CODEX_HIGH"}
-	for _, effort := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "extrahigh"} {
-		models = append(models, "gpt-5.5-codex-"+effort)
-	}
-	for _, model := range models {
-		t.Run(model, func(t *testing.T) {
-			if !allowlist.Allows(model) {
-				t.Fatalf("official legacy reasoning alias must match only in the allowlist: %q", model)
-			}
-			if got := NormalizeOpenAICompatRequestedModel(model); got != model {
-				t.Fatalf("allowlist compatibility must not change routing model identity: got %q want %q", got, model)
-			}
-		})
-	}
 }
 
 func TestGroupModelAllowlistEnabled(t *testing.T) {

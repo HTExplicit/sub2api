@@ -172,21 +172,6 @@ func deepSeekChatHistoryWithEncryptedReasoning() []byte {
 	}`)
 }
 
-func deepSeekChatHistoryWithEmptyReasoning() []byte {
-	// This independently representable history has no opaque provider state.
-	// The encrypted fixture above remains the fail-closed negative control.
-	return []byte(`{
-		"model":"gpt-5.6-sol",
-		"stream":false,
-		"input":[
-			{"type":"reasoning","id":"item_missing","summary":[]},
-			{"type":"function_call","call_id":"call_1","name":"exec","arguments":"{}"},
-			{"type":"function_call_output","call_id":"call_1","output":"ok"},
-			{"type":"message","role":"user","content":[{"type":"input_text","text":"go on"}]}
-		]
-	}`)
-}
-
 func newDeepSeekChatFallbackContext(t *testing.T, body []byte) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -207,44 +192,13 @@ func newOKChatCompletionsUpstream(requestID, body string) *httpUpstreamRecorder 
 
 const deepSeekChatFallbackOKBody = `{"id":"chatcmpl_ph","object":"chat.completion","model":"deepseek-chat","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`
 
-func requireOpaqueChatFallbackCacheMissRejected(t *testing.T, account *Account) {
-	t.Helper()
+func TestForwardResponses_DeepSeekChatFallbackInjectsReasoningPlaceholderOnCacheMiss(t *testing.T) {
 	body := deepSeekChatHistoryWithEncryptedReasoning()
-	c := newDeepSeekChatFallbackContext(t, body)
-	upstream := newOKChatCompletionsUpstream("rid_opaque_cache_miss", deepSeekChatFallbackOKBody)
-	svc := &OpenAIGatewayService{
-		cfg:          deepSeekChatFallbackTestConfig(),
-		httpUpstream: upstream,
-		cache:        &reasoningHitCache{},
-	}
-
-	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Nil(t, result)
-	var failure *UpstreamFailoverError
-	require.ErrorAs(t, err, &failure)
-	require.Equal(t, GatewayFailureScopeRequest, failure.Scope)
-	require.Equal(t, NextAccountStop, failure.NextAccountAction)
-	require.True(t, failure.SuppressAccountHealthPenalty)
-	require.Equal(t, http.StatusBadRequest, failure.ClientStatusCode)
-	require.Equal(t, "invalid_request_error", failure.ClientErrorType)
-	require.Equal(t, "unsupported_input_item", failure.ClientErrorCode)
-	require.Equal(t, "input", failure.ClientErrorParam)
-	require.Nil(t, upstream.lastReq, "opaque reasoning must not be weakened into an upstream request")
-	require.Empty(t, upstream.lastBody)
-}
-
-func TestForwardResponses_DeepSeekChatFallbackPreservesReasoningBoundaryOnCacheMiss(t *testing.T) {
-	t.Run("encrypted_history_cache_miss_is_rejected", func(t *testing.T) {
-		requireOpaqueChatFallbackCacheMissRejected(t, openaiPlatformDeepSeekAccount())
-	})
-
-	body := deepSeekChatHistoryWithEmptyReasoning()
 	c := newDeepSeekChatFallbackContext(t, body)
 	upstream := newOKChatCompletionsUpstream("rid_ds_rc_placeholder", deepSeekChatFallbackOKBody)
 	svc := &OpenAIGatewayService{
 		cfg:          deepSeekChatFallbackTestConfig(),
 		httpUpstream: upstream,
-		cache:        &reasoningHitCache{},
 	}
 
 	result, err := svc.Forward(context.Background(), c, openaiPlatformDeepSeekAccount(), body)
@@ -272,7 +226,7 @@ func TestForwardResponses_DeepSeekChatFallbackKeepsCachedReasoningContent(t *tes
 }
 
 func TestForwardResponses_NonDeepSeekChatFallbackDoesNotInjectReasoningPlaceholder(t *testing.T) {
-	body := deepSeekChatHistoryWithEmptyReasoning()
+	body := deepSeekChatHistoryWithEncryptedReasoning()
 	c := newDeepSeekChatFallbackContext(t, body)
 	upstream := newOKChatCompletionsUpstream("rid_other_rc", deepSeekChatFallbackOKBody)
 	account := &Account{
@@ -287,13 +241,9 @@ func TestForwardResponses_NonDeepSeekChatFallbackDoesNotInjectReasoningPlacehold
 			"base_url": "http://upstream.example",
 		},
 	}
-	t.Run("encrypted_history_cache_miss_is_rejected", func(t *testing.T) {
-		requireOpaqueChatFallbackCacheMissRejected(t, account)
-	})
 	svc := &OpenAIGatewayService{
 		cfg:          deepSeekChatFallbackTestConfig(),
 		httpUpstream: upstream,
-		cache:        &reasoningHitCache{},
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, body)

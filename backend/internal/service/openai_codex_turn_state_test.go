@@ -67,10 +67,6 @@ func TestRelayOpenAICodexTurnState_ClearsStaleValueWhenUpstreamAbsent(t *testing
 	c, _ := newTurnStateTestContext(t, 7, "sess-stale")
 	// 模拟上一 failover attempt 残留的值
 	c.Writer.Header().Set("X-Codex-Turn-State", "blob-old")
-	svc.openaiCodexTurnStateOrigins.Store("7\x00sess-stale", openAICodexTurnStateOrigin{
-		accountID: 42,
-		expiresAt: time.Now().Add(time.Minute),
-	})
 
 	svc.relayOpenAICodexTurnState(c, &Account{ID: 43}, http.Header{})
 
@@ -137,25 +133,14 @@ func TestStagedTurnState_AbandonedAttemptDoesNotPoisonProvenance(t *testing.T) {
 	require.Equal(t, int64(52), origin.accountID)
 }
 
-func TestNoteStagedOpenAICodexTurnStateCommitted_ClearsProvenanceWithoutState(t *testing.T) {
+func TestNoteStagedOpenAICodexTurnStateCommitted_NoopWithoutState(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	c, _ := newTurnStateTestContext(t, 12, "sess-nostate")
-	svc.openaiCodexTurnStateOrigins.Store("12\x00sess-nostate", openAICodexTurnStateOrigin{
-		accountID: 59,
-		expiresAt: time.Now().Add(time.Minute),
-	})
 
 	svc.noteStagedOpenAICodexTurnStateCommitted(c, &Account{ID: 60}, nil)
-	_, ok := svc.openaiCodexTurnStateOrigins.Load("12\x00sess-nostate")
-	require.False(t, ok)
-
-	svc.openaiCodexTurnStateOrigins.Store("12\x00sess-nostate", openAICodexTurnStateOrigin{
-		accountID: 59,
-		expiresAt: time.Now().Add(time.Minute),
-	})
 	svc.noteStagedOpenAICodexTurnStateCommitted(c, &Account{ID: 60}, http.Header{"X-Request-Id": []string{"rid"}})
 
-	_, ok = svc.openaiCodexTurnStateOrigins.Load("12\x00sess-nostate")
+	_, ok := svc.openaiCodexTurnStateOrigins.Load("12\x00sess-nostate")
 	require.False(t, ok)
 }
 
@@ -193,7 +178,7 @@ func TestGuardOpenAICodexTurnStateEcho(t *testing.T) {
 		require.Empty(t, h.Get("x-codex-turn-state"))
 	})
 
-	t.Run("no_provenance_preserves_echo", func(t *testing.T) {
+	t.Run("no_provenance_passthrough", func(t *testing.T) {
 		svc := &OpenAIGatewayService{}
 		c, _ := newTurnStateTestContext(t, 7, "sess-g3")
 		h := newOutbound("blob-unknown")
@@ -201,7 +186,7 @@ func TestGuardOpenAICodexTurnStateEcho(t *testing.T) {
 		require.Equal(t, "blob-unknown", h.Get("x-codex-turn-state"))
 	})
 
-	t.Run("expired_provenance_preserves_echo_and_prunes", func(t *testing.T) {
+	t.Run("expired_provenance_passthrough_and_pruned", func(t *testing.T) {
 		svc := &OpenAIGatewayService{}
 		c, _ := newTurnStateTestContext(t, 7, "sess-g4")
 		svc.openaiCodexTurnStateOrigins.Store("7\x00sess-g4", openAICodexTurnStateOrigin{
@@ -210,25 +195,17 @@ func TestGuardOpenAICodexTurnStateEcho(t *testing.T) {
 		})
 		h := newOutbound("blob-A")
 		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
-		_, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-g4")
 		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
+		_, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-g4")
 		require.False(t, ok)
 	})
 
-	t.Run("no_session_seed_preserves_echo", func(t *testing.T) {
+	t.Run("no_session_seed_noop", func(t *testing.T) {
 		svc := &OpenAIGatewayService{}
 		c, _ := newTurnStateTestContext(t, 7, "")
 		h := newOutbound("blob-A")
 		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
 		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
-	})
-
-	t.Run("missing_account_strips_echo", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
-		c, _ := newTurnStateTestContext(t, 7, "sess-g6")
-		h := newOutbound("blob-A")
-		svc.guardOpenAICodexTurnStateEcho(c, nil, h)
-		require.Empty(t, h.Get("x-codex-turn-state"))
 	})
 
 	t.Run("no_echo_noop", func(t *testing.T) {

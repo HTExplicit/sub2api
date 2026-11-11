@@ -49,23 +49,6 @@ type AccountRuntimeBlocker interface {
 	ClearAccountSchedulingBlock(accountID int64)
 }
 
-type accountPersistedSchedulingCooldownBlocker interface {
-	BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time)
-}
-
-// notifyPersistedAccountSchedulingCooldown distinguishes DB cooldown mirrors
-// from independent request-owned blockers without changing legacy implementations.
-func notifyPersistedAccountSchedulingCooldown(blocker AccountRuntimeBlocker, account *Account, until time.Time, reason string) {
-	if blocker == nil || account == nil {
-		return
-	}
-	if persisted, ok := blocker.(accountPersistedSchedulingCooldownBlocker); ok {
-		persisted.BlockAccountSchedulingFromPersistedCooldown(account, until)
-		return
-	}
-	blocker.BlockAccountScheduling(account, until, reason)
-}
-
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
 type SuccessfulTestRecoveryResult struct {
 	ClearedError     bool
@@ -125,13 +108,13 @@ func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogReposi
 	}
 }
 
-func (s *RateLimitService) SetOpenAIAPIKeyHealthCache(cache OpenAIAPIKeyHealthCache) {
-	s.openAIAPIKeyHealth = cache
-}
-
 // SetTimeoutCounterCache 设置超时计数器缓存（可选依赖）
 func (s *RateLimitService) SetTimeoutCounterCache(cache TimeoutCounterCache) {
 	s.timeoutCounterCache = cache
+}
+
+func (s *RateLimitService) SetOpenAIAPIKeyHealthCache(cache OpenAIAPIKeyHealthCache) {
+	s.openAIAPIKeyHealth = cache
 }
 
 // SetOpenAI403CounterCache 设置 OpenAI 403 连续失败计数器（可选依赖）
@@ -163,10 +146,6 @@ func (s *RateLimitService) IsOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx co
 
 func (s *RateLimitService) notifyAccountSchedulingBlocked(account *Account, until time.Time, reason string) {
 	if s == nil || s.runtimeBlocker == nil || account == nil {
-		return
-	}
-	if !until.IsZero() {
-		notifyPersistedAccountSchedulingCooldown(s.runtimeBlocker, account, until, reason)
 		return
 	}
 	s.runtimeBlocker.BlockAccountScheduling(account, until, reason)
@@ -341,6 +320,8 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 		}
 		return ErrorPolicySkipped
 	}
+	// The global overload cooldown is the default for ordinary accounts. Explicit
+	// account policies above retain precedence over this fallback.
 	if statusCode == 529 {
 		return ErrorPolicyMatched
 	}
@@ -361,22 +342,6 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	// 同请求内与 fastpath 调用点的重复触发由方法内去重吸收。
 	s.maybeHandleOpenAITeamLinkedError(ctx, account, statusCode, responseBody)
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
-	// An exhausted key budget stops scheduling completely, including in pool
-	// mode and regardless of custom error-code filtering.
-	if account.IsOpenAICompatible() && isOpenAIBudgetExceededResponse(statusCode, responseBody) {
-		s.handleOpenAIBudgetExceeded(ctx, account, responseBody)
-		return true
-	}
-
-	// A structured model_not_supported response is scoped to the (account,
-	// model) pair, not to the account pool. Persist that cooldown before the
-	// pool-mode early return below; pool accounts otherwise skip all local
-	// error state and would immediately be selected again for the same model.
-	if len(requestedModel) > 0 && account.IsOpenAICompatible() &&
-		isOpenAIModelNotSupportedError(statusCode, "", responseBody) &&
-		s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
-		return true
-	}
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 只在非凭据级且命中显式模型级规则时由规则处理，其余保留池模式现有的认证处理。
@@ -395,6 +360,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
 		return false
 	}
+
 	if statusCode == 529 {
 		if customErrorCodesEnabled {
 			s.handleCustomErrorCode(ctx, account, statusCode, extractUpstreamErrorMessage(responseBody))
@@ -620,7 +586,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		s.handle429(ctx, account, headers, responseBody)
 		shouldDisable = false
 	case 529:
-		s.handle529(ctx, account)
+		// Handled after pool/custom-code policy gates above.
 		shouldDisable = false
 	default:
 		// 自定义错误码启用时：在列表中的错误码都应该停止调度
@@ -1064,9 +1030,9 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	if account.Platform == PlatformAntigravity {
 		return s.handleAntigravity403(ctx, account, upstreamMsg, responseBody)
 	}
-	// Kimi reports its transient per-account concurrency limit as a 403.
-	// Preserve failover without feeding this exact signal into the permanent
-	// 403 escalation counter.
+	// Kimi reports its transient per-account concurrency/business limit as a 403.
+	// Keep the normal 403 failover signal (true), but never feed this exact message
+	// into the escalating 403 counter that can permanently mark the account error.
 	if isCNProviderConcurrencyLimit403(account, upstreamMsg) {
 		s.handleCNProviderConcurrencyLimit403(ctx, account)
 		return true
@@ -1283,12 +1249,25 @@ func (s *RateLimitService) handleCustomErrorCode(ctx context.Context, account *A
 // handle429 处理429限流错误
 // 解析响应头获取重置时间，标记账号为限流状态
 func (s *RateLimitService) handle429(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
+	// OpenAI OAuth stays on the same account for the gateway's bounded retry
+	// window. Persisting a rate-limit reset on the first 429 would make the next
+	// retry ineligible and silently turn same-account recovery into a switch.
+	if account != nil && isOpenAIOAuthAccount(account) && s.runtimeBlocker != nil {
+		if checker, ok := s.runtimeBlocker.(interface {
+			ShouldRetryOpenAIOAuth429(*Account, http.Header, []byte) bool
+		}); ok && checker.ShouldRetryOpenAIOAuth429(account, headers, responseBody) {
+			return
+		}
+	}
 	// Spark 影子：限流/熔断状态 100% 由 QueryUsage(/wham/usage body 的 codex_bengalfox)驱动。
 	// /responses 的 429 携带的 x-codex-*/usage_limit_reached 是 global codex 道(plan/spec §8),
 	// 套到影子会把 spark 误耦合到 global 窗口——即便 spark 仍有配额也会被冷却到 global reset,
 	// 单影子场景直接变成无可用账号(外审第8轮 P1)。整段跳过;影子的 codex_* 仅由 account_usage 的
 	// QueryUsage→persistOpenAICodexProbeSnapshot 维护,枯竭由调度守卫处理。
 	if account.IsShadow() {
+		if account.ParentAccountID != nil {
+			notifyOpenAIAutoReset(*account.ParentAccountID)
+		}
 		return
 	}
 	// 真实 Ollama Cloud 用量账号（credentials base_url 指向 ollama.com）的 429 由
@@ -1306,37 +1285,12 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			return
 		}
 	}
-	// Codex quota windows belong to OAuth credentials, never ordinary API keys.
-	if isOpenAIOAuthAccount(account) {
-		persistOpenAI429PlanType(ctx, s.accountRepo, account, responseBody)
-		s.persistOpenAICodexSnapshot(ctx, account, headers)
-		classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
-		slog.Info("codex_quota_429_classified",
-			"account_id", account.ID,
-			"classification", map[bool]string{true: "transient", false: "hard_quota"}[classification.Disposition == openAIOAuth429Transient],
-			"window", classification.Window,
-			"source", classification.Source,
-			"code", classification.Code,
-			"path", "rate_limit_service",
-		)
-		if classification.Disposition != openAIOAuth429Transient {
-			if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, time.Now()); err != nil {
-				slog.Warn("quota_state_write_failed", "account_id", account.ID)
-			}
-			// Quota observations own this restriction. Writing the same deadline
-			// into the ordinary 429 field would survive a verified quota reset and
-			// could only be cleared by also clearing unrelated transient limits.
-			return
-		}
-		s.apply429FallbackRateLimit(ctx, account, "openai_transient_429")
-		return
-	}
-	// Ordinary OpenAI accounts retain the upstream header/body fallback order.
+	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）
 	if account.Platform == PlatformOpenAI {
 		persistOpenAI429PlanType(ctx, s.accountRepo, account, responseBody)
 		s.persistOpenAICodexSnapshot(ctx, account, headers)
 		notifyOpenAIAutoReset(account.ID)
-		if resetAt := calculateOpenAI429ResetTime(headers); resetAt != nil {
+		if resetAt := s.calculateOpenAI429ResetTime(headers); resetAt != nil {
 			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
 			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
 				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
@@ -1496,25 +1450,37 @@ func calculateOpenAI429ResetTime(headers http.Header) *time.Time {
 	if snapshot == nil {
 		return nil
 	}
+
 	normalized := snapshot.Normalize()
 	if normalized == nil {
 		return nil
 	}
+
 	now := time.Now()
+
+	// 判断哪个限制被触发（used_percent >= 100）
 	is7dExhausted := normalized.Used7dPercent != nil && *normalized.Used7dPercent >= 100
 	is5hExhausted := normalized.Used5hPercent != nil && *normalized.Used5hPercent >= 100
+
+	// 优先使用被触发限制的重置时间
 	if is7dExhausted && normalized.Reset7dSeconds != nil {
 		resetAt := now.Add(time.Duration(*normalized.Reset7dSeconds) * time.Second)
+		slog.Info("openai_429_7d_limit_exhausted", "reset_after_seconds", *normalized.Reset7dSeconds, "reset_at", resetAt)
 		return &resetAt
 	}
 	if is5hExhausted && normalized.Reset5hSeconds != nil {
 		resetAt := now.Add(time.Duration(*normalized.Reset5hSeconds) * time.Second)
+		slog.Info("openai_429_5h_limit_exhausted", "reset_after_seconds", *normalized.Reset5hSeconds, "reset_at", resetAt)
 		return &resetAt
 	}
 
 	// 未达到100%时，reset-after 只代表窗口信息，不能证明账号配额耗尽。
 	// 这类瞬时429必须回到可配置的兜底路径，避免未耗尽账号被长时间排除。
 	return nil
+}
+
+func (s *RateLimitService) calculateOpenAI429ResetTime(headers http.Header) *time.Time {
+	return calculateOpenAI429ResetTime(headers)
 }
 
 // anthropic429Result holds the parsed Anthropic 429 rate-limit information.
@@ -1875,10 +1841,12 @@ func (s *RateLimitService) persistOpenAICodexSnapshot(ctx context.Context, accou
 	}
 	if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
 		slog.Warn("openai_codex_snapshot_persist_failed", "account_id", account.ID, "error", err)
+		return
 	}
+	notifyOpenAIAutoReset(account.ID)
 }
 
-// parseOpenAIRateLimitResetTime 解析 OpenAI 格式的 429 响应，返回重置时间的 Unix 时间戳
+// parseOpenAIRateLimitResetTime 解析 OpenAI 兼容格式的 429 响应，返回重置时间的 Unix 时间戳
 // OpenAI 的 usage_limit_reached 错误格式：
 //
 //	{
@@ -1929,6 +1897,8 @@ func parseOpenAIRateLimitResetTime(body []byte) *int64 {
 		}
 	}
 
+	// OpenCode Go subscriptions expose the reset only in a human-readable message,
+	// for example: "Weekly usage limit reached. Resets in 2 days."
 	if errType == "GoUsageLimitError" {
 		message, _ := errObj["message"].(string)
 		if resetAfter := parseOpenCodeGoUsageLimitResetDuration(message); resetAfter > 0 {
@@ -1945,6 +1915,7 @@ func parseOpenCodeGoUsageLimitResetDuration(message string) time.Duration {
 	if resetPrefix == nil {
 		return 0
 	}
+
 	remainder := message[resetPrefix[1]:]
 	var total time.Duration
 	for {
@@ -1953,14 +1924,17 @@ func parseOpenCodeGoUsageLimitResetDuration(message string) time.Duration {
 		if matches == nil {
 			break
 		}
+
 		value, err := strconv.ParseFloat(remainder[matches[2]:matches[3]], 64)
 		if err != nil || value <= 0 {
 			return 0
 		}
+
 		unit := openCodeGoUsageLimitDurationUnit(remainder[matches[4]:matches[5]])
 		if unit <= 0 {
 			return 0
 		}
+
 		const maxDuration = time.Duration(1<<63 - 1)
 		if value >= float64(maxDuration)/float64(unit) {
 			return 0
@@ -1972,6 +1946,7 @@ func parseOpenCodeGoUsageLimitResetDuration(message string) time.Duration {
 		total += part
 		remainder = remainder[matches[1]:]
 	}
+
 	return total
 }
 
@@ -2609,16 +2584,11 @@ const upstreamCodexPlanGatedModelReason = "upstream_400_codex_plan_gated_model"
 const tempUnschedBodyMaxBytes = 64 << 10
 const tempUnschedMessageMaxBytes = 2048
 
-// ModelRateLimitUpstreamMessageKey stores the upstream's own error text in a
-// model_rate_limits entry next to its reason code. SetModelRateLimit takes it
-// as the second reason value. Administrators read it; reason matching and
-// client classification only ever read "reason".
+// ModelRateLimitUpstreamMessageKey is diagnostic text stored alongside the official cooldown reason.
 const ModelRateLimitUpstreamMessageKey = "upstream_message"
 
-// modelRateLimitUpstreamMessage is the upstream error text kept with a model
-// cooldown: the extracted message, or the bounded body when it carries none.
 func modelRateLimitUpstreamMessage(body []byte) string {
-	if message := openAIOpsUpstreamErrorMessage(body); message != "" {
+	if message := extractUpstreamErrorMessage(body); strings.TrimSpace(message) != "" {
 		return truncateString(message, tempUnschedMessageMaxBytes)
 	}
 	return strings.TrimSpace(sanitizeUpstreamErrorMessage(truncateString(strings.TrimSpace(string(body)), tempUnschedMessageMaxBytes)))
@@ -2639,15 +2609,12 @@ func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, acco
 	if s == nil || account == nil || s.accountRepo == nil {
 		return false
 	}
-	modelNotSupported := account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(statusCode, "", responseBody)
-	if !account.ShouldHandleErrorCode(statusCode) && !modelNotSupported {
+	if !account.ShouldHandleErrorCode(statusCode) {
 		return false
 	}
 	var cooldown time.Duration
 	var reason string
 	switch {
-	case modelNotSupported:
-		cooldown, reason = upstreamModelNotSupportedCooldown, string(openAIModelNotSupportedReason)
 	case isUpstreamModelNotFoundError(statusCode, responseBody):
 		cooldown, reason = upstreamModelNotFoundCooldown, upstreamModelNotFoundReason
 	case statusCode == http.StatusUnauthorized && account.Type == AccountTypeAPIKey && account.IsOpenAICompatible() && isOpenAICompatibleModelNotFoundBody(responseBody):
@@ -2665,17 +2632,11 @@ func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, acco
 		return true
 	}
 	resetAt := time.Now().Add(cooldown)
-	// The persisted reason stays the exact code the availability diagnosis
-	// matches on; the upstream's own words are stored (upstream_message) and
-	// logged next to it.
 	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, resetAt, reason, modelRateLimitUpstreamMessage(responseBody)); err != nil {
 		slog.Warn("upstream_model_not_found_set_model_rate_limit_failed", "account_id", account.ID, "model", modelKey, "reason", reason, "error", err)
 		return true
 	}
-	slog.Info("upstream_model_not_found_model_rate_limited", "account_id", account.ID, "model", modelKey, "reason", reason, "reset_at", resetAt,
-		"upstream_status", statusCode,
-		"upstream_message", extractOpenAISSEErrorMessage(responseBody),
-		"upstream_body", truncateString(string(responseBody), tempUnschedMessageMaxBytes))
+	slog.Info("upstream_model_not_found_model_rate_limited", "account_id", account.ID, "model", modelKey, "reason", reason, "reset_at", resetAt)
 	return true
 }
 
@@ -2841,7 +2802,6 @@ func matchTempUnschedulableRules(account *Account, statusCode int, responseBody 
 
 func (s *RateLimitService) tryTempUnschedulable(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) bool {
 	if IsAccountObservation(ctx) {
-		// Preserve request-local policy matching without publishing its cooldown.
 		return len(matchTempUnschedulableRules(account, statusCode, responseBody)) > 0
 	}
 	if account == nil {

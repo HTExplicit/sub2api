@@ -8,15 +8,6 @@ import (
 
 var accountTodayStatsBatchCache = newSnapshotCache(30 * time.Second)
 
-// InvalidateAccountTodayStatsCache is called by the billing commit observer;
-// it invalidates cached batches and fences all older in-flight batch fills.
-func InvalidateAccountTodayStatsCache(accountIDs ...int64) {
-	if len(accountIDs) == 0 {
-		return
-	}
-	accountTodayStatsBatchCache.Clear()
-}
-
 func buildAccountTodayStatsBatchCacheKey(accountIDs []int64) string {
 	if len(accountIDs) == 0 {
 		return "accounts_today_stats_empty"

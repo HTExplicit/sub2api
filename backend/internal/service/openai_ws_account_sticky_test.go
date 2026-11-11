@@ -2,33 +2,12 @@ package service
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
-
-func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_StoreErrorFailsClosed(t *testing.T) {
-	ctx := context.Background()
-	groupID := int64(23)
-	cache := &openAIWSStateStoreTimeoutProbeCache{getErr: errors.New("redis unavailable")}
-	svc := &OpenAIGatewayService{
-		cache:              cache,
-		cfg:                newOpenAIWSV2TestConfig(),
-		openaiWSStateStore: NewOpenAIWSStateStore(cache),
-	}
-
-	selection, err := svc.SelectAccountByPreviousResponseID(ctx, &groupID, "resp_store_error", "gpt-5.6-sol", nil, false)
-
-	require.Nil(t, selection)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-	require.Equal(t, http.StatusServiceUnavailable, failoverErr.ClientStatusCode)
-}
 
 func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Hit(t *testing.T) {
 	ctx := context.Background()
@@ -109,7 +88,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_QuotaAutoPausedM
 	require.Equal(t, account.ID, boundAccountID)
 }
 
-func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_RateLimitedMissPreservesBinding(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_RateLimitedMiss(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(23)
 	rateLimitedUntil := time.Now().Add(30 * time.Minute)
@@ -143,10 +122,10 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_RateLimitedMissP
 	require.Nil(t, selection, "限额中的账号不应继续命中 previous_response_id 粘连")
 	boundAccountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_prev_rl")
 	require.NoError(t, getErr)
-	require.Equal(t, account.ID, boundAccountID)
+	require.Zero(t, boundAccountID)
 }
 
-func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_DBRuntimeRecheckRateLimitedMissPreservesBinding(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_DBRuntimeRecheckRateLimitedMiss(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(24)
 	rateLimitedUntil := time.Now().Add(30 * time.Minute)
@@ -195,7 +174,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_DBRuntimeRecheck
 	require.Nil(t, selection, "DB 中已限流的账号不应继续命中 previous_response_id 粘连")
 	boundAccountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_prev_db_rl")
 	require.NoError(t, getErr)
-	require.Equal(t, dbAccount.ID, boundAccountID)
+	require.Zero(t, boundAccountID)
 }
 
 func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Excluded(t *testing.T) {

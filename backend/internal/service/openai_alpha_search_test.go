@@ -15,7 +15,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
-	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -95,11 +94,11 @@ func TestForwardAlphaSearchOAuthPreservesWire(t *testing.T) {
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
 	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Equal(t,
-		scopeCodexAccountIdentityValue(account, 0, "search-session"),
+		scopeCodexAccountIdentityValue(account, 0, "session", "search-session"),
 		gjson.Get(upstream.lastReq.Header.Get("X-Codex-Turn-Metadata"), "session_id").String(),
 	)
 	require.Equal(t,
-		"search-turn",
+		scopeCodexAccountIdentityValue(account, 0, "turn", "search-turn"),
 		gjson.Get(upstream.lastReq.Header.Get("X-Codex-Turn-Metadata"), "turn_id").String(),
 	)
 	require.JSONEq(t, string(body), string(upstream.lastBody))
@@ -150,7 +149,6 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 		},
 	}
 
-	enableCodexRequestZstd(t)
 	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
 
 	require.NoError(t, err)
@@ -168,7 +166,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.Equal(t, "responses=experimental", upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
 	require.Equal(t,
-		"turn-1",
+		scopeCodexAccountIdentityValue(account, 0, "turn", "turn-1"),
 		gjson.Get(upstream.lastReq.Header.Get("X-Codex-Turn-Metadata"), "turn_id").String(),
 	)
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("Originator"))
@@ -176,148 +174,13 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.Empty(t, upstream.lastReq.Header.Get("X-Codex-Turn-State"))
 	require.Empty(t, upstream.lastReq.Header.Get(responsesLiteHeaderKey))
 	require.Empty(t, upstream.lastReq.Header.Get("Accept-Language"))
-	// PAT/OAuth 的 Responses web-search fallback 是真实 Codex turn：开关开启时同样 zstd 出站，
-	// 解压后语义不变。
-	require.Equal(t, "zstd", upstream.lastReq.Header.Get("Content-Encoding"))
-	zstdReader, err := zstd.NewReader(bytes.NewReader(upstream.lastBody))
-	require.NoError(t, err)
-	wireBody, err := io.ReadAll(zstdReader)
-	zstdReader.Close()
-	require.NoError(t, err)
-	require.False(t, gjson.GetBytes(wireBody, "prompt_cache_key").Exists())
-	require.False(t, gjson.GetBytes(wireBody, "prompt_cache_retention").Exists())
-	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(wireBody, "model").String())
-	require.True(t, gjson.GetBytes(wireBody, "stream").Bool())
-	require.False(t, gjson.GetBytes(wireBody, "store").Bool())
-	require.Equal(t, "web_search", gjson.GetBytes(wireBody, "tools.0.type").String())
-	require.Contains(t, gjson.GetBytes(wireBody, "input.0.content.0.text").String(), `"search_query"`)
-}
-
-func TestForwardAlphaSearchOrdinaryAPIKeyUsesDirectAlphaSearchEndpoint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	body := []byte(`{"id":"search-session","model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
-	c.Request.Header.Set("User-Agent", "codex-test")
-
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-		Body:       io.NopCloser(strings.NewReader(alphaSearchResponsesSSE("search result"))),
-	}}
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
-	account := &Account{
-		ID:          47,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://relay.example/gateway/v1"},
-	}
-
-	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 1, result.WebSearchCalls)
-	require.Equal(t, "https://relay.example/gateway/v1/alpha/search", upstream.lastReq.URL.String())
-	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("Authorization"))
-	require.Equal(t, http.StatusOK, recorder.Code)
-}
-
-func TestForwardAlphaSearchOrdinaryAPIKeyToolErrorUsesOfficialFailurePath(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
-
-	upstreamBody := []byte(`{"error":{"type":"invalid_request_error","message":"This upstream tool is unavailable"}}`)
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusBadRequest,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewReader(upstreamBody)),
-	}}
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
-	account := &Account{
-		ID:          49,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://compat.example"},
-	}
-
-	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
-
-	require.Nil(t, result)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.JSONEq(t, string(upstreamBody), recorder.Body.String())
-	require.Equal(t, "https://compat.example/v1/alpha/search", upstream.lastReq.URL.String())
-}
-
-func TestForwardAlphaSearchOrdinaryAPIKeyGenericBadRequestDoesNotFanOut(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","settings":{"search_context_size":"invalid"}}`)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
-
-	upstreamBody := `{"error":{"type":"invalid_request_error","message":"Invalid search context size"}}`
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusBadRequest,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
-	}}
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
-	account := &Account{
-		ID:          50,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://compat.example"},
-	}
-
-	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
-
-	require.NoError(t, err)
-	require.Nil(t, result)
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.JSONEq(t, upstreamBody, recorder.Body.String())
-}
-
-func TestForwardAlphaSearchOrdinaryAPIKeyTrustsOfficialAlphaSearchSuccess(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
-
-	textOnlySSE := "event: response.output_text.delta\n" +
-		`data: {"type":"response.output_text.delta","delta":"not searched"}` + "\n\n" +
-		"event: response.completed\n" +
-		`data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"not searched"}]}]}}` + "\n\n"
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-		Body:       io.NopCloser(strings.NewReader(textOnlySSE)),
-	}}
-	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
-	account := &Account{
-		ID:          51,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://compat.example"},
-	}
-
-	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 1, result.WebSearchCalls)
-	require.Equal(t, "https://compat.example/v1/alpha/search", upstream.lastReq.URL.String())
-	require.Equal(t, http.StatusOK, recorder.Code)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_retention").Exists())
+	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "store").Bool())
+	require.Equal(t, "web_search", gjson.GetBytes(upstream.lastBody, "tools.0.type").String())
+	require.Contains(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String(), `"search_query"`)
 }
 
 func TestForwardAlphaSearchPATBackfillsMissingChatGPTAccountMetadata(t *testing.T) {

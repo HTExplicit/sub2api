@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
@@ -209,7 +208,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
-	retryState := newOpenAIFailoverRetryState()
+	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	mediaEligibilityRejected := false
@@ -219,7 +218,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		videoCreateStartedAt = service.GrokVideoPendingCreatedAtNow()
 	}
 	maxAccountSwitches := h.maxAccountSwitches
-	var sameAccountRetrySelection *service.AccountSelectionResult
 	if maxAccountSwitches <= 0 {
 		maxAccountSwitches = 3
 	}
@@ -239,28 +237,27 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		if failoverClientGone(c) {
 			return
 		}
-		retryingSameAccount := sameAccountRetrySelection != nil
-		var (
-			selection        *service.AccountSelectionResult
-			scheduleDecision service.OpenAIAccountScheduleDecision
-			err              error
-		)
-		if retryingSameAccount {
-			selection, err = h.gatewayService.ReacquireOpenAISameAccountSelection(requestCtx, sameAccountRetrySelection)
-			sameAccountRetrySelection = nil
-			scheduleDecision.Layer = "same_account_retry"
-
+		var selection *service.AccountSelectionResult
+		var scheduleDecision service.OpenAIAccountScheduleDecision
+		if boundLookupAccountID > 0 {
+			selection, scheduleDecision, err = h.gatewayService.SelectMediaVideoRequestAccount(
+				requestCtx, apiKey.GroupID, sessionHash, boundLookupAccountID, routingModel, platform,
+			)
 		} else {
-			if boundLookupAccountID > 0 {
-				selection, scheduleDecision, err = h.gatewayService.SelectMediaVideoRequestAccount(
-					requestCtx, apiKey.GroupID, sessionHash, boundLookupAccountID, routingModel, platform,
-				)
-			} else {
-				selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapability(
-					requestCtx, apiKey.GroupID, "", sessionHash, routingModel, failedAccountIDs,
-					service.OpenAIUpstreamTransportHTTPSSE, requiredCapability, false, false, false, platform,
-				)
-			}
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapability(
+				requestCtx,
+				apiKey.GroupID,
+				"",
+				sessionHash,
+				routingModel,
+				failedAccountIDs,
+				service.OpenAIUpstreamTransportHTTPSSE,
+				requiredCapability,
+				false,
+				false,
+				false,
+				platform,
+			)
 		}
 		// Own an eagerly acquired slot before any rejection or eligibility probe.
 		// Forwarding takes over the same once-only release after admission.
@@ -268,8 +265,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			selection.ReleaseFunc = wrapReleaseOnDone(requestCtx, selection.ReleaseFunc)
 			accountReleaseFunc = selection.ReleaseFunc
 		}
-		// Forwarding owns the selected account slot release.
-
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("grok_media.account_select_aborted_client_disconnected", zap.Error(err))
@@ -283,10 +278,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
-			if retryingSameAccount && lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, lastFailoverErr, false)
-				return
-			}
 			if endpoint.IsGenerationRequest() && errors.Is(err, service.ErrNoAvailableAccounts) &&
 				(len(failedAccountIDs) == 0 || (mediaEligibilityRejected && lastFailoverErr == nil)) {
 				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
@@ -321,23 +312,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
 			return
 		}
-		// Scheduler selection acquires the account slot before the media
-		// eligibility probe. Release it on paths that exit before normal
-		// account-slot admission transfers ownership to forwarding.
-		var releaseSelectionOnce sync.Once
-		releaseSelection := func() {
-			releaseSelectionOnce.Do(func() {
-				if selection.HasOpenAIRuntimeBreakerProbe() {
-					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-				}
-				if selection.ReleaseFunc != nil {
-					selection.ReleaseFunc()
-					selection.ReleaseFunc = nil
-				}
-			})
-		}
 		if failoverClientGone(c) {
-			releaseSelection()
 			return
 		}
 		if boundLookupAccountID > 0 && selection.Account.ID != boundLookupAccountID {
@@ -345,7 +320,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				zap.Int64("bound_account_id", boundLookupAccountID),
 				zap.Int64("selected_account_id", selection.Account.ID),
 			)
-			releaseSelection()
 			h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video request not found")
 			return
 		}
@@ -361,25 +335,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 
 		account := selection.Account
 		if endpoint.IsGenerationRequest() && !endpoint.IsSeedance() {
-			probeDone := make(chan struct{})
-			probeStopped := make(chan struct{})
-			go func() {
-				defer close(probeStopped)
-				select {
-				case <-requestCtx.Done():
-					releaseSelection()
-				case <-probeDone:
-				}
-			}()
-			eligible, eligibilityReason, eligibilityErr := func() (bool, string, error) {
-				defer func() {
-					close(probeDone)
-					<-probeStopped // Transfer slot ownership only after cancellation cleanup stops.
-				}()
-				return h.ensureGrokMediaAccountEligibility(requestCtx, account)
-			}()
+			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
 			if !eligible {
-				releaseSelection()
+				releaseAccount()
 				mediaEligibilityRejected = true
 				failedAccountIDs[account.ID] = struct{}{}
 				reqLog.Warn("grok_media.account_eligibility_rejected",
@@ -397,28 +355,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			}
 		}
 		if failoverClientGone(c) {
-			releaseSelection()
 			return
 		}
-		// Video lookups are bound to the persisted task owner and must never
-		// refresh or overwrite the task's ownership binding while probing or
-		// forwarding the status request. Pool-mode retry hashes are therefore
-		// generated only for ordinary generation requests.
-		if boundLookupAccountID == 0 {
-			sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
-		}
+		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		var slotResult openAISlotAcquireResult
 		admissionSessionHash := sessionHash
 		if boundLookupAccountID > 0 {
+			// Waiting must not replace the video ownership TTL with text sticky TTL.
 			admissionSessionHash = ""
 		}
-		if retryingSameAccount {
-			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlotForSameAccountRetry(c, apiKey.GroupID, admissionSessionHash, selection, false, &streamStarted, reqLog)
-		} else {
-			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, admissionSessionHash, selection, false, &streamStarted, reqLog)
-		}
+		var slotResult openAISlotAcquireResult
+		accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, admissionSessionHash, selection, false, &streamStarted, reqLog)
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 媒体路径已显式豁免利润门（suppress 标记），此分支仅防御性兜底，
 			// 同样受否决上限约束。
@@ -429,14 +377,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
-			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
-				c, account, grokMediaScheduleModel(account, routingModel, nil), lastFailoverErr, failedAccountIDs,
-				&switchCount, maxAccountSwitches, &oauth429FailoverState,
-				"grok_media", reqLog, !endpoint.IsVideoLookupRequest(),
-				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
-			) {
-				continue
-			}
 			return
 		}
 
@@ -463,50 +403,48 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if failoverClientGone(c) {
-					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 					reqLog.Info("grok_media.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
 					)
 					return
 				}
+				if failoverErr.ShouldReportAccountScheduleFailure() {
+					h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, nil), false, nil)
+				}
 				if c.Writer.Size() != writerSizeBeforeForward {
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
 				if !failoverErr.ShouldRetryNextAccount() {
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
 				if endpoint.IsVideoLookupRequest() {
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
-				retryAction := retryState.Handle(
-					requestCtx,
-					h.gatewayService,
-					account,
-					grokMediaScheduleModel(account, routingModel, nil),
-					failoverErr,
-					true,
-					sameAccountRetryDelay,
-					"grok_media",
-				)
-				finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, retryAction)
-				switch retryAction {
-				case openAIFailoverRetrySameAccount:
-					sameAccountRetrySelection = selection
-					lastFailoverErr = failoverErr
-					continue
-				case openAIFailoverRetryCanceled:
-					return
-				case openAIFailoverRetryStop:
-					h.handleFailoverExhausted(c, failoverErr, false)
-					return
+				if failoverErr.RetryableOnSameAccount {
+					retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
+					if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+						sameAccountRetryCount[account.ID]++
+						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+						reqLog.Warn("grok_media.pool_mode_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Int("retry_limit", retryLimit),
+							zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+							zap.Duration("retry_delay", retryDelay),
+						)
+						select {
+						case <-requestCtx.Done():
+							return
+						case <-time.After(retryDelay):
+						}
+						continue
+					}
 				}
+				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {
@@ -518,7 +456,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
-				h.gatewayService.RecordOpenAIAccountSwitch()
 				reqLog.Warn("grok_media.upstream_failover_switching",
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),
@@ -527,7 +464,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				)
 				continue
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, grokMediaScheduleModel(account, routingModel, nil), false, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, nil), false, nil)
 			if !service.IsResponseCommitted(c) && c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
@@ -538,8 +475,8 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			return
 		}
 
-		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, grokMediaScheduleModel(account, routingModel, result), true, nil)
-		if endpoint.IsGenerationRequest() && strings.TrimSpace(result.ResponseID) != "" {
+		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
+		if isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
 			if err := h.gatewayService.BindGrokMediaVideoRequestAccount(
 				requestCtx, apiKey.GroupID, result.ResponseID, subject.UserID, apiKey.ID, account.ID,
 			); err != nil {

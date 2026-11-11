@@ -83,7 +83,7 @@ func (r *openAICodexExtraListRepo) ListWithFilters(_ context.Context, params pag
 	return r.accounts, &pagination.PaginationResult{Total: int64(len(r.accounts)), Page: params.Page, PageSize: params.PageSize}, nil
 }
 
-func TestOpenAIGatewayService_Forward_WSv2ErrorEventDefersCooldownToHandler(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitPersistsRateLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	resetAt := time.Now().Add(2 * time.Hour).Unix()
@@ -164,10 +164,11 @@ func TestOpenAIGatewayService_Forward_WSv2ErrorEventDefersCooldownToHandler(t *t
 	require.Nil(t, result)
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Nil(t, upstream.lastReq, "WS 限流 error event 不应回退到同账号 HTTP")
-	require.Empty(t, repo.rateLimitCalls)
+	require.Len(t, repo.rateLimitCalls, 1)
+	require.WithinDuration(t, time.Unix(resetAt, 0), repo.rateLimitCalls[0], 2*time.Second)
 }
 
-func TestOpenAIGatewayService_Forward_WSv2Handshake429DefersCooldownToHandler(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2Handshake429PersistsRateLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +234,9 @@ func TestOpenAIGatewayService_Forward_WSv2Handshake429DefersCooldownToHandler(t 
 	require.Nil(t, result)
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Nil(t, upstream.lastReq, "WS 握手 429 不应回退到同账号 HTTP")
-	require.Empty(t, repo.rateLimitCalls)
+	require.Len(t, repo.rateLimitCalls, 1)
+	require.NotEmpty(t, repo.updateExtra, "握手 429 的 x-codex 头应立即落库")
+	require.Contains(t, repo.updateExtra[0], "codex_usage_updated_at")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2Handshake502RecordsModelTransient(t *testing.T) {
@@ -282,7 +285,7 @@ func TestOpenAIGatewayService_Forward_WSv2Handshake502RecordsModelTransient(t *t
 	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(&account, "gpt-5.5"))
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ErrorEventDefersCooldownToHandler(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ErrorEventUsageLimitPersistsRateLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := newOpenAIWSV2TestConfig()
@@ -384,7 +387,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ErrorEventDefers
 		var failoverErr *UpstreamFailoverError
 		require.ErrorAs(t, serverErr, &failoverErr)
 		require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
-		require.Empty(t, repo.rateLimitCalls)
+		require.Len(t, repo.rateLimitCalls, 1)
+		require.WithinDuration(t, time.Unix(resetAt, 0), repo.rateLimitCalls[0], 2*time.Second)
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}

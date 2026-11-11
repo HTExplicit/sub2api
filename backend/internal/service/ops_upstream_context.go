@@ -397,26 +397,6 @@ func GetOpsStreamErrors(c *gin.Context) []OpsStreamError {
 	return nil
 }
 
-// IsGatewayFixedClientMessage reports whether message is a sentence the gateway
-// writes to clients in place of an upstream error text. Ops never records one
-// as the upstream's own message.
-func IsGatewayFixedClientMessage(message string) bool {
-	switch strings.TrimSpace(message) {
-	case OpenAIRequestRejectedClientMessage,
-		OpenAIContinuationStateUnavailableClientMessage,
-		OpenAIModelNotSupportedClientMessage,
-		OpenAIRequestBodyTooLargeClientMessage,
-		GrokCredentialUnavailableClientMessage,
-		AntigravityCredentialRejectedClientMessage,
-		openAISilentRefusalClientMessage,
-		openAIUpstreamAccessUnavailableClientMessage,
-		geminiCustomCodeSkippedClientMessage,
-		"Temporary upstream failure":
-		return true
-	}
-	return false
-}
-
 // SetOpsUpstreamError is the exported wrapper for setOpsUpstreamError, used by
 // handler-layer code (e.g. failover-exhausted paths) that needs to record the
 // original upstream status code before mapping it to a client-facing code.
@@ -467,8 +447,7 @@ type OpsUpstreamErrorEvent struct {
 	// Outcome
 	UpstreamStatusCode int    `json:"upstream_status_code,omitempty"`
 	UpstreamRequestID  string `json:"upstream_request_id,omitempty"`
-	// For Claude stream_error events, UpstreamStatusCode is the error's semantic
-	// status. Keep the actual HTTP response separately: SSE can fail after 200.
+	// Keep the actual HTTP status distinct from a streamed error's semantic status.
 	UpstreamHTTPStatusCode int `json:"upstream_http_status_code,omitempty"`
 
 	// UpstreamURL is the actual upstream URL that was called (host + path, query/fragment stripped).
@@ -489,17 +468,6 @@ type OpsUpstreamErrorEvent struct {
 	Message string `json:"message,omitempty"`
 	Detail  string `json:"detail,omitempty"`
 
-	// Administrator diagnostics: complete-value fingerprints plus bounded
-	// original values (IDs, instructions, the upstream error text). Never use
-	// this for passthrough-rule matching or to decide whether a request can be
-	// retried.
-	ContinuationDiagnostic *OpenAIContinuationDiagnostic `json:"continuation_diagnostic,omitempty"`
-	// Signature recovery evidence is bounded and contains fingerprints only;
-	// bookkeeping must not replace the corresponding upstream failure.
-	SignatureRecovery *ClaudeSignatureRecoveryDiagnostic `json:"signature_recovery,omitempty"`
-	// Preserve the raw historical preparation evidence; new attempts never set it.
-	BorrowQualification json.RawMessage `json:"borrow_qualification,omitempty"`
-
 	// SkipMonitoring is request-local rule state. It is intentionally excluded
 	// from persisted attempt JSON. The logger consults it only when this event is
 	// the final client-visible failure; recovered attempts remain provider-health
@@ -514,46 +482,6 @@ const (
 	// proxies.name column is NOT NULL/non-empty, so this is a defensive value.
 	opsProxyNameUnnamed = "proxy"
 )
-
-// OpsRefusalRecoveryEventsKey holds the refusal evidence behind HTTP refusal
-// rewrites and prompt retries. It is not upstream error context: nothing
-// classifies on it, a request that succeeds leaves no Ops row for it, and the
-// Ops logger attaches it only to a request that finally fails.
-const OpsRefusalRecoveryEventsKey = "ops_refusal_recovery_events"
-
-// opsRefusalRecoveryEventsMax bounds the evidence kept for one request.
-const opsRefusalRecoveryEventsMax = 8
-
-func appendOpsRefusalRecoveryEvent(c *gin.Context, ev OpsUpstreamErrorEvent) {
-	if c == nil {
-		return
-	}
-	events := OpsRefusalRecoveryEvents(c)
-	if len(events) >= opsRefusalRecoveryEventsMax {
-		return
-	}
-	if ev.AtUnixMs <= 0 {
-		ev.AtUnixMs = time.Now().UnixMilli()
-	}
-	normalizeOpsUpstreamProxyAttribution(&ev)
-	ev.Message = sanitizeUpstreamErrorMessage(strings.TrimSpace(ev.Message))
-	ev.Detail = strings.TrimSpace(ev.Detail)
-	evCopy := ev
-	c.Set(OpsRefusalRecoveryEventsKey, append(events, &evCopy))
-}
-
-// OpsRefusalRecoveryEvents returns the refusal evidence recorded for the request.
-func OpsRefusalRecoveryEvents(c *gin.Context) []*OpsUpstreamErrorEvent {
-	if c == nil {
-		return nil
-	}
-	if v, ok := c.Get(OpsRefusalRecoveryEventsKey); ok {
-		if events, ok := v.([]*OpsUpstreamErrorEvent); ok {
-			return events
-		}
-	}
-	return nil
-}
 
 func appendOpsUpstreamError(c *gin.Context, ev OpsUpstreamErrorEvent) {
 	if c == nil {

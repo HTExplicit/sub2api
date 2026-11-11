@@ -487,7 +487,7 @@ func (h *AccountHandler) fetchOpenAIAccountLoadMap(ctx context.Context, openAIAc
 		seen[account.ID] = struct{}{}
 		loadReq = append(loadReq, service.AccountWithConcurrency{
 			ID:             account.ID,
-			MaxConcurrency: account.Concurrency,
+			MaxConcurrency: account.EffectiveLoadFactor(),
 		})
 	}
 	if batchLoad, err := h.concurrencyService.GetAccountsLoadBatch(ctx, loadReq); err != nil {
@@ -2658,7 +2658,6 @@ func (h *AccountHandler) GetBatchTodayStats(c *gin.Context) {
 		return
 	}
 
-	generation := accountTodayStatsBatchCache.Generation()
 	stats, err := h.accountUsageService.GetTodayStatsBatch(c.Request.Context(), accountIDs)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -2666,7 +2665,7 @@ func (h *AccountHandler) GetBatchTodayStats(c *gin.Context) {
 	}
 
 	payload := gin.H{"stats": stats}
-	cached, _ := accountTodayStatsBatchCache.SetIfGeneration(cacheKey, payload, generation)
+	cached := accountTodayStatsBatchCache.Set(cacheKey, payload)
 	if cached.ETag != "" {
 		c.Header("ETag", cached.ETag)
 		c.Header("Vary", "If-None-Match")

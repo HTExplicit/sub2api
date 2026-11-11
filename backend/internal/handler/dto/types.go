@@ -223,7 +223,6 @@ type Account struct {
 	Extra                   map[string]any                 `json:"extra"`
 	OllamaCloudUsage        *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
 	OpenCodeGoUsage         *service.OpenCodeGoUsageState  `json:"opencode_go_usage,omitempty"`
-	QuotaState              *service.UpstreamQuotaState    `json:"quota_state,omitempty"`
 	ProxyID                 *int64                         `json:"proxy_id"`
 	ProxyFallbackOriginID   *int64                         `json:"proxy_fallback_origin_id"`
 	ProxyFallbackOriginName *string                        `json:"proxy_fallback_origin_name,omitempty"`
@@ -379,14 +378,13 @@ type AccountFacetOption struct {
 // repeated account_groups and groups object graphs. Fetch /admin/accounts/:id
 // for the complete Account DTO when editing or inspecting an account.
 type AccountListItem struct {
-	QuotaState       *service.UpstreamQuotaState `json:"quota_state,omitempty"`
-	ManagementFolder *AccountManagementFolder    `json:"management_folder,omitempty"`
-	Tags             []AccountManagementTag      `json:"tags"`
-	ID               int64                       `json:"id"`
-	Name             string                      `json:"name"`
-	Notes            *string                     `json:"notes"`
-	Platform         string                      `json:"platform"`
-	Type             string                      `json:"type"`
+	ManagementFolder *AccountManagementFolder `json:"management_folder,omitempty"`
+	Tags             []AccountManagementTag   `json:"tags"`
+	ID               int64                    `json:"id"`
+	Name             string                   `json:"name"`
+	Notes            *string                  `json:"notes"`
+	Platform         string                   `json:"platform"`
+	Type             string                   `json:"type"`
 
 	Credentials       map[string]any                 `json:"credentials,omitempty"`
 	CredentialsStatus map[string]bool                `json:"credentials_status,omitempty"`
@@ -663,8 +661,10 @@ type UsageLog struct {
 	CacheCreationTokens int `json:"cache_creation_tokens"`
 	CacheReadTokens     int `json:"cache_read_tokens"`
 
-	CacheCreation5mTokens int `json:"cache_creation_5m_tokens"`
-	CacheCreation1hTokens int `json:"cache_creation_1h_tokens"`
+	CacheCreation5mTokens  int `json:"cache_creation_5m_tokens"`
+	CacheCreation1hTokens  int `json:"cache_creation_1h_tokens"`
+	CacheCreation30mTokens int `json:"cache_creation_30m_tokens"`
+	CacheCreation12hTokens int `json:"cache_creation_12h_tokens"`
 
 	InputCost                 float64 `json:"input_cost"`
 	OutputCost                float64 `json:"output_cost"`

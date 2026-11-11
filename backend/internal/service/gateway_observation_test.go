@@ -3,6 +3,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
@@ -74,13 +74,13 @@ func requireNoAccountObservationWrites(t *testing.T, r *accountObservationRepo) 
 
 func TestAccountObservationBusinessForwardPreservesErrorsWithoutPublishingState(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		status int
-		body   string
+		name             string
+		status           int
+		body             string
+		wantNormalWrites bool
 	}{
-		{"http_auth", http.StatusUnauthorized, `{"error":{"message":"synthetic token expired"}}`},
-		{"http_budget", http.StatusTooManyRequests, `{"error":{"type":"budget_exceeded","message":"synthetic budget exhausted"}}`},
-		{"stream_budget", http.StatusOK, "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_observation_error\",\"status\":\"failed\",\"error\":{\"type\":\"budget_exceeded\",\"message\":\"synthetic budget exhausted\"}}}\n\n"},
+		{"http_auth", http.StatusUnauthorized, `{"error":{"message":"synthetic token expired"}}`, true},
+		{"http_budget", http.StatusTooManyRequests, `{"error":{"type":"budget_exceeded","message":"synthetic budget exhausted"}}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, observation := range []bool{true, false} {
@@ -114,8 +114,11 @@ func TestAccountObservationBusinessForwardPreservesErrorsWithoutPublishingState(
 					if observation {
 						requireNoAccountObservationWrites(t, repo)
 						require.False(t, setup.svc.isOpenAIAccountRuntimeBlocked(setup.account))
+					} else if tc.wantNormalWrites {
+						require.Positive(t, repo.errorCalls.Load()+repo.tempCalls.Load()+repo.rateCalls.Load()+repo.modelCalls.Load(), "ordinary forwarding retains its account-state contract")
 					} else {
-						require.Positive(t, repo.errorCalls.Load()+repo.tempCalls.Load(), "ordinary forwarding retains its account-state contract")
+						requireNoAccountObservationWrites(t, repo)
+						require.False(t, setup.svc.isOpenAIAccountRuntimeBlocked(setup.account), "official OAuth 429 does not publish an extra penalty before handler retry exhaustion")
 					}
 				})
 			}
@@ -162,7 +165,7 @@ func TestAccountObservationSuccessSuppressesBackgroundQuotaAndProxyHealth(t *tes
 		t.Fatal("ordinary success did not publish its quota snapshot")
 	}
 	require.EqualValues(t, 1, repo.extraCalls.Load())
-	setup.svc.clearOpenAIProxyStreamDisconnectInContext(context.Background(), setup.account)
+	setup.svc.clearOpenAIProxyStreamDisconnect(setup.account)
 	require.False(t, setup.svc.openaiProxyStreamCircuit.isBlocked(proxyID, time.Now()))
 }
 
@@ -274,26 +277,12 @@ func (r *accountObservationLogRepo) Create(context.Context, *UsageLog) (bool, er
 	return true, nil
 }
 
-func TestAccountObservationQueuedUsagePreservesMarkerAndDoesNotWrite(t *testing.T) {
-	store := &quotaActivityMemoryStore{}
-	activity := NewQuotaActivityService(store)
-	ctx, finish := activity.Attach(WithAccountObservation(context.WithValue(context.Background(), ctxkey.AccountID, int64(95))))
-	ObserveQuotaAccount(ctx, 95)
-	var ran bool
-	task, discard := TrackQuotaUsageTask(ctx, func(workerCtx context.Context) {
-		ran = true
-		require.True(t, IsAccountObservation(workerCtx))
-		require.NoError(t, (&GatewayService{}).RecordUsage(workerCtx, nil))
-		require.NoError(t, (&OpenAIGatewayService{}).RecordUsage(workerCtx, nil))
-		MarkQuotaLogPersisted(workerCtx, 95)
-	})
-	finish()
-	task(context.Background())
-	discard()
-	require.True(t, ran)
-	stamp, known := activity.Read(context.Background(), 95)
-	require.True(t, known)
-	require.Equal(t, QuotaActivityStamp{}, stamp)
+func TestAccountObservationUsageContextDoesNotWrite(t *testing.T) {
+	ctx := WithAccountObservation(context.Background())
+	workerCtx := CopyAccountObservationContext(ctx, context.Background())
+	require.True(t, IsAccountObservation(workerCtx))
+	require.NoError(t, (&GatewayService{}).RecordUsage(workerCtx, nil))
+	require.NoError(t, (&OpenAIGatewayService{}).RecordUsage(workerCtx, nil))
 
 	billing := &accountObservationBillingRepo{}
 	deferred := &DeferredService{}
@@ -311,9 +300,9 @@ func TestAccountObservationQueuedUsagePreservesMarkerAndDoesNotWrite(t *testing.
 	require.True(t, scheduled)
 
 	logs := &accountObservationLogRepo{}
-	require.False(t, writeUsageLogBestEffort(ctx, logs, &UsageLog{AccountID: 95}, "observation-test"))
+	writeUsageLogBestEffort(ctx, logs, &UsageLog{AccountID: 95}, "observation-test")
 	require.Zero(t, logs.calls)
-	require.True(t, writeUsageLogBestEffort(context.Background(), logs, &UsageLog{AccountID: 95}, "observation-test"))
+	writeUsageLogBestEffort(context.Background(), logs, &UsageLog{AccountID: 95}, "observation-test")
 	require.Equal(t, 1, logs.calls)
 }
 
@@ -362,12 +351,10 @@ func TestAccountObservationWebSocketFailureCallbacksDoNotPublishCooldown(t *test
 	gateway.rateLimitService.SetAccountRuntimeBlocker(gateway)
 	account := &Account{ID: 97, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	payload := []byte(`{"type":"error","error":{"code":"rate_limit_exceeded","type":"rate_limit_error","message":"synthetic rate limit exceeded"}}`)
-	require.True(t, gateway.handleOpenAIWSFailureAccountSideEffects(ctx, account, "gpt-6.1-sol", nil, payload))
-	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 	gateway.persistOpenAIWSRateLimitSignal(ctx, account, nil, payload, "rate_limit_exceeded", "rate_limit_error", "synthetic rate limit exceeded", "gpt-6.1-sol")
 	requireNoAccountObservationWrites(t, repo)
-	require.True(t, gateway.handleOpenAIWSFailureAccountSideEffects(context.Background(), account, "gpt-6.1-sol", nil, payload))
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account), "ordinary WS failure retains its retry-exhausted cooldown")
+	gateway.persistOpenAIWSRateLimitSignal(context.Background(), account, nil, payload, "rate_limit_exceeded", "rate_limit_error", "synthetic rate limit exceeded", "gpt-6.1-sol")
+	require.Positive(t, repo.rateCalls.Load(), "ordinary WS rate limit retains the official persisted cooldown")
 }
 
 type accountObservationBlockingUpstream struct {
@@ -415,4 +402,44 @@ func TestAccountObservationCancellationReachesBusinessUpstream(t *testing.T) {
 	defer release()
 	ordinaryCancel()
 	require.NoError(t, detached.Err(), "ordinary stream keeps the existing detached usage-collection contract")
+}
+
+func TestAccountObservationAntigravityCapacityRetryDoesNotClearBusinessCooldown(t *testing.T) {
+	const model = "gemini-observation-capacity-test"
+	for _, observation := range []bool{true, false} {
+		mode := "normal"
+		if observation {
+			mode = "observation"
+		}
+		t.Run(mode, func(t *testing.T) {
+			// An expired marker allows the retry while still exposing whether success deletes it.
+			modelCapacityExhaustedMu.Lock()
+			modelCapacityExhaustedUntil[model] = time.Now().Add(-time.Minute)
+			modelCapacityExhaustedMu.Unlock()
+			t.Cleanup(func() {
+				modelCapacityExhaustedMu.Lock()
+				delete(modelCapacityExhaustedUntil, model)
+				modelCapacityExhaustedMu.Unlock()
+			})
+			body := []byte(`{"error":{"code":503,"status":"UNAVAILABLE","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","metadata":{"model":"gemini-observation-capacity-test"},"reason":"MODEL_CAPACITY_EXHAUSTED"}],"message":"No capacity available"}}`)
+			resp := &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(body))}
+			upstream := &mockSmartRetryUpstream{responses: []*http.Response{{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"ok":true}`))}}, errors: []error{nil}}
+			ctx := context.Background()
+			if observation {
+				ctx = WithAccountObservation(ctx)
+			}
+			params := antigravityRetryLoopParams{
+				ctx: ctx, prefix: "[observation-test]", account: &Account{ID: 98, Platform: PlatformAntigravity, Type: AccountTypeOAuth},
+				accessToken: "synthetic-token", action: "generateContent", body: []byte(`{}`), httpUpstream: upstream,
+			}
+			result := (&AntigravityGatewayService{}).handleSmartRetry(params, resp, body, "https://antigravity.test", 0, []string{"https://antigravity.test"})
+			require.NoError(t, result.err)
+			require.Equal(t, http.StatusOK, result.resp.StatusCode)
+			require.Len(t, upstream.calls, 1)
+			modelCapacityExhaustedMu.RLock()
+			_, exists := modelCapacityExhaustedUntil[model]
+			modelCapacityExhaustedMu.RUnlock()
+			require.Equal(t, observation, exists, "only ordinary forwarding clears the business cooldown")
+		})
+	}
 }

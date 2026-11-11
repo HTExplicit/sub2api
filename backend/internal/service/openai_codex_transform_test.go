@@ -1383,9 +1383,8 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 		"input": "draw a cat",
 		"tools": []any{
 			map[string]any{
-				"type":   "image_generation",
-				"model":  "gpt-image-1.5",
-				"action": "auto",
+				"type":  "image_generation",
+				"model": "gpt-image-1.5",
 			},
 		},
 		"tool_choice": "auto",
@@ -1402,22 +1401,6 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 	tool, ok := tools[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "gpt-image-1.5", tool["model"])
-	require.Equal(t, "auto", tool["action"])
-}
-
-func TestNormalizeOpenAIResponsesImageOnlyModelWithModel_UsesOriginalBeforeAccountMapping(t *testing.T) {
-	reqBody := map[string]any{
-		"model": "openai/gpt-image-2",
-		"input": "draw a cat",
-	}
-
-	require.True(t, normalizeOpenAIResponsesImageOnlyModelWithModel(reqBody, "gpt-image-2"))
-	require.Equal(t, openAIImagesResponsesMainModel, reqBody["model"])
-	tools, ok := reqBody["tools"].([]any)
-	require.True(t, ok)
-	tool, ok := tools[0].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "gpt-image-2", tool["model"])
 }
 
 func TestValidateOpenAIResponsesImageModel_RejectsImageOnlyModel(t *testing.T) {

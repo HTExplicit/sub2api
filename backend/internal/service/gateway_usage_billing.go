@@ -589,11 +589,11 @@ func detachedBillingContext(ctx context.Context) (context.Context, context.Cance
 }
 
 func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Context, context.CancelFunc) {
-	if ctx == nil {
-		return context.Background(), func() {}
-	}
 	if IsAccountObservation(ctx) {
 		return ctx, func() {}
+	}
+	if ctx == nil {
+		return context.Background(), func() {}
 	}
 	if !stream {
 		return ctx, func() {}
@@ -602,11 +602,11 @@ func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Cont
 }
 
 func detachUpstreamContext(ctx context.Context, drainTimeout ...time.Duration) (context.Context, context.CancelFunc) {
-	if ctx == nil {
-		return context.Background(), func() {}
-	}
 	if IsAccountObservation(ctx) {
 		return ctx, func() {}
+	}
+	if ctx == nil {
+		return context.Background(), func() {}
 	}
 	return pkghttputil.DetachUpstreamContext(ctx, drainTimeout...), func() {}
 }
@@ -636,15 +636,12 @@ func (s *GatewayService) billingDeps() *billingDeps {
 	}
 }
 
-// writeUsageLogBestEffort reports confirmed log persistence, including a
-// successful synchronous fallback. An enqueue, timeout, or failed write alone
-// must not publish a log-backed statistics change.
-func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) bool {
+func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) {
 	if IsAccountObservation(ctx) {
-		return false
+		return
 	}
 	if repo == nil || usageLog == nil {
-		return false
+		return
 	}
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
@@ -664,25 +661,14 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 			}
 			if _, syncErr := repo.Create(fallbackCtx, usageLog); syncErr != nil {
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
-				MarkQuotaLogFailed(ctx, usageLog.AccountID)
-				return false
-			} else {
-				MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 			}
-		} else {
-			MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 		}
-		return true
+		return
 	}
 
 	if _, err := repo.Create(usageCtx, usageLog); err != nil {
 		logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
-		MarkQuotaLogFailed(ctx, usageLog.AccountID)
-		return false
-	} else {
-		MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 	}
-	return true
 }
 
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
@@ -919,7 +905,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		}
 	}
 	requestID := usageLog.RequestID
-	applied, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+	_, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 		Cost:                       cost,
 		User:                       user,
 		APIKey:                     apiKey,
@@ -938,15 +924,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 		return billingErr
 	}
-	if applied {
-		if s.usageCache != nil && account != nil {
-			s.usageCache.InvalidateAccount(account.ID)
-		}
-	}
-	logPersisted := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
-	if applied && logPersisted && s.usageCommitObserver != nil && account != nil {
-		s.usageCommitObserver(account.ID)
-	}
+	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 
 	return nil
 }
@@ -1383,7 +1361,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		UpstreamModelMismatch:    upstreamModelMismatch(sentModel, result.UpstreamResponseModel),
 		ServiceTier:              result.ServiceTier,
 		ReasoningEffort:          result.ReasoningEffort,
-		RequestedReasoningEffort: requestedEffortForPersistence(result.RequestedReasoningEffort, result.ReasoningEffort, result.ReasoningEffortDefaulted),
+		RequestedReasoningEffort: coalesceRequestedReasoningEffort(result.RequestedReasoningEffort, result.ReasoningEffort),
 		InboundEndpoint:          optionalTrimmedStringPtr(input.InboundEndpoint),
 		UpstreamEndpoint:         optionalTrimmedStringPtr(input.UpstreamEndpoint),
 		InputTokens:              result.Usage.InputTokens,

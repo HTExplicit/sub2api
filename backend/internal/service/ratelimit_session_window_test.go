@@ -239,7 +239,6 @@ func TestUpdateSessionWindow_FallbackPredictionWhenNoResetHeader(t *testing.T) {
 	call := repo.sessionWindowCalls[0]
 	if call.End == nil {
 		t.Fatal("expected window end to be set (fallback prediction)")
-		return
 	}
 	// Fallback: start = current hour truncated, end = start + 5h
 

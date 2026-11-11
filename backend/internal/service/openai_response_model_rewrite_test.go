@@ -62,10 +62,6 @@ func TestMappedResponseModelForwarding(t *testing.T) {
 						if kind != "json" {
 							contentType = "text/event-stream"
 							body = "data: " + payload + "\n\ndata: [DONE]\n\n"
-							if kind == "chat" {
-								// Downstream: [DONE] is only a transport marker; the stream still needs an authoritative terminal event.
-								body = "data: " + payload + "\n\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"model\":\"" + returned + "\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\ndata: [DONE]\n\n"
-							}
 						}
 						rec := httptest.NewRecorder()
 						c, _ := gin.CreateTestContext(rec)

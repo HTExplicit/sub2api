@@ -19,8 +19,22 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 // AnthropicToResponsesWithMinOutputTokens converts an Anthropic request using
 // the supplied max_output_tokens floor.
 func AnthropicToResponsesWithMinOutputTokens(req *AnthropicRequest, minOutputTokens int) (*ResponsesRequest, error) {
-	if err := openai.ValidateGPT61ReasoningEffort(req.Model, anthropicReasoningEffort(req)); err != nil {
-		return nil, err
+	return AnthropicToResponsesWithOptions(req, AnthropicToResponsesOptions{MinOutputTokens: minOutputTokens})
+}
+
+// AnthropicToResponsesOptions controls conversion and optional deferred effort
+// validation. Callers deferring validation must validate raw selections before
+// conversion and the final effort after applying their policy.
+type AnthropicToResponsesOptions struct {
+	MinOutputTokens                int
+	DeferReasoningEffortValidation bool
+}
+
+func AnthropicToResponsesWithOptions(req *AnthropicRequest, options AnthropicToResponsesOptions) (*ResponsesRequest, error) {
+	if !options.DeferReasoningEffortValidation {
+		if err := openai.ValidateGPT61ReasoningEffort(req.Model, anthropicReasoningEffort(req)); err != nil {
+			return nil, err
+		}
 	}
 	input, err := convertAnthropicToResponsesInput(req.System, req.Messages)
 	if err != nil {
@@ -56,8 +70,8 @@ func AnthropicToResponsesWithMinOutputTokens(req *AnthropicRequest, minOutputTok
 
 	if req.MaxTokens > 0 {
 		v := req.MaxTokens
-		if v < minOutputTokens {
-			v = minOutputTokens
+		if v < options.MinOutputTokens {
+			v = options.MinOutputTokens
 		}
 		out.MaxOutputTokens = &v
 	}
@@ -218,24 +232,27 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	}
 
 	var out []ResponsesInputItem
-	var parts []ResponsesContentPart
-	flushMessage := func() error {
-		if len(parts) == 0 {
-			return nil
+	var toolResultImageParts []ResponsesContentPart
+
+	// Extract tool_result blocks → function_call_output items.
+	// Images inside tool_results are extracted separately because the
+	// Responses API function_call_output.output only accepts strings.
+	for _, b := range blocks {
+		if b.Type != "tool_result" {
+			continue
 		}
-		content, err := json.Marshal(parts)
-		if err != nil {
-			return err
-		}
-		out = append(out, ResponsesInputItem{Type: "message", Role: "user", Content: content})
-		parts = nil
-		return nil
+		outputText, imageParts := convertToolResultOutput(b)
+		out = append(out, ResponsesInputItem{
+			Type:   "function_call_output",
+			CallID: toResponsesCallID(b.ToolUseID),
+			Output: outputText,
+		})
+		toolResultImageParts = append(toolResultImageParts, imageParts...)
 	}
 
-	// Only consecutive message parts may be grouped. Moving all tool results
-	// ahead of the text changes the order of the user's instructions. Preserve
-	// the bridge's string tool-output shape, keeping extracted images directly
-	// after their own result instead of moving them past later results.
+	// Remaining text + image blocks → user message with content parts.
+	// Also include images extracted from tool_results so the model can see them.
+	var parts []ResponsesContentPart
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
@@ -246,21 +263,16 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 			if uri := anthropicImageToDataURI(b.Source); uri != "" {
 				parts = append(parts, ResponsesContentPart{Type: "input_image", ImageURL: uri})
 			}
-		case "tool_result":
-			if err := flushMessage(); err != nil {
-				return nil, err
-			}
-			outputText, imageParts := convertToolResultOutput(b)
-			out = append(out, ResponsesInputItem{
-				Type:   "function_call_output",
-				CallID: toResponsesCallID(b.ToolUseID),
-				Output: outputText,
-			})
-			parts = append(parts, imageParts...)
 		}
 	}
-	if err := flushMessage(); err != nil {
-		return nil, err
+	parts = append(parts, toolResultImageParts...)
+
+	if len(parts) > 0 {
+		content, err := json.Marshal(parts)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ResponsesInputItem{Type: "message", Role: "user", Content: content})
 	}
 
 	return out, nil
@@ -269,9 +281,9 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 // anthropicAssistantToResponses handles an Anthropic assistant message.
 // Text content → assistant message with output_text parts.
 // tool_use blocks → function_call items.
-// thinking blocks → reasoning items, preserving their visible summary and any
-// opaque signature. A summary alone is not a claim to restore encrypted state
-// and must not be reclassified as ordinary assistant output text.
+// thinking blocks with signature → reasoning items (encrypted_content) so
+// multi-turn Grok/Codex prompt cache can reuse prior reasoning prefixes.
+// thinking without signature remains ignored (not accepted as plain text input).
 func anthropicAssistantToResponses(raw json.RawMessage) ([]ResponsesInputItem, error) {
 	// Try plain string.
 	var s string
@@ -290,63 +302,58 @@ func anthropicAssistantToResponses(raw json.RawMessage) ([]ResponsesInputItem, e
 	}
 
 	var items []ResponsesInputItem
-	var parts []ResponsesContentPart
-	flushMessage := func() error {
-		if len(parts) == 0 {
-			return nil
-		}
-		content, err := json.Marshal(parts)
-		if err != nil {
-			return err
-		}
-		items = append(items, ResponsesInputItem{Type: "message", Role: "assistant", Content: content})
-		parts = nil
-		return nil
-	}
 
-	// Walk the original sequence once. A thinking or tool block is a message
-	// boundary, not a reason to reorder all reasoning before all assistant text.
+	// Preserve turn order: reasoning → assistant text → tool calls. xAI/Codex
+	// multi-turn cache and tool continuations expect reasoning before the
+	// assistant message that followed it.
 	for _, b := range blocks {
-		if b.Type == "text" {
-			if b.Text != "" {
-				parts = append(parts, ResponsesContentPart{Type: "output_text", Text: b.Text})
-			}
+		if b.Type != "thinking" {
 			continue
 		}
-		if err := flushMessage(); err != nil {
+		sig := strings.TrimSpace(b.Signature)
+		// Only replay provider ciphertext. Skip GPT/Codex-style gAAAA blobs and
+		// empty placeholders — xAI returns 400 on decrypt for foreign signatures.
+		if sig == "" || strings.HasPrefix(sig, "gAAAA") {
+			continue
+		}
+		// CC Switch carries a JSON reasoning item in this versioned envelope,
+		// not provider ciphertext. Ignore the foreign state when resuming directly.
+		if strings.HasPrefix(sig, "ccswitch-openai-reasoning-v1:") {
+			continue
+		}
+		items = append(items, ResponsesInputItem{
+			Type:             "reasoning",
+			EncryptedContent: sig,
+		})
+	}
+
+	// Text content → assistant message with output_text content parts.
+	text := extractAnthropicTextFromBlocks(blocks)
+	if text != "" {
+		parts := []ResponsesContentPart{{Type: "output_text", Text: text}}
+		partsJSON, err := json.Marshal(parts)
+		if err != nil {
 			return nil, err
 		}
-		switch b.Type {
-		case "thinking":
-			if b.Signature == "" && b.Thinking == "" {
-				continue
-			}
-			// The selected upstream validates its own opaque state. Prefix
-			// guesses cannot establish provenance and must not delete or alter
-			// client-provided ciphertext (including Codex's gAAAA-prefixed form).
-			item := ResponsesInputItem{
-				Type:             "reasoning",
-				EncryptedContent: b.Signature,
-			}
-			if b.Thinking != "" {
-				item.Summary = []ResponsesSummary{{Type: "summary_text", Text: b.Thinking}}
-			}
-			items = append(items, item)
-		case "tool_use":
-			args := "{}"
-			if len(b.Input) > 0 {
-				args = string(b.Input)
-			}
-			items = append(items, ResponsesInputItem{
-				Type:      "function_call",
-				CallID:    toResponsesCallID(b.ID),
-				Name:      b.Name,
-				Arguments: args,
-			})
-		}
+		items = append(items, ResponsesInputItem{Type: "message", Role: "assistant", Content: partsJSON})
 	}
-	if err := flushMessage(); err != nil {
-		return nil, err
+
+	// tool_use → function_call items.
+	for _, b := range blocks {
+		if b.Type != "tool_use" {
+			continue
+		}
+		args := "{}"
+		if len(b.Input) > 0 {
+			args = string(b.Input)
+		}
+		fcID := toResponsesCallID(b.ID)
+		items = append(items, ResponsesInputItem{
+			Type:      "function_call",
+			CallID:    fcID,
+			Name:      b.Name,
+			Arguments: args,
+		})
 	}
 
 	return items, nil
@@ -386,8 +393,8 @@ func anthropicImageToDataURI(src *AnthropicImageSource) string {
 
 // convertToolResultOutput extracts text and image content from a tool_result
 // block. Returns the text as a string for the function_call_output Output
-// field, plus image parts for the separate user message used by this bridge's
-// existing string-output compatibility format.
+// field, plus any image parts that must be sent in a separate user message
+// (the Responses API output field only accepts strings).
 func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesContentPart) {
 	if len(b.Content) == 0 {
 		return "(empty)", nil

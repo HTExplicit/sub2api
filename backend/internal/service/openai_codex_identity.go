@@ -59,25 +59,6 @@ func SetCodexIdentityEnforcementEnabled(enabled bool) {
 	codexIdentityEnforcement.Store(enabled)
 }
 
-// codexForceCLI 是 gateway.force_codex_cli 的进程级快照：凭据面（token 刷新）拿不到网关配置，
-// 但账号显式 UA 是否生效必须与推理面同一套策略，否则同一账号会以两种 UA 出站。
-var codexForceCLI atomic.Bool
-
-// SetCodexForceCLIEnabled 由持有配置的网关服务在构造时发布。
-func SetCodexForceCLIEnabled(enabled bool) {
-	codexForceCLI.Store(enabled)
-}
-
-// codexAccountIdentityOverrideUA 返回账号级显式配置的出站 User-Agent，供强制统一身份时作为
-// 覆写来源。ForceCodexCLI 语义是「强制使用 Codex 身份」，等价于忽略账号自定义 UA，故返回空串；
-// 该优先级与历史行为一致（ForceCodexCLI 在账号自定义 UA 之后生效）。推理面与凭据面共用。
-func codexAccountIdentityOverrideUA(account *Account) string {
-	if codexForceCLI.Load() {
-		return ""
-	}
-	return account.GetOpenAIUserAgent()
-}
-
 // codexCanonicalUserAgentResolver 返回当前生效的规范 Codex User-Agent（后台设置 / 自动同步版本号）。
 // 由 SettingService 在装配时注入；解析器内部自带 TTL 缓存，热路径不触库。
 type codexCanonicalUserAgentResolver func() string
@@ -108,11 +89,7 @@ func CodexCanonicalUserAgent() string {
 // （codex-rs login/default_client.rs 的 default_headers()），version 门槛
 // （issue #3901）只存在于 /backend-api/codex 推理面。
 func CodexCanonicalAuthIdentity() (userAgent, originator string) {
-	policy := currentCodexFingerprintPolicy()
-	if !policy.enabled {
-		return codexCLIUserAgent, openai.CodexDefaultOriginator
-	}
-	identity := resolveCodexOutboundIdentity("", policy)
+	identity := resolveCodexOutboundIdentity("")
 	return identity.userAgent, identity.originator
 }
 
@@ -160,12 +137,8 @@ type codexOutboundIdentity struct {
 // 其自带的版本段一律用当前生效版本重建：一条填写于某个历史版本的 UA 否则会把出站身份
 // 永久钉死在陈旧版本上，绕过版本自动同步，落回上游身份风控更严格的一侧。
 // 需要固定版本请填「Codex 客户端版本号」并关闭自动同步。
-func resolveCodexOutboundIdentity(candidateUA string, policies ...*codexFingerprintPolicy) codexOutboundIdentity {
-	policy := selectCodexFingerprintPolicy(policies)
-	canonical := policy.userAgent
-	if !policy.enabled {
-		canonical = codexCLIUserAgent
-	}
+func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
+	canonical := codexCanonicalUserAgent()
 	if _, _, ok := openai.PairCodexClientIdentity(canonical); !ok {
 		canonical = codexCLIUserAgent
 	}
@@ -203,21 +176,11 @@ func codexClientVersionFromUA(ua string) string {
 
 // ensureCodexIdentityHeaders 补齐 OAuth（ChatGPT 内部接口）出站请求所需的 Codex 身份头。
 // 已有 User-Agent 与 version 保持不变，交给紧随其后的 enforceCodexIdentityHeaders 收口。
-func ensureCodexIdentityHeaders(h http.Header, policies ...*codexFingerprintPolicy) {
+func ensureCodexIdentityHeaders(h http.Header) {
 	if h == nil {
 		return
 	}
-	policy := selectCodexFingerprintPolicy(policies)
-	identity := resolveCodexOutboundIdentity("", policy)
-	if !policy.enabled {
-		// Fill only missing headers, deriving them from the actual caller's UA.
-		if originator, _, ok := openai.PairCodexClientIdentity(h.Get("user-agent")); ok {
-			identity.originator = originator
-			if version := NormalizeCodexClientVersion(openai.CodexUserAgentVersion(h.Get("user-agent"))); version != "" {
-				identity.version = version
-			}
-		}
-	}
+	identity := resolveCodexOutboundIdentity("")
 	if strings.TrimSpace(h.Get("user-agent")) == "" {
 		h.Set("user-agent", identity.userAgent)
 	}
@@ -259,58 +222,32 @@ func enforceCodexIdentityHeaders(h http.Header) {
 // 仅对携带 originator 的请求生效：compat 桥接等非 ChatGPT 内部接口路径会显式删除 originator，
 // 不应被补回。需要从缺失身份头恢复的调用方应先调用 ensureCodexIdentityHeaders。
 // 必须在所有 User-Agent 改写之后调用。
-func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string, policies ...*codexFingerprintPolicy) {
+func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
 	if h == nil || h.Get("originator") == "" {
 		return
 	}
-	policy := selectCodexFingerprintPolicy(policies)
-	if !policy.enabled {
+	if !codexIdentityEnforcement.Load() {
+		pairCodexIdentityHeaders(h)
 		return
 	}
-	identity := resolveCodexOutboundIdentity(overrideUA, policy)
+	identity := resolveCodexOutboundIdentity(overrideUA)
 	h.Set("user-agent", identity.userAgent)
 	h.Set("originator", identity.originator)
 	h.Set("version", identity.version)
 }
 
-// resolveCodexOutboundIdentityForAccount 返回某个 OAuth 账号的出站身份三元组。
-// 优先级：管理员显式配置的账号级 User-Agent（只贡献客户端名与 OS / 架构 / 终端指纹，
-// 版本段仍由生效版本重建）> 账号持久化 / 种子派生的设备身份 > 全局规范身份。
-// 账号设备沿用官方 CLI 归一化，版本号与 version 头都取当前生效的官方版本。
-func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string, policies ...*codexFingerprintPolicy) codexOutboundIdentity {
-	policy := selectCodexFingerprintPolicy(policies)
-	canonical := resolveCodexOutboundIdentity(overrideUA, policy)
-	if !policy.enabled {
-		return resolveCodexOutboundIdentity("", policy)
-	}
-	if overrideUA != "" {
-		return canonical
-	}
-	identity, ok := account.CodexClientIdentity()
+// pairCodexIdentityHeaders 是关闭强制统一后的兜底收口：保留客户端真实身份，
+// 仅保证 originator 与最终 User-Agent 首段配套、version 不低于上游门槛（issue #3901）。
+func pairCodexIdentityHeaders(h http.Header) {
+	originator, pairedUA, ok := openai.PairCodexClientIdentity(h.Get("user-agent"))
 	if !ok {
-		return canonical
+		identity := resolveCodexOutboundIdentity("")
+		originator, pairedUA = identity.originator, identity.userAgent
+		h.Set("version", identity.version)
 	}
-	originator, userAgent, _ := openai.NormalizeCodexClientIdentityToCLI(codexTUIOriginator, identity.UserAgent(canonical.version))
-	return codexOutboundIdentity{
-		userAgent:  userAgent,
-		originator: originator,
-		version:    canonical.version,
+	h.Set("user-agent", pairedUA)
+	h.Set("originator", originator)
+	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
+		h.Set("version", resolveCodexOutboundIdentity("").version)
 	}
-}
-
-// enforceCodexIdentityHeadersForAccount 与 enforceCodexIdentityHeadersWithUA 语义相同，
-// 但强制统一时使用账号级身份而不是全局规范身份，使同一账号的所有出站请求
-// 使用同一台固定设备，并采用官方 CLI 标识。
-func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string, policies ...*codexFingerprintPolicy) {
-	if h == nil || h.Get("originator") == "" {
-		return
-	}
-	policy := selectCodexFingerprintPolicy(policies)
-	if !policy.enabled {
-		return
-	}
-	identity := resolveCodexOutboundIdentityForAccount(account, overrideUA, policy)
-	h.Set("user-agent", identity.userAgent)
-	h.Set("originator", identity.originator)
-	h.Set("version", identity.version)
 }

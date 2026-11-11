@@ -21,11 +21,6 @@ type ModelAvailabilityDiagnosis struct {
 	// HasModelSupport is true if at least one account's model mapping admits
 	// the requested model.
 	HasModelSupport bool
-	// ModelNotSupportedCooldownExhausted is true only when at least one
-	// persistently eligible account supports the model and every such account
-	// currently carries the exact model_not_supported cooldown for this
-	// request's canonical wire model.
-	ModelNotSupportedCooldownExhausted bool
 	// HasRetiredSubscriptionModel records a ChatGPT upstream blocked by model
 	// retirement, so an unsupported request can include migration guidance.
 	HasRetiredSubscriptionModel bool

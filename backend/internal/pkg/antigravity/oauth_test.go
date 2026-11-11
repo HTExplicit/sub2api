@@ -146,7 +146,6 @@ func TestGetClientSecret_环境变量为空(t *testing.T) {
 	_, err := getClientSecret()
 	if err == nil {
 		t.Fatal("defaultClientSecret 为空时应返回错误")
-		return
 	}
 	if !strings.Contains(err.Error(), AntigravityOAuthClientSecretEnv) {
 		t.Errorf("错误信息应包含环境变量名: got %s", err.Error())
@@ -242,7 +241,6 @@ func TestNewURLAvailability(t *testing.T) {
 	ua := NewURLAvailability(5 * time.Minute)
 	if ua == nil {
 		t.Fatal("NewURLAvailability 返回 nil")
-		return
 	}
 	if ua.ttl != 5*time.Minute {
 		t.Errorf("TTL 不匹配: got %v, want 5m", ua.ttl)
@@ -409,7 +407,6 @@ func TestNewSessionStore(t *testing.T) {
 
 	if store == nil {
 		t.Fatal("NewSessionStore 返回 nil")
-		return
 	}
 	if store.sessions == nil {
 		t.Error("sessions map 不应为 nil")

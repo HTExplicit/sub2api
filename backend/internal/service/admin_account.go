@@ -126,7 +126,6 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
 	"quota_daily_reset_at":  {},
 	"quota_weekly_reset_at": {},
 	// Provider observations, capability probes, and transient scheduling state.
-	OpenAILastUpstreamErrorExtraKey:          {},
 	"model_rate_limits":                      {},
 	"session_window_utilization":             {},
 	"passive_usage_7d_utilization":           {},
@@ -499,15 +498,15 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
-	NormalizeAccountCredentialBaseURLs(input.Credentials)
-	if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
-		return nil, err
-	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
 	}
 	accountExtra, err = normalizeGrokMediaEligibilityExtra(input.Platform, accountExtra)
+	if err != nil {
+		return nil, err
+	}
+	accountExtra, err = normalizeOpenAIAutoResetCreditExtra(input.Platform, input.Type, false, accountExtra)
 	if err != nil {
 		return nil, err
 	}
@@ -530,6 +529,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			}
 		}
 	}
+
 	// 检查混合渠道风险（除非用户已确认）
 	if len(groupIDs) > 0 && !input.SkipMixedChannelCheck {
 		if err := s.checkMixedChannelRisk(ctx, 0, input.Platform, groupIDs); err != nil {
@@ -603,21 +603,21 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if account.Platform == PlatformTypeSafe && input.Type != "" && input.Type != AccountTypeAPIKey {
 		return nil, errors.New("typesafe accounts only support apikey credentials")
 	}
-	var protocolModes map[string]any
-	if input.Extra != nil {
-		protocolModes = openAIAPIKeyProtocolModesForUpdate(account, input.Extra)
-	}
-	NormalizeAccountCredentialBaseURLs(input.Credentials)
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
-		if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
-			return nil, err
-		}
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
 		if err != nil {
 			return nil, err
 		}
 		normalizedExtra, err = normalizeGrokMediaEligibilityUpdateExtra(account, input, normalizedExtra)
+		if err != nil {
+			return nil, err
+		}
+		effectiveType := account.Type
+		if input.Type != "" {
+			effectiveType = input.Type
+		}
+		normalizedExtra, err = normalizeOpenAIAutoResetCreditExtra(account.Platform, effectiveType, account.IsShadow(), normalizedExtra)
 		if err != nil {
 			return nil, err
 		}
@@ -672,7 +672,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
 		// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
 		account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
-		NormalizeAccountCredentialBaseURLs(account.Credentials)
 		// 校验并规范化请求头覆写配置（header 名小写化、格式检查）
 		if err := NormalizeHeaderOverrideCredentials(account.Credentials); err != nil {
 			return nil, err
@@ -734,8 +733,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 				normalizedExtra[key] = v
 			}
 		}
-		// System prompt bindings are written only by the binding endpoint.
-		// Ordinary account edits preserve them, including their absence.
+		// The binding endpoint owns system prompt assignments.
 		delete(normalizedExtra, AccountExtraSystemPromptKey)
 		if binding, exists := account.Extra[AccountExtraSystemPromptKey]; exists {
 			normalizedExtra[AccountExtraSystemPromptKey] = binding
@@ -763,9 +761,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Extra == nil {
 		account.Extra = prepareCodexFingerprintExtraForUpdate(account, account.Extra)
 	}
-	// A whole-object edit replaces the other Extra keys; omitted OpenAI API-key
-	// protocol modes retain their exact stored presence and value.
-	applyOpenAIAPIKeyProtocolModes(account, protocolModes)
 	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
 		if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
 			return nil, infraerrors.BadRequest(
@@ -971,10 +966,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
 	delete(updates, UpstreamModelMetadataExtraKey)
+	delete(updates, AccountExtraSystemPromptKey)
 	delete(updates, OpenCodeGoUsageAutoRefreshExtraKey)
 	delete(updates, OpenCodeGoUsageSnapshotExtraKey)
-	// System prompt bindings are written only by the binding endpoint.
-	delete(updates, AccountExtraSystemPromptKey)
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -987,21 +981,12 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if len(updates) == 0 {
 		return nil
 	}
-	if err := s.accountRepo.UpdateExtra(ctx, id, updates); err != nil {
-		return err
-	}
-	if _, changed := updates[codexFingerprintModeExtraKey]; changed {
-		notifyCodexFingerprintAccountChanged(id)
-	}
-	return nil
+	return s.accountRepo.UpdateExtra(ctx, id, updates)
 }
 
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
-	if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
-		return nil, err
-	}
 	// Managed probe/session state may only enter through dedicated typed endpoints.
 	input.Extra = sanitizedCodexFingerprintExtraUpdates(input.Extra)
 	input.Extra = stripOpenAIAutoResetCreditManagedExtra(input.Extra, true)

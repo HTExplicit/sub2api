@@ -132,9 +132,8 @@ func RegisterAdminRoutes(
 
 		// 独立业务 System Prompt 管理
 		registerSystemPromptRoutes(admin, h)
-		registerDeepSeekReasoningRoutes(admin, h)
 
-		// 推理恢复全局开关
+		// 独立鹈鹕测试
 		registerPelicanTestRoutes(admin, h)
 
 		// 邀请返利（专属用户管理）
@@ -274,7 +273,6 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Error logs (legacy)
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorLogByID)
-		ops.GET("/errors/:id/diagnostics", h.Admin.Ops.GetCodexErrorDiagnostics)
 		ops.PUT("/errors/:id/resolve", h.Admin.Ops.UpdateErrorResolution)
 
 		// Request errors (client-visible failures)
@@ -429,8 +427,6 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/sync/crs", h.Admin.Account.SyncFromCRS)
 		accounts.POST("/sync/crs/preview", h.Admin.Account.PreviewFromCRS)
 		accounts.PUT("/:id", h.Admin.Account.Update)
-		accounts.GET("/:id/codex-fingerprint", h.Admin.Account.GetCodexFingerprint)
-		accounts.PUT("/:id/codex-fingerprint", h.Admin.Account.UpdateCodexFingerprint)
 		accounts.GET("/:id/grok-media-eligibility", h.Admin.Account.GetGrokMediaEligibility)
 		accounts.PUT("/:id/grok-media-eligibility", h.Admin.Account.UpdateGrokMediaEligibility)
 		accounts.PUT("/:id/upstream-billing-probe", h.Admin.Account.SetUpstreamBillingProbeEnabled)
@@ -628,10 +624,6 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
 		adminSettings.GET("/observability", h.Admin.Setting.GetObservabilitySettings)
 		adminSettings.PUT("/observability", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateObservabilitySettings)
-		adminSettings.GET("/codex-runtime", h.Admin.Setting.GetCodexRuntimeSettings)
-		adminSettings.GET("/codex-fingerprint", h.Admin.Setting.GetCodexFingerprintSettings)
-		adminSettings.PUT("/codex-fingerprint", h.Admin.Setting.UpdateCodexFingerprintSettings)
-		adminSettings.PUT("/codex-runtime", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateCodexRuntimeSettings)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
 		adminSettings.GET("/email-templates", h.Admin.Setting.ListEmailTemplates)
@@ -967,12 +959,4 @@ func channelMonitorModeV2Guard(settingService *service.SettingService) gin.Handl
 		}
 		c.Next()
 	}
-}
-
-func registerDeepSeekReasoningRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
-	if h.Admin.DeepSeekReasoning == nil {
-		return
-	}
-	admin.GET("/deepseek-reasoning", h.Admin.DeepSeekReasoning.Get)
-	admin.PUT("/deepseek-reasoning", h.Admin.DeepSeekReasoning.Save)
 }

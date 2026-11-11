@@ -41,8 +41,8 @@ func TestResponsesToChat_ReasoningCacheLookup_RestoresEncryptedOnlyItem(t *testi
 	require.Equal(t, "user", out.Messages[2].Role)
 }
 
-// A cache miss cannot silently discard provider-bound reasoning state.
-func TestResponsesToChat_ReasoningCacheLookup_MissRequiresNative(t *testing.T) {
+// A cache miss keeps the original behavior: no reasoning_content, no error.
+func TestResponsesToChat_ReasoningCacheLookup_MissKeepsOriginalBehavior(t *testing.T) {
 	req := &ResponsesRequest{
 		Model: "deepseek-reasoner",
 		Input: json.RawMessage(`[
@@ -56,16 +56,14 @@ func TestResponsesToChat_ReasoningCacheLookup_MissRequiresNative(t *testing.T) {
 	out, err := ResponsesToChatCompletionsRequestWithOptions(req, &ResponsesToChatOptions{
 		ReasoningContentByID: func(string) string { return "" },
 	})
-	require.Nil(t, out)
-	var conversion *ResponsesConversionError
-	require.ErrorAs(t, err, &conversion)
-	require.Equal(t, "unsupported_input_item", conversion.Code)
+	require.NoError(t, err)
+	require.Len(t, out.Messages, 3)
+	require.Empty(t, out.Messages[0].ReasoningContent)
 
 	// Nil options (legacy path) behaves identically.
 	legacy, err := ResponsesToChatCompletionsRequest(req)
-	require.Nil(t, legacy)
-	require.ErrorAs(t, err, &conversion)
-	require.Equal(t, "unsupported_input_item", conversion.Code)
+	require.NoError(t, err)
+	require.Equal(t, out.Messages, legacy.Messages)
 }
 
 // Plaintext summary wins and the cache lookup is not consulted.

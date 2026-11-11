@@ -6,19 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"net/http"
-	"net/url"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/MoeForge/moego/ojson"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -68,60 +65,9 @@ func buildOpenAIResponsesURLForPlatform(platform string, base string) string {
 	return buildOpenAIResponsesURL(base)
 }
 
-// normalizeOpenAICompatibleResponsesReasoningSummary applies the destination
-// reasoning.summary contract after model mapping. Official OpenAI stays
-// passthrough; OpenAI API Key compatible hosts default to auto. Extra may
-// override. All other fields and history remain unchanged.
-func normalizeOpenAICompatibleResponsesReasoningSummary(account *Account, targetURL string, body []byte) ([]byte, error) {
-	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey || len(body) == 0 {
-		return body, nil
-	}
-	target, err := url.Parse(targetURL)
-	if err != nil || target.Scheme != "https" ||
-		(target.Port() != "" && target.Port() != "443") ||
-		target.Path != "/v1/responses" || target.RawQuery != "" || target.Fragment != "" || target.User != nil {
-		return body, nil
-	}
-	mode := openai_compat.ResolveReasoningSummaryMode(account.Extra, isOfficialOpenAIModelsBaseURL(targetURL))
-	if mode == openai_compat.ReasoningSummaryModePassthrough {
-		return body, nil
-	}
-	summary := gjson.GetBytes(body, "reasoning.summary")
-	if !summary.Exists() {
-		return body, nil
-	}
-	switch mode {
-	case openai_compat.ReasoningSummaryModeAuto:
-		if summary.Type != gjson.String || summary.String() == "auto" {
-			return body, nil
-		}
-		return sjson.SetBytes(body, "reasoning.summary", "auto")
-	case openai_compat.ReasoningSummaryModeOmit:
-		updated, err := sjson.DeleteBytes(body, "reasoning.summary")
-		if err != nil {
-			return body, err
-		}
-		if reasoning := gjson.GetBytes(updated, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {
-			updated, err = sjson.DeleteBytes(updated, "reasoning")
-			if err != nil {
-				return body, err
-			}
-		}
-		return updated, nil
-	default:
-		return body, nil
-	}
-}
-
 func shouldPreserveOpenAIResponsesNoneReasoningEffort(account *Account) bool {
 	if account == nil {
-		return true
-	}
-	// OpenAI-compatible native requests carry the same explicit effort contract
-	// even when their base URL is a third-party gateway. A custom host does not
-	// prove that "none" is a synthetic non-reasoning catalog placeholder.
-	if account.IsOpenAI() {
-		return true
+		return false
 	}
 	if account.IsOpenAIPassthroughEnabled() {
 		return true
@@ -129,13 +75,16 @@ func shouldPreserveOpenAIResponsesNoneReasoningEffort(account *Account) bool {
 	if account.IsOpenAIOAuthLike() {
 		return true
 	}
-	return false
+	if !account.IsOpenAIApiKey() {
+		return false
+	}
+	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	return baseURL == "" || isOfficialOpenAIModelsBaseURL(baseURL)
 }
 
 // Codex 0.149.0 needs a single advertised effort to directly select a visible
 // non-reasoning model. Treat that catalog-only "none" value as omission for
-// non-OpenAI provider adapters, while preserving native OpenAI-compatible
-// request semantics regardless of the upstream host.
+// compatible upstreams, while preserving official OpenAI request semantics.
 func filterOpenAIResponsesNoneReasoningEffortForAccount(account *Account, body []byte) ([]byte, error) {
 	if len(body) == 0 || shouldPreserveOpenAIResponsesNoneReasoningEffort(account) {
 		return body, nil
@@ -551,9 +500,9 @@ func SanitizeOpenAICrossModeFailoverReasoning(body []byte) (sanitized []byte, ch
 	return out, true, nil
 }
 
-// dropOpenAIEncryptedReasoningInputItems removes portable continuation-state
-// input items that carry provider-specific encrypted_content in full — including
-// their coupled id and summary — and reports whether anything changed. Contrast with
+// dropOpenAIEncryptedReasoningInputItems removes reasoning input items that carry
+// provider-specific encrypted_content in full — including their coupled id and
+// summary — and reports whether anything changed. Contrast with
 // trimOpenAIEncryptedReasoningItems, which only strips fields while keeping the
 // reasoning item skeleton.
 func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
@@ -569,7 +518,7 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 		filtered := input[:0]
 		changed := false
 		for _, item := range input {
-			if isOpenAIEncryptedPortableContinuationStateInputItem(item) {
+			if isOpenAIEncryptedReasoningInputItem(item) {
 				changed = true
 				continue
 			}
@@ -588,7 +537,7 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 		filtered := input[:0]
 		changed := false
 		for _, item := range input {
-			if isOpenAIEncryptedPortableContinuationStateInputItem(item) {
+			if isOpenAIEncryptedReasoningInputItem(item) {
 				changed = true
 				continue
 			}
@@ -604,7 +553,7 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 		reqBody["input"] = filtered
 		return true
 	case map[string]any:
-		if isOpenAIEncryptedPortableContinuationStateInputItem(input) {
+		if isOpenAIEncryptedReasoningInputItem(input) {
 			delete(reqBody, "input")
 			return true
 		}
@@ -614,14 +563,16 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 	}
 }
 
-func isOpenAIEncryptedPortableContinuationStateInputItem(item any) bool {
+func isOpenAIEncryptedReasoningInputItem(item any) bool {
 	inputItem, ok := item.(map[string]any)
 	if !ok {
 		return false
 	}
-	itemType, _ := inputItem["type"].(string)
-	encryptedContent, has := inputItem["encrypted_content"]
-	return has && isOpenAIRemovableEncryptedPortableContinuationState(itemType, encryptedContent)
+	if itemType, _ := inputItem["type"].(string); strings.TrimSpace(itemType) != "reasoning" {
+		return false
+	}
+	_, has := inputItem["encrypted_content"]
+	return has
 }
 
 // IsOpenAIResponsesCompactPath reports whether the request targets the legacy
@@ -715,23 +666,6 @@ func openAIRequestBodyHasTools(body []byte) bool {
 		}
 	}
 	return false
-}
-
-// usesOfficialOpenAIResponsesInputContract checks the concrete destination, not
-// the generic "openai" account label. Compatible providers can legitimately
-// issue different item identifiers and visible reasoning content.
-func usesOfficialOpenAIResponsesInputContract(account *Account) bool {
-	if account == nil {
-		return false
-	}
-	if account.IsOpenAIOAuthLike() {
-		return true
-	}
-	if !account.IsOpenAIApiKey() {
-		return false
-	}
-	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
-	return baseURL == "" || isOfficialOpenAIModelsBaseURL(baseURL)
 }
 
 // normalizeOpenAIResponsesReasoningContentReplay removes non-portable
@@ -1064,8 +998,7 @@ func getOpenAIReasoningEffortFromReqBody(reqBody map[string]any, requestedModel 
 
 	// Primary: reasoning.effort
 	if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
-		if field, present := reasoning["effort"]; present {
-			effort, _ := field.(string)
+		if effort, ok := reasoning["effort"].(string); ok {
 			return normalizeOpenAIReasoningEffortForModel(effort, requestedModel), true
 		}
 	}
@@ -1076,6 +1009,43 @@ func getOpenAIReasoningEffortFromReqBody(reqBody map[string]any, requestedModel 
 	}
 
 	return "", false
+}
+
+func deriveOpenAIReasoningEffortFromModel(model string) string {
+	if strings.TrimSpace(model) == "" {
+		return ""
+	}
+
+	modelID := strings.TrimSpace(model)
+	if strings.Contains(modelID, "/") {
+		parts := strings.Split(modelID, "/")
+		modelID = parts[len(parts)-1]
+	}
+
+	parts := strings.FieldsFunc(strings.ToLower(modelID), func(r rune) bool {
+		switch r {
+		case '-', '_', ' ':
+			return true
+		default:
+			return false
+		}
+	})
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return normalizeOpenAIReasoningEffortForModel(parts[len(parts)-1], modelID)
+}
+
+// deriveOpenAIReasoningEffortFromModelCandidates 依次对每个候选模型做后缀推导，
+// 返回第一个非空结果。
+func deriveOpenAIReasoningEffortFromModelCandidates(models []string) string {
+	for _, model := range models {
+		if value := deriveOpenAIReasoningEffortFromModel(model); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type openAIRequestView struct {
@@ -1600,57 +1570,6 @@ func normalizeOpenAIResponsesReasoningMode(body []byte, model string) ([]byte, b
 	return updated, true, nil
 }
 
-// normalizeOpenAIWSPassthroughSelectedCompatibilityForModel applies only the two
-// selected official rules to OAuth/SetupToken native WS frames. In particular,
-// it does not run the general input, ID, schema, or tool adapters on opaque wire
-// history. Surviving input items and all unrelated fields retain their raw JSON.
-func normalizeOpenAIWSPassthroughSelectedCompatibilityForModel(body []byte, account *Account, resolvedModel string) ([]byte, bool, error) {
-	if account == nil || account.Platform != PlatformOpenAI || !account.IsOpenAIOAuthLike() {
-		return body, false, nil
-	}
-	normalized, changed, err := normalizeOpenAIResponsesReasoningMode(body, resolvedModel)
-	if err != nil {
-		return body, false, err
-	}
-	inputJSON := gjson.GetBytes(normalized, "input")
-	if !inputJSON.IsArray() {
-		return normalized, changed, nil
-	}
-	previous := gjson.GetBytes(normalized, "previous_response_id")
-	if previous.Type == gjson.String && strings.TrimSpace(previous.String()) != "" {
-		return normalized, changed, nil
-	}
-	var input []any
-	if err := decodeOpenAIJSONUseNumber([]byte(inputJSON.Raw), &input); err != nil {
-		return body, false, fmt.Errorf("normalize selected websocket input compatibility: %w", err)
-	}
-	keep := openAIResponsesOrphanToolOutputKeepMask(input, false)
-	if keep == nil {
-		return normalized, changed, nil
-	}
-	rawItems := inputJSON.Array()
-	if len(rawItems) != len(keep) {
-		return body, false, errors.New("normalize selected websocket input compatibility: inconsistent input array")
-	}
-	filtered := make([]byte, 0, len(inputJSON.Raw))
-	filtered = append(filtered, '[')
-	for index, item := range rawItems {
-		if !keep[index] {
-			continue
-		}
-		if len(filtered) > 1 {
-			filtered = append(filtered, ',')
-		}
-		filtered = append(filtered, item.Raw...)
-	}
-	filtered = append(filtered, ']')
-	updated, err := sjson.SetRawBytes(normalized, "input", filtered)
-	if err != nil {
-		return body, false, fmt.Errorf("normalize selected websocket input compatibility: %w", err)
-	}
-	return updated, true, nil
-}
-
 func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
@@ -1675,15 +1594,7 @@ func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error)
 }
 
 func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Account, responsesLite bool) ([]byte, bool, error) {
-	return normalizeOpenAIResponsesWebSocketCompatibilityBodyWithConfig(nil, body, account, responsesLite)
-}
-
-func normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body []byte, account *Account, responsesLite bool, resolvedModel string, configs ...*config.Config) ([]byte, bool, error) {
-	var cfg *config.Config
-	if len(configs) > 0 {
-		cfg = configs[0]
-	}
-	return normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{Config: cfg, ResponsesLite: responsesLite, ResolvedModel: resolvedModel})
+	return normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{ResponsesLite: responsesLite})
 }
 
 func normalizeOpenAIResponsesWebSocketCompatibilityBodyWithConfig(cfg *config.Config, body []byte, account *Account, responsesLite bool) ([]byte, bool, error) {
@@ -1692,7 +1603,6 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBodyWithConfig(cfg *config.Co
 
 type openAIResponsesCompatibilityOptions struct {
 	Config        *config.Config
-	ResolvedModel string
 	ResponsesLite bool
 	// Compact marks the /responses/compact wire shape, which is left as-is
 	// by request-shape compatibility rewrites such as web_search history.
@@ -1701,10 +1611,6 @@ type openAIResponsesCompatibilityOptions struct {
 
 func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *Account, opts openAIResponsesCompatibilityOptions) ([]byte, bool, error) {
 	responsesLite := opts.ResponsesLite
-	resolvedModel := opts.ResolvedModel
-	if resolvedModel == "" {
-		resolvedModel = gjson.GetBytes(body, "model").String()
-	}
 	if account == nil || !account.IsOpenAI() {
 		return body, false, nil
 	}
@@ -1717,13 +1623,11 @@ func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *
 			return body, false, err
 		}
 	}
-	if usesOfficialOpenAIResponsesInputContract(account) {
-		if next, normalizedReasoningContent, err := normalizeOpenAIResponsesReasoningContentReplay(normalized); err != nil {
-			return body, false, err
-		} else if normalizedReasoningContent {
-			normalized = next
-			changed = true
-		}
+	if next, normalizedReasoningContent, err := normalizeOpenAIResponsesReasoningContentReplay(normalized); err != nil {
+		return body, false, err
+	} else if normalizedReasoningContent {
+		normalized = next
+		changed = true
 	}
 	if account.IsOpenAIApiKey() {
 		if next, normalizedParallel, err := normalizeOpenAIParallelToolCallsWithoutTools(normalized, responsesLite); err != nil {
@@ -1732,24 +1636,28 @@ func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *
 			normalized = next
 			changed = true
 		}
-	}
-	if usesOfficialOpenAIResponsesInputContract(account) {
-		if sanitized, idsChanged, err := sanitizeOpenAIResponsesInputItemIDs(normalized); err != nil {
-			return body, false, fmt.Errorf("sanitize websocket Responses input item IDs: %w", err)
-		} else if idsChanged {
-			normalized = sanitized
+		if next, normalizedReasoning, err := normalizeOpenAIAPIKeyStoreFalseReasoningReplay(normalized, false); err != nil {
+			return body, false, err
+		} else if normalizedReasoning {
+			normalized = next
 			changed = true
 		}
 	}
-	if account.IsOAuth() {
-		if reasoningBody, reasoningChanged, err := normalizeOpenAIResponsesReasoningMode(normalized, resolvedModel); err != nil {
+	if sanitized, idsChanged, err := sanitizeOpenAIResponsesInputItemIDs(normalized); err != nil {
+		return body, false, fmt.Errorf("sanitize websocket Responses input item IDs: %w", err)
+	} else if idsChanged {
+		normalized = sanitized
+		changed = true
+	}
+	if account != nil && account.IsOpenAI() && account.IsOAuth() {
+		if reasoningBody, reasoningChanged, err := normalizeOpenAIResponsesReasoningMode(normalized, account.GetMappedModel(gjson.GetBytes(normalized, "model").String())); err != nil {
 			return body, false, err
 		} else if reasoningChanged {
 			normalized = reasoningBody
 			changed = true
 		}
 	}
-	if account.IsOpenAIOAuthLike() {
+	if account != nil && account.IsOpenAIOAuthLike() {
 		oauthBody, oauthChanged, err := normalizeOpenAIOAuthResponsesCompatibilityBody(normalized)
 		if err != nil {
 			return body, false, err
@@ -1813,7 +1721,7 @@ func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *
 	}
 	if openAIRequestBodyImageGenerationToolNeedsNormalization(normalized) {
 		var reqBody map[string]any
-		if err := decodeOpenAIJSONUseNumber(normalized, &reqBody); err != nil {
+		if err := json.Unmarshal(normalized, &reqBody); err != nil {
 			return body, false, fmt.Errorf("normalize websocket image tool body: %w", err)
 		}
 		if normalizeOpenAIResponsesImageGenerationTools(reqBody) {
@@ -1952,39 +1860,52 @@ func isOpenAICodexModel(model string) bool {
 	return strings.Contains(strings.ToLower(strings.TrimSpace(model)), "codex")
 }
 
-// extractOpenAIReasoningEffortFromBody records only the final wire value.
-// Model aliases describe requested intent, not evidence that an effort reached
-// upstream; they must be materialized before forwarding, never guessed here.
-func extractOpenAIReasoningEffortFromBody(body []byte, _ ...string) *string {
-	field := gjson.GetBytes(body, "reasoning.effort")
-	if !field.Exists() {
-		field = gjson.GetBytes(body, "reasoning_effort")
+// extractOpenAIReasoningEffortFromBody 按优先级传入模型候选（如 upstreamModel,
+// billingModel, originalModel）：显式 effort 的模型归一化（max 保留判定）用第一个
+// 非空候选；body 未携带 effort 时的模型后缀推导依次尝试每个候选——OAuth 的
+// normalizeCodexModel 会剥掉 upstreamModel 的 effort 后缀，只有原始模型名还留着。
+func extractOpenAIReasoningEffortFromBody(body []byte, modelCandidates ...string) *string {
+	reasoningEffort := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
+	if reasoningEffort == "" {
+		reasoningEffort = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
 	}
-	if field.Type != gjson.String {
-		return nil
+	if reasoningEffort != "" {
+		normalized := normalizeOpenAIReasoningEffortForModel(reasoningEffort, firstNonEmpty(modelCandidates...))
+		if normalized == "" {
+			return nil
+		}
+		return &normalized
 	}
-	value := normalizeOpenAIReasoningEffort(field.String())
+
+	value := deriveOpenAIReasoningEffortFromModelCandidates(modelCandidates)
 	if value == "" {
 		return nil
 	}
 	return &value
 }
 
+func explicitRequestedReasoningEffortFromBody(body []byte) string {
+	raw := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
+	if raw == "" {
+		raw = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
+	}
+	if raw == "" {
+		raw = strings.TrimSpace(gjson.GetBytes(body, "output_config.effort").String())
+	}
+	return raw
+}
+
 // CanonicalRequestedReasoningEffort extracts the client-requested effort before
-// group policy rewriting or deliberate endpoint translation.
-// Empty or unknown values return nil; supported explicit values stay distinct.
+// group policy rewriting and before model-family remapping (max -> xhigh).
+// Empty or unknown values return nil. "max" is preserved even for models that
+// later persist "xhigh".
 func CanonicalRequestedReasoningEffort(body []byte, modelCandidates ...string) *string {
-	for _, path := range []string{"reasoning.effort", "reasoning_effort", "output_config.effort"} {
-		if field := gjson.GetBytes(body, path); field.Exists() {
-			if field.Type != gjson.String {
-				return nil
-			}
-			canonical := normalizeOpenAIReasoningEffort(field.String())
-			if canonical == "" {
-				return nil
-			}
-			return &canonical
+	if raw := explicitRequestedReasoningEffortFromBody(body); raw != "" {
+		canonical := NormalizeMaxReasoningEffort(raw)
+		if canonical == "" {
+			return nil
 		}
+		return &canonical
 	}
 	for _, model := range modelCandidates {
 		if value := canonicalReasoningEffortFromModelSuffix(model); value != "" {
@@ -2000,8 +1921,26 @@ func CanonicalRequestedReasoningEffort(body []byte, modelCandidates ...string) *
 }
 
 func canonicalReasoningEffortFromModelSuffix(model string) string {
-	_, effort, _ := resolveOpenAIModelReasoningAlias(model)
-	return effort
+	if strings.TrimSpace(model) == "" {
+		return ""
+	}
+	modelID := strings.TrimSpace(model)
+	if strings.Contains(modelID, "/") {
+		parts := strings.Split(modelID, "/")
+		modelID = parts[len(parts)-1]
+	}
+	parts := strings.FieldsFunc(strings.ToLower(modelID), func(r rune) bool {
+		switch r {
+		case '-', '_', ' ':
+			return true
+		default:
+			return false
+		}
+	})
+	if len(parts) == 0 {
+		return ""
+	}
+	return NormalizeMaxReasoningEffort(parts[len(parts)-1])
 }
 
 func extractOpenAIServiceTier(reqBody map[string]any) *string {
@@ -2124,7 +2063,7 @@ func (e *OpenAIFastBlockedError) Error() string { return e.Message }
 //     发生重叠，admin 可通过规则顺序明确意图。因此采用 first-match 而
 //     非 BetaPolicy 那样的"block 覆盖 filter 覆盖 pass"语义。
 func (s *OpenAIGatewayService) evaluateOpenAIFastPolicy(ctx context.Context, account *Account, model, serviceTier string) (action, errMsg string) {
-	if s == nil || s.settingService == nil || s.settingService.settingRepo == nil {
+	if s == nil || s.settingService == nil {
 		return BetaPolicyActionPass, ""
 	}
 	tier := strings.ToLower(strings.TrimSpace(serviceTier))
@@ -2595,7 +2534,7 @@ func sanitizeEmptyBase64InputImagesInOpenAIBody(body []byte) ([]byte, bool, erro
 	}
 
 	var reqBody map[string]any
-	if err := decodeOpenAIJSONUseNumber(body, &reqBody); err != nil {
+	if err := json.Unmarshal(body, &reqBody); err != nil {
 		return body, false, fmt.Errorf("sanitize request body: %w", err)
 	}
 	if !sanitizeEmptyBase64InputImagesInOpenAIRequestBodyMap(reqBody) {
@@ -2714,7 +2653,7 @@ func getOpenAIRequestBodyMap(_ *gin.Context, body []byte) (map[string]any, error
 	return reqBody, nil
 }
 
-// extractOpenAIReasoningEffort, like the byte variant, observes only the wire.
+// extractOpenAIReasoningEffort 的模型候选语义同 extractOpenAIReasoningEffortFromBody。
 func extractOpenAIReasoningEffort(reqBody map[string]any, modelCandidates ...string) *string {
 	if value, present := getOpenAIReasoningEffortFromReqBody(reqBody, firstNonEmpty(modelCandidates...)); present {
 		if value == "" {
@@ -2723,33 +2662,36 @@ func extractOpenAIReasoningEffort(reqBody map[string]any, modelCandidates ...str
 		return &value
 	}
 
-	return nil
+	value := deriveOpenAIReasoningEffortFromModelCandidates(modelCandidates)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func CanonicalRequestedReasoningEffortFromReqBody(reqBody map[string]any, modelCandidates ...string) *string {
 	if reqBody == nil {
 		return CanonicalRequestedReasoningEffort(nil, modelCandidates...)
 	}
+	raw := ""
 	if reasoning, ok := reqBody["reasoning"].(map[string]any); ok {
-		if field, present := reasoning["effort"]; present {
-			raw, _ := field.(string)
-			canonical := normalizeOpenAIReasoningEffort(raw)
-			if canonical == "" {
-				return nil
-			}
-			return &canonical
+		if effort, ok := reasoning["effort"].(string); ok {
+			raw = strings.TrimSpace(effort)
 		}
 	}
-	if field, present := reqBody["reasoning_effort"]; present {
-		raw, _ := field.(string)
-		canonical := normalizeOpenAIReasoningEffort(raw)
+	if raw == "" {
+		if effort, ok := reqBody["reasoning_effort"].(string); ok {
+			raw = strings.TrimSpace(effort)
+		}
+	}
+	if raw != "" {
+		canonical := NormalizeMaxReasoningEffort(raw)
 		if canonical == "" {
 			return nil
 		}
 		return &canonical
 	}
-	model, _ := reqBody["model"].(string)
-	return CanonicalRequestedReasoningEffort(nil, append(modelCandidates, model)...)
+	return CanonicalRequestedReasoningEffort(nil, modelCandidates...)
 }
 
 func normalizeOpenAIReasoningEffort(raw string) string {
@@ -2762,9 +2704,9 @@ func normalizeOpenAIReasoningEffort(raw string) string {
 	value = strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
 
 	switch value {
-	case "none", "minimal", "low", "medium", "high", "max":
+	case "none", "minimal", "low", "medium", "high":
 		return value
-	case "xhigh", "extrahigh":
+	case "xhigh", "extrahigh", "max":
 		return "xhigh"
 	default:
 		// Only store known effort levels for now to keep UI consistent.
@@ -2773,21 +2715,17 @@ func normalizeOpenAIReasoningEffort(raw string) string {
 }
 
 func normalizeOpenAIReasoningEffortForModel(raw, model string) string {
-	value := normalizeOpenAIReasoningEffort(raw)
-	// Legacy GPT-5.5 and earlier endpoints expose xhigh as their highest
-	// reasoning tier; translate the newer max alias for those models.
-	if value == "max" && !supportsOpenAIReasoningEffortMax(model) {
-		normalizedModel := strings.ToLower(lastOpenAIModelSegment(model))
-		if strings.HasPrefix(normalizedModel, "gpt-5.5") || strings.HasPrefix(normalizedModel, "gpt-5.4") {
-			return "xhigh"
-		}
+	if strings.EqualFold(strings.TrimSpace(raw), "none") && openai.IsGPT6SolOrLunaModelSpelling(model) {
+		return "none"
 	}
-	return value
+	if strings.EqualFold(strings.TrimSpace(raw), "max") && supportsOpenAIReasoningEffortMax(model) {
+		return "max"
+	}
+	return normalizeOpenAIReasoningEffort(raw)
 }
 
 // supportsOpenAIReasoningEffortMax reports model families whose upstream scale
-// has a distinct max level. Only explicit cross-protocol adapters may use this
-// capability hint; native parameter/usage extraction must preserve wire values.
+// has a distinct max level. Other models keep the legacy max -> xhigh behavior.
 func supportsOpenAIReasoningEffortMax(model string) bool {
 	if isOpenAIGPT6Model(model) || isOpenAIGPT56Model(model) {
 		return true
@@ -2810,9 +2748,19 @@ func supportsOpenAIReasoningEffortMax(model string) bool {
 	}
 }
 
-// validateGPT61CompatRequest runs after model mapping, before conversion can
-// discard unsupported explicit effort selections or disabled thinking.
+// validateGPT61CompatRequest validates the converted request after model
+// mapping and reasoning effort policy application.
 func validateGPT61CompatRequest(body []byte, model string) error {
+	if err := validateGPT61RawEffort(body, model); err != nil {
+		return err
+	}
+	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
+		return openai.ValidateGPT61ReasoningEffort(model, "none")
+	}
+	return nil
+}
+
+func validateGPT61RawEffort(body []byte, model string) error {
 	if !openai.IsGPT61SolModelSpelling(model) && !openai.IsGPT61TerraModelSpelling(model) {
 		return nil
 	}
@@ -2821,10 +2769,7 @@ func validateGPT61CompatRequest(body []byte, model string) error {
 			return err
 		}
 	}
-	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
-		return openai.ValidateGPT61ReasoningEffort(model, "none")
-	}
-	requestedModel := gjson.GetBytes(body, "model").String()
+	requestedModel := openai.CanonicalizeOpenAIModelAliasSpelling(gjson.GetBytes(body, "model").String())
 	for _, effort := range []string{"none", "minimal"} {
 		if strings.HasSuffix(strings.ToLower(requestedModel), "-"+effort) {
 			return openai.ValidateGPT61ReasoningEffort(model, effort)

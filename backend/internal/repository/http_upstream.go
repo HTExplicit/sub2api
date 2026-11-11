@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"io"
 	"log/slog"
 	"net"
@@ -220,12 +219,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	}
 
 	// 获取或创建对应的客户端，并标记请求占用
-	var entry *upstreamClientEntry
-	if binding, ok := codextransport.FromContext(req.Context()); ok {
-		entry, err = s.acquireCodexClient(proxyURL, accountID, accountConcurrency, binding)
-	} else {
-		entry, err = s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
-	}
+	entry, err := s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +332,6 @@ func doUpstreamRequest(client *http.Client, req *http.Request, drainTimeouts ...
 		return resp, err
 	}
 	decompressResponseBody(resp)
-	restoreCodexEventStreamContentType(resp)
 	resp.Body = &cancelOnCloseBody{ReadCloser: resp.Body, cancel: cancel}
 	return resp, nil
 }
@@ -594,10 +587,9 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
-	protocolMode := upstreamProtocolModeDefault
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, protocolMode)
-	poolKey := buildPoolKey(settings, protocolMode) + ":tls"
+	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
+	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls"
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -1421,12 +1413,6 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		IdleConnTimeout:       settings.idleConnTimeout,
 		ResponseHeaderTimeout: settings.responseHeaderTimeout,
 	}
-	if isOpenAIUpstreamProtocolMode(protocolMode) {
-		// 真实 Codex 客户端（reqwest，未启用压缩特性）不发送 Accept-Encoding；关闭 Go 的自动
-		// gzip 协商，避免出站多出一条 `Accept-Encoding: gzip`。上游若仍返回 Content-Encoding，
-		// 由 decompressResponseBody 手动解压，业务层语义不变。
-		transport.DisableCompression = true
-	}
 	switch protocolMode {
 	case upstreamProtocolModeLongStreamH2, upstreamProtocolModeOpenAIH2:
 		transport.ForceAttemptHTTP2 = true
@@ -1449,36 +1435,20 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 	return transport, nil
 }
 
-// isOpenAIUpstreamProtocolMode 判断协议模式是否属于 OpenAI 专用传输（H2 / H1 / H1 回退）。
-func isOpenAIUpstreamProtocolMode(mode string) bool {
-	switch mode {
-	case upstreamProtocolModeOpenAIH1, upstreamProtocolModeOpenAIH2, upstreamProtocolModeOpenAIH1Fallback:
-		return true
-	}
-	return false
-}
-
 // enableHTTP2KeepAlive 在 http.Transport 上显式配置 HTTP/2 并启用连接健康探测。
 // Go 默认惰性配置 http2 且 ReadIdleTimeout=0（不发健康 PING），无法检测被代理/NAT
 // 静默掐断的死连接。此处主动设置 ReadIdleTimeout/PingTimeout，让死连接被提前 PING
 // 出并关闭，请求得以重建连接而非挂到 TCP 重传超时。返回底层 *http2.Transport 便于测试。
-//
-//lint:ignore SA1019 Retain the configured x/net transport handle to preserve existing pool and proxy behavior.
 func enableHTTP2KeepAlive(transport *http.Transport, protocolMode string) (*http2.Transport, error) {
-	//lint:ignore SA1019 Keep the existing transport registration; this release only patches its security dependencies.
 	h2, err := http2.ConfigureTransports(transport)
 	if err != nil {
 		return nil, err
 	}
 	if h2 != nil {
-		//lint:ignore SA1019 Preserve the existing long-stream health-check configuration on the compatibility handle.
 		h2.ReadIdleTimeout = longStreamHTTP2ReadIdleTimeout
-		//lint:ignore SA1019 Preserve the separate long-stream PING response deadline.
 		h2.PingTimeout = longStreamHTTP2PingTimeout
 		if protocolMode == upstreamProtocolModeOpenAIH2 {
-			//lint:ignore SA1019 Preserve the existing OpenAI health-check configuration on the compatibility handle.
 			h2.ReadIdleTimeout = openAIHTTP2ReadIdleTimeout
-			//lint:ignore SA1019 Preserve the separate OpenAI PING response deadline.
 			h2.PingTimeout = openAIHTTP2PingTimeout
 		}
 	}
@@ -1503,8 +1473,6 @@ func enableHTTP2KeepAlive(transport *http.Transport, protocolMode string) (*http
 //   - socks5: SOCKS5 代理，使用 SOCKS5ProxyDialer（SOCKS5 隧道 + utls 握手）
 func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile) (*http.Transport, error) {
 	transport := &http.Transport{
-		DialContext:           newUpstreamDialer().DialContext,
-		TLSHandshakeTimeout:   defaultUpstreamTLSHandshakeTimeout,
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,
@@ -1581,21 +1549,6 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 		return body
 	}
 	return &trackedBody{ReadCloser: body, onClose: onClose}
-}
-
-// restoreCodexEventStreamContentType 为缺少 Content-Type 的 ChatGPT Codex /responses 流补回
-// text/event-stream。ChatGPT 边缘自 2026-09-23 起不再为这类 SSE 响应发送该头，而工具名映射
-// 和图片流等消费方都按它识别流；请求声明接受 SSE 且上游 200 时响应体就是 SSE。
-func restoreCodexEventStreamContentType(resp *http.Response) {
-	if resp == nil || resp.StatusCode != http.StatusOK || resp.Header == nil || resp.Header.Get("Content-Type") != "" {
-		return
-	}
-	req := resp.Request
-	if req == nil || req.URL == nil || req.Method != http.MethodPost || !strings.EqualFold(req.URL.Hostname(), "chatgpt.com") ||
-		req.URL.Path != "/backend-api/codex/responses" || !strings.Contains(strings.ToLower(req.Header.Get("Accept")), "text/event-stream") {
-		return
-	}
-	resp.Header.Set("Content-Type", "text/event-stream")
 }
 
 // decompressResponseBody 根据 Content-Encoding 解压响应体。

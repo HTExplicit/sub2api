@@ -277,13 +277,6 @@ func (m *mockGatewayCacheForPlatform) DeleteSessionAccountID(ctx context.Context
 	return nil
 }
 
-func (m *mockGatewayCacheForPlatform) DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error) {
-	if m.sessionBindings == nil || m.sessionBindings[sessionHash] != expectedAccountID {
-		return false, nil
-	}
-	return true, m.DeleteSessionAccountID(ctx, groupID, sessionHash)
-}
-
 func (m *mockGatewayCacheForPlatform) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
 	return nil
 }

@@ -237,16 +237,8 @@ func TestReasoningEffortBillingPreservesForwardedNoneAndMinimal(t *testing.T) {
 		})
 	}
 
-	// Downstream keeps an explicit none for OpenAI-wire accounts even on compatible hosts, so it is billed as sent.
-	compat := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://compat.example/v1"}}
-	kept, err := filterOpenAIResponsesNoneReasoningEffortForAccount(compat, []byte(`{"model":"custom-model","reasoning":{"effort":"none"}}`))
-	require.NoError(t, err)
-	preserved := extractOpenAIReasoningEffortFromBody(kept, "custom-model")
-	require.NotNil(t, preserved)
-	require.Equal(t, "none", *preserved)
-
-	// A non-OpenAI adapter that strips none must not bill the removed request preference.
-	account := &Account{Platform: PlatformOpenCodeGo, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://compat.example/v1"}}
+	// A compatibility endpoint that strips none must not bill the removed request preference.
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://compat.example/v1"}}
 	filtered, err := filterOpenAIResponsesNoneReasoningEffortForAccount(account, []byte(`{"model":"custom-model","reasoning":{"effort":"none"}}`))
 	require.NoError(t, err)
 	require.Nil(t, extractOpenAIReasoningEffortFromBody(filtered, "custom-model"))

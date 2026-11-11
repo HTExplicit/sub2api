@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -46,54 +45,6 @@ func TestIsOpenAIWSClientDisconnectError(t *testing.T) {
 			require.Equal(t, tt.want, isOpenAIWSClientDisconnectError(tt.err))
 		})
 	}
-}
-
-func TestNormalizeOpenAIWSNonInitialTurnErrorStopsCrossAccountReplay(t *testing.T) {
-	t.Parallel()
-
-	retryable := &UpstreamFailoverError{StatusCode: 429}
-	require.Same(t, retryable, normalizeOpenAIWSNonInitialTurnError(1, retryable))
-
-	got := normalizeOpenAIWSNonInitialTurnError(2, errors.New("acquire failed: "+retryable.Error()))
-	var closeErr *OpenAIWSClientCloseError
-	require.ErrorAs(t, got, &closeErr)
-	require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
-	require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
-
-	wrappedFailover := fmt.Errorf("acquire upstream websocket: %w", retryable)
-	got = normalizeOpenAIWSNonInitialTurnError(2, wrappedFailover)
-	closeErr = nil
-	require.ErrorAs(t, got, &closeErr)
-	require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
-	require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
-	require.ErrorIs(t, got, retryable)
-
-	got = normalizeOpenAIWSNonInitialTurnError(2, retryable)
-	closeErr = nil
-	require.ErrorAs(t, got, &closeErr)
-	require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
-	require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
-	require.ErrorIs(t, got, retryable)
-
-	continuation := NewOpenAIContinuationStateUnavailableError(400, nil, nil)
-	got = normalizeOpenAIWSNonInitialTurnError(2, continuation)
-	require.Same(t, continuation, got)
-	require.True(t, continuation.IsOpenAIContinuationStateUnavailable())
-	require.False(t, continuation.ShouldRetryNextAccount())
-	require.False(t, continuation.ShouldReportAccountScheduleFailure())
-}
-
-func TestShouldRetryOpenAIWSIngressTurnOnlyAllowsFirstTurnWithoutOutput(t *testing.T) {
-	t.Parallel()
-	retryable := wrapOpenAIWSIngressTurnError("write_upstream", errors.New("write failed"), false)
-	wroteOutput := wrapOpenAIWSIngressTurnError("read_upstream", errors.New("read failed"), true)
-	persistent := wrapOpenAIWSIngressTurnError("read_upstream", errors.New("dial tcp: connection refused"), false)
-
-	require.True(t, shouldRetryOpenAIWSIngressTurn(1, 0, retryable))
-	require.False(t, shouldRetryOpenAIWSIngressTurn(1, 1, retryable))
-	require.False(t, shouldRetryOpenAIWSIngressTurn(2, 0, retryable))
-	require.False(t, shouldRetryOpenAIWSIngressTurn(1, 0, wroteOutput))
-	require.True(t, shouldRetryOpenAIWSIngressTurn(1, 0, persistent), "首轮零输出的持久网络错误也应同账号重试一次")
 }
 
 func TestIsOpenAIWSIngressPreviousResponseNotFound(t *testing.T) {
@@ -945,7 +896,7 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		require.Equal(t, "world", gjson.GetBytes(items[1], "text").String())
 	})
 
-	t.Run("previous_response_id_preserves_unfinished_historical_custom_tool_call", func(t *testing.T) {
+	t.Run("previous_response_id_filters_orphan_historical_custom_tool_call", func(t *testing.T) {
 		previousFull := []json.RawMessage{
 			json.RawMessage(`{"type":"input_text","text":"hello"}`),
 			json.RawMessage(`{"type":"custom_tool_call","id":"item_orphan","call_id":"call_orphan","name":"exec","input":"pwd"}`),
@@ -958,10 +909,9 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.True(t, exists)
-		require.Len(t, items, 3)
+		require.Len(t, items, 2)
 		require.Equal(t, "hello", gjson.GetBytes(items[0], "text").String())
-		require.JSONEq(t, string(previousFull[1]), string(items[1]))
-		require.Equal(t, "user", gjson.GetBytes(items[2], "role").String())
+		require.Equal(t, "user", gjson.GetBytes(items[1], "role").String())
 	})
 
 	t.Run("previous_response_id_preserves_paired_historical_function_call", func(t *testing.T) {
@@ -1012,10 +962,9 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.True(t, exists)
-		require.Len(t, items, 3)
-		require.JSONEq(t, string(previousFull[0]), string(items[0]))
-		require.Equal(t, "item_reference", gjson.GetBytes(items[1], "type").String())
-		require.Equal(t, "user", gjson.GetBytes(items[2], "role").String())
+		require.Len(t, items, 2)
+		require.Equal(t, "item_reference", gjson.GetBytes(items[0], "type").String())
+		require.Equal(t, "user", gjson.GetBytes(items[1], "role").String())
 	})
 
 	t.Run("previous_response_id_preserves_current_orphan_custom_tool_call", func(t *testing.T) {

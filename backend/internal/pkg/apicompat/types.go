@@ -63,8 +63,8 @@ type AnthropicContentBlock struct {
 
 	// type=thinking
 	Thinking string `json:"thinking,omitempty"`
-	// Signature carries opaque provider reasoning state so multi-turn clients
-	// can round-trip it verbatim. Its format does not identify its provider.
+	// Signature carries provider encrypted reasoning (e.g. xAI encrypted_content)
+	// so multi-turn Claude clients can round-trip it back on subsequent turns.
 	Signature string `json:"signature,omitempty"`
 	Data      string `json:"data,omitempty"` // redacted_thinking
 
@@ -251,17 +251,10 @@ type ResponsesRequest struct {
 	PreviousResponseID string              `json:"previous_response_id,omitempty"`
 }
 
-// ResponsesReasoning preserves the independently selectable reasoning options.
-// Unknown members and explicit null/empty values survive typed round trips;
-// see responses_reasoning.go. No mode or effort is inferred by this type.
+// ResponsesReasoning configures reasoning effort in the Responses API.
 type ResponsesReasoning struct {
-	Effort          string `json:"effort,omitempty"`
-	Summary         string `json:"summary,omitempty"`
-	Mode            string `json:"mode,omitempty"`
-	Context         string `json:"context,omitempty"`
-	GenerateSummary string `json:"generate_summary,omitempty"`
-
-	rawFields map[string]json.RawMessage
+	Effort  string `json:"effort"`            // "low" | "medium" | "high" | "xhigh"
+	Summary string `json:"summary,omitempty"` // "auto" | "concise" | "detailed"
 }
 
 // ResponsesText configures text output options in the Responses API.
@@ -281,8 +274,7 @@ type ResponsesInputItem struct {
 	Content json.RawMessage `json:"content,omitempty"` // string or []ResponsesContentPart
 
 	// type=reasoning (multi-turn replay of encrypted reasoning)
-	EncryptedContent string             `json:"encrypted_content,omitempty"`
-	Summary          []ResponsesSummary `json:"summary,omitempty"`
+	EncryptedContent string `json:"encrypted_content,omitempty"`
 
 	// type=function_call
 	CallID    string `json:"call_id,omitempty"`
@@ -293,24 +285,6 @@ type ResponsesInputItem struct {
 	// type=function_call_output
 	Output    string `json:"output,omitempty"`
 	outputRaw json.RawMessage
-}
-
-// Reasoning input items require a summary array, including signature-only
-// replay. Keep that requirement local to reasoning; other input item wire
-// shapes must not gain an unrelated summary field.
-func (i ResponsesInputItem) MarshalJSON() ([]byte, error) {
-	type alias ResponsesInputItem
-	if i.Type != "reasoning" {
-		return json.Marshal(alias(i))
-	}
-	summary := i.Summary
-	if summary == nil {
-		summary = []ResponsesSummary{}
-	}
-	return json.Marshal(struct {
-		alias
-		Summary []ResponsesSummary `json:"summary"`
-	}{alias: alias(i), Summary: summary})
 }
 
 func (i *ResponsesInputItem) UnmarshalJSON(data []byte) error {
@@ -398,13 +372,12 @@ type ResponsesResponse struct {
 	// it non-optional and abort with `missing field 'created_at'` when it is
 	// absent, so it is always emitted — no omitempty. Same rule as ID (see the
 	// "clients treat it as required" fallback in ChatCompletionsResponseToAnthropic).
-	CreatedAt   int64               `json:"created_at"`
-	Model       string              `json:"model"`
-	Status      string              `json:"status"` // "completed" | "incomplete" | "failed"
-	Output      []ResponsesOutput   `json:"output"`
-	Usage       *ResponsesUsage     `json:"usage,omitempty"`
-	ServiceTier string              `json:"service_tier,omitempty"` // upstream tier, echoed back verbatim
-	Reasoning   *ResponsesReasoning `json:"reasoning,omitempty"`
+	CreatedAt   int64             `json:"created_at"`
+	Model       string            `json:"model"`
+	Status      string            `json:"status"` // "completed" | "incomplete" | "failed"
+	Output      []ResponsesOutput `json:"output"`
+	Usage       *ResponsesUsage   `json:"usage,omitempty"`
+	ServiceTier string            `json:"service_tier,omitempty"` // upstream tier, echoed back verbatim
 
 	// incomplete_details is present when status="incomplete"
 	IncompleteDetails *ResponsesIncompleteDetails `json:"incomplete_details,omitempty"`
@@ -444,6 +417,9 @@ type ResponsesOutput struct {
 	Arguments string `json:"arguments,omitempty"`
 	// 来源为 namespace 子工具时的归属命名空间（codex 按 namespace+name 路由该调用）。
 	Namespace string `json:"namespace,omitempty"`
+	// Preserve the upstream encryption marker, including explicit null/[];
+	// omitting it can make sealed arguments appear to be plaintext.
+	EncryptedFunctionArgs json.RawMessage `json:"encrypted_function_args,omitempty"`
 
 	// type=custom_tool_call（custom/freeform 工具，input 为自由文本）
 	Input string `json:"input,omitempty"`
@@ -678,24 +654,23 @@ type ResponsesStreamEvent struct {
 
 // ChatCompletionsRequest is the request body for POST /v1/chat/completions.
 type ChatCompletionsRequest struct {
-	PromptCacheOptions  json.RawMessage     `json:"prompt_cache_options,omitempty"`
-	Model               string              `json:"model"`
-	Messages            []ChatMessage       `json:"messages"`
-	Instructions        string              `json:"instructions,omitempty"` // OpenAI Responses API compat
-	MaxTokens           *int                `json:"max_tokens,omitempty"`
-	MaxCompletionTokens *int                `json:"max_completion_tokens,omitempty"`
-	Temperature         *float64            `json:"temperature,omitempty"`
-	TopP                *float64            `json:"top_p,omitempty"`
-	Stream              bool                `json:"stream,omitempty"`
-	StreamOptions       *ChatStreamOptions  `json:"stream_options,omitempty"`
-	Tools               []ChatTool          `json:"tools,omitempty"`
-	ParallelToolCalls   *bool               `json:"parallel_tool_calls,omitempty"`
-	ToolChoice          json.RawMessage     `json:"tool_choice,omitempty"`
-	ReasoningEffort     string              `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
-	Reasoning           *ResponsesReasoning `json:"reasoning,omitempty"`        // Responses-compatible Chat ingress extension
-	ServiceTier         string              `json:"service_tier,omitempty"`
-	Stop                json.RawMessage     `json:"stop,omitempty"` // string or []string
-	ResponseFormat      json.RawMessage     `json:"response_format,omitempty"`
+	PromptCacheOptions  json.RawMessage    `json:"prompt_cache_options,omitempty"`
+	Model               string             `json:"model"`
+	Messages            []ChatMessage      `json:"messages"`
+	Instructions        string             `json:"instructions,omitempty"` // OpenAI Responses API compat
+	MaxTokens           *int               `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64           `json:"temperature,omitempty"`
+	TopP                *float64           `json:"top_p,omitempty"`
+	Stream              bool               `json:"stream,omitempty"`
+	StreamOptions       *ChatStreamOptions `json:"stream_options,omitempty"`
+	Tools               []ChatTool         `json:"tools,omitempty"`
+	ParallelToolCalls   *bool              `json:"parallel_tool_calls,omitempty"`
+	ToolChoice          json.RawMessage    `json:"tool_choice,omitempty"`
+	ReasoningEffort     string             `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
+	ServiceTier         string             `json:"service_tier,omitempty"`
+	Stop                json.RawMessage    `json:"stop,omitempty"` // string or []string
+	ResponseFormat      json.RawMessage    `json:"response_format,omitempty"`
 
 	// Legacy function calling (deprecated but still supported)
 	Functions    []ChatFunction  `json:"functions,omitempty"`

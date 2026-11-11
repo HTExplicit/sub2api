@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"fmt"
-	"mime"
 	"net/http"
 	"strings"
 
@@ -29,11 +28,7 @@ import (
 //     `model`/`session.model` 或 multipart `model`/`session` 后回填请求体。
 //   - 拒绝：按入口协议格式返回 404，并标记运维业务限流原因
 //     local_model_configuration 与 ingress 拒绝原因 model_not_allowed。
-func GroupModelAllowlist(maxNormalizedBytes ...int64) gin.HandlerFunc {
-	var bodyLimit int64
-	if len(maxNormalizedBytes) > 0 {
-		bodyLimit = maxNormalizedBytes[0]
-	}
+func GroupModelAllowlist() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		apiKey, ok := GetAPIKeyFromContext(c)
 		if !ok || apiKey == nil || apiKey.Group == nil || !apiKey.Group.ModelAllowlistEnabled() {
@@ -59,7 +54,7 @@ func GroupModelAllowlist(maxNormalizedBytes ...int64) gin.HandlerFunc {
 		} else {
 			switch c.Request.Method {
 			case http.MethodPost, http.MethodPut, http.MethodPatch:
-				candidates, done := groupModelAllowlistModelsFromBody(c, bodyLimit)
+				candidates, done := groupModelAllowlistModelsFromBody(c)
 				if !done {
 					// 请求体读取失败（如超限 413）已写出响应。
 					return
@@ -114,23 +109,8 @@ func isResponsesWebSocketRoute(c *gin.Context) bool {
 // 下游同时存在 gjson（首个、大小写敏感）、encoding/json 绑定（末值、大小写
 // 不敏感）与 multipart 表单（首/末字段）三类解析器，这里返回「任一解析器可能
 // 绑定到的全部模型值」，调用方必须逐一校验，任一未命中即拒绝。
-func groupModelAllowlistModelsFromBody(c *gin.Context, maxNormalizedBytes int64) ([]string, bool) {
-	// 白名单位于合成路由和协议 handler 之前，必须使用相同的 JSON 容错与大小限制，
-	// 否则开启白名单会拒绝原本支持的完整 JSON + UnexpectedEOF 请求。
-	// multipart 和其他二进制类型仍严格读体，不能把截断上传当成完整请求。
-	var body []byte
-	var err error
-	mediaType, _, mediaErr := mime.ParseMediaType(strings.TrimSpace(c.GetHeader("Content-Type")))
-	mediaType = strings.ToLower(mediaType)
-	if mediaErr == nil && (mediaType == "application/json" ||
-		(strings.HasPrefix(mediaType, "application/") && strings.HasSuffix(mediaType, "+json"))) {
-		body, err = httputil.ReadLenientJSONRequestBodyWithPrealloc(c.Request, maxNormalizedBytes)
-	} else {
-		body, err = httputil.ReadRequestBodyWithPrealloc(c.Request)
-		if err == nil && maxNormalizedBytes > 0 && int64(len(body)) > maxNormalizedBytes {
-			err = &http.MaxBytesError{Limit: maxNormalizedBytes}
-		}
-	}
+func groupModelAllowlistModelsFromBody(c *gin.Context) ([]string, bool) {
+	body, err := httputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
 		if RejectRequestBodyReadError(c, "middleware.group_model_allowlist", err) {
 			return nil, false
@@ -143,11 +123,10 @@ func groupModelAllowlistModelsFromBody(c *gin.Context, maxNormalizedBytes int64)
 }
 
 // groupModelAllowlistModelFromParams 从路由参数提取模型名：Gemini 原生 URL 的
-// `model` / `modelAction`（去掉 `:action` 后缀）。`/v1/models/*model` 为通配
-// 路由，参数自带前导斜杠且模型 ID 可含命名空间（openai/gpt-5.4），这里只去掉
-// 首尾斜杠。提取不到返回空串，由调用方决定是否继续读请求体或查询参数。
+// `model` / `modelAction`（去掉 `:action` 后缀）。提取不到返回空串，
+// 由调用方决定是否继续读请求体或查询参数。
 func groupModelAllowlistModelFromParams(c *gin.Context) string {
-	if model := strings.Trim(strings.TrimSpace(c.Param("model")), "/"); model != "" {
+	if model := strings.TrimSpace(c.Param("model")); model != "" {
 		return model
 	}
 	if modelAction := strings.TrimSpace(c.Param("modelAction")); modelAction != "" {

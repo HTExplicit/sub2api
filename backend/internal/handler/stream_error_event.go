@@ -14,9 +14,8 @@ import (
 
 // responsesFailedError 对齐 OpenAI Responses 协议 error 子对象。
 type responsesFailedError struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	Retryable bool   `json:"retryable,omitempty"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // responsesFailedBody 对齐 apicompat.makeResponsesCompletedEvent 输出的 response 子对象字段集。
@@ -60,27 +59,11 @@ type responsesFailedEvent struct {
 // 此时 caller 也无法回退到 JSON（HTTP 200 已固化），通常意味着连接已经损坏，
 // 应当让请求处理函数 return，由上层关闭连接。
 func writeResponsesFailedSSE(c *gin.Context, errType, code, message string) bool {
-	return writeResponsesFailedSSEWithDetails(c, errType, code, message, false)
-}
-
-func writeResponsesFailedSSEWithDetails(c *gin.Context, errType, code, message string, retryable bool) bool {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return false
 	}
-	// This helper can now also be used for a stream:true request that failed
-	// before any upstream byte was written.  Set the SSE headers before the
-	// first write in that case; once committed, preserve the headers selected by
-	// the normal streaming path.
-	if !c.Writer.Written() {
-		c.Header("Content-Type", "text/event-stream; charset=utf-8")
-		c.Header("Cache-Control", "no-cache")
-		c.Header("X-Accel-Buffering", "no")
-	}
 
-	if code == "" {
-		code = mapResponsesErrorCode(errType, "")
-	}
 	payload, err := json.Marshal(responsesFailedEvent{
 		Type: "response.failed",
 		Response: responsesFailedBody{
@@ -91,9 +74,8 @@ func writeResponsesFailedSSEWithDetails(c *gin.Context, errType, code, message s
 			Status:    "failed",
 			Output:    []any{},
 			Error: responsesFailedError{
-				Code:      mapResponsesErrorCode(errType, code),
-				Message:   message,
-				Retryable: retryable,
+				Code:    mapResponsesErrorCode(errType, code),
+				Message: message,
 			},
 		},
 	})
@@ -143,18 +125,6 @@ func inboundIsResponses(c *gin.Context) bool {
 		return false
 	}
 	return strings.HasSuffix(p, "/responses") || strings.Contains(p, "/responses/")
-}
-
-// inboundResponsesStreamRequested reports whether the parsed Responses request
-// asked for streaming.  It intentionally reads the handler's normalized request
-// context rather than reparsing the request body after it has been consumed.
-func inboundResponsesStreamRequested(c *gin.Context) bool {
-	if c == nil || !inboundIsResponses(c) {
-		return false
-	}
-	stream, _ := c.Get(opsStreamKey)
-	requested, _ := stream.(bool)
-	return requested
 }
 
 // synthesizeResponseID 为合成的 response.failed 事件生成一个稳定的 id。

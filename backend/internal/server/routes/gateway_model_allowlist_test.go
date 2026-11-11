@@ -19,23 +19,17 @@ import (
 func newGatewayRoutesTestRouterWithGroup(group *service.Group) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	if group.ID == 0 {
-		group.ID = 1
-	}
-	if group.Status == "" {
-		group.Status = service.StatusActive
-	}
-	cfg := &config.Config{Gateway: config.GatewayConfig{MaxBodySize: 1024 * 1024, TextMaxBodySize: 1024 * 1024}}
 	RegisterGatewayRoutes(
 		router,
 		&handler.Handlers{
-			Gateway:       newGatewayRoutesHandlerForGroup(cfg, group),
+			Gateway:       &handler.GatewayHandler{},
 			OpenAIGateway: &handler.OpenAIGatewayHandler{},
 			AsyncImage:    handler.NewAsyncImageHandler(nil, nil),
 		},
 		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
-				GroupID: &group.ID,
+				GroupID: &groupID,
 				Group:   group,
 			})
 			c.Next()
@@ -45,7 +39,12 @@ func newGatewayRoutesTestRouterWithGroup(group *service.Group) *gin.Engine {
 		nil,
 		nil,
 		nil,
-		cfg,
+		&config.Config{
+			Gateway: config.GatewayConfig{
+				MaxBodySize:     1024 * 1024,
+				TextMaxBodySize: 1024 * 1024,
+			},
+		},
 	)
 	return router
 }

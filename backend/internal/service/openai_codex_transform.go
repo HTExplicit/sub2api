@@ -8,16 +8,14 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 var codexModelMap = map[string]string{
 	"gpt-6.1-terra":        "gpt-6.1-terra",
 	"gpt-6.1-sol":          "gpt-6.1-sol",
-	"gpt-6-astra":          "gpt-6-astra",
 	"gpt-6-sol":            "gpt-6-sol",
 	"gpt-6-luna":           "gpt-6-luna",
+	"gpt-6-astra":          "gpt-6-astra",
 	"gpt-5.6-sol":          "gpt-5.6-sol",
 	"gpt-5.6-terra":        "gpt-5.6-terra",
 	"gpt-5.6-luna":         "gpt-5.6-luna",
@@ -182,9 +180,6 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 
 func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuthTransformOptions) codexTransformResult {
 	result := codexTransformResult{}
-	if applyOpenAIModelReasoningAlias(reqBody) {
-		result.Modified = true
-	}
 	if normalizeOpenAIOAuthResponsesCompatibilityFields(reqBody) {
 		result.Modified = true
 	}
@@ -632,124 +627,6 @@ func normalizeCodexModel(model string) string {
 	return model
 }
 
-// resolveOpenAIModelReasoningAlias recognizes only an explicitly supported
-// model followed by an effort token. It must not infer intent from arbitrary
-// provider model names (or from the native gpt-5.1-codex-max model name).
-// The base is not endpoint-mapped here: gpt-5-low remains gpt-5, not gpt-5.4.
-func resolveOpenAIModelReasoningAlias(model string) (baseModel, effort string, ok bool) {
-	model = strings.TrimSpace(model)
-	if separator := strings.LastIndexByte(model, '/'); separator >= 0 {
-		// Only the established OpenAI namespace is a spelling alias. Other
-		// prefixes are provider-owned model identities, not an invitation to
-		// strip their namespace and reinterpret a suffix.
-		if !strings.EqualFold(strings.TrimSpace(model[:separator]), "openai") {
-			return "", "", false
-		}
-	}
-	key := canonicalizeOpenAIModelAliasSpelling(model)
-	if key == "" || key == "gpt-5.1-codex-max" {
-		return "", "", false
-	}
-	index := strings.LastIndexByte(key, '-')
-	if index < 0 {
-		return "", "", false
-	}
-	base, suffix := key[:index], key[index+1:]
-	if !isKnownOpenAIReasoningAliasEffort(suffix) {
-		return "", "", false
-	}
-	if split := strings.LastIndexByte(base, '-'); split >= 0 && base != "gpt-5.1-codex-max" && isKnownOpenAIReasoningAliasEffort(base[split+1:]) {
-		return "", "", false
-	}
-	if _, known := codexModelMap[base]; !known {
-		known = base == "gpt-6" || base == "gpt-5.6"
-		for _, item := range codexVersionModelPrefixes {
-			if base == item.prefix {
-				known = true
-				break
-			}
-		}
-		if !known {
-			return "", "", false
-		}
-	}
-	return base, normalizeOpenAIReasoningEffort(suffix), true
-}
-
-func isKnownOpenAIReasoningAliasEffort(value string) bool {
-	switch value {
-	case "none", "minimal", "low", "medium", "high", "xhigh", "extrahigh", "max":
-		return true
-	default:
-		return false
-	}
-}
-
-// materializeOpenAIModelReasoningEffort makes an accepted model alias part of
-// the actual wire request before group policy runs. Model identity is retained
-// here so account mappings and billing still see the original requested name.
-// An explicit field, including null/unknown values, always wins; endpoint
-// validation, not an alias, decides whether that value is supported.
-func materializeOpenAIModelReasoningEffort(body []byte, modelCandidates ...string) ([]byte, bool, error) {
-	if len(body) == 0 || gjson.GetBytes(body, "reasoning.effort").Exists() || gjson.GetBytes(body, "reasoning_effort").Exists() {
-		return body, false, nil
-	}
-	if reasoning := gjson.GetBytes(body, "reasoning"); reasoning.Exists() && !reasoning.IsObject() {
-		return body, false, nil
-	}
-	models := append([]string{gjson.GetBytes(body, "model").String()}, modelCandidates...)
-	effortPath := "reasoning.effort"
-	if gjson.GetBytes(body, "messages").Exists() && !gjson.GetBytes(body, "input").Exists() {
-		// The same explicit policy entrypoint is used before a Chat request is
-		// either sent natively or converted. Its wire field is the flat form.
-		effortPath = "reasoning_effort"
-	}
-	for _, model := range models {
-		_, effort, ok := resolveOpenAIModelReasoningAlias(model)
-		if !ok {
-			continue
-		}
-		updated, err := sjson.SetBytes(body, effortPath, effort)
-		if err != nil {
-			return body, false, fmt.Errorf("materialize model reasoning effort: %w", err)
-		}
-		return updated, true, nil
-	}
-	return body, false, nil
-}
-
-// applyOpenAIModelReasoningAlias is the decoded OAuth request counterpart.
-// It preserves native reasoning members and performs no family remapping.
-func applyOpenAIModelReasoningAlias(reqBody map[string]any) bool {
-	model, _ := reqBody["model"].(string)
-	base, effort, ok := resolveOpenAIModelReasoningAlias(model)
-	if !ok {
-		return false
-	}
-	reqBody["model"] = base
-	if _, explicit := reqBody["reasoning_effort"]; explicit {
-		return true
-	}
-	if existing, present := reqBody["reasoning"]; present {
-		reasoning, valid := existing.(map[string]any)
-		if !valid {
-			return true
-		}
-		if _, explicit := reasoning["effort"]; explicit {
-			return true
-		}
-		updated := make(map[string]any, len(reasoning)+1)
-		for key, value := range reasoning {
-			updated[key] = value
-		}
-		updated["effort"] = effort
-		reqBody["reasoning"] = updated
-	} else {
-		reqBody["reasoning"] = map[string]any{"effort": effort}
-	}
-	return true
-}
-
 func normalizeKnownCodexModel(model string) (string, bool) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -975,7 +852,7 @@ func stripOpenAIImageGenerationToolsFromRawPayload(payload []byte) ([]byte, bool
 		return payload, false, json.Unmarshal(payload, &invalidPayload)
 	}
 	payloadMap := make(map[string]any)
-	if err := decodeOpenAIJSONUseNumber(payload, &payloadMap); err != nil {
+	if err := json.Unmarshal(payload, &payloadMap); err != nil {
 		return payload, false, err
 	}
 	if !stripOpenAIImageGenerationTools(payloadMap) {
@@ -1287,14 +1164,10 @@ func validateOpenAIResponsesImageModel(reqBody map[string]any, model string) err
 }
 
 func normalizeOpenAIResponsesImageOnlyModel(reqBody map[string]any) bool {
-	return normalizeOpenAIResponsesImageOnlyModelWithModel(reqBody, firstNonEmptyString(reqBody["model"]))
-}
-
-func normalizeOpenAIResponsesImageOnlyModelWithModel(reqBody map[string]any, requestedModel string) bool {
 	if len(reqBody) == 0 {
 		return false
 	}
-	imageModel := strings.TrimSpace(requestedModel)
+	imageModel := strings.TrimSpace(firstNonEmptyString(reqBody["model"]))
 	if !isOpenAIImageGenerationModel(imageModel) {
 		return false
 	}
@@ -1372,13 +1245,11 @@ func normalizeOpenAIModelForUpstream(account *Account, model string) string {
 		return normalizeCodexModel(model)
 	}
 	model = strings.TrimSpace(model)
-	if account.IsOpenAIApiKey() {
-		if base, _, accepted := resolveOpenAIModelReasoningAlias(model); accepted {
-			model = base
-		}
-	}
 	if account.Platform == PlatformDeepseek {
-		// DeepSeek 走 OpenAI 兼容入口，不经 Anthropic 入站的 [1m] 后缀归一。
+		// DeepSeek 走 OpenAI 兼容入口，不经 Anthropic 入站的 [1m] 后缀归一
+		// （parseGatewayRequestCurrentBody 仅处理 PlatformAnthropic 协议）。
+		// 官方 Claude Code 接入要求 ANTHROPIC_MODEL=deepseek-flash[1m] 写法，
+		// 出站前剥离泄漏的客户端上下文后缀，转发规范名给上游。
 		return normalizeClaudeCodeLongContextModel(model)
 	}
 	return model

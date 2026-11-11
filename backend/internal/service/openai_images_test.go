@@ -869,14 +869,6 @@ func TestOpenAIGatewayServiceForwardImages_OAuthPassesNAndReturnsAllImages(t *te
 	require.Equal(t, "draw a cat 3", gjson.Get(rec.Body.String(), "data.2.revised_prompt").String())
 }
 
-func TestValidateOpenAIImagesModel_RecognizesCatalogImageWithoutChangingNativeSet(t *testing.T) {
-	require.Error(t, validateOpenAIImagesModel("gemini-3-pro-image"))
-	require.Error(t, validateOpenAIImagesModel("google/gemini-3-pro-image"))
-	require.False(t, IsNativeOpenAIImagesModel("gemini-3-pro-image"))
-	require.True(t, IsNativeOpenAIImagesModel("gpt-image-2"))
-	require.Error(t, validateOpenAIImagesModel("gpt-5.6-luna"))
-}
-
 func TestParseOpenAIImagesSSEUsageBytes_ToolUsagePrecedenceAndFallback(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	fallback := OpenAIUsage{InputTokens: 3, OutputTokens: 4, ImageOutputTokens: 2}

@@ -37,10 +37,6 @@ func (r openAIImagesFailoverAccountRepo) GetByID(_ context.Context, id int64) (*
 	return nil, service.ErrNoAvailableAccounts
 }
 
-func (r openAIImagesFailoverAccountRepo) ListByGroup(_ context.Context, _ int64) ([]service.Account, error) {
-	return append([]service.Account(nil), r.accounts...), nil
-}
-
 func (r openAIImagesFailoverAccountRepo) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, platform string) ([]service.Account, error) {
 	return r.accountsForPlatform(platform), nil
 }
@@ -192,7 +188,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	require.Equal(t, "1536x1024", loggedFields["img_size"])
 	require.NotContains(t, loggedFields, "prompt")
 
-	require.Equal(t, []int64{1, 1, 2, 2}, upstream.calls())
+	require.Equal(t, []int64{1, 2}, upstream.calls())
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
@@ -201,9 +197,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	require.True(t, ok)
 	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
 	require.True(t, ok)
-	require.Len(t, events, 4)
+	require.Len(t, events, 2)
 	require.Equal(t, "failover", events[0].Kind)
-	for _, event := range events[1:] {
-		require.Equal(t, "failover", event.Kind)
-	}
+	require.Equal(t, "failover", events[1].Kind)
 }
