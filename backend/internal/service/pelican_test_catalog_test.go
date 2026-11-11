@@ -217,19 +217,19 @@ func TestPelicanTestCatalogNativeUpstreamAndAdaptiveUseBusinessEffortCapabilitie
 	require.Contains(t, invalidType.CapabilityReason, AccountTypeBedrock)
 }
 
-func TestPelicanTestCatalogOpenAIModelCapabilityUsesNativeResolvedAlias(t *testing.T) {
+func TestPelicanTestCatalogOpenAIModelCapabilityUsesOfficialMappedModel(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://local-catalog.example", "model_mapping": map[string]any{"public-model": "gpt-6.1-sol-high"},
 	}}
 	reasoning := false
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
 		Models: map[string]UpstreamModelMetadata{
-			"gpt-6.1-sol": {ID: "gpt-6.1-sol", Reasoning: &reasoning, InputModalities: []string{"text"}},
+			"gpt-6.1-sol-high": {ID: "gpt-6.1-sol-high", Reasoning: &reasoning, InputModalities: []string{"text"}},
 		},
 	})
 	option := PelicanTestModelOptions(account, "public-model")
 	require.True(t, option.TextSupported, option.CapabilityReason)
-	require.Equal(t, "gpt-6.1-sol", option.UpstreamModel, "native OpenAI forwarding removes the finite effort suffix")
+	require.Equal(t, "gpt-6.1-sol-high", option.UpstreamModel, "official OpenAI forwarding preserves the configured mapped model")
 	require.Empty(t, option.ReasoningEfforts, "capabilities belong to the actual wire model, not its mapped spelling")
 	require.Empty(t, option.DefaultEffort, "the saved non-reasoning declaration must not be bypassed by local defaults")
 }

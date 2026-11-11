@@ -97,7 +97,7 @@ func TestAccountTestReasoningGrokSendsForwardedEffort(t *testing.T) {
 	account := &Account{ID: 46, Platform: PlatformGrok, Type: AccountTypeAPIKey, Status: StatusActive, Credentials: map[string]any{"api_key": "test-key"}}
 	supported := true
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"grok-4.3": {Reasoning: &supported, SupportedReasoningLevels: []string{"low", "high", "xhigh"}}}})
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\"}\n\n")}}
+	upstream := &httpUpstreamRecorder{resp: newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\"}\n\n")}
 	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: account}, httpUpstream: upstream}
 	c, recorded := newTestContext()
 	require.NoError(t, svc.TestAccountConnection(c, account.ID, "grok-4.3", "", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "xhigh"}))

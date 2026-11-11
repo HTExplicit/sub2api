@@ -106,7 +106,9 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	ctx, recorder := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"OK"}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
 
 `))
 	resp.Header.Set("x-codex-primary-used-percent", "88")
@@ -142,7 +144,9 @@ func TestAccountTestService_OpenAIOAuthTestNormalizesGPT56Alias(t *testing.T) {
 	ctx, _ := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"OK"}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
 
 `))
 
@@ -170,7 +174,9 @@ func TestAccountTestService_OpenAIShadowUsesParentCredentialsAndShadowModel(t *t
 	ctx, recorder := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"OK"}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
 
 `))
 
@@ -243,8 +249,9 @@ func TestAccountTestService_OpenAIStreamEOFBeforeCompletedFails(t *testing.T) {
 	}
 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
-	require.Error(t, err)
-	require.Contains(t, recorder.Body.String(), "response.completed")
+	require.ErrorIs(t, err, ErrAccountTestIncomplete)
+	require.EqualError(t, err, "stream ended before terminal (last event: response.output_text.delta)")
+	require.Contains(t, recorder.Body.String(), err.Error())
 	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }
 
@@ -253,7 +260,9 @@ func TestAccountTestService_DeepSeekCustomBaseURLUsesV1ResponsesPath(t *testing.
 	ctx, _ := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"OK"}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
 
 `))
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
@@ -287,7 +296,9 @@ func TestAccountTestService_DeepSeekResponsesRoutesToOpenAIProbe(t *testing.T) {
 	ctx, _ := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"OK"}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
 
 `))
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
@@ -327,7 +338,9 @@ func TestAccountTestService_DeepSeekDefaultBaseURLUsesNativeResponsesPath(t *tes
 	ctx, _ := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"OK"}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
 
 `))
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
@@ -536,7 +549,7 @@ func TestAccountTestService_OpenAIAPIKeyResponsesUsesCodexProbeHeaders(t *testin
 	ctx, _ := newTestContext()
 
 	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\"}\n\n"))
+	resp.Body = io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"))
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
 	svc := &AccountTestService{
 		httpUpstream: upstream,
@@ -698,9 +711,9 @@ func TestAccountTestService_OpenAIChatCompletionsPathRejectsNonJSONStream(t *tes
 	}
 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrAccountTestProtocol)
 	require.Equal(t, "https://compat-upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
-	require.Contains(t, err.Error(), "Invalid Chat Completions response from /v1/chat/completions")
-	require.Contains(t, recorder.Body.String(), "/v1/chat/completions")
+	require.EqualError(t, err, "invalid SSE data: not-json")
+	require.Contains(t, recorder.Body.String(), err.Error())
 	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }
