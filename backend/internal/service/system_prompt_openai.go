@@ -2,31 +2,19 @@ package service
 
 import (
 	"bytes"
-	"fmt"
-	"io"
-	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
-// finalizeResponsesForSend builds the body for one Responses send from the
-// caller's clean body: the system prompt first, then the account's
-// openai_prompt_cache_key_mode on the final-wire prompt_cache_key. The clean
-// body stays the retry source.
-func (s *OpenAIGatewayService) finalizeResponsesForSend(c *gin.Context, account *Account, body []byte) ([]byte, error) {
+// finalizeResponsesForSend applies the configured system prompt at the final
+// Responses send boundary.
+func (s *OpenAIGatewayService) finalizeResponsesForSend(c *gin.Context, account *Account, body []byte) []byte {
 	if s != nil {
 		body = s.systemPrompts.applyResponses(c, account, body)
 	}
-	updated, err := applyOpenAIAPIKeyPromptCacheKeyMode(c, account, body)
-	if err != nil {
-		return nil, fmt.Errorf("normalize final prompt_cache_key: %w", err)
-	}
-	return updated, nil
+	return body
 }
 
 var systemPromptEchoMarker = []byte(`"instructions"`)
@@ -83,132 +71,3 @@ func restoreSystemPromptEchoSSE(c *gin.Context, body []byte) []byte {
 	}
 	return result.Bytes()
 }
-
-// undoSystemPromptForIntegrity removes this send's injection before the
-// request-integrity comparison with the client body.
-func undoSystemPromptForIntegrity(c *gin.Context, body []byte) []byte {
-	echo := systemPromptEchoFrom(c)
-	if echo == nil {
-		return body
-	}
-	if echo.instructions {
-		value := gjson.GetBytes(body, "instructions")
-		if value.Type != gjson.String || value.String() != echo.finalInstructions {
-			return body
-		}
-		var (
-			out []byte
-			err error
-		)
-		if echo.clientHadInstructs {
-			out, err = sjson.SetBytes(body, "instructions", echo.clientInstructions)
-		} else {
-			out, err = sjson.DeleteBytes(body, "instructions")
-		}
-		if err != nil {
-			return body
-		}
-		return out
-	}
-	if echo.inputIndex < 0 {
-		return body
-	}
-	item := gjson.GetBytes(body, systemPromptInputPath(echo.inputIndex))
-	if item.Get("role").String() != "developer" || item.Get("content.#").Int() != 1 || item.Get("content.0.text").String() != echo.developerPromptText {
-		return body
-	}
-	out, err := sjson.DeleteBytes(body, systemPromptInputPath(echo.inputIndex))
-	if err != nil {
-		return body
-	}
-	if echo.inputWasString {
-		rest := gjson.GetBytes(out, "input").Array()
-		if len(rest) == 1 && rest[0].Get("role").String() == "user" && rest[0].Get("content").String() == echo.clientInputText {
-			if restored, setErr := sjson.SetBytes(out, "input", echo.clientInputText); setErr == nil {
-				return restored
-			}
-		}
-	}
-	return out
-}
-
-var systemPromptRetryInputIndex = regexp.MustCompile(`input\[(\d+)\]`)
-
-// normalizeSystemPromptRejectedFieldRetryBody translates a provider's input
-// indices from the sent array to the clean array before the bounded
-// rejected-field repair runs. A rejection of the injected item is never
-// repaired by editing a customer item at the same index.
-func normalizeSystemPromptRejectedFieldRetryBody(c *gin.Context, status int, clean, response []byte) ([]byte, string, bool, error) {
-	echo := systemPromptEchoFrom(c)
-	if echo == nil || echo.inputIndex < 0 {
-		return normalizeOpenAIResponsesRejectedFieldRetryBody(status, clean, response)
-	}
-	out := response
-	for _, field := range []string{"error.param", "error.message", "param", "message"} {
-		text := gjson.GetBytes(out, field)
-		if text.Type != gjson.String {
-			continue
-		}
-		owned := false
-		mapped := systemPromptRetryInputIndex.ReplaceAllStringFunc(text.String(), func(match string) string {
-			index, err := strconv.Atoi(systemPromptRetryInputIndex.FindStringSubmatch(match)[1])
-			if err != nil || index == echo.inputIndex {
-				owned = true
-				return match
-			}
-			if index > echo.inputIndex {
-				index--
-			}
-			return "input[" + strconv.Itoa(index) + "]"
-		})
-		if owned {
-			return nil, "", false, nil
-		}
-		var err error
-		out, err = sjson.SetBytes(out, field, mapped)
-		if err != nil {
-			return nil, "", false, err
-		}
-	}
-	return normalizeOpenAIResponsesRejectedFieldRetryBody(status, clean, out)
-}
-
-// prepareReasoningRecoveryRequest lets reasoning recovery inspect the exact
-// wire body produced by the builder, then repeats its edits on the clean body
-// that later retries rebuild from.
-
-// finalWireRequestBody reads the body a builder attached to req.
-func finalWireRequestBody(req *http.Request, fallback []byte) ([]byte, error) {
-	if req.GetBody != nil {
-		reader, err := req.GetBody()
-		if err != nil {
-			return nil, err
-		}
-		wire, err := io.ReadAll(reader)
-		_ = reader.Close()
-		if err != nil {
-			return nil, err
-		}
-		return wire, nil
-	}
-	return fallback, nil
-}
-
-// finalWirePromptCacheKey prefers the key actually sent (the account's
-// sha256_64 prompt_cache_key mode may shorten it) and falls back to the
-// caller's seed when the body carries none.
-func finalWirePromptCacheKey(wire []byte, seed string) string {
-	if value := gjson.GetBytes(wire, "prompt_cache_key"); value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
-		return strings.TrimSpace(value.String())
-	}
-	return seed
-}
-
-// projectReasoningRecoveryEdits repeats a recovery edit on the clean request.
-// Recovery may only delete encrypted_content from reasoning items, whose
-// relative order the system prompt never changes, and the id of an item it
-// has stripped: with the ciphertext, or afterwards from the item left behind.
-// Any other difference is rejected instead of becoming the next retry's source.
-
-// openAIReasoningBareItemsByID lists, for each id, the input positions of the
-// reasoning items that carry it and have no ciphertext.

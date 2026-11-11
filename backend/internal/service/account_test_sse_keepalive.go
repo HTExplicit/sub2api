@@ -72,9 +72,6 @@ type accountTestKeepaliveWriter struct {
 }
 
 func (w *accountTestKeepaliveWriter) Header() http.Header {
-	w.k.mu.Lock()
-	w.k.paused = true
-	w.k.mu.Unlock()
 	return w.ResponseWriter.Header()
 }
 
@@ -84,7 +81,6 @@ func (w *accountTestKeepaliveWriter) Write(data []byte) (int, error) {
 	if err := w.ctx.Err(); err != nil {
 		return 0, err
 	}
-	w.k.paused = false
 	n, err := w.ResponseWriter.Write(data)
 	if err != nil {
 		w.cancel()
@@ -112,7 +108,6 @@ func (w *accountTestKeepaliveWriter) Flush() {
 	w.k.mu.Lock()
 	defer w.k.mu.Unlock()
 	if w.ctx.Err() == nil {
-		w.k.paused = false
 		w.ResponseWriter.Flush()
 	}
 }

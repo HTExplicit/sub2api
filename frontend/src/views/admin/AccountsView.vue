@@ -265,14 +265,14 @@
           @select-all-results="handleSelectAllResults"
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
-        <div ref="accountTableRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-test="account-list-scroll" :style="accountNameColumnStyle">
+        <div ref="accountTableRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-test="account-list-scroll" :style="accountNameColumnStyle" :aria-busy="loading" :inert="loading && accounts.length > 0">
         <DataTable
           v-if="viewMode === 'table'"
           ref="dataTableRef"
           data-table="accounts"
           :columns="cols"
           :data="accounts"
-          :loading="loading"
+          :loading="loading && accounts.length === 0"
           row-key="id"
           :server-side-sort="true"
           @sort="handleSort"
@@ -400,7 +400,7 @@
                 :batched-usage-loading="usageBatchLoadingByAccountId[String(row.id)] === true"
                 :request-batched-usage="isDesktopViewport ? queueBatchedUsage : null"
                 variant="list"
-                read-only
+                :read-only="row.platform !== 'antigravity'"
                 @account-updated="handleAccountUpdated"
                 @usage-loaded="handleAccountUsageLoaded(row.id, $event)"
               />
@@ -537,7 +537,7 @@
         <AccountCompactList
           v-else-if="viewMode === 'compact'"
           :accounts="accountsWithGroups"
-          :loading="loading"
+          :loading="loading && accounts.length === 0"
           :selected-ids="selIds"
           :today-stats="todayStatsByAccountId"
           :today-stats-loading="todayStatsLoading"
@@ -554,7 +554,7 @@
         <AccountCardGrid
           v-else
           :accounts="accountsWithGroups"
-          :loading="loading"
+          :loading="loading && accounts.length === 0"
           :selected-ids="selIds"
           :today-stats="todayStatsByAccountId"
           :today-stats-loading="todayStatsLoading"

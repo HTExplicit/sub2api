@@ -14,37 +14,6 @@ import type {
 } from "@/types";
 import type { RechargeBonusTier } from "@/utils/rechargeBonus";
 
-export const DEFAULT_OPENAI_REFUSAL_KEYWORDS = [
-  "抱歉",
-  "无法",
-  "违反",
-  "不能",
-  "拒绝",
-  "不允许",
-  "禁止",
-  "很抱歉",
-  "对不起",
-  "不好意思",
-  "我无法",
-  "我不能",
-  "sorry",
-  "cannot",
-  "apologize",
-  "violate",
-  "policy",
-  "as an AI",
-  "I cannot",
-  "I'm unable",
-  "not able to",
-  "against my",
-  "I won't",
-  "refuse to",
-  "unable to",
-  "I apologize",
-  "not permitted",
-  "not allowed",
-] as const;
-
 export interface DefaultSubscriptionSetting {
   group_id: number;
   validity_days: number;
@@ -695,11 +664,6 @@ export interface SystemSettings {
   cyber_policy_user_allowlist: string;
   cyber_session_block_enabled: boolean;
   cyber_session_block_ttl_seconds: number;
-  openai_refusal_recovery_enabled: boolean;
-  openai_cyber_failover_enabled: boolean;
-  openai_refusal_rewrite_enabled: boolean;
-  openai_refusal_keywords: string[];
-  openai_refusal_replacement: string;
 
   payment_min_amount: number;
   payment_max_amount: number;
@@ -1024,11 +988,6 @@ export interface UpdateSettingsRequest {
   cyber_policy_user_allowlist?: string;
   cyber_session_block_enabled?: boolean;
   cyber_session_block_ttl_seconds?: number;
-  openai_refusal_recovery_enabled?: boolean;
-  openai_cyber_failover_enabled?: boolean;
-  openai_refusal_rewrite_enabled?: boolean;
-  openai_refusal_keywords?: string[];
-  openai_refusal_replacement?: string;
 
   payment_min_amount?: number;
   payment_max_amount?: number;

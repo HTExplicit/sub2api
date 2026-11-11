@@ -43,20 +43,20 @@ func AccountTestReasoningOptions(account *Account, model string) (efforts []stri
 		if known && metadata.Reasoning != nil && !*metadata.Reasoning {
 			return nil, ""
 		}
-		return claude.EffortLevelsForModel(model), claude.DefaultEffortForModel(model)
+		return claude.EffortLevelsForModel(model), accountTestClaudeDefaultEffort(model)
 	}
 	if known && metadata.Reasoning != nil {
 		if !*metadata.Reasoning {
 			return nil, ""
 		}
 		levels := normalizeReasoningLevels(metadata.SupportedReasoningLevels)
-		if isOpenAIGPT6SolOrLunaModel(model) {
-			levels = intersectOrderedStrings(levels, openai.GPT6APIReasoningEfforts())
+		if openai.IsGPT6SolOrLunaModelSpelling(model) {
+			levels = intersectOrderedStrings(levels, accountTestGPT6APIReasoningEfforts())
 		}
 		return levels, normalizeReasoningLevel(metadata.DefaultReasoningLevel)
 	}
-	if account.IsOpenAIApiKey() && isOpenAIGPT6SolOrLunaModel(model) {
-		return openai.GPT6APIReasoningEfforts(), "medium"
+	if account.IsOpenAIApiKey() && openai.IsGPT6SolOrLunaModelSpelling(model) {
+		return accountTestGPT6APIReasoningEfforts(), "medium"
 	}
 	var levels []configuredCodexReasoningLevel
 	switch {
@@ -70,6 +70,30 @@ func AccountTestReasoningOptions(account *Account, model string) (efforts []stri
 		out = append(out, level.Effort)
 	}
 	return out, ""
+}
+
+// These choices belong to the administrator test payload, not gateway policy.
+func accountTestGPT6APIReasoningEfforts() []string {
+	return []string{"none", "low", "medium", "high", "xhigh", "max"}
+}
+
+func accountTestClaudeDefaultEffort(model string) string {
+	if len(claude.EffortLevelsForModel(model)) == 0 {
+		return ""
+	}
+	if claude.IsOpus55(model) || claude.IsHaiku55(model) {
+		return "medium"
+	}
+	return "high"
+}
+
+func accountTestClaudeUsesAdaptiveThinking(model string) bool {
+	if len(claude.EffortLevelsForModel(model)) == 0 {
+		return false
+	}
+	model = strings.ToLower(model)
+	return !strings.Contains(model, "opus-4-5") && !strings.Contains(model, "opus-4.5") &&
+		!strings.Contains(model, "mythos-preview")
 }
 
 // accountTestUpstreamModel resolves the model ID the account test sends
@@ -105,7 +129,7 @@ func accountTestSupportsReasoningWire(account *Account, model string) bool {
 		// Responses forwarding removes the effort for every other model.
 		return grokSupportsReasoningEffort(accountTestGrokUpstreamModel(model))
 	case account.Platform == PlatformAnthropic:
-		return !account.IsBedrock() || bedrockKeepsOutputConfigEffort(model)
+		return !account.IsBedrock() || claude.IsSonnet55(model)
 	default:
 		return false
 	}
@@ -182,7 +206,7 @@ func accountTestClaudeBody(c *gin.Context, payload map[string]any, model string)
 		return body, nil
 	}
 	payload["output_config"] = map[string]any{"effort": effort}
-	if claude.EffortUsesAdaptiveThinking(model) {
+	if accountTestClaudeUsesAdaptiveThinking(model) {
 		payload["thinking"] = map[string]any{"type": "adaptive"}
 	}
 	delete(payload, "temperature")
