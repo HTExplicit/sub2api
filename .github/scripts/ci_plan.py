@@ -272,7 +272,7 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
         elif relative in (".github/audit-exceptions.yml", "tools/check_pnpm_audit_exceptions.py"):
             select("frontend_security", relative)
             known = True
-        elif relative in ("Dockerfile", ".dockerignore", ".github/buildkitd.toml"):
+        elif relative in ("Dockerfile", "backend/Dockerfile", "deploy/Dockerfile", ".dockerignore", ".github/buildkitd.toml"):
             select("candidate_image", relative)
             if relative == "Dockerfile":
                 select("renderer", relative)

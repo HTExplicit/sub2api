@@ -87,6 +87,10 @@ requires checking migration progress; it does not trigger another deployment
 or automatic rollback. Production identity and health must agree before the
 operator production pointer is updated.
 
+The Go build uses 1.27.4 to address the net/http standard-library advisory
+[GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859); this patch does not add a
+downstream request policy. Other dependency versions follow the integrated tree.
+
 ## Validation boundary
 
 Validation follows [AGENTS](../AGENTS.md): official changed-behavior tests,

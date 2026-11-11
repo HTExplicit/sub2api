@@ -58,6 +58,13 @@ class ChangeSelectionTests(unittest.TestCase):
                 self.assertIn("unclassified_input:" + path, plan["failures"])
                 self.assertFalse(plan["backend_tests"])
 
+    def test_alternate_go_builder_dockerfiles_select_candidate_image_only(self):
+        for path in ("backend/Dockerfile", "deploy/Dockerfile"):
+            with self.subTest(path=path):
+                plan = ci_plan.classify_paths([path])
+                self.assertTrue(plan["passed"], plan["failures"])
+                self.assertEqual(["candidate_image"], plan["groups"])
+
     def test_go_dependency_graph_selects_security_and_build_without_business_suite(self):
         plan = ci_plan.classify_paths(["backend/go.mod", "backend/go.sum"])
         self.assertTrue(plan["passed"], plan["failures"])
