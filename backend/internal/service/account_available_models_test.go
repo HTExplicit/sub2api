@@ -84,6 +84,8 @@ func TestAccountAvailableModelsProjectsOAuthDiscovery(t *testing.T) {
 		{"gpt-image-2", "GPT Image 2"},
 		{"gpt-image-2.5-flare", "GPT Image 2.5 Flare"},
 		{"gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst"},
+		{"gpt-image-2.6-flare", "GPT Image 2.6 Flare"},
+		{"gpt-image-2.6-sunburst", "GPT Image 2.6 Sunburst"},
 	}
 	require.Len(t, models, len(expected))
 	for i, want := range expected {

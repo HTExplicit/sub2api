@@ -98,6 +98,9 @@ func TestAccountReadableSnapshot_DenylistTripwire(t *testing.T) {
 	safeToExpose := map[string]struct{}{
 		"ID": {}, "Name": {}, "Notes": {}, "Platform": {}, "Type": {}, "Extra": {},
 		"Proxy": {}, "ProxyID": {}, "ProxyFallbackOriginID": {}, "ProxyFallbackOriginName": {},
+		// Taxonomy is already readable: these flat metadata types contain no
+		// credentials or back-references to account/group graphs.
+		"ManagementFolderID": {}, "ManagementFolder": {}, "Tags": {},
 		"Concurrency": {}, "Priority": {}, "RateMultiplier": {}, "LoadFactor": {},
 		"Status": {}, "ErrorMessage": {}, "LastUsedAt": {}, "ExpiresAt": {},
 		"AutoPauseOnExpired": {}, "CreatedAt": {}, "UpdatedAt": {}, "Schedulable": {},
