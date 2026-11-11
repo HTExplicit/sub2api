@@ -439,7 +439,6 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 	c.Set(accountTestReasoningContextKey, testOpts.ReasoningEffort)
 	bindAccountTestPlatform(c, account)
-	ctx = c.Request.Context()
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
 	// interactions, but intentionally do not send their placeholder credentials

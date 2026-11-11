@@ -1278,6 +1278,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	currentPayload := firstPayload.payloadRaw
+	var wirePayload []byte
+	var wireSource []byte
 	// Admission hooks must see client model candidates before upstream mapping.
 	currentClientPayload := firstPayload.rawForHash
 	currentOriginalModel := firstPayload.originalModel
@@ -1840,10 +1842,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 
-		// Keep the official client/replay payload separate from this turn's wire
-		// body. The official rejected-field repair uses the exact sent indices.
-		wirePayload := s.finalizeResponsesForSend(c, account, currentPayload)
-		rejectedFieldRetryState.remember(wirePayload)
+		// Reuse repaired wire bytes across reconnects while the immutable client
+		// body is unchanged; official payload rebuilds get a new final injection.
+		if wirePayload == nil || !bytes.Equal(wireSource, currentPayload) {
+			wireSource = currentPayload
+			wirePayload = s.finalizeResponsesForSend(c, account, currentPayload)
+			rejectedFieldRetryState.remember(wirePayload)
+		}
 		var result *OpenAIForwardResult
 		var relayErr error
 		for {
@@ -2011,6 +2016,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		currentPayload = nextPayload.payloadRaw
+		wirePayload = nil
+		wireSource = nil
 		currentClientPayload = nextPayload.rawForHash
 		currentOriginalModel = nextPayload.originalModel
 		currentImageBillingModel = nextPayload.imageBillingModel
