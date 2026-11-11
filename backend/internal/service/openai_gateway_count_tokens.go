@@ -325,13 +325,17 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	}
 	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 	if err != nil {
-		return s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, 0, safeErr, "")
+		writeAnthropicCountTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+		return fmt.Errorf("openai input_tokens upstream request failed: %s", safeErr)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		writeAnthropicCountTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
+		return fmt.Errorf("read input_tokens response: %w", err)
 	}
 
 	if resp.StatusCode >= 400 {
@@ -341,28 +345,13 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 			return nil
 		}
 
-		if isOpenAIInputTokensUnsupported(resp.StatusCode, respBody) {
-			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, prepared.UpstreamModel)
-			}
-			writeAnthropicCountTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported by upstream")
-			return nil
-		}
-		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody) {
-			shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, prepared.UpstreamModel)
-			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
-			if account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMsg, respBody) {
-				return newOpenAIModelNotSupportedFailoverError(resp.Header, respBody)
-			}
-			return &UpstreamFailoverError{
-				StatusCode:             resp.StatusCode,
-				ResponseHeaders:        resp.Header.Clone(),
-				ResponseBody:           respBody,
-				RetryableOnSameAccount: retryableOnSameAccount,
-			}
-		}
 		if s.rateLimitService != nil {
 			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, prepared.UpstreamModel)
+		}
+
+		if isOpenAIInputTokensUnsupported(resp.StatusCode, respBody) {
+			writeAnthropicCountTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported by upstream")
+			return nil
 		}
 
 		upstreamDetail := ""
@@ -391,15 +380,8 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 
 	inputTokens := gjson.GetBytes(respBody, "input_tokens")
 	if !inputTokens.Exists() {
-		return &UpstreamFailoverError{
-			StatusCode:        http.StatusBadGateway,
-			ResponseBody:      respBody,
-			ResponseHeaders:   resp.Header.Clone(),
-			NextAccountAction: NextAccountRetry,
-			Reason:            OpenAITransientTransportFailureReason,
-			ClientStatusCode:  http.StatusBadGateway,
-			ClientMessage:     "Upstream response missing input_tokens",
-		}
+		writeAnthropicCountTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream response missing input_tokens")
+		return fmt.Errorf("input_tokens response missing input_tokens field")
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -424,7 +406,9 @@ func prepareOpenAIInputTokensCountRequest(
 	billingModel := resolveOpenAIForwardModel(account, normalizedModel, strings.TrimSpace(defaultMappedModel))
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 
-	responsesReq, err := apicompat.AnthropicToResponses(&anthropicReq)
+	responsesReq, err := apicompat.AnthropicToResponsesWithOptions(&anthropicReq, apicompat.AnthropicToResponsesOptions{
+		DeferReasoningEffortValidation: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("convert anthropic request to responses: %w", err)
 	}
@@ -494,10 +478,7 @@ func (s *OpenAIGatewayService) buildInputTokensUpstreamRequest(
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
 
-	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
-		return nil, err
-	}
-	return bindCodexAttemptRequest(c, req, account)
+	return req, nil
 }
 
 func writeAnthropicCountTokensError(c *gin.Context, status int, errType, message string) {

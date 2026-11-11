@@ -1,42 +1,28 @@
 # Settings, stored data and rollback
 
 Current native contracts are maintained here. Account tests and system prompts
-are in [models and prompts](gpt6-models-and-prompts.md); source and release rules
-are in [DOWNSTREAM.md](../DOWNSTREAM.md).
+are in [models and prompts](gpt6-models-and-prompts.md); official business-core
+and release rules are in [DOWNSTREAM.md](../DOWNSTREAM.md).
 
 ## Settings
 
 Paths are relative to `/api/v1`; writes retain administrator authentication,
 audit and existing step-up policy.
 
-| Interface | Contract |
-| --- | --- |
-| `GET/PUT /admin/settings/codex-runtime` | `request_zstd` compression switch. Without a stored row, `gateway.openai_codex_request_zstd` applies. |
-| `GET/PUT /admin/settings/observability` | `theme_enabled` console switch; missing key defaults on. |
+`GET/PUT /admin/settings/observability` controls `theme_enabled`; missing values
+default on. It uses one JSON settings row and standard envelopes. PUT accepts
+only the documented boolean switch; extra keys, nulls and non-booleans return
+400 without writes. Login protection and system-prompt settings have their own
+interfaces described below and in the linked prompt contract.
 
-Each uses one JSON `settings` row and standard response envelopes. PUT requires
-an object containing only the documented boolean switch; extra keys, nulls and
-non-booleans return 400 without writes. Codex advanced settings live at
-`/admin/codex/advanced`; old runtime URLs redirect there.
-
-## DeepSeek default reasoning effort
-
-`/admin/deepseek-reasoning` uses administrator-only
-`GET/PUT /api/v1/admin/deepseek-reasoning`, audit and standard envelopes.
-`settings.deepseek_reasoning_config` holds `{"enabled":false,"effort":"max"}`;
-effort accepts `low`, `high`, `max`. Missing configuration is disabled/Max.
-Saving refreshes memory immediately; other processes refresh within one minute.
-Requests freeze a memory snapshot. Initial read failure leaves requests unchanged;
-refresh failure retains the last valid snapshot. No migration or usage rewrite.
-
-After mappings, Flash/V4 receive the default only for absent/null/empty effort;
-other DeepSeek models require catalog support. Namespaces are recognized.
-Explicit or malformed values, disabled thinking and existing aliases remain.
-Group ceilings/deny rules apply once, and clean failover attempts never inherit
-another model's injection. Responses, Chat and Messages retain their native
-fields and other reasoning options. Usage records forwarded effort without
-inventing explicit client effort. Compact/count-tokens remain unchanged;
-disabling restores ordinary omitted-effort behavior.
+The downstream `GET/PUT /admin/settings/codex-fingerprint`,
+`GET/PUT /admin/accounts/:id/codex-fingerprint`,
+`GET/PUT /admin/settings/codex-runtime` and
+`GET/PUT /admin/deepseek-reasoning` are retired without aliases. Their dedicated
+pages, fingerprint bulk entry and request-integrity diagnostics entry are
+removed. Historical settings rows, account extras, seeds and diagnostic data
+remain. Retired configuration no longer controls runtime behavior; retirement
+adds no cleanup migration.
 
 ## Model catalog interfaces
 
@@ -45,75 +31,22 @@ owns current official behavior. Custom capacity forms and
 `POST /admin/accounts/models/context-capacities-preview`,
 `GET /admin/accounts/:id/models/context-capacities` and
 `GET /admin/settings/model-context-catalog` are retired. Historical SQL,
-stored overrides/source values and diagnostics remain. Native sync, confirmation
-picker, metadata and test/effort plans remain independent; no data cleanup.
+stored overrides/source values and diagnostics remain. Native sync,
+confirmation picker, metadata and test/effort plans remain independent.
 
-## Codex fingerprint simulation
+## Codex identity and transport
 
-The Codex sidebar opens `/admin/codex/identity`; `/admin/codex` redirects there.
-`/admin/codex/advanced` owns UA/version, identifier modes and compression. Old
-runtime/fingerprint addresses redirect. Saved/effective fields remain available
-in accessible disclosures; general settings/account forms do not write identity.
+Official general UA/version settings, account fingerprint options, proxies and
+TLS profiles remain in the normal settings/account forms. Fingerprint defaults
+to `off`; explicit `device`, `session` and `full` use their original official
+semantics. Official credential source/shadow and account/API-key isolation
+remain. New and existing accounts are not batch-reconfigured by integration.
 
-`GET/PUT /admin/settings/codex-fingerprint` requires `enabled`, `user_agent`,
-`client_version`, `version_auto_sync_enabled` on PUT; existing UA/version/sync
-keys remain authoritative and `codex_fingerprint_enabled` falls back to the
-startup flag. GET includes synced/effective versions, default UA and source.
-Writes use existing administrator authentication/audit without extra step-up.
-
-`GET/PUT /admin/accounts/:id/codex-fingerprint` applies to OpenAI OAuth/setup-token
-accounts, including credential shadows. PUT accepts only `mode`; bulk jobs use
-frozen IDs and only that extra key. Read-only `device_identity`,
-`effective_device` and `identifier_policy` distinguish saved/derived fields from
-UA parsing. Reads never persist identity or timestamps. Details load at most
-three concurrently; obsolete responses are rejected and unsaved drafts retained.
-General edits preserve omitted modes, existing seeds/devices remain, and new
-accounts default to `device`.
-
-Enabled simulation uses one random seed-derived fixed credential-source device
-and independent real conversations. Final originator/UA uses official
-`codex_cli_rs` normalization without regenerating the device. Stored `session`
-and `full` stay compatible but act as `device`; UI offers off/device. Mapping
-scopes session/thread/parent/window by credential source and API key, preserving
-UUIDv7 time and real root/child/fork relationships. Explicit cache keys remain;
-default cache keys follow the mapping. Real turns, timestamps, permissions and
-sandbox metadata remain. A request without a conversation gets one synthetic
-UUIDv7 root shared across its attempts, never a permanent account root.
-
-Embedded turn metadata is canonical; flat fields and bounded HTTP/WS headers are
-projections. Malformed core metadata returns request-scoped 400; unknown fields
-and large numbers remain, and resolved conflicts are recorded. Tests/compaction
-use the same projection; wire status separates policy, sent identity and TLS/ALPN.
-
-The verified transport reference is official `rust-v0.162.1`, commit
-`092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`.
-`backend/internal/pkg/codextransport/reference.json` owns archive/binary/capture
-hashes and samples for Windows x86_64, Linux x86_64 and macOS arm64/x86_64.
-The sampled isolated custom-CA variant does not prove all native trust stores.
-It records TLS permutation, HTTP/2 order/flow, HTTP/1 headers and WS offers;
-handshakes are fresh without shared session tickets.
-
-Strict simulation never falls back to generic Go transport or replays an
-uncertain POST. Existing explicit protocol recovery remains separate. Plugins
-owning transmission need a matching attested profile or fail clearly while
-retaining configuration. API-key/other-provider/master-off paths keep their
-clients. HTTP/WS/refresh/catalog pools isolate credential source, proxy/profile.
-The Codex WS adapter retains coder/websocket v1.8.14 notices and bounded deflate;
-other services use the original dependency.
-
-Version discovery runs every six hours: normalized manual version, discovered
-stable, then built-in default, subject to the minimum. New client identities do
-not await new transport samples. `Binding.client_version` records the requested
-identity in pool keys; `Binding.version`/`validated` describe sampled transport.
-Settings `version_source` is manual/synced/builtin; `verified_version` retains
-the reference and compatibility `version_pending_validation` is false. The
-four-field PUT contract, seeds and persisted hardware remain unchanged.
-
-Every attempt shares one frozen identity/header/body/transport policy and
-compression choice. WS reuse also checks actual device/session/thread/window,
-client and policy revision, including off/device modes. Changed identity needs
-a new handshake after the current turn; mode edits invalidate only that
-account's subsequent connections.
+The downstream persistent device backfill, independent session mapping,
+metadata validator, frozen policy and custom sampled transport are retired.
+Their old values remain stored without recreating those policies. The former
+request-Zstd and DeepSeek default-effort switches no longer participate in
+requests; current behavior comes from the official core.
 
 ## Independent Pelican tests
 

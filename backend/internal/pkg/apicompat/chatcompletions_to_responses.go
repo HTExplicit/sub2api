@@ -74,16 +74,11 @@ func ChatCompletionsToResponsesWithMinOutputTokens(req *ChatCompletionsRequest, 
 		out.MaxOutputTokens = &v
 	}
 
-	// Preserve the complete native reasoning object. The Chat effort field only
-	// overrides effort; it must not erase mode, context, or future extensions.
-	out.Reasoning = req.Reasoning.Clone()
+	// reasoning_effort → reasoning.effort + reasoning.summary="auto"
 	if req.ReasoningEffort != "" {
-		if out.Reasoning == nil {
-			out.Reasoning = &ResponsesReasoning{}
-		}
-		out.Reasoning.Effort = req.ReasoningEffort
-		if !out.Reasoning.HasField("summary") {
-			out.Reasoning.Summary = "auto"
+		out.Reasoning = &ResponsesReasoning{
+			Effort:  req.ReasoningEffort,
+			Summary: "auto",
 		}
 	}
 

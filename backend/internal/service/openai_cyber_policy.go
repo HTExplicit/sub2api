@@ -10,13 +10,13 @@ import (
 
 // opsCyberPolicyKey 在 gin context 中携带 cyber_policy 命中标记。
 // 由 gateway 服务层在检测到上游 error.code=="cyber_policy" 时设置，
-// handler 在 Forward 返回后读取以触发风控记录、邮件与 tokens=0 用量行。
+// handler 在 Forward 返回后读取以触发风控记录、邮件与专用用量记录。
 const opsCyberPolicyKey = "ops_cyber_policy"
 
 // errOpenAICyberPolicyForwarded 表示 cyber_policy 已按当前端点格式透传给客户端
 // （error 已写出/下发）。compat 路径 ForwardAsChatCompletions / ForwardAsAnthropic 出口
-// 据此丢弃 result 并返回该哨兵，使 handler 落入 tokens=0 免费用量行（对齐 /v1/responses），
-// 既不计费、也不 failover、不重复写响应。
+// 据此丢弃 result 并返回该哨兵，由 handler 按上游实际 token 记录和计费，
+// 不再通过普通 RecordUsage 重复处理，也不 failover 或重复写响应。
 var errOpenAICyberPolicyForwarded = errors.New("openai cyber_policy forwarded to client")
 
 // CyberPolicyMark 记录一次 cyber_policy 硬阻断的上游证据。

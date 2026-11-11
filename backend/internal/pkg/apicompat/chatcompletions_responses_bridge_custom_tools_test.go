@@ -12,12 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Tool-shape fixtures explicitly model a completed tool-call response.
-func finalizeCompleteChatToolFixture(state *ChatCompletionsToResponsesStreamState) []ResponsesStreamEvent {
-	state.FinishReason = "tool_calls"
-	return FinalizeChatCompletionsResponsesStream(state)
-}
-
 func TestResponsesToChatCompletionsRequest_CustomToolBecomesFunctionTool(t *testing.T) {
 	req := &ResponsesRequest{
 		Model: "glm-5.2",
@@ -164,7 +158,7 @@ func TestEffectiveResponsesTools_RejectsMalformedAdditionalTools(t *testing.T) {
 	assert.Empty(t, tools)
 }
 
-func TestResponsesToChatCompletionsRequest_RejectsNonConvertibleTools(t *testing.T) {
+func TestResponsesToChatCompletionsRequest_DropsToolChoiceWhenNoConvertibleTools(t *testing.T) {
 	req := &ResponsesRequest{
 		Model: "glm-5.2",
 		Input: json.RawMessage(`"hi"`),
@@ -176,8 +170,10 @@ func TestResponsesToChatCompletionsRequest_RejectsNonConvertibleTools(t *testing
 	}
 
 	out, err := ResponsesToChatCompletionsRequest(req)
-	require.Error(t, err)
-	require.Nil(t, out)
+	require.NoError(t, err)
+
+	assert.Empty(t, out.Tools)
+	assert.Empty(t, out.ToolChoice, "tools 为空时转发 tool_choice 会被上游 400 拒绝")
 }
 
 func TestResponsesToChatCompletionsRequest_CustomToolChoiceMapsToFunctionChoice(t *testing.T) {
@@ -272,7 +268,7 @@ func TestChatCompletionsChunkToResponsesEvents_CustomToolCallStream(t *testing.T
 	}
 
 	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	var added, inputDone, itemDone *ResponsesStreamEvent
 	for i := range events {
@@ -334,7 +330,7 @@ func TestChatCompletionsChunkToResponsesEvents_MixedCustomNamespaceAliasStream(t
 		Index: &idx, ID: "call_alias", Function: ChatFunctionCall{Name: "functions__exec", Arguments: `not-json`},
 	}}}}}}
 	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	for _, evt := range events {
 		if evt.Type == "response.output_item.added" && evt.Item != nil && evt.Item.Type == "custom_tool_call" {
@@ -371,7 +367,7 @@ func TestChatCompletionsChunkToResponsesEvents_ExplicitFunctionOwnsCustomAliasCo
 		Index: &idx, ID: "call_function", Function: ChatFunctionCall{Name: "functions__exec", Arguments: `{"path":"/tmp"}`},
 	}}}}}}
 	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	for _, evt := range events {
 		assert.NotEqual(t, "response.custom_tool_call_input.done", evt.Type)
@@ -484,7 +480,7 @@ func TestChatCompletionsChunkToResponsesEvents_ToolSearchCallStream(t *testing.T
 	}
 
 	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	var added, itemDone *ResponsesStreamEvent
 	for i := range events {
@@ -546,6 +542,7 @@ func TestResponsesToChatCompletionsRequest_NamespaceToolFlattensChildren(t *test
 			Name: "gmail",
 			Tools: []ResponsesTool{
 				{Type: "function", Name: "send", Description: "Send mail", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)},
+				{Type: "custom", Name: "ignored_child"},
 			},
 		}},
 	}
@@ -688,7 +685,7 @@ func TestChatCompletionsChunkToResponsesEvents_CustomToolNameArrivesLate(t *test
 	var events []ResponsesStreamEvent
 	events = append(events, ChatCompletionsChunkToResponsesEvents(chunk1, state)...)
 	events = append(events, ChatCompletionsChunkToResponsesEvents(chunk2, state)...)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	addedCount := 0
 	for _, evt := range events {
@@ -723,7 +720,7 @@ func TestChatCompletionsChunkToResponsesEvents_FunctionToolNameArrivesLate(t *te
 	var events []ResponsesStreamEvent
 	events = append(events, ChatCompletionsChunkToResponsesEvents(chunk1, state)...)
 	events = append(events, ChatCompletionsChunkToResponsesEvents(chunk2, state)...)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	deltas := ""
 	argsDone := ""
@@ -853,8 +850,8 @@ func TestResponsesToChatCompletionsRequest_RejectsDuplicateTopLevelExecutableNam
 
 // tool_choice 指向被转换丢弃的工具（如 web_search）或不存在的名字时不能原样转发，
 // chat 上游会因选择项指向未声明工具而 400；字符串形式与指向幸存工具的选择保持转发。
-func TestResponsesToChatCompletionsRequest_RejectsUnrepresentableToolChoice(t *testing.T) {
-	// Unsupported hosted tools and invalid choices must not be silently weakened.
+func TestResponsesToChatCompletionsRequest_DropsToolChoiceForDroppedTool(t *testing.T) {
+	// 强制选择被丢弃的 web_search：工具没了，选择项也必须丢。
 	out, err := ResponsesToChatCompletionsRequest(&ResponsesRequest{
 		Model: "glm-5.2",
 		Input: json.RawMessage(`"hi"`),
@@ -864,8 +861,9 @@ func TestResponsesToChatCompletionsRequest_RejectsUnrepresentableToolChoice(t *t
 		},
 		ToolChoice: json.RawMessage(`{"type":"web_search"}`),
 	})
-	require.Error(t, err)
-	require.Nil(t, out)
+	require.NoError(t, err)
+	require.Len(t, out.Tools, 1)
+	assert.Empty(t, out.ToolChoice, "指向被丢弃服务端工具的 tool_choice 必须丢弃")
 
 	out, err = ResponsesToChatCompletionsRequest(&ResponsesRequest{
 		Model: "glm-5.2",
@@ -877,8 +875,9 @@ func TestResponsesToChatCompletionsRequest_RejectsUnrepresentableToolChoice(t *t
 		},
 		ToolChoice: json.RawMessage(`{"type":"function","name":"web_search"}`),
 	})
-	require.Error(t, err)
-	require.Nil(t, out)
+	require.NoError(t, err)
+	require.Len(t, out.Tools, 2)
+	assert.Empty(t, out.ToolChoice, "surviving x_search must not keep a function tool_choice named web_search")
 
 	// 具名选择指向不存在的工具名。
 	out, err = ResponsesToChatCompletionsRequest(&ResponsesRequest{
@@ -887,8 +886,8 @@ func TestResponsesToChatCompletionsRequest_RejectsUnrepresentableToolChoice(t *t
 		Tools:      []ResponsesTool{{Type: "function", Name: "wait"}},
 		ToolChoice: json.RawMessage(`{"type":"function","name":"missing"}`),
 	})
-	require.Error(t, err)
-	require.Nil(t, out)
+	require.NoError(t, err)
+	assert.Empty(t, out.ToolChoice, "指向不存在工具名的 tool_choice 必须丢弃")
 
 	// 字符串形式与指向幸存工具的选择保持原有转发行为。
 	out, err = ResponsesToChatCompletionsRequest(&ResponsesRequest{
@@ -923,15 +922,15 @@ func TestResponsesToChatCompletionsRequest_ToolSearchToolChoiceMapsToProxy(t *te
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"type":"function","function":{"name":"tool_search"}}`, string(out.ToolChoice))
 
-	// An undeclared tool cannot be selected.
+	// 未声明 type=tool_search 时强制选择它没有可指向的代理，丢弃选择项。
 	out, err = ResponsesToChatCompletionsRequest(&ResponsesRequest{
 		Model:      "glm-5.2",
 		Input:      json.RawMessage(`"hi"`),
 		Tools:      []ResponsesTool{{Type: "function", Name: "wait"}},
 		ToolChoice: json.RawMessage(`{"type":"tool_search"}`),
 	})
-	require.Error(t, err)
-	require.Nil(t, out)
+	require.NoError(t, err)
+	assert.Empty(t, out.ToolChoice)
 }
 
 // 客户端请求在原生 Responses API 上合法（namespace 子工具按 namespace+name 路由），
@@ -1045,7 +1044,7 @@ func TestChatCompletionsChunkToResponsesEvents_NamespacedToolCallStream(t *testi
 	}
 
 	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	var added, itemDone *ResponsesStreamEvent
 	for i := range events {
@@ -1114,7 +1113,7 @@ func TestChatCompletionsChunkToResponsesEvents_NamespacedToolNameArrivesLate(t *
 	var events []ResponsesStreamEvent
 	events = append(events, ChatCompletionsChunkToResponsesEvents(chunk1, state)...)
 	events = append(events, ChatCompletionsChunkToResponsesEvents(chunk2, state)...)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	addedCount := 0
 	deltas := ""
@@ -1152,7 +1151,7 @@ func TestChatCompletionsChunkToResponsesEvents_FunctionToolStreamUnaffected(t *t
 	}
 
 	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
-	events = append(events, finalizeCompleteChatToolFixture(state)...)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
 	sawArgsDelta := false
 	for _, evt := range events {

@@ -108,9 +108,10 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	}
 
 	upstreamStart := time.Now()
+	patchedBody = s.finalizeResponsesForSend(c, account, patchedBody)
 	var resp *http.Response
 	for attempt := 0; ; attempt++ {
-		upstreamReq, buildErr := s.buildGrokConversationRequest(upstreamCtx, c, account, patchedBody, token, cacheIdentity)
+		upstreamReq, buildErr := buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token, cacheIdentity, s.cfg, s.settingService)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -1574,16 +1575,6 @@ func addOpenAIUsage(dst *OpenAIUsage, usage OpenAIUsage) {
 	dst.ImageOutputTokens += usage.ImageOutputTokens
 }
 
-// Conversation sends share the final prompt boundary. Auxiliary vision probes
-// and standalone image/audio endpoints keep the lower-level transport builder.
-func (s *OpenAIGatewayService) buildGrokConversationRequest(ctx context.Context, c *gin.Context, account *Account, clean []byte, token, cacheIdentity string) (*http.Request, error) {
-	body, err := s.finalizeResponsesForSend(c, account, clean)
-	if err != nil {
-		return nil, err
-	}
-	return buildGrokResponsesRequest(ctx, c, account, body, token, cacheIdentity, s.cfg, s.settingService)
-}
-
 func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, cacheIdentity string, cfg *config.Config, settings ...*SettingService) (*http.Request, error) {
 	targetURL, err := buildGrokResponsesURL(account, cfg, settings...)
 	if err != nil {
@@ -1907,7 +1898,7 @@ func (s *OpenAIGatewayService) rateLimitGrok(ctx context.Context, account *Accou
 	if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(runtimeUntil) {
 		runtimeUntil = *account.TempUnschedulableUntil
 	}
-	s.BlockAccountSchedulingFromPersistedCooldown(account, runtimeUntil)
+	s.BlockAccountScheduling(account, runtimeUntil, "429")
 	persistGrokRateLimit(ctx, s.accountRepo, account, resetAt)
 
 	// Propagate a short team+model cool so sibling OAuth accounts on the same
@@ -2143,7 +2134,7 @@ func (s *OpenAIGatewayService) tempUnscheduleGrok(ctx context.Context, account *
 	if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(until) {
 		until = *account.TempUnschedulableUntil
 	}
-	s.BlockAccountSchedulingFromPersistedCooldown(account, until)
+	s.BlockAccountScheduling(account, until, reason)
 	if s.accountRepo != nil {
 		stateCtx, cancel := openAIAccountStateContext(ctx)
 		defer cancel()

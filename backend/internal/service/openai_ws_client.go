@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"io"
 	"net/http"
 	"net/url"
@@ -124,9 +123,6 @@ func (d *coderOpenAIWSClientDialer) Dial(
 		return nil, 0, nil, errors.New("ws url is empty")
 	}
 
-	if binding, ok := codextransport.FromContext(ctx); ok {
-		return d.dialStrictCodex(ctx, targetURL, headers, proxyURL, binding)
-	}
 	wrapped := &coderOpenAIWSClientConn{}
 	opts := &coderws.DialOptions{
 		HTTPHeader:      cloneHeader(headers),
@@ -142,8 +138,6 @@ func (d *coderOpenAIWSClientDialer) Dial(
 			return nil, 0, nil, err
 		}
 		opts.HTTPClient = proxyClient
-	} else {
-		opts.HTTPClient = openAIWSDirectHTTPClient()
 	}
 
 	conn, resp, err := coderws.Dial(ctx, targetURL, opts)
@@ -201,8 +195,6 @@ func (d *coderOpenAIWSClientDialer) proxyHTTPClient(proxy string) (*http.Client,
 		IdleConnTimeout:     openAIWSProxyTransportIdleConnTimeout,
 		TLSHandshakeTimeout: 10 * time.Second,
 		ForceAttemptHTTP2:   true,
-		// 与官方客户端一致：握手不带 Go 自动附加的 Accept-Encoding: gzip。
-		DisableCompression: true,
 	}
 	client := &http.Client{Transport: transport}
 	d.proxyClients[normalizedProxy] = &openAIWSProxyClientEntry{
@@ -212,28 +204,6 @@ func (d *coderOpenAIWSClientDialer) proxyHTTPClient(proxy string) (*http.Client,
 	d.ensureProxyClientCapacityLocked()
 	d.proxyMisses.Add(1)
 	return client, nil
-}
-
-var (
-	openAIWSDirectHTTPClientOnce  sync.Once
-	openAIWSDirectHTTPClientValue *http.Client
-)
-
-// openAIWSDirectHTTPClient 是直连（无代理）WS 握手用的 HTTP 客户端：沿用 DefaultTransport 的
-// 全部行为（环境代理、超时、HTTP/1.1 升级），仅关闭 Go 自动附加的 Accept-Encoding: gzip，
-// 使握手请求头与官方客户端一致。
-func openAIWSDirectHTTPClient() *http.Client {
-	openAIWSDirectHTTPClientOnce.Do(func() {
-		base, ok := http.DefaultTransport.(*http.Transport)
-		if !ok || base == nil {
-			openAIWSDirectHTTPClientValue = http.DefaultClient
-			return
-		}
-		transport := base.Clone()
-		transport.DisableCompression = true
-		openAIWSDirectHTTPClientValue = &http.Client{Transport: transport}
-	})
-	return openAIWSDirectHTTPClientValue
 }
 
 func (d *coderOpenAIWSClientDialer) cleanupProxyClientsLocked(nowUnixNano int64) {

@@ -1,6 +1,7 @@
 package apicompat
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
@@ -146,7 +147,7 @@ func TestAnthropicToResponses_ToolUse(t *testing.T) {
 	assert.Equal(t, "Sunny, 72°F", items[3].Output)
 }
 
-func TestAnthropicToResponses_ThinkingWithoutSignatureBecomesSummary(t *testing.T) {
+func TestAnthropicToResponses_ThinkingWithoutSignatureIgnored(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.2",
 		MaxTokens: 1024,
@@ -162,15 +163,12 @@ func TestAnthropicToResponses_ThinkingWithoutSignatureBecomesSummary(t *testing.
 
 	var items []ResponsesInputItem
 	require.NoError(t, json.Unmarshal(resp.Input, &items))
-	// user + reasoning(summary only) + assistant(text) + user = 4
-	require.Len(t, items, 4)
-	assert.Equal(t, "reasoning", items[1].Type)
-	assert.Empty(t, items[1].EncryptedContent)
-	assert.Equal(t, []ResponsesSummary{{Type: "summary_text", Text: "deep thought"}}, items[1].Summary)
-	assert.Equal(t, "assistant", items[2].Role)
+	// user + assistant(text only, thinking without signature ignored) + user = 3
+	require.Len(t, items, 3)
+	assert.Equal(t, "assistant", items[1].Role)
 	// Assistant content should only have text, not thinking.
 	var parts []ResponsesContentPart
-	require.NoError(t, json.Unmarshal(items[2].Content, &parts))
+	require.NoError(t, json.Unmarshal(items[1].Content, &parts))
 	require.Len(t, parts, 1)
 	assert.Equal(t, "output_text", parts[0].Type)
 	assert.Equal(t, "Hi!", parts[0].Text)
@@ -196,9 +194,52 @@ func TestAnthropicToResponses_ThinkingSignatureBecomesReasoning(t *testing.T) {
 	require.GreaterOrEqual(t, len(items), 4)
 	assert.Equal(t, "reasoning", items[1].Type)
 	assert.Equal(t, "enc-rs-1", items[1].EncryptedContent)
-	assert.Equal(t, []ResponsesSummary{{Type: "summary_text", Text: "plan"}}, items[1].Summary)
 	assert.Equal(t, "assistant", items[2].Role)
 	assert.Equal(t, "function_call", items[3].Type)
+}
+
+func TestAnthropicToResponses_ForeignReasoningEnvelopePreservesToolHistory(t *testing.T) {
+	envelope := "ccswitch-openai-reasoning-v1:" + base64.RawURLEncoding.EncodeToString([]byte(
+		`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"gAAAA-foreign"}`,
+	))
+	for _, tc := range []struct{ name, signature string }{
+		{"valid envelope", envelope},
+		{"surrounding whitespace", " \n" + envelope + "\t"},
+		{"malformed envelope", "ccswitch-openai-reasoning-v1:not-base64!"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			blocks, err := json.Marshal([]AnthropicContentBlock{
+				{Type: "thinking", Signature: tc.signature},
+				{Type: "thinking", Signature: "native-ciphertext"},
+				{Type: "text", Text: "Checking now."},
+				{Type: "tool_use", ID: "call_1", Name: "lookup", Input: json.RawMessage(`{"key":"value"}`)},
+			})
+			require.NoError(t, err)
+			resp, err := AnthropicToResponses(&AnthropicRequest{
+				Model: "gpt-6.1-sol", MaxTokens: 1024,
+				Messages: []AnthropicMessage{
+					{Role: "user", Content: json.RawMessage(`"Check this"`)},
+					{Role: "assistant", Content: blocks},
+					{Role: "user", Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"call_1","content":"found"}]`)},
+				},
+			})
+			require.NoError(t, err)
+			var items []ResponsesInputItem
+			require.NoError(t, json.Unmarshal(resp.Input, &items))
+			require.Len(t, items, 5)
+			require.Equal(t, "reasoning", items[1].Type)
+			require.Equal(t, "native-ciphertext", items[1].EncryptedContent)
+			require.Equal(t, "assistant", items[2].Role)
+			require.JSONEq(t, `[{"type":"output_text","text":"Checking now."}]`, string(items[2].Content))
+			require.Equal(t, "function_call", items[3].Type)
+			require.Equal(t, "call_1", items[3].CallID)
+			require.Equal(t, "lookup", items[3].Name)
+			require.JSONEq(t, `{"key":"value"}`, items[3].Arguments)
+			require.Equal(t, "function_call_output", items[4].Type)
+			require.Equal(t, "call_1", items[4].CallID)
+			require.Equal(t, "found", items[4].Output)
+		})
+	}
 }
 
 func TestAnthropicToResponses_MaxTokensFloor(t *testing.T) {
@@ -1858,8 +1899,8 @@ func TestOpus55ResponsesAdaptiveThinkingAndToolChoice(t *testing.T) {
 	require.ErrorContains(t, err, "reasoning effort")
 	old, err := ResponsesToAnthropicRequest(&ResponsesRequest{Model: "claude-opus-5", Input: json.RawMessage(`"hello"`), Reasoning: &ResponsesReasoning{Effort: "xhigh"}})
 	require.NoError(t, err)
-	require.Equal(t, "xhigh", old.OutputConfig.Effort)
-	require.Equal(t, &AnthropicThinking{Type: "adaptive"}, old.Thinking)
+	require.Equal(t, "max", old.OutputConfig.Effort)
+	require.Equal(t, "enabled", old.Thinking.Type)
 }
 
 func TestOpus55SignedThinkingResponsesRoundTrip(t *testing.T) {
@@ -1942,71 +1983,6 @@ func TestSonnet55SignedThinkingResponsesRoundTrip(t *testing.T) {
 	require.Equal(t, block, blocks[0])
 	require.Equal(t, "text", blocks[1].Type)
 	require.Equal(t, "tool_use", blocks[2].Type)
-}
-
-func TestResponsesToAnthropicReasoningEffortByModelFamily(t *testing.T) {
-	for _, tc := range []struct {
-		model, effort   string
-		maxOutputTokens int // 0: the client sets no limit
-		thinking        *AnthropicThinking
-		outputEffort    string // "": no output_config
-		maxTokens       int
-	}{
-		{"claude-opus-4-7", "xhigh", 0, &AnthropicThinking{Type: "adaptive"}, "xhigh", 8192},
-		{"anthropic/claude-opus-4.7", "xhigh", 0, &AnthropicThinking{Type: "adaptive"}, "xhigh", 8192},
-		{"claude-opus-4-6", "xhigh", 0, &AnthropicThinking{Type: "adaptive"}, "max", 8192},
-		{"claude-opus-4-8", "none", 0, &AnthropicThinking{Type: "adaptive"}, "low", 8192},
-		{"claude-opus-5", "none", 0, &AnthropicThinking{Type: "adaptive"}, "low", 8192},
-		{"claude-fable-5-1", "none", 0, &AnthropicThinking{Type: "adaptive"}, "low", 8192},
-		{"claude-opus-4-5-20251101", "max", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 23808}, "high", 32000},
-		{"claude-opus-4-5", "high", 1024, nil, "high", 1024},
-		{"claude-haiku-4-5", "high", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 10240}, "", 18432},
-		{"claude-opus-4-0", "xhigh", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 23808}, "", 32000},
-		{"glm-5.3", "xhigh", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 32768}, "max", 8192},
-	} {
-		t.Run(tc.model+"/"+tc.effort, func(t *testing.T) {
-			req := &ResponsesRequest{Model: tc.model, Input: json.RawMessage(`"hello"`), Reasoning: &ResponsesReasoning{Effort: tc.effort}}
-			if tc.maxOutputTokens > 0 {
-				req.MaxOutputTokens = &tc.maxOutputTokens
-			}
-			out, err := ResponsesToAnthropicRequest(req)
-			require.NoError(t, err)
-			require.Equal(t, tc.thinking, out.Thinking)
-			if tc.outputEffort == "" {
-				require.Nil(t, out.OutputConfig)
-			} else {
-				require.Equal(t, tc.outputEffort, out.OutputConfig.Effort)
-			}
-			require.Equal(t, tc.maxTokens, out.MaxTokens)
-		})
-	}
-
-	// Chat Completions reaches the same conversion; its max_tokens caps
-	// reasoning and answer together, so the budget shrinks below it.
-	maxTokens := 4096
-	chatReq, err := ChatCompletionsToResponses(&ChatCompletionsRequest{Model: "claude-haiku-4-5", ReasoningEffort: "high", MaxTokens: &maxTokens, Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`"hello"`)}}})
-	require.NoError(t, err)
-	out, err := ResponsesToAnthropicRequest(chatReq)
-	require.NoError(t, err)
-	require.Equal(t, &AnthropicThinking{Type: "enabled", BudgetTokens: 4095}, out.Thinking)
-	require.Nil(t, out.OutputConfig)
-	require.Equal(t, 4096, out.MaxTokens)
-
-	// Thinking takes temperature only at 1, and chat clients send their own.
-	temperature := 0.7
-	chatReq, err = ChatCompletionsToResponses(&ChatCompletionsRequest{Model: "claude-sonnet-4-6", ReasoningEffort: "low", Temperature: &temperature, Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`"hello"`)}}})
-	require.NoError(t, err)
-	out, err = ResponsesToAnthropicRequest(chatReq)
-	require.NoError(t, err)
-	require.Equal(t, &AnthropicThinking{Type: "adaptive"}, out.Thinking)
-	require.Equal(t, "low", out.OutputConfig.Effort)
-	require.Nil(t, out.Temperature)
-
-	// Budget thinking rejects forced tool use; the effort level still applies.
-	out, err = ResponsesToAnthropicRequest(&ResponsesRequest{Model: "claude-opus-4-5", Input: json.RawMessage(`"hello"`), Tools: []ResponsesTool{{Type: "function", Name: "lookup"}}, ToolChoice: json.RawMessage(`"required"`), Reasoning: &ResponsesReasoning{Effort: "medium"}})
-	require.NoError(t, err)
-	require.Nil(t, out.Thinking)
-	require.Equal(t, "medium", out.OutputConfig.Effort)
 }
 
 func TestHaiku55ResponsesThinkingAndSampling(t *testing.T) {

@@ -477,14 +477,38 @@ func summarizeOpenAIWSInput(input any) string {
 	)
 }
 
-// A transport retry repeats the same request. In particular, include may ask
-// for encrypted reasoning needed by the next turn; it is not disposable
-// metadata. Explicit protocol rejections are handled separately.
+func dropOpenAIWSPayloadKey(payload map[string]any, key string, removed *[]string) {
+	if len(payload) == 0 || strings.TrimSpace(key) == "" {
+		return
+	}
+	if _, exists := payload[key]; !exists {
+		return
+	}
+	delete(payload, key)
+	*removed = append(*removed, key)
+}
+
+// applyOpenAIWSRetryPayloadStrategy 在 WS 连续失败时仅移除无语义字段，
+// 避免重试成功却改变原始请求语义。
+// 注意：prompt_cache_key 不应在重试中移除；它常用于会话稳定标识（session_id 兜底）。
 func applyOpenAIWSRetryPayloadStrategy(payload map[string]any, attempt int) (strategy string, removedKeys []string) {
 	if len(payload) == 0 {
 		return "empty", nil
 	}
-	return "full", nil
+	if attempt <= 1 {
+		return "full", nil
+	}
+
+	removed := make([]string, 0, 2)
+	if attempt >= 2 {
+		dropOpenAIWSPayloadKey(payload, "include", &removed)
+	}
+
+	if len(removed) == 0 {
+		return "full", nil
+	}
+	sort.Strings(removed)
+	return "trim_optional_fields", removed
 }
 
 func logOpenAIWSModeInfo(format string, args ...any) {
@@ -515,8 +539,6 @@ func logOpenAIWSBindResponseAccountWarn(groupID, accountID int64, responseID str
 		zap.Int64("group_id", groupID),
 		zap.Int64("account_id", accountID),
 		zap.String("response_id", truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen)),
-		zap.Bool("response_id_present", strings.TrimSpace(responseID) != ""),
-		zap.String("response_id_kind", normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(responseID))),
 		zap.Error(err),
 	)
 }

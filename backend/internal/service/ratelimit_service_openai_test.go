@@ -5,7 +5,6 @@ package service
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 )
 
 func TestCalculateOpenAI429ResetTime_7dExhausted(t *testing.T) {
+	svc := &RateLimitService{}
 
 	// Simulate headers when 7d limit is exhausted (100% used)
 	// Primary = 7d (10080 minutes), Secondary = 5h (300 minutes)
@@ -26,12 +26,11 @@ func TestCalculateOpenAI429ResetTime_7dExhausted(t *testing.T) {
 	headers.Set("x-codex-secondary-window-minutes", "300")        // 5 hours
 
 	before := time.Now()
-	resetAt := calculateOpenAI429ResetTime(headers)
+	resetAt := svc.calculateOpenAI429ResetTime(headers)
 	after := time.Now()
 
 	if resetAt == nil {
 		t.Fatal("expected non-nil resetAt")
-		return
 	}
 
 	// Should be approximately 384607 seconds from now
@@ -45,6 +44,7 @@ func TestCalculateOpenAI429ResetTime_7dExhausted(t *testing.T) {
 }
 
 func TestCalculateOpenAI429ResetTime_5hExhausted(t *testing.T) {
+	svc := &RateLimitService{}
 
 	// Simulate headers when 5h limit is exhausted (100% used)
 	headers := http.Header{}
@@ -56,12 +56,11 @@ func TestCalculateOpenAI429ResetTime_5hExhausted(t *testing.T) {
 	headers.Set("x-codex-secondary-window-minutes", "300")       // 5 hours
 
 	before := time.Now()
-	resetAt := calculateOpenAI429ResetTime(headers)
+	resetAt := svc.calculateOpenAI429ResetTime(headers)
 	after := time.Now()
 
 	if resetAt == nil {
 		t.Fatal("expected non-nil resetAt")
-		return
 	}
 
 	// Should be approximately 3600 seconds from now
@@ -75,6 +74,7 @@ func TestCalculateOpenAI429ResetTime_5hExhausted(t *testing.T) {
 }
 
 func TestCalculateOpenAI429ResetTime_NeitherExhausted_ReturnsNil(t *testing.T) {
+	svc := &RateLimitService{}
 
 	headers := http.Header{}
 	headers.Set("x-codex-primary-used-percent", "80")
@@ -84,18 +84,17 @@ func TestCalculateOpenAI429ResetTime_NeitherExhausted_ReturnsNil(t *testing.T) {
 	headers.Set("x-codex-secondary-reset-after-seconds", "5000")
 	headers.Set("x-codex-secondary-window-minutes", "300")
 
-	now := time.Now()
-	require.Nil(t, calculateOpenAI429ResetTime(headers))
-	require.Nil(t, classifyOpenAIOAuth429At(headers, nil, now).ResetAt, "OAuth retains its transient classification")
+	require.Nil(t, svc.calculateOpenAI429ResetTime(headers))
 }
 
 func TestCalculateOpenAI429ResetTime_NoCodexHeaders(t *testing.T) {
+	svc := &RateLimitService{}
 
 	// No codex headers at all
 	headers := http.Header{}
 	headers.Set("content-type", "application/json")
 
-	resetAt := calculateOpenAI429ResetTime(headers)
+	resetAt := svc.calculateOpenAI429ResetTime(headers)
 
 	if resetAt != nil {
 		t.Errorf("expected nil resetAt when no codex headers, got %v", resetAt)
@@ -146,6 +145,7 @@ func TestParseOpenAIRateLimitResetTime_DoesNotParseUnknownErrorMessage(t *testin
 }
 
 func TestCalculateOpenAI429ResetTime_ReversedWindowOrder(t *testing.T) {
+	svc := &RateLimitService{}
 
 	// Test when OpenAI sends primary as 5h and secondary as 7d (reversed)
 	headers := http.Header{}
@@ -157,12 +157,11 @@ func TestCalculateOpenAI429ResetTime_ReversedWindowOrder(t *testing.T) {
 	headers.Set("x-codex-secondary-window-minutes", "10080") // 7 days - larger!
 
 	before := time.Now()
-	resetAt := calculateOpenAI429ResetTime(headers)
+	resetAt := svc.calculateOpenAI429ResetTime(headers)
 	after := time.Now()
 
 	if resetAt == nil {
 		t.Fatal("expected non-nil resetAt")
-		return
 	}
 
 	// Should correctly identify that primary is 5h (smaller window) and use its reset time
@@ -178,91 +177,18 @@ func TestCalculateOpenAI429ResetTime_ReversedWindowOrder(t *testing.T) {
 type openAI429SnapshotRepo struct {
 	mockAccountRepoForGemini
 	rateLimitedID      int64
-	rateLimitedAt      time.Time
 	updatedExtra       map[string]any
-	updatedExtraIDs    []int64
 	bulkUpdatedIDs     []int64
 	bulkUpdatedPayload AccountBulkUpdate
 }
 
-func (r *openAI429SnapshotRepo) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
+func (r *openAI429SnapshotRepo) SetRateLimited(_ context.Context, id int64, _ time.Time) error {
 	r.rateLimitedID = id
-	r.rateLimitedAt = resetAt
 	return nil
 }
 
-func TestHandle429_OpenAITransientIncidentHeadersUseShortFallback(t *testing.T) {
-	headers := http.Header{}
-	headers.Set("x-codex-primary-used-percent", "28")
-	headers.Set("x-codex-primary-reset-after-seconds", "18000")
-	headers.Set("x-codex-primary-window-minutes", "300")
-	headers.Set("x-codex-secondary-used-percent", "69")
-	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
-	headers.Set("x-codex-secondary-window-minutes", "10080")
-	for _, accountType := range []string{AccountTypeOAuth, AccountTypeAPIKey} {
-		t.Run(accountType, func(t *testing.T) {
-			repo := &openAI429SnapshotRepo{}
-			blocker := &runtimeBlockRecorder{}
-			svc := NewRateLimitService(repo, nil, nil, nil, nil)
-			svc.SetAccountRuntimeBlocker(blocker)
-			account := &Account{ID: 125, Platform: PlatformOpenAI, Type: accountType}
-			now := time.Now()
-
-			svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
-
-			require.Equal(t, account.ID, repo.rateLimitedID)
-			require.WithinDuration(t, now.Add(time.Duration(defaultRateLimit429CooldownSeconds)*time.Second), repo.rateLimitedAt, 2*time.Second)
-			require.Less(t, repo.rateLimitedAt.Sub(now), time.Minute)
-			require.Equal(t, []*Account{account}, blocker.accounts)
-			require.Equal(t, []time.Time{repo.rateLimitedAt}, blocker.until)
-			require.Equal(t, []string{"429_fallback"}, blocker.reasons)
-			require.Equal(t, 28.0, repo.updatedExtra["codex_5h_used_percent"])
-			require.Equal(t, 69.0, repo.updatedExtra["codex_7d_used_percent"])
-		})
-	}
-}
-
-func TestHandle429_OpenAITransientIncidentHeadersFallbackDisabledSkipsPenalty(t *testing.T) {
-	headers := http.Header{}
-	headers.Set("x-codex-primary-used-percent", "28")
-	headers.Set("x-codex-primary-reset-after-seconds", "18000")
-	headers.Set("x-codex-primary-window-minutes", "300")
-	headers.Set("x-codex-secondary-used-percent", "69")
-	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
-	headers.Set("x-codex-secondary-window-minutes", "10080")
-	for _, accountType := range []string{AccountTypeOAuth, AccountTypeAPIKey} {
-		t.Run(accountType, func(t *testing.T) {
-			repo := &openAI429SnapshotRepo{}
-			blocker := &runtimeBlockRecorder{}
-			settingSvc := NewSettingService(newMockSettingRepo(), &config.Config{})
-			require.NoError(t, settingSvc.SetRateLimit429CooldownSettings(context.Background(), &RateLimit429CooldownSettings{
-				Enabled: false, CooldownSeconds: 12,
-			}))
-			svc := NewRateLimitService(repo, nil, nil, nil, nil)
-			svc.SetSettingService(settingSvc)
-			svc.SetAccountRuntimeBlocker(blocker)
-			account := &Account{ID: 126, Platform: PlatformOpenAI, Type: accountType}
-
-			svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
-
-			require.Zero(t, repo.rateLimitedID)
-			require.True(t, repo.rateLimitedAt.IsZero())
-			require.Empty(t, blocker.accounts)
-			require.Empty(t, blocker.reasons)
-			require.Equal(t, 28.0, repo.updatedExtra["codex_5h_used_percent"])
-			require.Equal(t, 69.0, repo.updatedExtra["codex_7d_used_percent"])
-		})
-	}
-}
-
-func (r *openAI429SnapshotRepo) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
-	r.updatedExtraIDs = append(r.updatedExtraIDs, id)
-	if r.updatedExtra == nil {
-		r.updatedExtra = make(map[string]any)
-	}
-	for key, value := range updates {
-		r.updatedExtra[key] = value
-	}
+func (r *openAI429SnapshotRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+	r.updatedExtra = updates
 	return nil
 }
 
@@ -287,9 +213,9 @@ func TestHandle429_OpenAIPersistsCodexSnapshotImmediately(t *testing.T) {
 
 	svc.handle429(context.Background(), account, headers, nil)
 
-	require.Zero(t, repo.rateLimitedID, "quota restrictions must not be duplicated as an unrelated 429 cooldown")
-	require.True(t, account.QuotaState(time.Now()).Blocked)
-	require.NotNil(t, account.QuotaState(time.Now()).Until)
+	if repo.rateLimitedID != account.ID {
+		t.Fatalf("rateLimitedID = %d, want %d", repo.rateLimitedID, account.ID)
+	}
 	if len(repo.updatedExtra) == 0 {
 		t.Fatal("expected codex snapshot to be persisted on 429")
 	}
@@ -317,20 +243,7 @@ func TestHandle429_OpenAISyncsObservedPlanType(t *testing.T) {
 	require.Equal(t, []int64{account.ID}, repo.bulkUpdatedIDs)
 	require.Equal(t, "free", repo.bulkUpdatedPayload.Credentials["plan_type"])
 	require.Equal(t, "free", account.Credentials["plan_type"])
-	require.Zero(t, repo.rateLimitedID, "hard quota is owned by Extra, not the legacy 429 cooldown")
-	require.True(t, repo.rateLimitedAt.IsZero())
-	require.NotEmpty(t, repo.updatedExtraIDs)
-	for _, id := range repo.updatedExtraIDs {
-		require.Equal(t, account.ID, id)
-	}
-	now := time.Now()
-	quota := account.QuotaState(now)
-	require.NotNil(t, quota)
-	require.True(t, quota.Blocked)
-	require.Nil(t, quota.Until, "the expired reset in the response must remain unknown")
-	persisted := *account
-	persisted.Extra = repo.updatedExtra
-	require.Equal(t, quota, persisted.QuotaState(now), "the durable observation must reproduce the hard block")
+	require.Equal(t, account.ID, repo.rateLimitedID)
 }
 
 // TestHandle429_SkipsSparkShadow 外审第8轮 P1:spark 影子的限流状态只由 QueryUsage(/wham/usage
@@ -360,39 +273,15 @@ func TestHandle429_SkipsSparkShadow(t *testing.T) {
 
 	require.Zero(t, shadowRepo.rateLimitedID, "spark shadow must not be SetRateLimited from /responses global 429")
 	require.Empty(t, shadowRepo.updatedExtra, "spark shadow must not get a codex snapshot from /responses 429")
-	require.Empty(t, shadowRepo.updatedExtraIDs)
-	require.Nil(t, shadow.QuotaState(time.Now()), "global quota headers must not block the Spark quota scope")
 
 	// 反向对照:普通 OpenAI OAuth 账号仍按 global 429 限流。
 	normalRepo := &openAI429SnapshotRepo{}
 	normalSvc := NewRateLimitService(normalRepo, nil, nil, nil, nil)
 	normal := &Account{ID: 902, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
-	before := time.Now()
 	normalSvc.handle429(context.Background(), normal, headers, nil)
-	now := time.Now()
 
-	require.Zero(t, normalRepo.rateLimitedID, "normal OAuth hard quota must not duplicate a legacy cooldown")
-	require.True(t, normalRepo.rateLimitedAt.IsZero())
-	require.NotEmpty(t, normalRepo.updatedExtraIDs)
-	for _, id := range normalRepo.updatedExtraIDs {
-		require.Equal(t, normal.ID, id)
-	}
-	require.Equal(t, 100.0, normalRepo.updatedExtra["codex_5h_used_percent"])
-	require.Equal(t, 100.0, normalRepo.updatedExtra["codex_7d_used_percent"])
-	quota := normal.QuotaState(now)
-	require.NotNil(t, quota)
-	require.True(t, quota.Blocked)
-	require.NotNil(t, quota.Until)
-	require.False(t, quota.Until.Before(before.Add(7*24*time.Hour).Truncate(time.Second)))
-	require.False(t, quota.Until.After(now.Add(7*24*time.Hour)))
-	persisted := *normal
-	persisted.Extra = normalRepo.updatedExtra
-	persistedQuota := persisted.QuotaState(now)
-	require.NotNil(t, persistedQuota)
-	require.Equal(t, quota.Blocked, persistedQuota.Blocked)
-	require.Equal(t, quota.Until, persistedQuota.Until)
-	require.Len(t, persistedQuota.Windows, 2, "the durable snapshot also retains both global quota windows")
+	require.Equal(t, normal.ID, normalRepo.rateLimitedID, "normal OpenAI OAuth account should still be rate limited")
 }
 
 func TestNormalizedCodexLimits(t *testing.T) {
@@ -416,7 +305,6 @@ func TestNormalizedCodexLimits(t *testing.T) {
 	normalized := snapshot.Normalize()
 	if normalized == nil {
 		t.Fatal("expected non-nil normalized")
-		return
 	}
 
 	// Primary has larger window (10080 > 300), so primary should be 7d
@@ -448,7 +336,6 @@ func TestNormalizedCodexLimits_OnlyPrimaryData(t *testing.T) {
 	normalized := snapshot.Normalize()
 	if normalized == nil {
 		t.Fatal("expected non-nil normalized")
-		return
 	}
 
 	// Legacy assumption: primary=7d, secondary=5h
@@ -528,7 +415,6 @@ func TestNormalizedCodexLimits_OnlySecondaryData(t *testing.T) {
 	normalized := snapshot.Normalize()
 	if normalized == nil {
 		t.Fatal("expected non-nil normalized")
-		return
 	}
 
 	// Legacy assumption: primary=7d, secondary=5h
@@ -563,7 +449,6 @@ func TestNormalizedCodexLimits_BothDataNoWindowMinutes(t *testing.T) {
 	normalized := snapshot.Normalize()
 	if normalized == nil {
 		t.Fatal("expected non-nil normalized")
-		return
 	}
 
 	// Legacy assumption: primary=7d, secondary=5h
@@ -585,13 +470,15 @@ func TestHandle429_AnthropicPlatformUnaffected(t *testing.T) {
 	// Verify that Anthropic platform accounts still use the original logic
 	// This test ensures we don't break existing Claude account rate limiting
 
+	svc := &RateLimitService{}
+
 	// Simulate Anthropic 429 headers
 	headers := http.Header{}
 	headers.Set("anthropic-ratelimit-unified-reset", "1737820800") // A future Unix timestamp
 
 	// For Anthropic platform, calculateOpenAI429ResetTime should return nil
 	// because it only handles OpenAI platform
-	resetAt := calculateOpenAI429ResetTime(headers)
+	resetAt := svc.calculateOpenAI429ResetTime(headers)
 
 	// Should return nil since there are no x-codex-* headers
 	if resetAt != nil {
@@ -606,6 +493,8 @@ func TestCalculateOpenAI429ResetTime_UserProvidedScenario(t *testing.T) {
 	// codex_5h_used_percent: 3
 	// codex_5h_reset_after_seconds: 17369 (约4.8小时后重置)
 
+	svc := &RateLimitService{}
+
 	// Simulate headers matching user's data
 	// Note: We need to map the canonical 5h/7d back to primary/secondary
 	// Based on typical OpenAI behavior: primary=7d (larger window), secondary=5h (smaller window)
@@ -618,12 +507,11 @@ func TestCalculateOpenAI429ResetTime_UserProvidedScenario(t *testing.T) {
 	headers.Set("x-codex-secondary-window-minutes", "300") // 5 hours = 300 minutes
 
 	before := time.Now()
-	resetAt := calculateOpenAI429ResetTime(headers)
+	resetAt := svc.calculateOpenAI429ResetTime(headers)
 	after := time.Now()
 
 	if resetAt == nil {
 		t.Fatal("expected non-nil resetAt for user scenario")
-		return
 	}
 
 	// Should use the 7d reset time (384607 seconds) since 7d limit is exhausted (100%)
@@ -647,52 +535,20 @@ func TestCalculateOpenAI429ResetTime_UserProvidedScenario(t *testing.T) {
 	t.Logf("User scenario: reset_at=%v, duration=%.2f days", resetAt, actualDays)
 }
 
-func TestOpenAIOAuth429_HardQuotaWithoutResetKeepsDeadlineUnknown(t *testing.T) {
+func TestCalculateOpenAI429ResetTime_5MinFallbackWhenNoReset(t *testing.T) {
+	// Test that we return nil when there's used_percent but no reset_after_seconds
+	// This should cause the caller to use the default 5-minute fallback
+
+	svc := &RateLimitService{}
 
 	headers := http.Header{}
 	headers.Set("x-codex-primary-used-percent", "100")
 	// No reset_after_seconds!
 
-	before := time.Now()
-	classification := classifyOpenAIOAuth429At(headers, nil, before)
-	require.NotEqual(t, openAIOAuth429Transient, classification.Disposition)
-	require.Nil(t, classification.ResetAt, "missing upstream evidence is not a five-hour or seven-day deadline")
-	require.Nil(t, calculateOpenAI429ResetTime(headers), "ordinary accounts do not invent OAuth quota windows")
-}
+	resetAt := svc.calculateOpenAI429ResetTime(headers)
 
-func TestOpenAIOAuth429OrdinaryAPIKeyUsesOfficialFallbacks(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		body        string
-		headerReset bool
-		want        time.Duration
-	}{
-		{name: "quota without reset", body: `{"error":{"type":"insufficient_quota"}}`, want: time.Duration(defaultRateLimit429CooldownSeconds) * time.Second},
-		{name: "body reset", body: `{"error":{"type":"usage_limit_reached","resets_in_seconds":90}}`, want: 90 * time.Second},
-		{name: "OpenCode reset", body: `{"error":{"type":"GoUsageLimitError","message":"Weekly usage limit reached. Resets in 2 days."}}`, want: 48 * time.Hour},
-		{name: "shared header before body", body: `{"error":{"type":"usage_limit_reached","resets_in_seconds":90}}`, headerReset: true, want: 30 * time.Minute},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			headers := http.Header{}
-			if tc.headerReset {
-				headers.Set("anthropic-ratelimit-unified-reset", strconv.FormatInt(time.Now().Add(tc.want).Unix(), 10))
-			}
-			repo := &openAI429SnapshotRepo{}
-			svc := NewRateLimitService(repo, nil, nil, nil, nil)
-			account := &Account{ID: 17, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-			now := time.Now()
-			svc.handle429(context.Background(), account, headers, []byte(tc.body))
-			require.Equal(t, account.ID, repo.rateLimitedID)
-			require.WithinDuration(t, now.Add(tc.want), repo.rateLimitedAt, 2*time.Second)
-		})
+	// Should return nil since there's no reset time available
+	if resetAt != nil {
+		t.Errorf("expected nil when no reset_after_seconds, got %v", resetAt)
 	}
-}
-
-func TestOpenAIOAuth429OrdinaryAPIKeyRetainsPoolPolicy(t *testing.T) {
-	repo := &openAI429SnapshotRepo{}
-	svc := NewRateLimitService(repo, nil, nil, nil, nil)
-	account := &Account{ID: 18, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
-		Credentials: map[string]any{"pool_mode": true}}
-	svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, []byte(`{"error":{"type":"insufficient_quota"}}`))
-	require.Zero(t, repo.rateLimitedID)
 }

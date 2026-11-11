@@ -45,7 +45,7 @@ func TestStream_ReasoningOpensItemBeforeDelta(t *testing.T) {
 	}
 }
 
-func TestStream_ReasoningOnlyPreservesIncompleteWithoutSyntheticAnswer(t *testing.T) {
+func TestStream_ReasoningOnlySynthesizesVisibleText(t *testing.T) {
 	events := collectStreamEvents(t, []string{
 		`{"choices":[{"index":0,"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}`,
 		`{"choices":[{"index":0,"delta":{"reasoning_content":"thinking before final"}}]}`,
@@ -71,18 +71,20 @@ func TestStream_ReasoningOnlyPreservesIncompleteWithoutSyntheticAnswer(t *testin
 				sawMessageDone = true
 				require.Equal(t, "thinking before final", e.Item.Content[0].Text)
 			}
-		case "response.incomplete":
+		case "response.completed":
 			require.NotNil(t, e.Response)
 			require.Equal(t, "incomplete", e.Response.Status)
 			require.NotNil(t, e.Response.IncompleteDetails)
 			require.Equal(t, "max_output_tokens", e.Response.IncompleteDetails.Reason)
-			require.Len(t, e.Response.Output, 1)
+			require.Len(t, e.Response.Output, 2)
 			require.Equal(t, "reasoning", e.Response.Output[0].Type)
+			require.Equal(t, "message", e.Response.Output[1].Type)
+			require.Equal(t, "thinking before final", e.Response.Output[1].Content[0].Text)
 		}
 	}
-	require.False(t, sawTextDelta, "reasoning must not become an answer")
-	require.False(t, sawTextDone)
-	require.False(t, sawMessageDone)
+	require.True(t, sawTextDelta, "reasoning-only stream must produce visible text delta")
+	require.True(t, sawTextDone, "reasoning-only stream must close visible text part")
+	require.True(t, sawMessageDone, "reasoning-only stream must close synthesized message item")
 }
 
 func TestStream_ReasoningOnlyBlankDoesNotSynthesizeVisibleText(t *testing.T) {
@@ -93,10 +95,12 @@ func TestStream_ReasoningOnlyBlankDoesNotSynthesizeVisibleText(t *testing.T) {
 
 	for _, e := range events {
 		require.NotEqual(t, "response.output_text.delta", e.Type)
-		if e.Type == "response.failed" {
+		if e.Type == "response.completed" {
 			require.NotNil(t, e.Response)
-			require.Len(t, e.Response.Output, 1)
+			require.Len(t, e.Response.Output, 2)
 			require.Equal(t, "reasoning", e.Response.Output[0].Type)
+			require.Equal(t, "message", e.Response.Output[1].Type)
+			require.Equal(t, "", e.Response.Output[1].Content[0].Text)
 		}
 	}
 }
@@ -273,12 +277,12 @@ func TestStream_ValidToolCallAtOutputLimitKeepsIncompleteResponse(t *testing.T) 
 		case "response.function_call_arguments.done":
 			sawArgsDone = true
 			require.Equal(t, `{}`, event.Arguments)
-		case "response.incomplete":
+		case "response.completed":
 			require.NotNil(t, event.Response)
 			sawIncomplete = event.Response.Status == "incomplete"
 		}
 	}
-	require.False(t, sawArgsDone, "a length-truncated response must not authorize execution")
+	require.True(t, sawArgsDone)
 	require.True(t, sawIncomplete)
 }
 

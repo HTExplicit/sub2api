@@ -85,18 +85,7 @@ func TestHandleOpenAITransientError_CanonicalModelIsNotMappedTwice(t *testing.T)
 	}
 
 	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "public-alias"))
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, account.ID, canonicalModel, true, nil)
-	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "public-alias"), "a late success must not clear an active cooldown")
-
-	key, ok := openAIAccountModelTransientKey(account.ID, canonicalModel)
-	require.True(t, ok)
-	svc.openaiModelTransient.mu.Lock()
-	entry := svc.openaiModelTransient.entries[key]
-	entry.blockUntil = time.Now().Add(-time.Millisecond)
-	svc.openaiModelTransient.entries[key] = entry
-	svc.openaiModelTransient.mu.Unlock()
-
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, account.ID, canonicalModel, true, nil)
+	svc.ReportOpenAIAccountScheduleResult(account, canonicalModel, true, nil)
 	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "public-alias"))
 }
 
@@ -116,11 +105,11 @@ func TestHandleOpenAITransientError_DoesNotBlockParameter400(t *testing.T) {
 	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "gpt-5.5"))
 }
 
-func TestHandleOpenAITransientError_PersistedCooldownClearsWithDatabaseState(t *testing.T) {
+func TestHandleOpenAITransientError_HardDisableStillBlocksWholeAccount(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 5106, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute))
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "upstream_disable")
 
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))

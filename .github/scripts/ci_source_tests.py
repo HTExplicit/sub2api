@@ -147,7 +147,7 @@ group(INTERNAL, "server/middleware/api_key_auth", "server/middleware/api_key_aut
 group(INTERNAL, "server/middleware/api_key_auth_google", "server/middleware/api_key_auth_google")
 group(INTERNAL, "server/middleware/audit_log", "server/middleware/audit_log")
 group(INTERNAL, "server/middleware/cors", "server/middleware/cors")
-group(INTERNAL, "server/middleware/group_model_allowlist", "server/middleware/group_model_allowlist_body_compat server/middleware/request_body_memory")
+group(INTERNAL, "server/middleware/group_model_allowlist", "server/middleware/request_body_memory")
 group(INTERNAL, "server/middleware/panel_rate_limit", "server/middleware/custom_admin_key_rate_limit")
 group(INTERNAL, "server/middleware/request_body_limit server/middleware/request_body_memory server/middleware/request_body_read_failure",
       "server/middleware/request_body_memory")
@@ -199,3 +199,168 @@ COMPILE_ONLY_FILES = {
     "backend/internal/service/audit_log.go",
     "backend/internal/service/wire.go",
 }
+
+# Official v0.2.21 and reviewed retirement callers; exact files only.
+SOURCE_TEST_FILES.update({
+    'backend/internal/domain/constants.go': ['backend/internal/domain/constants_test.go'],
+    'backend/internal/handler/admin/channel_handler.go': ['backend/internal/handler/admin/channel_handler_test.go'],
+    'backend/internal/handler/admin/setting_handler.go': ['backend/internal/handler/admin/setting_handler_partial_payload_test.go'],
+    'backend/internal/handler/admin/setting_handler_audit.go': ['backend/internal/handler/admin/setting_handler_partial_payload_test.go'],
+    'backend/internal/handler/available_channel_handler.go': ['backend/internal/handler/available_channel_handler_test.go'],
+    'backend/internal/handler/composite_platform.go': ['backend/internal/handler/composite_platform_test.go'],
+    'backend/internal/handler/model_plaza_handler.go': ['backend/internal/handler/model_plaza_handler_test.go'],
+    'backend/internal/handler/no_account_error.go': ['backend/internal/handler/no_account_error_test.go'],
+    'backend/internal/handler/openai_page_context.go': ['backend/internal/handler/openai_page_context_test.go'],
+    'backend/internal/handler/stream_error_event.go': ['backend/internal/handler/stream_error_event_test.go'],
+    'backend/internal/payment/provider/easypay.go': ['backend/internal/payment/provider/easypay_refund_test.go'],
+    'backend/internal/pkg/claude/constants.go': ['backend/internal/pkg/claude/models_52_test.go'],
+    'backend/internal/pkg/claude/effort_catalog.go': ['backend/internal/pkg/claude/effort_catalog_test.go'],
+    'backend/internal/pkg/sysutil/memory.go': ['backend/internal/pkg/sysutil/memory_test.go'],
+    'backend/internal/repository/channel_repo_account_stats_pricing.go': ['backend/internal/repository/channel_repo_pricing_time_test.go'],
+    'backend/internal/repository/channel_repo_pricing.go': ['backend/internal/repository/channel_repo_pricing_reasoning_test.go', 'backend/internal/repository/channel_repo_pricing_time_test.go'],
+    'backend/internal/repository/migrations_runner.go': ['backend/internal/repository/migrations_runner_api_key_cost_index_test.go'],
+    'backend/internal/repository/openai_oauth_service.go': ['backend/internal/repository/openai_oauth_service_test.go'],
+    'backend/internal/repository/refresh_token_cache.go': ['backend/internal/repository/refresh_token_cache_test.go'],
+    'backend/internal/repository/req_client_pool.go': ['backend/internal/repository/req_client_pool_test.go'],
+    'backend/internal/repository/usage_log_repo_insert.go': ['backend/internal/repository/usage_log_repo_insert_shape_unit_test.go'],
+    'backend/internal/repository/usage_log_repo_query.go': ['backend/internal/repository/usage_log_repo_request_type_test.go'],
+    'backend/internal/securityaudit/prompt_enqueue.go': ['backend/internal/securityaudit/prompt_worker_wake_test.go'],
+    'backend/internal/securityaudit/prompt_service.go': ['backend/internal/securityaudit/prompt_service_test.go'],
+    'backend/internal/securityaudit/prompt_worker.go': ['backend/internal/securityaudit/prompt_worker_test.go'],
+    'backend/internal/service/account_scheduling_threshold_eval.go': ['backend/internal/service/account_scheduling_threshold_eval_test.go'],
+    'backend/internal/service/account_stats_pricing.go': ['backend/internal/service/account_stats_pricing_test.go'],
+    'backend/internal/service/account_test_reasoning.go': ['backend/internal/service/account_test_reasoning_test.go'],
+    'backend/internal/service/apicompat_config.go': ['backend/internal/service/openai_reasoning_effort_policy_test.go'],
+    'backend/internal/service/billing_context_schedule.go': ['backend/internal/service/billing_context_schedule_test.go'],
+    'backend/internal/service/billing_token_cost_request.go': ['backend/internal/service/billing_token_cost_request_test.go'],
+    'backend/internal/service/channel.go': ['backend/internal/service/channel_test.go'],
+    'backend/internal/service/channel_available.go': ['backend/internal/service/channel_available_test.go'],
+    'backend/internal/service/channel_service.go': ['backend/internal/service/channel_service_test.go'],
+    'backend/internal/service/gateway_forward.go': ['backend/internal/service/gateway_forward_partial_usage_test.go'],
+    'backend/internal/service/gateway_model_availability.go': ['backend/internal/service/gateway_model_availability_test.go'],
+    'backend/internal/service/gateway_scheduling.go': ['backend/internal/service/gateway_scheduling_slot_release_test.go'],
+    'backend/internal/service/gateway_service.go': ['backend/internal/service/gateway_service_selection_failure_stats_test.go'],
+    'backend/internal/service/model_plaza_service.go': ['backend/internal/service/model_plaza_service_test.go'],
+    'backend/internal/service/model_pricing_resolver.go': ['backend/internal/service/model_pricing_resolver_test.go'],
+    'backend/internal/service/model_rate_limit.go': ['backend/internal/service/model_rate_limit_test.go'],
+    'backend/internal/service/openai_account_model_transient.go': ['backend/internal/service/openai_account_model_transient_test.go'],
+    'backend/internal/service/openai_account_runtime_block_fastpath.go': ['backend/internal/service/openai_account_runtime_block_fastpath_test.go'],
+    'backend/internal/service/openai_alpha_search.go': ['backend/internal/service/openai_alpha_search_test.go'],
+    'backend/internal/service/openai_bulk_account_settings.go': ['backend/internal/service/admin_service_bulk_update_test.go'],
+    'backend/internal/service/openai_codex_account_identity.go': ['backend/internal/service/openai_codex_account_identity_test.go'],
+    'backend/internal/service/openai_codex_fingerprint.go': ['backend/internal/service/openai_codex_fingerprint_test.go'],
+    'backend/internal/service/openai_codex_identity.go': ['backend/internal/service/openai_codex_identity_test.go'],
+    'backend/internal/service/openai_codex_transform.go': ['backend/internal/service/openai_codex_transform_test.go'],
+    'backend/internal/service/openai_codex_version_sync_service.go': ['backend/internal/service/openai_codex_version_sync_service_test.go'],
+    'backend/internal/service/openai_compact_probe.go': ['backend/internal/service/openai_compact_probe_test.go'],
+    'backend/internal/service/openai_compact_sse_keepalive.go': ['backend/internal/service/openai_compact_sse_keepalive_test.go'],
+    'backend/internal/service/openai_compact_stream_bridge.go': ['backend/internal/service/openai_compact_stream_bridge_test.go'],
+    'backend/internal/service/openai_compat_model.go': ['backend/internal/service/openai_compat_model_test.go'],
+    'backend/internal/service/openai_content_session_seed.go': ['backend/internal/service/openai_content_session_seed_test.go'],
+    'backend/internal/service/openai_embeddings.go': ['backend/internal/service/openai_embeddings_test.go'],
+    'backend/internal/service/openai_gateway_count_tokens.go': ['backend/internal/service/openai_gateway_count_tokens_test.go'],
+    'backend/internal/service/openai_gateway_grok_chat_bridge.go': ['backend/internal/service/openai_gateway_grok_chat_bridge_test.go'],
+    'backend/internal/service/openai_gateway_model_availability.go': ['backend/internal/service/gateway_model_availability_test.go'],
+    'backend/internal/service/openai_gateway_upstream_errors.go': ['backend/internal/service/openai_upstream_transport_error_handle_test.go'],
+    'backend/internal/service/openai_images_balance.go': ['backend/internal/service/openai_images_balance_test.go'],
+    'backend/internal/service/openai_images_json_keepalive.go': ['backend/internal/service/openai_images_json_keepalive_test.go'],
+    'backend/internal/service/openai_live.go': ['backend/internal/service/openai_live_test.go'],
+    'backend/internal/service/openai_model_alias.go': ['backend/internal/service/openai_model_alias_test.go'],
+    'backend/internal/service/openai_model_mapping.go': ['backend/internal/service/openai_model_mapping_test.go'],
+    'backend/internal/service/openai_oauth_service.go': ['backend/internal/service/openai_oauth_service_auth_url_test.go', 'backend/internal/service/openai_oauth_service_refresh_test.go'],
+    'backend/internal/service/openai_plugin_transport.go': ['backend/internal/service/plugin_manager_routing_test.go'],
+    'backend/internal/service/openai_previous_response_id.go': ['backend/internal/service/openai_previous_response_id_test.go'],
+    'backend/internal/service/openai_privacy_service.go': ['backend/internal/service/openai_privacy_cf_challenge_test.go', 'backend/internal/service/openai_privacy_retry_test.go'],
+    'backend/internal/service/openai_proxy_stream_circuit.go': ['backend/internal/service/openai_proxy_stream_circuit_test.go'],
+    'backend/internal/service/openai_quota_auto_reset.go': ['backend/internal/service/openai_quota_auto_reset_test.go'],
+    'backend/internal/service/openai_raw_stream_truncation.go': ['backend/internal/service/openai_gateway_chat_completions_raw_test.go'],
+    'backend/internal/service/openai_reasoning_effort_policy.go': ['backend/internal/service/openai_reasoning_effort_policy_test.go'],
+    'backend/internal/service/openai_responses_ingress_compat.go': ['backend/internal/service/openai_responses_ingress_compat_test.go'],
+    'backend/internal/service/openai_responses_input_compat.go': ['backend/internal/service/openai_responses_input_compat_test.go'],
+    'backend/internal/service/openai_responses_namespace.go': ['backend/internal/service/openai_responses_namespace_test.go'],
+    'backend/internal/service/openai_routing_hint.go': ['backend/internal/service/openai_routing_hint_test.go'],
+    'backend/internal/service/openai_sticky_compat.go': ['backend/internal/service/openai_sticky_compat_test.go'],
+    'backend/internal/service/openai_team_linked_error.go': ['backend/internal/service/ratelimit_service_openai_team_linked_test.go'],
+    'backend/internal/service/openai_ws_client.go': ['backend/internal/service/openai_ws_client_test.go'],
+    'backend/internal/service/openai_ws_forwarder.go': ['backend/internal/service/openai_ws_forwarder_test.go'],
+    'backend/internal/service/openai_ws_forwarder_ingress.go': ['backend/internal/service/openai_ws_forwarder_ingress_test.go'],
+    'backend/internal/service/openai_ws_forwarder_logutil.go': ['backend/internal/service/openai_ws_forwarder_logutil_test.go'],
+    'backend/internal/service/openai_ws_forwarder_payload.go': ['backend/internal/service/openai_ws_forwarder_retry_payload_test.go'],
+    'backend/internal/service/openai_ws_forwarder_support.go': ['backend/internal/service/openai_ws_forwarder_test.go'],
+    'backend/internal/service/openai_ws_forwarder_v2.go': ['backend/internal/service/openai_ws_forwarder_v2_test.go'],
+    'backend/internal/service/openai_ws_pool.go': ['backend/internal/service/openai_ws_pool_test.go'],
+    'backend/internal/service/openai_ws_search_activation.go': ['backend/internal/service/openai_ws_search_activation_test.go'],
+    'backend/internal/service/openai_ws_state_store.go': ['backend/internal/service/openai_ws_state_store_test.go'],
+    'backend/internal/service/openai_ws_v2_passthrough_adapter.go': ['backend/internal/service/openai_ws_v2_passthrough_lifecycle_test.go', 'backend/internal/service/openai_ws_v2_passthrough_adapter_effort_test.go'],
+    'backend/internal/service/ops_upstream_context.go': ['backend/internal/service/ops_upstream_context_test.go'],
+    'backend/internal/service/payment_config_service.go': ['backend/internal/service/payment_config_service_test.go'],
+    'backend/internal/service/pelican_account_generator.go': ['backend/internal/service/pelican_account_generator_test.go'],
+    'backend/internal/service/pelican_test_catalog.go': ['backend/internal/service/pelican_test_catalog_test.go'],
+    'backend/internal/service/refresh_token_cache.go': ['backend/internal/service/auth_service_refresh_race_test.go'],
+    'backend/internal/service/setting_gateway_runtime.go': ['backend/internal/service/setting_service_codex_policy_test.go', 'backend/internal/service/setting_claude_code_version_test.go'],
+    'backend/internal/service/setting_parse.go': ['backend/internal/service/setting_service_update_test.go'],
+    'backend/internal/service/setting_update.go': ['backend/internal/service/setting_service_update_test.go'],
+    'backend/internal/service/system_prompt_openai.go': ['backend/internal/service/system_prompt_test.go'],
+    'backend/internal/service/upstream_models.go': ['backend/internal/service/upstream_models_test.go'],
+    'backend/internal/service/usage_log.go': ['backend/internal/service/usage_log_test.go'],
+    'backend/migrations/249_add_usage_logs_api_key_cost_index_notx.sql': ['backend/migrations/usage_log_api_key_cost_index_test.go'],
+    'backend/migrations/250_openai_cache_write_ttl.sql': ['backend/internal/repository/openai_cache_write_ttl_integration_test.go'],
+})
+
+COMPILE_ONLY_FILES.update({
+    'backend/cmd/server/main.go',
+    'backend/ent/migrate/schema.go',
+    'backend/ent/mutation.go',
+    'backend/ent/runtime/runtime.go',
+    'backend/ent/schema/usage_log.go',
+    'backend/ent/usagelog.go',
+    'backend/ent/usagelog/usagelog.go',
+    'backend/ent/usagelog/where.go',
+    'backend/ent/usagelog_create.go',
+    'backend/ent/usagelog_update.go',
+    'backend/internal/handler/dto/mappers.go',
+    'backend/internal/handler/dto/types.go',
+})
+
+SOURCE_TEST_FILES.update({
+    "backend/internal/service/account.go": [SERVICE + "admin_account_taxonomy_test.go"],
+    "backend/internal/service/account_test_stream.go": [SERVICE + "account_test_stream_contract_test.go"],
+    "backend/internal/service/ops_service.go": [SERVICE + "ops_service_redaction_test.go"],
+})
+
+SOURCE_TEST_FILES.update({
+    "backend/internal/repository/temp_unsched_cache.go": [INTERNAL + "repository/temp_unsched_cache_health_test.go"],
+    "backend/internal/service/account_test_model.go": [SERVICE + "account_test_models_test.go"],
+    "backend/internal/service/admin_account.go": [SERVICE + "admin_account_taxonomy_test.go", SERVICE + "admin_service_bulk_update_test.go"],
+    "backend/internal/service/cn_provider_balance_check_service.go": [SERVICE + "cn_provider_balance_check_service_test.go"],
+    "backend/internal/service/grok_credential_failure.go": [SERVICE + "grok_credential_failure_test.go"],
+    "backend/internal/service/oauth_service.go": [SERVICE + "oauth_service_test.go"],
+    "backend/internal/service/temp_unsched.go": [SERVICE + "temp_unsched_scope_test.go"],
+    "backend/internal/service/token_refresh_service.go": [SERVICE + "token_refresh_service_test.go", SERVICE + "token_refresh_pool_health_test.go"],
+})
+
+SOURCE_TEST_FILES.update({
+    "backend/internal/handler/admin/account_today_stats_cache.go": [INTERNAL + "handler/admin/custom_admin_key_statistics_test.go"],
+    "backend/internal/handler/admin/snapshot_cache.go": [INTERNAL + "handler/admin/snapshot_cache_test.go"],
+    "backend/internal/service/group_model_allowlist.go": [SERVICE + "group_model_allowlist_test.go"],
+    "backend/internal/testutil/stubs.go": [INTERNAL + "handler/grok_media_slots_test.go"],
+})
+
+SOURCE_TEST_FILES.update({
+    "backend/internal/pkg/httpclient/pool.go": [INTERNAL + "pkg/httpclient/pool_test.go"],
+    "backend/internal/pkg/openai_compat/upstream_capability.go": [INTERNAL + "pkg/openai_compat/upstream_capability_test.go"],
+    "backend/internal/pkg/tlsfingerprint/dialer.go": [INTERNAL + "pkg/tlsfingerprint/dialer_test.go"],
+})
+
+# Prompt insertion owns the actual HTTP/WS retry seam, not only binding storage.
+SOURCE_TEST_FILES.update({
+    "backend/internal/service/system_prompt_inject.go": [SERVICE + "system_prompt_responses_retry_test.go", SERVICE + "system_prompt_responses_retry_ws_test.go"],
+    "backend/internal/service/system_prompt_openai.go": [SERVICE + "system_prompt_responses_retry_test.go", SERVICE + "system_prompt_responses_retry_ws_test.go"],
+})
+
+SOURCE_TEST_FILES.update({
+    "backend/internal/service/audit_log_service.go": [SERVICE + "audit_log_test.go"],
+    "backend/internal/service/openai_cyber_policy.go": [SERVICE + "openai_cyber_policy_test.go"],
+    "backend/internal/service/ops_concurrency.go": [SERVICE + "account_load_factor_test.go", SERVICE + "ops_metrics_collector_projection_test.go"],
+    "backend/internal/service/ops_metrics_collector.go": [SERVICE + "ops_metrics_collector_projection_test.go"],
+})

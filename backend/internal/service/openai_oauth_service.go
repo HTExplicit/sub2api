@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/subtle"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -113,22 +112,21 @@ type OpenAIExchangeCodeInput struct {
 
 // OpenAITokenInfo represents the token information for OpenAI
 type OpenAITokenInfo struct {
-	AccessToken                string `json:"access_token"`
-	RefreshToken               string `json:"refresh_token"`
-	IDToken                    string `json:"id_token,omitempty"`
-	ExpiresIn                  int64  `json:"expires_in"`
-	ExpiresAt                  int64  `json:"expires_at"`
-	ClientID                   string `json:"client_id,omitempty"`
-	AuthMode                   string `json:"auth_mode,omitempty"`
-	Email                      string `json:"email,omitempty"`
-	ChatGPTAccountID           string `json:"chatgpt_account_id,omitempty"`
-	ChatGPTUserID              string `json:"chatgpt_user_id,omitempty"`
-	ChatGPTAccountFedRAMP      bool   `json:"chatgpt_account_is_fedramp,omitempty"`
-	OrganizationID             string `json:"organization_id,omitempty"`
-	PlanType                   string `json:"plan_type,omitempty"`
-	SubscriptionExpiresAt      string `json:"subscription_expires_at,omitempty"`
-	PrivacyMode                string `json:"privacy_mode,omitempty"`
-	planTypeFromOtherWorkspace bool
+	AccessToken           string `json:"access_token"`
+	RefreshToken          string `json:"refresh_token"`
+	IDToken               string `json:"id_token,omitempty"`
+	ExpiresIn             int64  `json:"expires_in"`
+	ExpiresAt             int64  `json:"expires_at"`
+	ClientID              string `json:"client_id,omitempty"`
+	AuthMode              string `json:"auth_mode,omitempty"`
+	Email                 string `json:"email,omitempty"`
+	ChatGPTAccountID      string `json:"chatgpt_account_id,omitempty"`
+	ChatGPTUserID         string `json:"chatgpt_user_id,omitempty"`
+	ChatGPTAccountFedRAMP bool   `json:"chatgpt_account_is_fedramp,omitempty"`
+	OrganizationID        string `json:"organization_id,omitempty"`
+	PlanType              string `json:"plan_type,omitempty"`
+	SubscriptionExpiresAt string `json:"subscription_expires_at,omitempty"`
+	PrivacyMode           string `json:"privacy_mode,omitempty"`
 }
 
 // ExchangeCode exchanges authorization code for tokens
@@ -216,29 +214,7 @@ func (s *OpenAIOAuthService) RefreshToken(ctx context.Context, refreshToken stri
 
 // RefreshTokenWithClientID refreshes an OpenAI OAuth token with optional client_id.
 func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string) (*OpenAITokenInfo, error) {
-	return s.refreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, codexOutboundIdentity{}, nil)
-}
-
-// refreshTokenWithIdentity 用给定的 Codex 出站身份刷新 token：已有账号刷新时使用与推理
-// 一致的账号级身份（真实 Codex 客户端以自己的 UA/originator 刷新）；身份为空或客户端
-// 不支持时退回全局规范身份。
-func (s *OpenAIOAuthService) refreshTokenWithIdentity(ctx context.Context, refreshToken, proxyURL, clientID string, identity codexOutboundIdentity, selectedAccount *Account) (*OpenAITokenInfo, error) {
-	if selectedAccount != nil && selectedAccount.IsOpenAIOAuthLike() && currentCodexFingerprintPolicyForAccount(selectedAccount).enabled {
-		binding, err := codextransport.Select(identity.userAgent, codexTransportScope(selectedAccount), "http")
-		if err != nil {
-			return nil, err
-		}
-		ctx = codextransport.WithBinding(ctx, binding)
-	}
-
-	var tokenResp *openai.TokenResponse
-	var err error
-	refresher, ok := s.oauthClient.(OpenAIOAuthIdentityRefresher)
-	if ok && strings.TrimSpace(identity.userAgent) != "" && strings.TrimSpace(identity.originator) != "" {
-		tokenResp, err = refresher.RefreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, identity.userAgent, identity.originator)
-	} else {
-		tokenResp, err = s.oauthClient.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
-	}
+	tokenResp, err := s.oauthClient.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +249,6 @@ func (s *OpenAIOAuthService) refreshTokenWithIdentity(ctx context.Context, refre
 		tokenInfo.PlanType = userInfo.PlanType
 	}
 
-	preserveOpenAISelectedWorkspace(tokenInfo, selectedAccount)
 	s.enrichTokenInfo(ctx, tokenInfo, proxyURL)
 
 	return tokenInfo, nil
@@ -297,12 +272,12 @@ func (s *OpenAIOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *Ope
 	// accounts/check 命中的记录不属于个人账号时，必须改用个人订阅端点拿到期时间，
 	// 否则会把 workspace 权益的 expires_at 当成个人订阅到期日展示。
 	forcePersonalSubscriptionLookup := false
-	if info := fetchChatGPTAccountInfoForWorkspace(ctx, s.privacyClientFactory, tokenInfo.AccessToken, proxyURL, orgID, tokenInfo.ChatGPTAccountID); info != nil {
-		// A token claim is authoritative only for its own selected workspace.
-		// Preserve that claim; when refresh returned a different default workspace,
-		// use only the exact selected account's authenticated account information.
-		appliedAccountInfoPlanType := shouldApplyChatGPTAccountInfoPlanType(tokenInfo.PlanType, info.PlanType) ||
-			(tokenInfo.planTypeFromOtherWorkspace && strings.TrimSpace(info.PlanType) != "" && chatGPTAccountInfoBelongsToTokenAccount(tokenInfo, info))
+	if info := fetchChatGPTAccountInfo(ctx, s.privacyClientFactory, tokenInfo.AccessToken, proxyURL, orgID); info != nil {
+		// chatgpt_plan_type from the ID token is the canonical personal-plan value.
+		// accounts/check is a multi-account/workspace endpoint; inactive team or
+		// business workspaces can otherwise overwrite Pro/Free with internal
+		// workspace billing plan names such as self_serve_business_usage_based.
+		appliedAccountInfoPlanType := shouldApplyChatGPTAccountInfoPlanType(tokenInfo.PlanType, info.PlanType)
 		if appliedAccountInfoPlanType {
 			tokenInfo.PlanType = info.PlanType
 		}
@@ -411,8 +386,7 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 
 	clientID := account.GetCredential("client_id")
-	identity := resolveCodexOutboundIdentityForAccount(account, codexAccountIdentityOverrideUA(account))
-	return s.refreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, identity, account)
+	return s.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
 }
 
 // BuildAccountCredentials builds credentials map from token info

@@ -49,7 +49,6 @@ func ProvideAdminHandlers(
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
 	systemPromptHandler *admin.SystemPromptHandler,
-	deepseekReasoningHandler *admin.DeepSeekReasoningHandler,
 	pelicanTestHandler *admin.PelicanTestHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
@@ -99,7 +98,6 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
 		SystemPrompt:           systemPromptHandler,
-		DeepSeekReasoning:      deepseekReasoningHandler,
 		PelicanTest:            pelicanTestHandler,
 	}
 }
@@ -133,7 +131,6 @@ func ProvideGatewayHandler(
 
 func ProvideOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
-	nativeAnthropicGatewayService *service.GatewayService,
 	pluginManager *service.PluginManager,
 	concurrencyService *service.ConcurrencyService,
 	billingCacheService *service.BillingCacheService,
@@ -150,7 +147,6 @@ func ProvideOpenAIGatewayHandler(
 	gatewayService.SetPluginManager(pluginManager)
 	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
 		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
-	h.SetNativeAnthropicGatewayService(nativeAnthropicGatewayService)
 	h.compositeResolver = compositeResolver
 	h.securityAuditCoordinator = coordinator
 	h.grokMediaEligibilityProber = grokQuotaService
@@ -306,7 +302,6 @@ var ProviderSet = wire.NewSet(
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
 	admin.NewSystemPromptHandler,
-	admin.NewDeepSeekReasoningHandler,
 	admin.NewPelicanTestHandler,
 	ProvideAccountJobRuntime,
 

@@ -206,42 +206,19 @@ func startPassthroughLifecycleServerWithHooks(
 		if hooksFactory != nil {
 			hooks = hooksFactory(ginCtx)
 		}
-		proxyErr := svc.ProxyResponsesWebSocketFromClient(controlCtx, ginCtx, conn, account, "sk-test", firstMessage, hooks)
-		// Mirror the production handler: proxy-level client-close errors must
-		// reach the peer before the handler's deferred CloseNow tears down TCP.
-		var closeErr *OpenAIWSClientCloseError
-		if errors.As(proxyErr, &closeErr) {
-			_ = conn.Close(closeErr.StatusCode(), closeErr.Reason())
-		}
-		serverErr <- proxyErr
+		serverErr <- svc.ProxyResponsesWebSocketFromClient(controlCtx, ginCtx, conn, account, "sk-test", firstMessage, hooks)
 	}))
 	return server, serverErr
 }
 
 func TestPassthroughLifecycle_LaterTurnPreOutputRateLimitRequestsReconnect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, accountType := range []string{AccountTypeAPIKey, AccountTypeOAuth} {
-		t.Run(accountType, func(t *testing.T) {
-			testPassthroughLifecycleLaterTurnRateLimit(t, accountType)
-		})
-	}
-}
-
-func testPassthroughLifecycleLaterTurnRateLimit(t *testing.T, accountType string) {
-	t.Helper()
 	controlCtx, cancelControl := context.WithCancelCause(context.Background())
 	defer cancelControl(context.Canceled)
 	upstream := newStagedPassthroughConn()
 	account := passthroughLifecycleAccount()
-	account.Type = accountType
-	if accountType == AccountTypeOAuth {
-		account.Credentials = map[string]any{"access_token": "sk-test"}
-		account.Extra = map[string]any{"openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModePassthrough}
-	}
 	repo := &openAIWSRateLimitSignalRepo{stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{*account}}}
-	cfg := passthroughLifecycleConfig()
-	cfg.Gateway.OpenAIWS.OAuthEnabled = true
-	svc := newPassthroughLifecycleService(cfg, upstream)
+	svc := newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream)
 	svc.accountRepo = repo
 	svc.rateLimitService = &RateLimitService{accountRepo: repo}
 
@@ -271,22 +248,8 @@ func testPassthroughLifecycleLaterTurnRateLimit(t *testing.T, accountType string
 	require.ErrorAs(t, err, &websocketCloseErr)
 	require.Equal(t, coderws.StatusTryAgainLater, websocketCloseErr.Code)
 	require.Equal(t, "upstream rate limit exceeded; please reconnect", websocketCloseErr.Reason)
-	// Downstream quota handling deliberately does not persist legacy account
-	// status. The OAuth case proves this same later-turn signal reaches the
-	// existing hard-quota classifier and records the shared quota reset deadline.
-	require.Empty(t, repo.rateLimitCalls, "a WS quota event must not restore legacy persistent account penalties")
-	if accountType == AccountTypeOAuth {
-		require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		quota := account.QuotaState(time.Now())
-		require.NotNil(t, quota)
-		require.True(t, quota.Blocked)
-		require.NotNil(t, quota.Until)
-		require.WithinDuration(t, time.Unix(resetAt, 0), *quota.Until, 2*time.Second)
-		_, legacyBlock := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
-		require.False(t, legacyBlock, "hard quota must not duplicate the shared quota state in the legacy runtime map")
-	} else {
-		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "ordinary API-key cooldown remains owned by request failover")
-	}
+	require.Len(t, repo.rateLimitCalls, 1)
+	require.WithinDuration(t, time.Unix(resetAt, 0), repo.rateLimitCalls[0], 2*time.Second)
 
 	select {
 	case err := <-serverErr:
@@ -396,7 +359,7 @@ func TestPassthroughLifecycle_CyberTerminalEventsMarkBeforeAfterTurn(t *testing.
 	}
 }
 
-func TestPassthroughLifecycle_NonCyberFailureKeepsRequestScopedCooldown(t *testing.T) {
+func TestPassthroughLifecycle_NonCyberFailureKeepsAccountSideEffects(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	controlCtx, cancelControl := context.WithCancelCause(context.Background())
 	defer cancelControl(context.Canceled)
@@ -432,7 +395,7 @@ func TestPassthroughLifecycle_NonCyberFailureKeepsRequestScopedCooldown(t *testi
 	case <-time.After(3 * time.Second):
 		t.Fatal("non-cyber terminal event did not complete its turn")
 	}
-	require.Zero(t, repo.setErrorCalls, "API key failures must not persist legacy account error state")
+	require.Equal(t, 1, repo.setErrorCalls, "non-cyber credential failure must retain account failure side effects")
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
@@ -606,61 +569,6 @@ func TestOpenAIWSPassthroughTurnLifecycle_SerializesTerminalCommitAndNextTurn(t 
 		t.Error("failed terminal write must not commit idle state")
 	})
 	require.False(t, <-admitted, "failed terminal write must keep the current turn in flight")
-}
-
-func TestPassthroughLifecycle_ContinuationEventsAreNotForwarded(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	tests := []struct {
-		name  string
-		event string
-		code  string
-	}{
-		{
-			name:  "response.failed",
-			event: `{"type":"response.failed","response":{"error":{"code":"previous_response_not_found","message":"previous response not found"}}}`,
-			code:  "previous_response_not_found",
-		},
-		{
-			name:  "error event",
-			event: `{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
-			code:  "invalid_encrypted_content",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			controlCtx, cancelControl := context.WithCancelCause(context.Background())
-			defer cancelControl(context.Canceled)
-			upstream := newStagedPassthroughConn()
-			upstream.Send(tt.event)
-			server, serverErr := startPassthroughLifecycleServer(
-				t,
-				controlCtx,
-				newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream),
-				passthroughLifecycleAccount(),
-			)
-			defer server.Close()
-			clientConn := dialPassthroughLifecycleClient(t, server)
-			defer func() { _ = clientConn.CloseNow() }()
-
-			_ = requirePassthroughUpstreamWrite(t, upstream, 3*time.Second)
-			payload, readErr := readPassthroughLifecycleFrame(t, clientConn, 3*time.Second)
-			require.Error(t, readErr)
-			require.NotContains(t, string(payload), tt.code)
-
-			select {
-			case proxyErr := <-serverErr:
-				var failoverErr *UpstreamFailoverError
-				require.ErrorAs(t, proxyErr, &failoverErr)
-				require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-				require.False(t, failoverErr.ShouldRetryNextAccount())
-				require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
-				require.Contains(t, string(failoverErr.ResponseBody), tt.code)
-			case <-time.After(3 * time.Second):
-				t.Fatal("passthrough continuation did not terminate")
-			}
-		})
-	}
 }
 
 func TestPassthroughLifecycle_LeaseLossSendsRetryClose(t *testing.T) {

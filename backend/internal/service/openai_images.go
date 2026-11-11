@@ -557,18 +557,6 @@ func isOpenAIImageGenerationModel(model string) bool {
 	return IsGPTImageGenerationModel(model) || isGrokImageGenerationModel(model)
 }
 
-// IsNativeOpenAIImagesModel reports whether the existing OpenAI/Grok image
-// implementation accepts model.
-func IsNativeOpenAIImagesModel(model string) bool {
-	return isOpenAIImageGenerationModel(model)
-}
-
-// IsCompatibleImagesModel reports provider image models that only the API-key
-// Images passthrough path serves (for example Gemini-compatible image models).
-func IsCompatibleImagesModel(model string) bool {
-	return isGeminiCompatibleImageModel(model)
-}
-
 // IsGPTImageGenerationModel identifies the GPT native image-generation model family.
 func IsGPTImageGenerationModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
@@ -732,6 +720,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err := validateCompatibleImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}
+	SetOpsUpstreamModel(c, upstreamModel)
 	logger.LegacyPrintf(
 		"service.openai_gateway",
 		"[OpenAI] Images request routing request_model=%s upstream_model=%s endpoint=%s account_type=%s",
@@ -766,18 +755,27 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		proxyURL = account.Proxy.URL()
 	}
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		return nil, s.handleOpenAIImagesUpstreamTransportError(upstreamCtx, c, account, err, upstreamReq.URL.String())
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, 0, safeErr, "")
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			ProxyID:            opsUpstreamProxyID(account),
+			ProxyName:          opsUpstreamProxyName(account),
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: 0,
+			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+			Kind:               "request_error",
+			Message:            safeErr,
+		})
+		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 	}
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
-		if isOpenAIRequestScopedSafetyRejection(respBody) {
-			resp.Body = io.NopCloser(bytes.NewReader(s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)))
-			return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, upstreamModel)
-		}
 		respBody = s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
@@ -812,15 +810,14 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 				Message:            upstreamMsg,
 			})
 			shouldDisable := s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, upstreamModel)
-			return nil, s.newOpenAIAccountFailoverError(
-				account,
-				resp.StatusCode,
-				resp.Header,
-				respBody,
-				upstreamMsg,
-				shouldDisable,
-				!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
-			)
+			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
+			if account.IsOpenAIOAuthLike() && resp.StatusCode == http.StatusTooManyRequests {
+				return nil, s.newOpenAIAccountFailoverError(account, resp.StatusCode, resp.Header, respBody, upstreamMsg, shouldDisable, retryableOnSameAccount)
+			}
+			if isOpenAIHTTPUpstreamAccessStateError(resp.StatusCode, upstreamMsg, respBody) {
+				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMsg, retryableOnSameAccount)
+			}
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody, RetryableOnSameAccount: retryableOnSameAccount}
 		}
 		return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, upstreamModel)
 	}
@@ -1944,36 +1941,6 @@ func dedupeStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
-}
-
-// handleOpenAIImagesUpstreamTransportError restores the upstream_url that
-// v0.2.8 recorded on image transport failures; the shared transport helper
-// records the attempt but does not know the endpoint.
-func (s *OpenAIGatewayService) handleOpenAIImagesUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, upstreamURL string) error {
-	recordedBefore := openAIOpsUpstreamErrorCount(c)
-	transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
-	if c != nil {
-		if value, ok := c.Get(OpsUpstreamErrorsKey); ok {
-			if events, ok := value.([]*OpsUpstreamErrorEvent); ok && len(events) > recordedBefore {
-				if last := events[len(events)-1]; last != nil && last.UpstreamURL == "" {
-					last.UpstreamURL = safeUpstreamURL(upstreamURL)
-				}
-			}
-		}
-	}
-	return transportErr
-}
-
-func openAIOpsUpstreamErrorCount(c *gin.Context) int {
-	if c == nil {
-		return 0
-	}
-	if value, ok := c.Get(OpsUpstreamErrorsKey); ok {
-		if events, ok := value.([]*OpsUpstreamErrorEvent); ok {
-			return len(events)
-		}
-	}
-	return 0
 }
 
 // Image generation may continue long enough to incur upstream costs after the

@@ -8,10 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -51,165 +49,7 @@ func (u *openAIResponsesFailoverCancelUpstream) calls() []int64 {
 	return append([]int64(nil), u.accountIDs...)
 }
 
-// openAIResponsesContinuationStateUpstream simulates a compatibility upstream
-// that wraps a request-history rejection in a generic 502. The handler must not
-// reinterpret this as an account failure and select account 2.
-type openAIResponsesContinuationStateUpstream struct {
-	service.HTTPUpstream
-	mu         sync.Mutex
-	accountIDs []int64
-}
-
-func (u *openAIResponsesContinuationStateUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
-	u.mu.Lock()
-	u.accountIDs = append(u.accountIDs, accountID)
-	u.mu.Unlock()
-	return &http.Response{
-		StatusCode: http.StatusBadGateway,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body: io.NopCloser(bytes.NewBufferString(
-			`{"error":{"code":"previous_response_not_found","message":"previous response not found"}}`,
-		)),
-	}, nil
-}
-
-func (u *openAIResponsesContinuationStateUpstream) calls() []int64 {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return append([]int64(nil), u.accountIDs...)
-}
-
-// openAIResponsesGenericBadRequestUpstream models a compatibility upstream
-// that produces a non-semantic 400 before it writes any stream bytes.  This is
-// deliberately not recognized as a continuation-state error: the handler must
-// still uphold the client-requested Responses streaming contract.
-type openAIResponsesGenericBadRequestUpstream struct {
-	service.HTTPUpstream
-	mu           sync.Mutex
-	accountIDs   []int64
-	responseBody string
-}
-
-type openAIResponsesModelNotSupportedUpstream struct {
-	service.HTTPUpstream
-	mu         sync.Mutex
-	accountIDs []int64
-	requests   [][]byte
-}
-
-type openAIResponsesCooledAccountRepo struct {
-	openAIImagesFailoverAccountRepo
-}
-
-// The common failover repository stub embeds AccountRepository for methods
-// unrelated to these tests. Implement the persistent model-availability query
-// explicitly so continuation classification can inspect accounts even when a
-// transient model cooldown is present.
-func (r openAIImagesFailoverAccountRepo) ListModelAvailabilityCandidates(
-	_ context.Context,
-	_ *int64,
-	platforms []string,
-	_ bool,
-) ([]service.Account, error) {
-	allowed := make(map[string]struct{}, len(platforms))
-	for _, platform := range platforms {
-		allowed[platform] = struct{}{}
-	}
-	result := make([]service.Account, 0, len(r.accounts))
-	for _, account := range r.accounts {
-		if _, ok := allowed[account.Platform]; !ok || !account.IsActive() || !account.Schedulable {
-			continue
-		}
-		result = append(result, account)
-	}
-	return result, nil
-}
-
-func (r openAIResponsesCooledAccountRepo) ListByPlatform(_ context.Context, platform string) ([]service.Account, error) {
-	return r.accountsForPlatform(platform), nil
-}
-
-func (r openAIResponsesCooledAccountRepo) ListByGroup(_ context.Context, _ int64) ([]service.Account, error) {
-	return append([]service.Account(nil), r.accounts...), nil
-}
-
-// The shared failover repository stub embeds the production interface for
-// unrelated methods. Provide the persistent-eligibility query explicitly so
-// the legacy cooldown diagnosis can inspect accounts whose transient model
-// limits would otherwise be filtered by ListSchedulable*.
-func (r openAIResponsesCooledAccountRepo) ListModelAvailabilityCandidates(
-	_ context.Context,
-	_ *int64,
-	platforms []string,
-	_ bool,
-) ([]service.Account, error) {
-	allowed := make(map[string]struct{}, len(platforms))
-	for _, platform := range platforms {
-		allowed[platform] = struct{}{}
-	}
-	result := make([]service.Account, 0, len(r.accounts))
-	for _, account := range r.accounts {
-		if _, ok := allowed[account.Platform]; !ok || !account.IsActive() || !account.Schedulable {
-			continue
-		}
-		result = append(result, account)
-	}
-	return result, nil
-}
-
-func (u *openAIResponsesModelNotSupportedUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
-	requestBody, _ := io.ReadAll(req.Body)
-	u.mu.Lock()
-	u.accountIDs = append(u.accountIDs, accountID)
-	u.requests = append(u.requests, requestBody)
-	u.mu.Unlock()
-	return &http.Response{
-		StatusCode: http.StatusBadRequest,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body: io.NopCloser(bytes.NewBufferString(
-			`{"error":{"code":400,"type":"model_not_supported","message":"model is not supported"}}`,
-		)),
-	}, nil
-}
-
-func (u *openAIResponsesModelNotSupportedUpstream) bodies() [][]byte {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	result := make([][]byte, len(u.requests))
-	for i := range u.requests {
-		result[i] = append([]byte(nil), u.requests[i]...)
-	}
-	return result
-}
-
-func (u *openAIResponsesModelNotSupportedUpstream) calls() []int64 {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return append([]int64(nil), u.accountIDs...)
-}
-
-func (u *openAIResponsesGenericBadRequestUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
-	u.mu.Lock()
-	u.accountIDs = append(u.accountIDs, accountID)
-	u.mu.Unlock()
-	body := u.responseBody
-	if body == "" {
-		body = `{"error":{"message":"must-not-leak"}}`
-	}
-	return &http.Response{
-		StatusCode: http.StatusBadRequest,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewBufferString(body)),
-	}, nil
-}
-
-func (u *openAIResponsesGenericBadRequestUpstream) calls() []int64 {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return append([]int64(nil), u.accountIDs...)
-}
-
-func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream, testAccounts ...service.Account) *OpenAIGatewayHandler {
+func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream) *OpenAIGatewayHandler {
 	t.Helper()
 	accounts := []service.Account{
 		{
@@ -234,9 +74,6 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 			Priority:    1,
 			Credentials: map[string]any{"access_token": "token-2"},
 		},
-	}
-	if len(testAccounts) > 0 {
-		accounts = testAccounts
 	}
 	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
@@ -283,21 +120,9 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 }
 
 func newOpenAIResponsesFailoverTestContext(t *testing.T, ctx context.Context) (*gin.Context, *httptest.ResponseRecorder) {
-	return newOpenAIResponsesFailoverTestContextWithStream(t, ctx, false)
-}
-
-func newOpenAIResponsesFailoverTestContextWithStream(t *testing.T, ctx context.Context, stream bool) (*gin.Context, *httptest.ResponseRecorder) {
-	t.Helper()
-	body := []byte(`{"model":"gpt-5.1","stream":false,"input":"hello"}`)
-	if stream {
-		body = []byte(`{"model":"gpt-5.1","stream":true,"input":"hello"}`)
-	}
-	return newOpenAIResponsesFailoverTestContextWithBody(t, ctx, body)
-}
-
-func newOpenAIResponsesFailoverTestContextWithBody(t *testing.T, ctx context.Context, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	groupID := int64(3131)
+	body := []byte(`{"model":"gpt-5.1","stream":false,"input":"hello"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -352,8 +177,8 @@ func TestOpenAIGatewayHandlerResponses_FailoverAbortsWhenClientDisconnected(t *t
 }
 
 // TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient 回归
-// 守卫：客户端在线时，每个 OAuth 账号对 520 只做一次同账号传输重试，
-// 再切换到账号 2；两个账号均耗尽后返回 502。
+// 守卫：客户端在线时 failover 行为不变——切换到账号 2，两个账号都 520 后按
+// 耗尽返回 502。
 func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -363,158 +188,7 @@ func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *te
 
 	handler.Responses(c)
 
-	require.Equal(t, []int64{1, 1, 2, 2}, upstream.calls(), "在线客户端应按上限重试并正常切换账号")
+	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号")
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-}
-
-func TestOpenAIGatewayHandlerResponses_ContinuationStateStopsBeforeSecondAccount(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	upstream := &openAIResponsesContinuationStateUpstream{}
-	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
-	c, rec := newOpenAIResponsesFailoverTestContext(t, nil)
-
-	handler.Responses(c)
-
-	require.Equal(t, []int64{1}, upstream.calls(), "a request-scoped continuation failure must not select account 2")
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Equal(t, "invalid_request_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.GetBytes(rec.Body.Bytes(), "error.code").String())
-	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
-
-	rawEvents, ok := c.Get(service.OpsUpstreamErrorsKey)
-	require.True(t, ok)
-	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
-	require.True(t, ok)
-	require.Len(t, events, 1)
-	require.Equal(t, "continuation_state", events[0].Kind)
-}
-
-// Regression: a stream:true Responses request can encounter stale continuation
-// state before Forward has written any upstream bytes.  It must still receive a
-// syntactically valid response.failed terminal event, not an HTTP 400 JSON body
-// that strict Codex clients report as a transport/system error.
-func TestOpenAIGatewayHandlerResponses_StreamingContinuationStateEmitsTerminalSSEBeforeFirstByte(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	upstream := &openAIResponsesContinuationStateUpstream{}
-	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
-	c, rec := newOpenAIResponsesFailoverTestContextWithStream(t, nil, true)
-
-	handler.Responses(c)
-
-	require.Equal(t, []int64{1}, upstream.calls(), "a request-scoped continuation failure must not select account 2")
-	require.Equal(t, http.StatusOK, rec.Code, "streaming terminal must be delivered in-band as SSE")
-	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
-	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: response.failed\n"), "emit exactly one terminal event")
-	require.NotContains(t, rec.Body.String(), "event: response.completed\n")
-
-	_, errObj := parseResponsesFailedSSE(t, rec.Body.String())
-	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, errObj["code"])
-	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, errObj["message"])
-	require.NotContains(t, rec.Body.String(), "previous response not found")
-}
-
-// A generic upstream 400 must use the same terminal framing.  It does not get
-// reclassified as continuation state, but a stream:true client still cannot
-// consume a preflight JSON error as a completed Responses stream.
-func TestOpenAIGatewayHandlerResponses_StreamingGenericPreflightErrorEmitsTerminalSSEBeforeFirstByte(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	upstream := &openAIResponsesGenericBadRequestUpstream{}
-	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
-	c, rec := newOpenAIResponsesFailoverTestContextWithStream(t, nil, true)
-
-	handler.Responses(c)
-
-	require.Equal(t, []int64{1}, upstream.calls())
-	require.Equal(t, http.StatusOK, rec.Code, "streaming terminal must be delivered in-band as SSE")
-	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
-	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: response.failed\n"), "emit exactly one terminal event")
-	require.NotContains(t, rec.Body.String(), "event: response.completed\n")
-	require.NotContains(t, rec.Body.String(), "must-not-leak")
-
-	resp, errObj := parseResponsesFailedSSE(t, rec.Body.String())
-	require.Equal(t, "failed", resp["status"])
-	require.Equal(t, service.OpenAIRequestRejectedCode, errObj["code"])
-	require.Equal(t, service.OpenAIRequestRejectedClientMessage, errObj["message"])
-}
-
-// Request history cannot turn a generic validation rejection into proof that
-// its upstream state is permanently unavailable.
-func TestOpenAIGatewayHandlerResponses_StreamingOpaqueToolChainRejectionStopsWithoutFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	upstream := &openAIResponsesGenericBadRequestUpstream{}
-	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
-	body := []byte(`{"model":"gpt-5.1","stream":true,"input":[{"type":"reasoning","encrypted_content":"opaque-test-carrier"},{"type":"function_call","call_id":"call_opaque","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_opaque","output":"{}"}]}`)
-	c, rec := newOpenAIResponsesFailoverTestContextWithBody(t, nil, body)
-
-	handler.Responses(c)
-
-	require.Equal(t, []int64{1}, upstream.calls(), "opaque encrypted tool continuations must not select account 2")
-	require.Equal(t, http.StatusOK, rec.Code, "streaming terminal must be delivered in-band as SSE")
-	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
-	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: response.failed\n"), "emit exactly one terminal event")
-	require.NotContains(t, rec.Body.String(), "must-not-leak")
-
-	_, errObj := parseResponsesFailedSSE(t, rec.Body.String())
-	require.Equal(t, service.OpenAIRequestRejectedCode, errObj["code"])
-	require.Equal(t, service.OpenAIRequestRejectedClientMessage, errObj["message"])
-	require.NotContains(t, rec.Body.String(), service.OpenAIContinuationStateUnavailableCode)
-
-	rawEvents, ok := c.Get(service.OpsUpstreamErrorsKey)
-	require.True(t, ok)
-	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
-	require.True(t, ok)
-	require.Len(t, events, 1)
-	require.Equal(t, "request_rejected", events[0].Kind)
-}
-
-func TestPreCooledPoolReturnsModelNotSupportedWithoutUpstreamReplay(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	resetAt := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
-	accounts := make([]service.Account, 0, 2)
-	for id := int64(1); id <= 2; id++ {
-		accounts = append(accounts, service.Account{
-			ID: id, Name: "relay", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
-			Status: service.StatusActive, Schedulable: true, Concurrency: 0,
-			Credentials: map[string]any{
-				"api_key": "test", "base_url": "https://relay.example.test",
-				"model_mapping": map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
-			},
-			Extra: map[string]any{
-				"openai_passthrough": true,
-				"model_rate_limits": map[string]any{
-					"openai/gpt-5.6-luna": map[string]any{
-						"rate_limit_reset_at": resetAt,
-						"reason":              "upstream_400_model_not_supported",
-					},
-				},
-			},
-		})
-	}
-	upstream := &openAIResponsesModelNotSupportedUpstream{}
-	repo := openAIResponsesCooledAccountRepo{
-		openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts},
-	}
-	cfg := &config.Config{RunMode: config.RunModeSimple}
-	gateway := service.NewOpenAIGatewayService(
-		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil, upstream,
-		nil, nil, nil, nil, nil, nil, nil, nil,
-	)
-	billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
-	t.Cleanup(billing.Stop)
-	handler := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(nil), billing,
-		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg)
-	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"input":"hello"}`)
-	c, rec := newOpenAIResponsesFailoverTestContextWithBody(t, nil, body)
-
-	handler.Responses(c)
-
-	require.Empty(t, upstream.calls())
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Equal(t, service.OpenAIModelNotSupportedCode, gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Equal(t, service.OpenAIModelNotSupportedCode, gjson.GetBytes(rec.Body.Bytes(), "error.code").String())
 }

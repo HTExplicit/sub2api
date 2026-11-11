@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
@@ -75,7 +74,7 @@ func connectionTestDefaultModels(account *Account) []string {
 
 // claudeConnectionTestModels prefers Anthropic's replacement for the deprecated
 // Sonnet 4.5 test model, then the current Opus.
-var claudeConnectionTestModels = []string{claude.DefaultTestModel, claude.DefaultTestModelFallback}
+var claudeConnectionTestModels = []string{"claude-sonnet-5-5", "claude-opus-5-5"}
 
 // AccountTestSupportsTextConversation reports whether a model of the account
 // can answer a text connection test: image, audio, embedding, realtime, speech

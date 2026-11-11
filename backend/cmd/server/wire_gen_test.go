@@ -24,11 +24,11 @@ func TestProvideServiceBuildInfo(t *testing.T) {
 }
 
 func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
-	cleanup := minimalDependencyCleanup(nil, nil)
+	cleanup := minimalDependencyCleanup(nil)
 	require.NotPanics(t, cleanup)
 }
 
-func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *service.OpenAIQuotaAutoResetService) func() {
+func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) func() {
 	cfg := &config.Config{}
 
 	oauthSvc := service.NewOAuthService(nil, nil)
@@ -62,7 +62,6 @@ func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *serv
 	return provideCleanup(
 		nil, // entClient
 		nil, // redis
-		gatewayCache,
 		&service.OpsMetricsCollector{},
 		&service.OpsAggregationService{},
 		&service.OpsAlertEvaluatorService{},
@@ -78,7 +77,6 @@ func minimalDependencyCleanup(gatewayCache service.GatewayCache, autoReset *serv
 		accountExpirySvc,
 		nil, // cnProviderBalanceCheck
 		codexVersionSyncSvc,
-		nil, // codexClientIdentityBackfill
 		claudeCodeVersionSyncSvc,
 		proxyExpirySvc,
 		subscriptionExpirySvc,
@@ -169,22 +167,6 @@ func TestProvideCleanupStopsExistingQuotaAutoResetWorker(t *testing.T) {
 		t.Fatal("the actual auto-reset worker did not reach the synthetic repository")
 	}
 	require.NoError(t, work.Err())
-	minimalDependencyCleanup(nil, autoReset)()
+	minimalDependencyCleanup(autoReset)()
 	require.ErrorIs(t, work.Err(), context.Canceled, "application cleanup must stop the existing upstream worker before infrastructure closes")
-}
-
-type cleanupGatewayCache struct {
-	service.GatewayCache
-	closed bool
-}
-
-func (c *cleanupGatewayCache) Close() error {
-	c.closed = true
-	return nil
-}
-
-func TestProvideCleanupClosesGatewayCache(t *testing.T) {
-	cache := &cleanupGatewayCache{}
-	minimalDependencyCleanup(cache, nil)()
-	require.True(t, cache.closed, "application cleanup must close the Redis client the gateway cache owns")
 }

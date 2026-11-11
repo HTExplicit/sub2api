@@ -560,21 +560,6 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'admin.plugins.description'
     }
   },
-  { path: '/admin/codex', redirect: '/admin/codex/identity', meta: { requiresAuth: true, requiresAdmin: true } },
-  {
-    path: '/admin/codex/identity',
-    name: 'AdminCodexIdentity',
-    component: () => import('@/views/admin/CodexFingerprintView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex', titleKey: 'nav.codex' }
-  },
-  {
-    path: '/admin/codex/advanced',
-    name: 'AdminCodexAdvanced',
-    component: () => import('@/views/admin/CodexRuntimeView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex', titleKey: 'nav.codex' }
-  },
-  { path: '/admin/codex-runtime', redirect: '/admin/codex/advanced', meta: { requiresAuth: true, requiresAdmin: true } },
-  { path: '/admin/codex-fingerprint', redirect: '/admin/codex/identity', meta: { requiresAuth: true, requiresAdmin: true } },
   {
     path: '/admin/pelican-tests',
     name: 'AdminPelicanTests',
@@ -653,12 +638,6 @@ const routes: RouteRecordRaw[] = [
     name: 'AdminLoginProtection',
     component: () => import('@/views/admin/LoginProtectionView.vue'),
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Login Protection', titleKey: 'admin.loginProtection.title' }
-  },
-  {
-    path: '/admin/deepseek-reasoning',
-    name: 'AdminDeepSeekReasoning',
-    component: () => import('@/views/admin/DeepSeekReasoningView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'DeepSeek Default Reasoning Effort', titleKey: 'admin.deepseekReasoning.title' }
   },
   {
     path: '/admin/system-prompts',

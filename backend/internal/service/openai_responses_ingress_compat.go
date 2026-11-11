@@ -58,9 +58,7 @@ func normalizeOpenAIResponsesLegacyIngressWithConfig(cfg *config.Config, body []
 			if !hasNativeInput {
 				request["input"] = legacy.input
 				applyLegacyResponsesTopLevelFields(request, legacy)
-				// A messages alias is not proof that this is complete history.
-				// Preserve a supplied native anchor for the selected endpoint to
-				// validate, just as when the caller supplies input directly.
+				delete(request, "previous_response_id")
 			}
 		}
 		// messages is not a Responses field. When native input is present but the

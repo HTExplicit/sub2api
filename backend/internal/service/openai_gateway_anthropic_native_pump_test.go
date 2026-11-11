@@ -230,7 +230,6 @@ func TestCCStreamingFromNativeAnthropic_HangTimesOut(t *testing.T) {
 	}
 	if res == nil {
 		t.Fatalf("expected result carrying accumulated usage")
-		return
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("handler did not respect interval bound: %v", elapsed)
@@ -281,7 +280,6 @@ func TestResponsesStreamingFromNativeAnthropic_HangTimesOut(t *testing.T) {
 	}
 	if res == nil {
 		t.Fatalf("expected result carrying accumulated usage")
-		return
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("handler did not respect interval bound: %v", elapsed)
@@ -309,7 +307,6 @@ func TestCCStreamingFromNativeAnthropic_HappyPathStillConverts(t *testing.T) {
 	}
 	if res == nil {
 		t.Fatalf("expected result")
-		return
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "Hello") {
@@ -341,7 +338,6 @@ func TestCCBufferedFromNativeAnthropic_HappyPathStillConverts(t *testing.T) {
 	}
 	if res == nil {
 		t.Fatalf("expected result")
-		return
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "Hello") {

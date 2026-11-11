@@ -53,10 +53,10 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	}
 	if strings.TrimSpace(previousResponseID) != "" {
 		logOpenAIWSModeInfo(
-			"prewarm_skip account_id=%d conn_id=%s reason=has_previous_response_id previous_response_id_present=true previous_response_id_kind=%s",
+			"prewarm_skip account_id=%d conn_id=%s reason=has_previous_response_id previous_response_id=%s",
 			account.ID,
 			connID,
-			normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
+			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 		)
 		return nil
 	}
@@ -132,19 +132,12 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
 			prewarmModel, _ := reqBody["model"].(string)
-			modelNotSupported := account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message)
-			if modelNotSupported {
-				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, lease.HandshakeHeaders(), message, prewarmModel)
-			}
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw, prewarmModel)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
 				errMsg = "OpenAI websocket prewarm error"
 			}
 			fallbackReason, canFallback := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
-			if fallbackReason == "model_not_supported" {
-				canFallback = modelNotSupported
-			}
 			errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 			logOpenAIWSModeInfo(
 				"prewarm_error_event account_id=%d conn_id=%s idx=%d fallback_reason=%s can_fallback=%v err_code=%s err_type=%s err_message=%s",
@@ -158,25 +151,10 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 				errMessage,
 			)
 			lease.MarkBroken()
-			if modelNotSupported {
-				// Prewarm is part of the same account attempt as the actual turn.
-				// Preserve the structured capability failure so the outer account
-				// failover loop can cool this account/model pair and select a safe
-				// sibling when the request is replayable.
-				return newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), message)
-			}
 			if canFallback {
-				return wrapOpenAIWSFallback("prewarm_"+fallbackReason, newOpenAIWSUpstreamEventError(errMsg, message))
+				return wrapOpenAIWSFallback("prewarm_"+fallbackReason, errors.New(errMsg))
 			}
-			return wrapOpenAIWSFallback("prewarm_error_event", newOpenAIWSUpstreamEventError(errMsg, message))
-		}
-		if eventType == "response.failed" && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message) {
-			prewarmModel, _ := reqBody["model"].(string)
-			_ = s.handleOpenAIAccountUpstreamError(
-				ctx, account, http.StatusBadRequest, lease.HandshakeHeaders(), message, prewarmModel,
-			)
-			lease.MarkBroken()
-			return newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), message)
+			return wrapOpenAIWSFallback("prewarm_error_event", errors.New(errMsg))
 		}
 
 		if isOpenAIWSTerminalEvent(eventType) {
@@ -186,17 +164,16 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	}
 
 	lease.MarkPrewarmed()
-	if !IsAccountObservation(ctx) && prewarmResponseID != "" && stateStore != nil {
+	if prewarmResponseID != "" && stateStore != nil && !IsAccountObservation(ctx) {
 		ttl := s.openAIWSResponseStickyTTL()
 		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, prewarmResponseID, stateStore.BindResponseAccount(ctx, groupID, prewarmResponseID, account.ID, ttl))
 		stateStore.BindResponseConn(prewarmResponseID, lease.ConnID(), ttl)
 	}
 	logOpenAIWSModeInfo(
-		"prewarm_done account_id=%d conn_id=%s response_id_present=%v response_id_kind=%s events=%d terminal_events=%d duration_ms=%d",
+		"prewarm_done account_id=%d conn_id=%s response_id=%s events=%d terminal_events=%d duration_ms=%d",
 		account.ID,
 		connID,
-		strings.TrimSpace(prewarmResponseID) != "",
-		normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(prewarmResponseID)),
+		truncateOpenAIWSLogValue(prewarmResponseID, openAIWSIDValueMaxLen),
 		prewarmEventCount,
 		prewarmTerminalCount,
 		time.Since(prewarmStart).Milliseconds(),
@@ -245,7 +222,50 @@ func normalizeOpenAIWSTerminalEvent(eventType string) string {
 	}
 }
 
-func openAIWSPayloadStatus(payload []byte) int {
+// markOpenAIWSClientVisibleFailure records only terminal/error protocol events
+// that were delivered to the client. Callers invoke it only after any hidden
+// failover/recovery decision and a successful downstream write.
+func markOpenAIWSClientVisibleFailure(c *gin.Context, eventType string, payload []byte) {
+	eventType = strings.TrimSpace(eventType)
+	if eventType != "error" && eventType != "response.failed" {
+		return
+	}
+	prefix := "error"
+	if eventType == "response.failed" {
+		prefix = "response.error"
+	}
+	code := strings.TrimSpace(gjson.GetBytes(payload, prefix+".code").String())
+	errType := strings.TrimSpace(gjson.GetBytes(payload, prefix+".type").String())
+	message := strings.TrimSpace(gjson.GetBytes(payload, prefix+".message").String())
+	if eventType == "response.failed" && code == "" && errType == "" && message == "" {
+		prefix = "error"
+		code = strings.TrimSpace(gjson.GetBytes(payload, prefix+".code").String())
+		errType = strings.TrimSpace(gjson.GetBytes(payload, prefix+".type").String())
+		message = strings.TrimSpace(gjson.GetBytes(payload, prefix+".message").String())
+	}
+	status := int(gjson.GetBytes(payload, prefix+".status_code").Int())
+	if status == 0 {
+		status = int(gjson.GetBytes(payload, prefix+".status").Int())
+	}
+	if status == 0 && eventType == "error" {
+		status = int(gjson.GetBytes(payload, "status").Int())
+	}
+	if status == 0 {
+		status = openAIWSErrorHTTPStatusFromRaw(code, errType)
+	}
+	if errType == "" {
+		errType = "upstream_error"
+	}
+	if code == "" {
+		code = strings.ReplaceAll(eventType, ".", "_")
+	}
+	if message == "" {
+		message = "upstream websocket request failed"
+	}
+	MarkOpsStreamFailure(c, errType, code, message, status)
+}
+
+func openAIWSPayloadTransientStatus(payload []byte) int {
 	if len(payload) == 0 {
 		return 0
 	}
@@ -259,11 +279,11 @@ func openAIWSPayloadStatus(payload []byte) int {
 	if status == 0 {
 		status = int(gjson.GetBytes(payload, "error.status").Int())
 	}
-	if status != 0 {
+	if shouldCooldownOpenAITransientUpstreamError(status, payload) {
 		return status
 	}
-	if isOpenAIModelNotSupportedPayload(payload) {
-		return http.StatusBadRequest
+	if status != 0 {
+		return 0
 	}
 	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
 	errType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String()))
@@ -274,10 +294,6 @@ func openAIWSPayloadStatus(payload []byte) int {
 		errType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.type").String()))
 	}
 	switch {
-	case strings.Contains(code, "rate_limit"), strings.Contains(errType, "rate_limit"):
-		return http.StatusTooManyRequests
-	case strings.Contains(code, "forbidden"), strings.Contains(errType, "forbidden"):
-		return http.StatusForbidden
 	case code == "server_is_overloaded", code == "slow_down":
 		return http.StatusServiceUnavailable
 	case strings.Contains(code, "server_error"),
@@ -292,36 +308,22 @@ func openAIWSPayloadStatus(payload []byte) int {
 	}
 }
 
-func openAIWSPayloadTransientStatus(payload []byte) int {
-	status := openAIWSPayloadStatus(payload)
-	if shouldCooldownOpenAITransientUpstreamError(status, payload) {
-		return status
-	}
-	return 0
-}
-
 func (s *OpenAIGatewayService) handleOpenAIWSTerminalTransientFailure(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) string {
 	eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
 	terminalEvent := normalizeOpenAIWSTerminalEvent(eventType)
 	if terminalEvent != "response.failed" {
 		return terminalEvent
 	}
-	if s.handleOpenAIBudgetExceededTerminalEvent(ctx, account, payload) {
-		return terminalEvent
-	}
-	status := openAIWSPayloadTransientStatus(payload)
-	if status != 0 {
-		s.handleOpenAIAccountUpstreamError(ctx, account, status, headers, payload, canonicalModel)
-	}
+	s.handleOpenAIWSFailureAccountSideEffects(ctx, account, canonicalModel, headers, payload)
 	return terminalEvent
 }
 
 func (s *OpenAIGatewayService) handleOpenAIWSErrorEventTransientFailure(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) {
-	eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
-	if eventType != "error" {
+	if IsAccountObservation(ctx) {
 		return
 	}
-	if s.handleOpenAIBudgetExceededTerminalEvent(ctx, account, payload) {
+	eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
+	if eventType != "error" {
 		return
 	}
 	status := openAIWSPayloadTransientStatus(payload)
@@ -337,40 +339,20 @@ func (s *OpenAIGatewayService) handleOpenAIWSErrorEventTransientFailure(ctx cont
 // failures and transient failures. Its return value lets stream callers avoid
 // applying the same transition twice for an error/response.failed pair.
 func (s *OpenAIGatewayService) handleOpenAIWSFailureAccountSideEffects(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) bool {
+	if IsAccountObservation(ctx) {
+		return false
+	}
 	message := extractOpenAISSEErrorMessage(payload)
 	status := openAIStreamFailureStatus(payload, message)
-	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
-		switch status {
-		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, 529:
-			// A passthrough WS terminal is already the end of this request, so it
-			// cannot reach the HTTP handler's retry-exhausted cleanup. Reuse that
-			// request-local cooldown here without persisting legacy account errors.
-			s.CooldownOpenAIRetryExhausted(ctx, account, canonicalModel, &UpstreamFailoverError{
-				StatusCode:      status,
-				ResponseBody:    append([]byte(nil), payload...),
-				ResponseHeaders: cloneHeader(headers),
-			})
-			return true
-		}
-	}
 	switch status {
-	case http.StatusBadRequest:
-		if !isOpenAIModelNotSupportedPayload(payload) {
-			return false
-		}
-		model := strings.TrimSpace(canonicalModel)
-		if model == "" {
-			model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
-		}
-		return s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
 	case http.StatusUnauthorized, http.StatusTooManyRequests, 529:
-		s.handleOpenAIStreamTerminalAccountSideEffectsWithContext(ctx, account, payload, message, headers, canonicalModel)
+		s.handleOpenAIStreamTerminalAccountSideEffects(nil, account, payload, message, headers, canonicalModel)
 		return true
 	case http.StatusForbidden:
 		if !openAIStream403AccountFailure(payload, message) {
 			return false
 		}
-		s.handleOpenAIStreamTerminalAccountSideEffectsWithContext(ctx, account, payload, message, headers, canonicalModel)
+		s.handleOpenAIStreamTerminalAccountSideEffects(nil, account, payload, message, headers, canonicalModel)
 		return true
 	}
 
@@ -383,66 +365,14 @@ func (s *OpenAIGatewayService) handleOpenAIWSFailureAccountSideEffects(ctx conte
 }
 
 func (s *OpenAIGatewayService) handleOpenAIWSDialTransientFailure(ctx context.Context, account *Account, canonicalModel string, err error) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	var dialErr *openAIWSDialError
 	if !errors.As(err, &dialErr) || dialErr == nil || !shouldCooldownOpenAITransientUpstreamError(dialErr.StatusCode, dialErr.ResponseBody) {
 		return
 	}
 	s.handleOpenAIAccountUpstreamError(ctx, account, dialErr.StatusCode, dialErr.ResponseHeaders, dialErr.ResponseBody, canonicalModel)
-}
-
-// openAIWSInitialDialFailover classifies only upstream dial/handshake failures.
-// Local pool pressure and continuation affinity errors are deliberately left to
-// their protocol-specific close paths.
-func openAIWSInitialDialFailover(account *Account, err error) (retrySameAccount bool, failoverErr *UpstreamFailoverError) {
-	if err == nil || errors.Is(err, context.Canceled) ||
-		errors.Is(err, errOpenAIWSConnQueueFull) || errors.Is(err, errOpenAIWSPreferredConnUnavailable) {
-		return false, nil
-	}
-	var dialErr *openAIWSDialError
-	if !errors.As(err, &dialErr) || dialErr == nil {
-		return false, nil
-	}
-
-	statusCode := dialErr.StatusCode
-	switch {
-	case statusCode == http.StatusUnauthorized,
-		statusCode == http.StatusForbidden,
-		statusCode == http.StatusTooManyRequests,
-		statusCode == http.StatusBadRequest &&
-			account != nil &&
-			account.IsOpenAICompatible() &&
-			isOpenAIModelNotSupportedError(statusCode, "", dialErr.ResponseBody):
-		// Authentication and quota failures switch immediately.
-	case statusCode == http.StatusRequestTimeout, statusCode >= http.StatusInternalServerError:
-		retrySameAccount = true
-	case statusCode == 0:
-		statusCode = http.StatusBadGateway
-		retrySameAccount = true
-	default:
-		return false, nil
-	}
-
-	reason := GatewayFailureReason("")
-	responseBody := append([]byte(nil), dialErr.ResponseBody...)
-	if dialErr.StatusCode == 0 {
-		reason = OpenAITransientTransportFailureReason
-		if classifyUpstreamTransportError(dialErr.Err).Persistent {
-			reason = OpenAIPersistentTransportFailureReason
-		}
-		if len(responseBody) == 0 {
-			responseBody = append([]byte(nil), openAITransportFailoverBody...)
-		}
-	}
-	if account != nil && account.IsOpenAICompatible() &&
-		isOpenAIModelNotSupportedError(statusCode, "", dialErr.ResponseBody) {
-		return false, newOpenAIModelNotSupportedFailoverError(dialErr.ResponseHeaders, dialErr.ResponseBody)
-	}
-	return retrySameAccount, &UpstreamFailoverError{
-		StatusCode:      statusCode,
-		ResponseBody:    responseBody,
-		ResponseHeaders: cloneHeader(dialErr.ResponseHeaders),
-		Reason:          reason,
-	}
 }
 
 func isOpenAIWSTokenEvent(eventType string) bool {
@@ -524,8 +454,7 @@ func getOpenAIGroupIDFromContext(c *gin.Context) int64 {
 }
 
 // SelectAccountByPreviousResponseID 按 previous_response_id 命中账号粘连。
-// 未命中时返回 (nil, nil)，由调用方继续走常规调度；已绑定账号处于
-// runtime breaker 冷却或 half-open probe 被占用时返回稳定的续链终止错误。
+// 未命中或账号不可用时返回 (nil, nil)，由调用方继续走常规调度。
 func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	ctx context.Context,
 	groupID *int64,
@@ -549,109 +478,11 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
 ) (*AccountSelectionResult, error) {
-	return s.selectAccountByPreviousResponseIDForCapabilityWithPolicy(
-		ctx,
-		groupID,
-		previousResponseID,
-		requestedModel,
-		excludedIDs,
-		requiredCapability,
-		requireCompact,
-		true,
-	)
-}
-
-func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWithPolicy(
-	ctx context.Context,
-	groupID *int64,
-	previousResponseID string,
-	requestedModel string,
-	excludedIDs map[int64]struct{},
-	requiredCapability OpenAIEndpointCapability,
-	requireCompact bool,
-	strictContinuation bool,
-) (*AccountSelectionResult, error) {
-	return s.selectAccountByPreviousResponseIDForCapabilityWithPolicyAndMismatch(
-		ctx,
-		groupID,
-		previousResponseID,
-		requestedModel,
-		excludedIDs,
-		requiredCapability,
-		requireCompact,
-		strictContinuation,
-		false,
-	)
-}
-
-// selectAccountByPreviousResponseIDForStrictContinuation keeps an anchored
-// request fail-closed when the stored owner no longer satisfies current group
-// policy.  A different account cannot own an opaque upstream response ID, so
-// falling back to ordinary scheduling would replay the binding on another
-// credential.  The older lookup helper intentionally remains best-effort for
-// callers that merely probe whether a sticky hit exists.
-func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForStrictContinuation(
-	ctx context.Context,
-	groupID *int64,
-	previousResponseID string,
-	requestedModel string,
-	excludedIDs map[int64]struct{},
-	requiredCapability OpenAIEndpointCapability,
-	requireCompact bool,
-) (*AccountSelectionResult, error) {
-	// A continuation store outage fails closed; a stale group or capability
-	// binding remains a soft miss so the caller can fall back to normal
-	// scheduling where that is safe.
-	if s != nil && strings.TrimSpace(previousResponseID) != "" {
-		if store := s.getOpenAIWSStateStore(); store != nil &&
-			LookupOpenAIContinuationBinding(ctx, store, derefGroupID(groupID), strings.TrimSpace(previousResponseID)).State == OpenAIContinuationBindingStoreError {
-			return nil, NewOpenAIContinuationStoreUnavailableError()
-		}
-	}
-	return s.selectAccountByPreviousResponseIDForCapabilityWithPolicyAndMismatch(
-		ctx,
-		groupID,
-		previousResponseID,
-		requestedModel,
-		excludedIDs,
-		requiredCapability,
-		requireCompact,
-		true,
-		false,
-	)
-}
-
-func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWithPolicyAndMismatch(
-	ctx context.Context,
-	groupID *int64,
-	previousResponseID string,
-	requestedModel string,
-	excludedIDs map[int64]struct{},
-	requiredCapability OpenAIEndpointCapability,
-	requireCompact bool,
-	strictContinuation bool,
-	failOnPolicyMismatch bool,
-) (*AccountSelectionResult, error) {
 	if s == nil {
 		return nil, nil
 	}
-	accountID, account, responseID, store, resolveErr := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
-	if resolveErr != nil {
-		if errors.Is(resolveErr, errOpenAIContinuationPolicyMismatch) {
-			if strictContinuation && failOnPolicyMismatch {
-				return nil, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
-			}
-			return nil, nil
-		}
-		if strictContinuation {
-			return nil, resolveErr
-		}
-		return nil, nil
-	}
+	accountID, account, responseID, store := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
 	if accountID <= 0 || account == nil || store == nil {
-		if strictContinuation {
-			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
-		}
 		return nil, nil
 	}
 
@@ -663,16 +494,16 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWit
 			responseID,
 			store.BindResponseAccount(ctx, derefGroupID(groupID), responseID, accountID, s.openAIWSResponseStickyTTL()),
 		)
-		return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
 			Account:     account,
 			Acquired:    true,
 			ReleaseFunc: result.ReleaseFunc,
-		})), nil
+		}), nil
 	}
 
 	cfg := s.schedulingConfig()
 	if s.concurrencyService != nil {
-		return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
 			Account: account,
 			WaitPlan: &AccountWaitPlan{
 				AccountID:      accountID,
@@ -680,7 +511,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWit
 				Timeout:        cfg.StickySessionWaitTimeout,
 				MaxWaiting:     cfg.StickySessionMaxWaiting,
 			},
-		})), nil
+		}), nil
 	}
 	return nil, nil
 }
@@ -694,11 +525,9 @@ func (s *OpenAIGatewayService) ResolveAccountIDByPreviousResponseIDForScheduler(
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
 ) int64 {
-	accountID, _, _, _, _ := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
+	accountID, _, _, _ := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
 	return accountID
 }
-
-var errOpenAIContinuationPolicyMismatch = errors.New("continuation account does not satisfy current group policy")
 
 func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	ctx context.Context,
@@ -708,122 +537,112 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
-) (int64, *Account, string, OpenAIWSStateStore, error) {
+) (int64, *Account, string, OpenAIWSStateStore) {
 	if s == nil {
-		return 0, nil, "", nil, nil
+		return 0, nil, "", nil
 	}
 	responseID := strings.TrimSpace(previousResponseID)
 	if responseID == "" {
-		return 0, nil, "", nil, nil
+		return 0, nil, "", nil
 	}
 	store := s.getOpenAIWSStateStore()
 	if store == nil {
-		return 0, nil, "", nil, nil
+		return 0, nil, "", nil
 	}
 
-	binding := LookupOpenAIContinuationBinding(ctx, store, derefGroupID(groupID), responseID)
-	if binding.State == OpenAIContinuationBindingStoreError {
-		return 0, nil, "", nil, NewOpenAIContinuationStoreUnavailableError()
-	}
-	if binding.State == OpenAIContinuationBindingMiss {
-		return 0, nil, "", nil, nil
-	}
-	accountID := binding.AccountID
-	miss := func(deleteBinding, continuationUnavailable bool) (int64, *Account, string, OpenAIWSStateStore, error) {
-		if deleteBinding {
-			_, _ = store.DeleteResponseAccountIfMatches(ctx, derefGroupID(groupID), responseID, accountID)
-		}
-		if continuationUnavailable {
-			return 0, nil, "", nil, NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
-		}
-		return 0, nil, "", nil, nil
-	}
-	policyMiss := func() (int64, *Account, string, OpenAIWSStateStore, error) {
-		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
-	}
-	policyMissDelete := func() (int64, *Account, string, OpenAIWSStateStore, error) {
-		_, _ = store.DeleteResponseAccountIfMatches(ctx, derefGroupID(groupID), responseID, accountID)
-		return policyMiss()
+	accountID, err := store.GetResponseAccount(ctx, derefGroupID(groupID), responseID)
+	if err != nil || accountID <= 0 {
+		return 0, nil, "", nil
 	}
 	if excludedIDs != nil {
 		if _, excluded := excludedIDs[accountID]; excluded {
-			return policyMiss()
+			return 0, nil, "", nil
 		}
 	}
 
-	var account *Account
-	var err error
-	// Response affinity identifies the account, but provider identity must come
-	// from the database because a persisted scheduler snapshot can predate a migration.
-	if s.accountRepo != nil {
-		account, err = s.accountRepo.GetByID(ctx, accountID)
-		if err == nil && account != nil && s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) {
-			return policyMiss()
-		}
-	} else {
-		account, err = s.getSchedulableAccount(ctx, accountID)
-	}
+	account, err := s.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
-		return miss(true, false)
+		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		return 0, nil, "", nil
 	}
 	// OAuth/SetupToken continuation state lives on the WSv2 session and cannot
-	// survive an HTTP fallback. API-key Responses HTTP requests are different:
-	// previous_response_id is scoped to the selected key, so the response-id
-	// binding must retain that key.
+	// survive an HTTP fallback. Official API-key Responses HTTP requests are
+	// different: previous_response_id is supported by the provider and scoped to
+	// the selected key/project, so the response-id binding must retain that key.
 	if !account.IsOpenAIApiKey() && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
-		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
+		return 0, nil, "", nil
 	}
-	if !account.IsOpenAI() || !account.IsActive() || !account.Schedulable {
-		return miss(true, false)
-	}
-	if shouldClearStickySession(account, requestedModel) || !account.IsSchedulable() {
-		return policyMiss()
-	}
-	// A model_not_supported cooldown belongs to this credential/model pair, not
-	// the whole account.  Response affinity must nevertheless honour it: an
-	// anchored continuation cannot safely fall through to another credential,
-	// while an ordinary sticky lookup may decline the hit and let its caller
-	// choose a fresh conversation route.  Use the same account-aware canonical
-	// key as the scheduler and DB recheck so aliases cannot bypass the cooldown.
-	if !account.IsSchedulableForModelWithContext(ctx, requestedModel) {
-		return policyMiss()
-	}
-	hasGroupMetadata := len(account.GroupIDs) > 0 || len(account.AccountGroups) > 0
-	if hasGroupMetadata && !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
-		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
-	}
-	if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !account.IsPrivacySet() {
-		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
+	if shouldClearStickySession(account, requestedModel) || !account.IsOpenAI() || !account.IsSchedulable() {
+		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		return 0, nil, "", nil
 	}
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
-		return policyMiss()
+		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		return 0, nil, "", nil
 	}
 	if requestedModel != "" && !supportsOpenAIRequestModel(account, requestedModel, requireCompact) {
-		return policyMiss()
+		return 0, nil, "", nil
 	}
 	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {
-		return policyMiss()
+		return 0, nil, "", nil
 	}
 	// Quota auto-pause must also gate the previous_response_id sticky path; otherwise an
 	// account over its 5h/7d threshold keeps serving the same response chain even though
 	// normal scheduling skips it. Pause is transient, so fall through to normal scheduling
 	// without deleting the binding (the window may reset before the next turn).
 	if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
-		return policyMiss()
+		return 0, nil, "", nil
 	}
 	// 分组利润控制：与 quota auto-pause 同语义——利润不合格是暂时
 	// 状态（上游倍率/高峰随时间变化），只跳过本次复用、落回普通调度，不删除
 	// 绑定（倍率恢复后可继续按 previous_response_id 粘连）。
 	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
-		return policyMiss()
+		return 0, nil, "", nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
-		return miss(false, true)
+	if s.schedulerSnapshot != nil && s.accountRepo != nil {
+		latest, latestErr := s.accountRepo.GetByID(ctx, account.ID)
+		if latestErr != nil || latest == nil {
+			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			return 0, nil, "", nil
+		}
+		if shouldClearStickySession(latest, requestedModel) || !latest.IsOpenAI() || !latest.IsSchedulable() {
+			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			return 0, nil, "", nil
+		}
+		if !s.openAIAccountMatchesSchedulingGroup(latest, groupID) {
+			return 0, nil, "", nil
+		}
+		if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !latest.IsPrivacySet() {
+			return 0, nil, "", nil
+		}
+		if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
+			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			return 0, nil, "", nil
+		}
+		if requestedModel != "" && !supportsOpenAIRequestModel(latest, requestedModel, requireCompact) {
+			return 0, nil, "", nil
+		}
+		if !latest.SupportsOpenAIEndpointCapability(requiredCapability) {
+			return 0, nil, "", nil
+		}
+		if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, latest); paused {
+			return 0, nil, "", nil
+		}
+		// 利润门对最新账号状态复检一次，语义同上：跳过复用、不删绑定。
+		if vetoed, _ := openAIProfitControlVetoReason(ctx, latest); vetoed {
+			return 0, nil, "", nil
+		}
+		if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) {
+			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			return 0, nil, "", nil
+		}
+		account = latest
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
-		return policyMissDelete()
+		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		return 0, nil, "", nil
 	}
-	return accountID, account, responseID, store, nil
+	return accountID, account, responseID, store
 }
 
 func classifyOpenAIWSAcquireError(err error) string {
@@ -907,6 +726,18 @@ func openAIWSSemantic429Headers(account *Account, model string, headers http.Hea
 	return nil
 }
 
+func (s *OpenAIGatewayService) newOpenAIWSRateLimitFailoverError(account *Account, headers http.Header, responseBody []byte, message string) *UpstreamFailoverError {
+	return s.newOpenAIAccountFailoverError(
+		account,
+		http.StatusTooManyRequests,
+		headers,
+		responseBody,
+		strings.TrimSpace(message),
+		false,
+		false,
+	)
+}
+
 func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (string, bool) {
 	code := strings.ToLower(strings.TrimSpace(codeRaw))
 	errType := strings.ToLower(strings.TrimSpace(errTypeRaw))
@@ -923,16 +754,9 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 		return "invalid_encrypted_content", true
 	case "previous_response_not_found":
 		return "previous_response_not_found", true
-	case "model_not_supported":
-		if hasModelNotSupportedMessage(msgRaw) {
-			return "model_not_supported", true
-		}
 	}
 	if isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
 		return "upstream_rate_limited", false
-	}
-	if errType == "model_not_supported" && hasModelNotSupportedMessage(msgRaw) {
-		return "model_not_supported", true
 	}
 	if strings.Contains(msg, "upgrade required") || strings.Contains(msg, "status 426") {
 		return "upgrade_required", true
@@ -971,8 +795,6 @@ func openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw string) int {
 	code := strings.ToLower(strings.TrimSpace(codeRaw))
 	errType := strings.ToLower(strings.TrimSpace(errTypeRaw))
 	switch {
-	case code == "model_not_supported" || errType == "model_not_supported":
-		return http.StatusBadRequest
 	case strings.Contains(errType, "invalid_request"),
 		strings.Contains(code, "invalid_request"),
 		strings.Contains(code, "bad_request"),

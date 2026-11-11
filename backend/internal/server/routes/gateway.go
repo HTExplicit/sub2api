@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"mime"
 	"net/http"
 	"strings"
 
@@ -65,29 +64,8 @@ func RegisterGatewayRoutes(
 		dispatchCodexModelsGateway(c, h.OpenAIGateway.CodexModels, h.Gateway.CodexModels)
 	}
 	modelsHandler := func(c *gin.Context) {
-		// A client_version query selects the Codex manifest for collection
-		// requests.  Single-model lookups must still flow through the regular
-		// catalogue handler so the returned object matches the visible list.
-		if c.Param("model") == "" && c.Query("client_version") != "" {
+		if c.Query("client_version") != "" {
 			codexModelsHandler(c)
-			return
-		}
-		h.Gateway.Models(c)
-	}
-	// Model IDs may carry a provider namespace ("openai/gpt-5.4"), which a
-	// ":model" segment cannot capture, so single-model discovery uses a
-	// catch-all. The catch-all value keeps its leading slash; it is normalized
-	// before handlers read c.Param("model").
-	// Single-model discovery never selects the Codex client_version manifest.
-	modelPathHandler := func(c *gin.Context) {
-		model := strings.Trim(c.Param("model"), "/")
-		for i := range c.Params {
-			if c.Params[i].Key == "model" {
-				c.Params[i].Value = model
-			}
-		}
-		if model == "" {
-			modelsHandler(c)
 			return
 		}
 		h.Gateway.Models(c)
@@ -227,7 +205,8 @@ func RegisterGatewayRoutes(
 		// /models endpoint with a client_version query and expect the ChatGPT
 		// Codex manifest format; other clients keep the OpenAI-style list.
 		gateway.GET("/models", modelsHandler)
-		gateway.GET("/models/*model", modelPathHandler)
+		// Single-model discovery never selects the Codex client_version manifest.
+		gateway.GET("/models/:model", h.Gateway.Models)
 		gateway.GET("/usage", h.Gateway.Usage)
 		gateway.POST("/live", h.OpenAIGateway.Live)
 		gateway.GET("/live/:call_id", h.OpenAIGateway.LiveSideband)
@@ -403,7 +382,7 @@ func RegisterGatewayRoutes(
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
 	rootRoute(http.MethodGet, "/models", bodyLimit, modelsHandler)
-	rootRoute(http.MethodGet, "/models/*model", bodyLimit, modelPathHandler)
+	rootRoute(http.MethodGet, "/models/:model", bodyLimit, h.Gateway.Models)
 	rootRoute(http.MethodPost, "/messages/count_tokens", bodyLimit, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)
@@ -567,16 +546,9 @@ func getGroupPlatform(c *gin.Context) string {
 	return apiKey.Group.Platform
 }
 
-// compositeTargetPlatformMiddleware resolves a composite group's target
-// platform from the request model. The optional body-size argument is kept
-// for callers/tests that need the same normalized limit used by the gateway.
-func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver, maxBodySize ...int64) gin.HandlerFunc {
+func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {
 	if resolver == nil {
 		resolver = service.NewCompositeRouteResolver(nil)
-	}
-	maxNormalizedBytes := int64(0)
-	if len(maxBodySize) > 0 {
-		maxNormalizedBytes = maxBodySize[0]
 	}
 	return func(c *gin.Context) {
 		apiKey, ok := middleware.GetAPIKeyFromContext(c)
@@ -589,7 +561,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 			return
 		}
 
-		body, err := readCompositeRequestBody(c.Request, maxNormalizedBytes)
+		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
 			if middleware.RejectRequestBodyReadError(c, "middleware.composite_route", err) {
 				return
@@ -631,33 +603,6 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 		requestmodel.ResetRequestBody(c.Request, body)
 		c.Next()
 	}
-}
-
-// readCompositeRequestBody relaxes the known malformed-EOF condition for JSON
-// family media types. Multipart and binary paths retain the strict reader so
-// partial uploads cannot be mistaken for complete requests.
-func readCompositeRequestBody(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
-	if req != nil && compositeJSONContentType(req.Header.Get("Content-Type")) {
-		return pkghttputil.ReadLenientJSONRequestBodyWithPrealloc(req, maxNormalizedBytes)
-	}
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(req)
-	if err != nil {
-		return body, err
-	}
-	if maxNormalizedBytes > 0 && int64(len(body)) > maxNormalizedBytes {
-		return nil, &http.MaxBytesError{Limit: maxNormalizedBytes}
-	}
-	return body, nil
-}
-
-func compositeJSONContentType(contentType string) bool {
-	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType))
-	if err != nil {
-		return false
-	}
-	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
-	return mediaType == "application/json" ||
-		(strings.HasPrefix(mediaType, "application/") && strings.HasSuffix(mediaType, "+json"))
 }
 
 func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {

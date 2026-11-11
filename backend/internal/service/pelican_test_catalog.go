@@ -328,7 +328,7 @@ func pelicanTestUsesClaudeEffort(account *Account, model string) bool {
 	if account.Platform == PlatformAnthropic {
 		return true
 	}
-	if !claude.IsClaudeModel(model) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "claude-") {
 		return false
 	}
 	if account.Platform == PlatformAntigravity && account.Type == AccountTypeUpstream {
@@ -342,7 +342,7 @@ func pelicanTestUsesClaudeEffort(account *Account, model string) bool {
 
 func pelicanTestSupportsReasoningWire(account *Account, model string) bool {
 	if pelicanTestUsesClaudeEffort(account, model) {
-		return !account.IsBedrock() || bedrockKeepsOutputConfigEffort(model)
+		return !account.IsBedrock() || claude.IsSonnet55(model)
 	}
 	switch {
 	case account.IsOpenAI():
@@ -393,26 +393,27 @@ func PelicanTestModelOptions(account *Account, model string) PelicanTestModelOpt
 	} else if known && (metadata.Reasoning != nil || len(metadata.SupportedReasoningLevels) > 0) {
 		if metadata.Reasoning == nil || *metadata.Reasoning {
 			option.ReasoningEfforts = normalizeReasoningLevels(metadata.SupportedReasoningLevels)
-			if isOpenAIGPT6SolOrLunaModel(mapped) {
-				option.ReasoningEfforts = intersectOrderedStrings(option.ReasoningEfforts, openai.GPT6APIReasoningEfforts())
+			if openai.IsGPT6SolOrLunaModelSpelling(mapped) {
+				option.ReasoningEfforts = intersectOrderedStrings(option.ReasoningEfforts, accountTestGPT6APIReasoningEfforts())
 			}
 		}
-	} else if account.IsOpenAIApiKey() && isOpenAIGPT6SolOrLunaModel(mapped) {
-		option.ReasoningEfforts = openai.GPT6APIReasoningEfforts()
+	} else if account.IsOpenAIApiKey() && openai.IsGPT6SolOrLunaModelSpelling(mapped) {
+		option.ReasoningEfforts = accountTestGPT6APIReasoningEfforts()
 	} else {
 		var levels []configuredCodexReasoningLevel
 		switch {
 		case account.Platform == PlatformGrok:
 			levels = configuredCodexGrokReasoningLevels(accountTestGrokUpstreamModel(mapped))
 		case account.IsOpenAI() && isOpenAICodexReasoningGPTModel(mapped):
-			levels = configuredCodexGPTReasoningLevels(mapped)
+			levels = newConfiguredCodexModelDescriptor(mapped).SupportedReasoningLevels
 		}
 		for _, level := range levels {
-			if level.Effort != "ultra" {
-				option.ReasoningEfforts = append(option.ReasoningEfforts, level.Effort)
-			}
+			option.ReasoningEfforts = append(option.ReasoningEfforts, level.Effort)
 		}
 	}
+	option.ReasoningEfforts = slices.DeleteFunc(option.ReasoningEfforts, func(effort string) bool {
+		return effort == "ultra"
+	})
 	if option.ReasoningEfforts == nil {
 		option.ReasoningEfforts = []string{}
 	}

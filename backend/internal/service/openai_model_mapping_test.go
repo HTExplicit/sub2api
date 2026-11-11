@@ -1,10 +1,6 @@
 package service
 
-import (
-	"testing"
-
-	"github.com/stretchr/testify/require"
-)
+import "testing"
 
 func TestResolveOpenAIForwardModel(t *testing.T) {
 	tests := []struct {
@@ -224,19 +220,6 @@ func TestResolveOpenAICompactForwardModel(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestResolveOpenAICompactForwardModelWithCanonicalKeepsPublicIdentityMappingPriority(t *testing.T) {
-	account := &Account{Credentials: map[string]any{
-		"compact_model_mapping": map[string]any{
-			"gpt-5.6-luna":        "gpt-5.6-luna",
-			"openai/gpt-5.6-luna": "luna-canonical-compact",
-		},
-	}}
-
-	require.Equal(t, "gpt-5.6-luna", resolveOpenAICompactForwardModelWithCanonical(
-		account, "gpt-5.6-luna", "openai/gpt-5.6-luna",
-	))
 }
 
 func TestResolveOpenAIForwardMappedModels_CompactMappingPrecedence(t *testing.T) {

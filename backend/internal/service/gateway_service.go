@@ -450,8 +450,9 @@ var allowedHeaders = map[string]bool{
 	"x-client-request-id":                       true,
 }
 
-// ErrStickySessionNotFound lets cache implementations report a missing
-// binding without exposing their storage driver's sentinel error.
+// ErrStickySessionNotFound is returned by GatewayCache.GetSessionAccountID
+// when no binding exists for the session. It abstracts away the underlying
+// cache implementation (e.g. redis.Nil), mirroring ErrRefreshTokenNotFound.
 var ErrStickySessionNotFound = errors.New("sticky session not found")
 
 // ErrReasoningContentNotFound is returned by GatewayCache.GetReasoningContent
@@ -464,7 +465,13 @@ var ErrReasoningContentNotFound = errors.New("reasoning content not found")
 // GatewayCache defines cache operations for gateway service.
 // Provides sticky session storage, retrieval, refresh and deletion capabilities.
 type GatewayCache interface {
-	// GetSessionAccountID returns ErrStickySessionNotFound when no binding exists.
+	// GetSessionAccountID 获取粘性会话绑定的账号 ID；无绑定时返回
+	// ErrStickySessionNotFound，使 service 层无需依赖具体缓存实现即可
+	// 区分"未绑定"与真实读取失败。
+	// Get the account ID bound to a sticky session. Returns
+	// ErrStickySessionNotFound when no binding exists so service code can
+	// distinguish a miss from a real read failure without importing the
+	// cache driver.
 	GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error)
 	// SetSessionAccountID 设置粘性会话与账号的绑定关系
 	// Set the binding between sticky session and account
@@ -475,10 +482,6 @@ type GatewayCache interface {
 	// DeleteSessionAccountID 删除粘性会话绑定，用于账号不可用时主动清理
 	// Delete sticky session binding, used to proactively clean up when account becomes unavailable
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
-	// DeleteSessionAccountIDIfMatches atomically deletes a binding only while it
-	// still points to expectedAccountID. Implementations must not emulate this as
-	// a separate read followed by delete.
-	DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error)
 
 	// Grok async video billing snapshot (create → status success).
 	// SetGrokVideoPendingBilling stores create-time model/duration/resolution for status billing.
@@ -500,34 +503,6 @@ type GatewayCache interface {
 	// ErrReasoningContentNotFound，使 service 层无需依赖具体缓存实现即可
 	// 区分"未缓存"与真实读取失败。
 	GetReasoningContent(ctx context.Context, itemID string) (string, error)
-}
-
-// OpenAIRuntimeBreakerStore is an optional Redis-backed extension implemented
-// by the production GatewayCache. Keeping it separate avoids forcing every
-// lightweight cache mock to implement circuit-breaker persistence.
-type OpenAIRuntimeBreakerStore interface {
-	BlockOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, reason string, ttl time.Duration) error
-	AllowOpenAIRuntimeBreakerProbe(ctx context.Context, accountID int64, model, owner string, claimTTL time.Duration) (bool, error)
-	// ClearOpenAIRuntimeBreaker closes a half-open breaker only when its active
-	// block has expired and the probe claim belongs to owner. It must not clear a
-	// newer block or another request's claim.
-	ClearOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, owner string) error
-	ClearAllOpenAIRuntimeBreakers(ctx context.Context, accountID int64) error
-}
-
-// OpenAIRuntimeBreakerBatchProbeStore atomically checks and claims all breaker
-// scopes that apply to one request.
-type OpenAIRuntimeBreakerBatchProbeStore interface {
-	AllowOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string, claimTTL time.Duration) (allowed bool, claimedModels []string, err error)
-}
-
-// OpenAIRuntimeBreakerLeaseStore extends the batch probe store with owner-safe
-// lease lifecycle operations. It remains optional so existing cache adapters
-// keep their single-scope compatibility; the production Redis cache implements it.
-type OpenAIRuntimeBreakerLeaseStore interface {
-	OpenAIRuntimeBreakerBatchProbeStore
-	RenewOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string, claimTTL time.Duration) (bool, error)
-	ReleaseOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string) (bool, error)
 }
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
@@ -607,28 +582,12 @@ type AccountSelectionResult struct {
 	Acquired    bool
 	ReleaseFunc func()
 	WaitPlan    *AccountWaitPlan // nil means no wait allowed
-	// runtimeBreakerProbeOwner identifies the request that acquired a Redis
-	// half-open probe claim. It is deliberately private so only scheduler
-	// results can authorize a conditional breaker close.
-	runtimeBreakerProbeOwner string
-	// runtimeBreakerProbeModels is the set of Redis scopes claimed for this
-	// account. It is private so only the scheduler can renew or release leases.
-	runtimeBreakerProbeModels []string
-	runtimeBreakerProbeLease  *openAIRuntimeBreakerProbeLease
-	runtimeBreakerProbeEnded  atomic.Bool
 	// stickySessionHit 标记账号来自会话粘性绑定命中，供非高级调度路径回填决策标签。
 	stickySessionHit bool
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。
 	profitGate *openAIProfitControlGate
-}
-
-// HasOpenAIRuntimeBreakerProbe reports whether selection carries a breaker
-// probe lease that must be released on an early exit.
-func (r *AccountSelectionResult) HasOpenAIRuntimeBreakerProbe() bool {
-	return r != nil && (r.runtimeBreakerProbeLease != nil ||
-		(strings.TrimSpace(r.runtimeBreakerProbeOwner) != "" && len(r.runtimeBreakerProbeModels) > 0))
 }
 
 // ProfitGateActive 报告本次选号是否处于利润门之下。
@@ -666,7 +625,8 @@ type ForwardResult struct {
 	// response before any client-facing rewrite or protocol conversion.
 	UpstreamResponseModel         string
 	UpstreamResponseModelConflict bool
-	// UpstreamResponseServiceTier is the tier the upstream reports having used.
+	// UpstreamResponseServiceTier is the tier the upstream reports having used
+	// (Anthropic usage.speed: "fast" / "standard"); "" when not declared.
 	UpstreamResponseServiceTier string
 	Stream                      bool
 	Duration                    time.Duration
@@ -674,11 +634,11 @@ type ForwardResult struct {
 	ClientDisconnect            bool // 客户端是否在流式传输过程中断开
 	ReasoningEffort             *string
 	// RequestedReasoningEffort is the client-requested effort before mapping.
-	ReasoningEffortDefaulted bool
 	RequestedReasoningEffort *string
-	// ServiceTier records the billable request tier. OpenAI uses service_tier;
-	// Anthropic speed=fast is normalized to "fast". Usage recording lowers it
-	// to UpstreamResponseServiceTier when the upstream reports a cheaper tier.
+	// ServiceTier records the tier requested by the client. OpenAI uses
+	// service_tier; Anthropic speed=fast is normalized to "fast". Usage recording
+	// lowers it to UpstreamResponseServiceTier when the upstream reports a
+	// cheaper tier (see ResolveBillingServiceTier).
 	ServiceTier *string
 
 	// 图片生成计费字段（图片生成模型使用）
@@ -735,27 +695,23 @@ type GatewayFailureReason string
 // trigger account failover. Additive metadata keeps existing composite literals
 // source-compatible and preserves their legacy retry-next-account behavior.
 type UpstreamFailoverError struct {
-	StatusCode                   int
-	ResponseBody                 []byte        // 上游响应体，用于错误透传规则匹配
-	ResponseHeaders              http.Header   // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
-	ForceCacheBilling            bool          // Antigravity 粘性会话切换时设为 true
-	RetryableOnSameAccount       bool          // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
-	SameAccountRetryDelay        time.Duration // 同账号重试的最小间隔；零值使用 handler 默认值
-	SameAccountRetryDeadline     time.Time     // 同账号重试截止时间；零值表示仅受 retryLimit 限制
-	SameAccountRetryMax          int           // 可选的错误级同账号重试上限，低于 handler 默认预算时优先采用
-	RequestScopedTransient       bool          // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁
-	BoundUpstreamPassthrough     bool          // A cache-bound upstream gateway 429/5xx is returned without error remapping.
-	SafeToFailoverAfterWrite     bool          // 仅写出 SSE 注释等非语义字节时，仍可在同一客户端流中切换账号
-	Stage                        GatewayFailureStage
-	Scope                        GatewayFailureScope
-	Reason                       GatewayFailureReason
-	NextAccountAction            NextAccountAction
-	ClientStatusCode             int
-	ClientErrorCode              string
-	ClientErrorType              string
-	ClientErrorParam             string
-	ClientMessage                string
-	SuppressAccountHealthPenalty bool
+	StatusCode               int
+	ResponseBody             []byte        // 上游响应体，用于错误透传规则匹配
+	ResponseHeaders          http.Header   // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
+	ForceCacheBilling        bool          // Antigravity 粘性会话切换时设为 true
+	RetryableOnSameAccount   bool          // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
+	SameAccountRetryDelay    time.Duration // 同账号重试的最小间隔；零值使用 handler 默认值
+	SameAccountRetryDeadline time.Time     // 同账号重试截止时间；零值表示仅受 retryLimit 限制
+	SameAccountRetryMax      int           // 可选的错误级同账号重试上限，低于 handler 默认预算时优先采用
+	RequestScopedTransient   bool          // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁
+	SafeToFailoverAfterWrite bool          // 仅写出 SSE 注释等非语义字节时，仍可在同一客户端流中切换账号
+	BoundUpstreamPassthrough bool          // 绑定显式缓存的请求在上游网关账号上收到的 429 / 5xx：反映持有缓存的上游账号状态，原样回写不走错误映射
+	Stage                    GatewayFailureStage
+	Scope                    GatewayFailureScope
+	Reason                   GatewayFailureReason
+	NextAccountAction        NextAccountAction
+	ClientStatusCode         int
+	ClientMessage            string
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -778,9 +734,6 @@ func (e *UpstreamFailoverError) IsCredentialFailure() bool {
 // and inference failures retain their existing scheduler-health behavior.
 func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 	if e == nil {
-		return false
-	}
-	if e.SuppressAccountHealthPenalty {
 		return false
 	}
 	return !e.IsCredentialFailure() || e.Scope == GatewayFailureScopeAccount
@@ -819,7 +772,6 @@ func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accou
 
 // GatewayService handles API gateway operations
 type GatewayService struct {
-	deepseekReasoning     *DeepSeekReasoningService
 	systemPrompts         *SystemPromptService
 	accountRepo           AccountRepository
 	groupRepo             GroupRepository
@@ -858,20 +810,6 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
-	usageCache            *UsageCache
-	usageCommitObserver   UsageCommitObserver
-}
-
-func (s *GatewayService) SetUsageCache(cache *UsageCache) {
-	if s != nil {
-		s.usageCache = cache
-	}
-}
-
-func (s *GatewayService) SetUsageCommitObserver(observer UsageCommitObserver) {
-	if s != nil {
-		s.usageCommitObserver = observer
-	}
 }
 
 // NewGatewayService creates a new GatewayService
@@ -1511,7 +1449,7 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		// Treat it like an unmapped account: skip its mapping here and let
 		// supplementUnmappedOpenAIModels contribute the default set. Mappings on
 		// the ordinary accounts in the same group still count.
-		if acc.IsOpenAIPassthroughEnabled() {
+		if platform == PlatformOpenAI && acc.IsOpenAIPassthroughEnabled() {
 			continue
 		}
 
@@ -1731,20 +1669,19 @@ func (s *GatewayService) initDebugGatewayBodyFile(path string) {
 	}
 
 	// 如果 path 指向一个已存在的目录，自动追加默认文件名
-	// path comes only from the server operator's debug environment setting.
-	if info, err := os.Stat(path); err == nil && info.IsDir() { //nolint:gosec
+	if info, err := os.Stat(path); err == nil && info.IsDir() { //nolint:gosec // G703: path 仅来自启动环境变量 SUB2API_DEBUG_GATEWAY_BODY（运维配置），非请求输入
 		path = filepath.Join(path, debugGatewayBodyDefaultFilename)
 	}
 
 	// 确保父目录存在
 	if dir := filepath.Dir(path); dir != "." {
-		if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec
+		if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G703: 同上
 			slog.Error("failed to create gateway debug log directory", "dir", dir, "error", err)
 			return
 		}
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec // G703: 同上
 	if err != nil {
 		slog.Error("failed to open gateway debug log file", "path", path, "error", err)
 		return

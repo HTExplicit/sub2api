@@ -171,126 +171,6 @@ const openAIQuotaAutoPauseSettingsDBTimeout = 5 * time.Second
 
 const openAIQuotaAutoPauseSettingsRefreshKey = "openai_quota_auto_pause_settings"
 
-type OpenAIRefusalRecoveryRuntime struct {
-	Enabled       bool
-	CyberFailover bool
-	Rewrite       bool
-	Matcher       *OpenAIRefusalMatcher
-}
-
-type cachedOpenAIRefusalRecoveryRuntime struct {
-	runtime   OpenAIRefusalRecoveryRuntime
-	expiresAt int64
-}
-
-const openAIRefusalRecoveryCacheTTL = 60 * time.Second
-const openAIRefusalRecoveryErrorTTL = 5 * time.Second
-const openAIRefusalRecoveryDBTimeout = 5 * time.Second
-
-func (r OpenAIRefusalRecoveryRuntime) CyberFailoverEnabled() bool {
-	return r.CyberFailover
-}
-
-func (r OpenAIRefusalRecoveryRuntime) RewriteEnabled() bool {
-	return r.Enabled && r.Rewrite && r.Matcher != nil
-}
-
-func (s *SettingService) commitOpenAIRefusalRecoveryRuntime(
-	observed *cachedOpenAIRefusalRecoveryRuntime,
-	next *cachedOpenAIRefusalRecoveryRuntime,
-) *cachedOpenAIRefusalRecoveryRuntime {
-	s.openAIRefusalRecoveryCacheMu.Lock()
-	defer s.openAIRefusalRecoveryCacheMu.Unlock()
-
-	current, _ := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime)
-	if current != observed && current != nil {
-		return current
-	}
-	s.openAIRefusalRecoveryCache.Store(next)
-	return next
-}
-
-func cachedOpenAIRefusalRecoveryErrorRuntime(
-	stale *cachedOpenAIRefusalRecoveryRuntime,
-) *cachedOpenAIRefusalRecoveryRuntime {
-	runtime := OpenAIRefusalRecoveryRuntime{}
-	if stale != nil {
-		runtime = stale.runtime
-	}
-	return &cachedOpenAIRefusalRecoveryRuntime{
-		runtime:   runtime,
-		expiresAt: time.Now().Add(openAIRefusalRecoveryErrorTTL).UnixNano(),
-	}
-}
-
-func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) OpenAIRefusalRecoveryRuntime {
-	if s == nil {
-		return OpenAIRefusalRecoveryRuntime{}
-	}
-	if cached, ok := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime); ok && cached != nil && time.Now().UnixNano() < cached.expiresAt {
-		return cached.runtime
-	}
-	if s.settingRepo == nil {
-		return OpenAIRefusalRecoveryRuntime{}
-	}
-	result, _, _ := s.openAIRefusalRecoverySF.Do("openai_refusal_recovery", func() (any, error) {
-		observed, _ := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime)
-		if observed != nil && time.Now().UnixNano() < observed.expiresAt {
-			return observed, nil
-		}
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIRefusalRecoveryDBTimeout)
-		defer cancel()
-		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
-			SettingKeyOpenAIRefusalRecoveryEnabled,
-			SettingKeyOpenAICyberFailoverEnabled,
-			SettingKeyOpenAIRefusalRewriteEnabled,
-			SettingKeyOpenAIRefusalKeywords,
-			SettingKeyOpenAIRefusalReplacement,
-		})
-		if err != nil {
-			slog.Warn("failed to load OpenAI refusal recovery settings", "error", err, "using_stale", observed != nil)
-			entry := cachedOpenAIRefusalRecoveryErrorRuntime(observed)
-			return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
-		}
-		if values == nil {
-			values = make(map[string]string)
-		}
-		entry := &cachedOpenAIRefusalRecoveryRuntime{
-			runtime:   buildOpenAIRefusalRecoveryRuntime(values),
-			expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano(),
-		}
-		return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
-	})
-	if entry, ok := result.(*cachedOpenAIRefusalRecoveryRuntime); ok && entry != nil {
-		return entry.runtime
-	}
-	return OpenAIRefusalRecoveryRuntime{}
-}
-
-func buildOpenAIRefusalRecoveryRuntime(values map[string]string) OpenAIRefusalRecoveryRuntime {
-	runtime := OpenAIRefusalRecoveryRuntime{
-		Enabled:       values[SettingKeyOpenAIRefusalRecoveryEnabled] == "true",
-		CyberFailover: values[SettingKeyOpenAICyberFailoverEnabled] == "true",
-		Rewrite:       values[SettingKeyOpenAIRefusalRewriteEnabled] == "true",
-	}
-	if !runtime.Enabled || !runtime.Rewrite {
-		return runtime
-	}
-	matcher, err := NewOpenAIRefusalMatcher(
-		parseOpenAIRefusalKeywordsSetting(values[SettingKeyOpenAIRefusalKeywords]),
-		values[SettingKeyOpenAIRefusalReplacement],
-	)
-	if err != nil {
-		runtime.Rewrite = false
-		return runtime
-	}
-	runtime.Matcher = matcher
-	return runtime
-}
-
 // GetCyberSessionBlockRuntime 返回 (开关, TTL)，进程内缓存 ~60s，
 // 供网关热路径读取时避免 DB 往返。
 // 屏蔽设置与用户白名单在单次 singleflight 中一起读取。
@@ -495,7 +375,13 @@ func (s *SettingService) GetOpenAICodexClientVersion(ctx context.Context) string
 			})
 			return fallback, nil
 		}
-		version, _ := resolveCodexClientVersion(values[SettingKeyOpenAICodexClientVersion], values[SettingKeyOpenAICodexClientVersionSynced])
+		version := NormalizeCodexClientVersion(values[SettingKeyOpenAICodexClientVersion])
+		if version == "" {
+			version = NormalizeCodexClientVersion(values[SettingKeyOpenAICodexClientVersionSynced])
+		}
+		if version == "" {
+			version = fallback
+		}
 		s.openAICodexVersionCache.Store(&cachedOpenAICodexClientVersion{
 			version:   version,
 			expiresAt: time.Now().Add(openAICodexClientVersionCacheTTL).UnixNano(),
@@ -978,14 +864,6 @@ type gatewayForwardingSettingsResult struct {
 }
 
 func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context) gatewayForwardingSettingsResult {
-	if s == nil || s.settingRepo == nil {
-		return gatewayForwardingSettingsResult{
-			openAITTFTMode:                   OpenAITTFTModeSemantic,
-			fp:                               true,
-			claudeOAuthSystemPromptInjection: true,
-			clientDatelineNormalization:      true,
-		}
-	}
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return gatewayForwardingSettingsResult{

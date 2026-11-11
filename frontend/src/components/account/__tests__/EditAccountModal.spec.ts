@@ -347,17 +347,19 @@ function mountModal(account = buildAccount(), renderGroupSelector = false) {
 }
 
 describe('EditAccountModal', () => {
-  it('omits the extension-owned fingerprint mode while saving an unrelated OAuth account edit', async () => {
+  it('preserves the official fingerprint mode while saving an unrelated OAuth account edit', async () => {
     const account = buildOpenAIOAuthParentAccount()
     account.extra = { codex_fingerprint_mode: 'full', unrelated_setting: 'preserved' }
     updateAccountMock.mockReset().mockResolvedValue(account)
     const wrapper = mountModal(account)
     await flushPromises()
-    expect(wrapper.find('[data-testid="edit-codex-fingerprint-mode-select"]').exists()).toBe(false)
+    const fingerprint = wrapper.get('[data-testid="edit-codex-fingerprint-mode-select"]')
+    expect((fingerprint.element as HTMLSelectElement).value).toBe('full')
+    expect(fingerprint.findAll('option').map(option => option.element.value)).toEqual(['off', 'device', 'session', 'full'])
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     await flushPromises()
     const payload = updateAccountMock.mock.calls.at(-1)?.[1]
-    expect(payload?.extra).not.toHaveProperty('codex_fingerprint_mode')
+    expect(payload?.extra?.codex_fingerprint_mode).toBe('full')
     expect(payload?.extra?.unrelated_setting).toBe('preserved')
     wrapper.unmount()
   })

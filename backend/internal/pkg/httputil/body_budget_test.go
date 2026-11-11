@@ -351,7 +351,6 @@ func TestRequestBodyMemoryBudgetRefundsFailedOwnedBuffers(t *testing.T) {
 			case "invalid_zstd":
 				encoding = "zstd"
 			case "read_error":
-				payload = []byte(`{"input":"unfinished`)
 				wantErr = io.ErrUnexpectedEOF
 			case "cancellation":
 				wantErr = context.Canceled
@@ -561,48 +560,5 @@ func TestDetachRequestBodyMemoryRejectsWhenBudgetExhausted(t *testing.T) {
 		t.Fatalf("without a budget detach is a no-op: %v", err)
 	} else {
 		releaseNoop()
-	}
-}
-
-func TestRecoveredEOFRequestBodyRetainsOnlyFinalAllocation(t *testing.T) {
-	for _, encoding := range []string{"identity", "gzip", "zstd"} {
-		t.Run(encoding, func(t *testing.T) {
-			payload := []byte("{\"input\":\"hello\x00world\"}")
-			raw := payload
-			switch encoding {
-			case "gzip":
-				var compressed bytes.Buffer
-				encoder := gzip.NewWriter(&compressed)
-				_, _ = encoder.Write(payload)
-				if err := encoder.Close(); err != nil {
-					t.Fatal(err)
-				}
-				raw = compressed.Bytes()
-			case "zstd":
-				encoder, err := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
-				if err != nil {
-					t.Fatal(err)
-				}
-				raw = encoder.EncodeAll(payload, nil)
-				if err := encoder.Close(); err != nil {
-					t.Fatal(err)
-				}
-			}
-			budget := NewBodyMemoryBudget(16 << 20)
-			ctx, release := WithRequestBodyMemoryBudget(context.Background(), budget)
-			defer release()
-			req := requestWithTerminalError(t, raw, encoding, io.ErrUnexpectedEOF).WithContext(ctx)
-			got, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
-			if err != nil || !bytes.Equal(got, bytes.ReplaceAll(payload, []byte{0}, []byte(`\u0000`))) {
-				t.Fatalf("complete JSON recovery changed: %q %v", got, err)
-			}
-			if used := requestBodyBudgetUsed(budget); used != int64(cap(got)) {
-				t.Fatalf("recovery retained %d bytes, final allocation is %d", used, cap(got))
-			}
-			release()
-			if used := requestBodyBudgetUsed(budget); used != 0 {
-				t.Fatalf("recovered body cleanup retained %d bytes", used)
-			}
-		})
 	}
 }

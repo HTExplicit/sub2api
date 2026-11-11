@@ -25,16 +25,16 @@ func TestExtractOpenAIReasoningEffortFromBodyModelCandidates(t *testing.T) {
 		want       string // "" 表示期望 nil
 	}{
 		{
-			name:       "未发送 effort 不从原始模型猜测已生效",
+			name:       "后缀推导回退到原始模型（OAuth 上游模型已剥后缀）",
 			body:       bodyWithoutEffort,
 			candidates: []string{"gpt-5.4", "gpt-5.4", "gpt-5.4-xhigh"},
-			want:       "",
+			want:       "xhigh",
 		},
 		{
-			name:       "GPT-5.6 后缀未写入请求时不记录 max",
+			name:       "GPT-5.6 后缀 max 经原始模型推导保留",
 			body:       bodyWithoutEffort,
 			candidates: []string{"gpt-5.6-sol", "gpt-5.6-sol", "gpt-5.6-sol-max"},
-			want:       "",
+			want:       "max",
 		},
 		{
 			name:       "显式 max 用第一个非空候选（映射后模型）判定",
@@ -43,10 +43,10 @@ func TestExtractOpenAIReasoningEffortFromBodyModelCandidates(t *testing.T) {
 			want:       "max",
 		},
 		{
-			name:       "实际发送 max 不根据模型重写元数据",
+			name:       "显式 max 非 5.6 首候选仍折叠为 xhigh",
 			body:       bodyWithMax,
 			candidates: []string{"gpt-5.4", "sol"},
-			want:       "max",
+			want:       "xhigh",
 		},
 		{
 			name:       "所有候选均无后缀时返回 nil",
@@ -74,10 +74,13 @@ func TestExtractOpenAIReasoningEffortModelCandidates(t *testing.T) {
 
 	got := extractOpenAIReasoningEffort(reqBody, "gpt-5.3-codex", "gpt-5.3-codex-high")
 
-	require.Nil(t, got)
+	require.NotNil(t, got)
+	require.Equal(t, "high", *got)
 }
 
-// 回归：后缀对应的 effort 必须真的发到上游，随后按实际请求记录用量。
+// 回归：OAuth 账号请求后缀式模型（无显式 reasoning 字段）时，上游模型被
+// normalizeCodexModel 剥掉 effort 后缀，用量元数据的 effort 必须仍能从
+// 原始模型名后缀推导出来。
 func TestOpenAIGatewayServiceForwardOAuthDerivesEffortFromSuffixModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{
@@ -114,7 +117,6 @@ func TestOpenAIGatewayServiceForwardOAuthDerivesEffortFromSuffixModel(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "gpt-5.3-codex", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.Equal(t, "xhigh", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
 	require.NotNil(t, result.ReasoningEffort)
 	require.Equal(t, "xhigh", *result.ReasoningEffort)
 }

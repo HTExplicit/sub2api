@@ -54,8 +54,6 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 	}
 
 	diag := ModelAvailabilityDiagnosis{}
-	supportingAccounts := 0
-	modelNotSupportedCooldowns := 0
 	for i := range accounts {
 		diag.HasAccountsInPool = true
 		if isRetiredOpenAISubscriptionModel(&accounts[i], resolveOpenAIAccountUpstreamModelForRequest(&accounts[i], requestedModel, false)) {
@@ -67,12 +65,8 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 		// mapping must match.
 		if accounts[i].IsModelSupported(requestedModel) {
 			diag.HasModelSupport = true
-			supportingAccounts++
-			if accounts[i].hasActiveModelRateLimitReasonWithContext(ctx, requestedModel, string(openAIModelNotSupportedReason)) {
-				modelNotSupportedCooldowns++
-			}
+			return diag
 		}
 	}
-	diag.ModelNotSupportedCooldownExhausted = supportingAccounts > 0 && modelNotSupportedCooldowns == supportingAccounts
 	return diag
 }

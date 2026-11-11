@@ -190,13 +190,6 @@ func (c *schedulerTestGatewayCache) DeleteSessionAccountID(ctx context.Context, 
 	return nil
 }
 
-func (c *schedulerTestGatewayCache) DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error) {
-	if c.sessionBindings == nil || c.sessionBindings[sessionHash] != expectedAccountID {
-		return false, nil
-	}
-	return true, c.DeleteSessionAccountID(ctx, groupID, sessionHash)
-}
-
 func (c *schedulerTestGatewayCache) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
 	return nil
 }
@@ -481,6 +474,75 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLega
 	require.False(t, decision.StickyPreviousHit)
 }
 
+// Regression: the legacy load-batch path had two bare ErrNoAvailableAccounts
+// exits that bypassed the diagnostics added for both the advanced scheduler and
+// the non-batched legacy selector. This is the default path when load batching
+// is enabled, so quota auto-pause could still surface as an opaque 503.
+func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_LoadBatchReportsFilterReasons(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := withOpenAIQuotaAutoPauseSettings(context.Background(), OpsOpenAIAccountQuotaAutoPauseSettings{DefaultThreshold7d: 0.9})
+	groupID := int64(10107)
+	quotaPaused := Account{
+		ID:          36003,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Extra: map[string]any{
+			"codex_7d_used_percent":  95.0,
+			"codex_7d_reset_at":      time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+			"codex_usage_updated_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+		},
+	}
+	mappingMiss := Account{
+		ID:          36004,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"gpt-4o": "gpt-4o"},
+		},
+	}
+	excluded := Account{
+		ID:          36005,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = true
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{quotaPaused, mappingMiss, excluded}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	require.False(t, svc.isOpenAIAdvancedSchedulerEnabled(ctx))
+	selection, decision, err := svc.SelectAccountWithScheduler(
+		ctx,
+		&groupID,
+		"",
+		"",
+		"gpt-5.4-mini",
+		map[int64]struct{}{excluded.ID: {}},
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Nil(t, selection)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	require.EqualError(t, err, "no available OpenAI accounts supporting model: gpt-5.4-mini (pool=3, filtered: excluded=1 model_not_supported=1 quota_auto_pause_7d=1)")
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_RequiredWSV2_SkipsHTTPOnlyAccount(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 
@@ -635,6 +697,59 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_Embeddi
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
 }
 
+func TestOpenAIGatewayService_SelectAccountForTokenCount_DoesNotAcquireGenerationSlot(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(10115)
+	acquiredIDs := make([]int64, 0)
+	accounts := []Account{
+		{
+			ID: 36501, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0,
+			Credentials: map[string]any{"openai_capabilities": []any{"chat_completions"}},
+		},
+		{
+			ID: 36502, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 5,
+			Credentials: map[string]any{"openai_capabilities": []any{"embeddings"}},
+		},
+		{
+			ID: 36503, Platform: PlatformGrok, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 10,
+			Credentials: map[string]any{"openai_capabilities": []any{"chat_completions"}},
+		},
+		{
+			ID: 36504, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 15,
+			Credentials: map[string]any{
+				"openai_capabilities": []any{"chat_completions"},
+				"model_mapping":       map[string]any{"gpt-4o": "gpt-4o"},
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:       &schedulerTestGatewayCache{},
+		cfg:         &config.Config{},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+			acquireResults: map[int64]bool{36501: false},
+			acquiredIDs:    &acquiredIDs,
+		}),
+	}
+
+	account, err := svc.SelectAccountForTokenCount(
+		ctx,
+		&groupID,
+		"",
+		"gpt-5.1",
+		OpenAIEndpointCapabilityChatCompletions,
+		PlatformOpenAI,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, int64(36501), account.ID)
+	require.Empty(t, acquiredIDs, "token counting must not acquire a generation slot")
+}
+
 // 生图意图的 /v1/responses 请求要求 OpenAIEndpointCapabilityResponses：探测确认
 // 不支持 Responses API 的 APIKey 账号必须被排除，避免 forward 阶段降级为无法生图
 // 的 Chat Completions 直转（#4417）。
@@ -701,113 +816,6 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_ResponsesCapabilityExcl
 		require.NotNil(t, selection)
 		require.NotNil(t, selection.Account)
 		require.Equal(t, int64(37002), selection.Account.ID)
-	})
-}
-
-func TestOpenAIGatewayService_SelectAccountWithSchedulerForCapabilityAndPreference_CyberFailoverMatrix(t *testing.T) {
-	resetOpenAIAdvancedSchedulerSettingCacheForTest()
-	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
-
-	groupID := int64(10126)
-	newSvc := func(accounts []Account, groupAware bool, cache *schedulerTestGatewayCache) *OpenAIGatewayService {
-		cfg := &config.Config{}
-		cfg.Gateway.Scheduling.LoadBatchEnabled = false
-		var repo AccountRepository = schedulerTestOpenAIAccountRepo{accounts: accounts}
-		if groupAware {
-			repo = schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: accounts}}
-		}
-		if cache == nil {
-			cache = &schedulerTestGatewayCache{}
-		}
-		return &OpenAIGatewayService{
-			accountRepo:        repo,
-			cache:              cache,
-			cfg:                cfg,
-			concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
-		}
-	}
-	selectAccount := func(t *testing.T, svc *OpenAIGatewayService, sessionHash string, excluded map[int64]struct{}, transport OpenAIUpstreamTransport, capability OpenAIEndpointCapability, preferredType string) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-		t.Helper()
-		return svc.SelectAccountWithSchedulerForCapabilityAndPreference(
-			context.Background(), &groupID, "", sessionHash, "gpt-5.1", excluded,
-			transport, capability, false, false, false, PlatformOpenAI,
-			OpenAIAccountTypePreference{PreferredType: preferredType, AllowCompatibleFallback: true},
-		)
-	}
-	account := func(id int64, accountType string, priority int) Account {
-		return Account{ID: id, Platform: PlatformOpenAI, Type: accountType, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: priority, GroupIDs: []int64{groupID}}
-	}
-
-	t.Run("oauth prefers another oauth before apikey", func(t *testing.T) {
-		accounts := []Account{account(38101, AccountTypeOAuth, 0), account(38102, AccountTypeOAuth, 10), account(38103, AccountTypeAPIKey, 0)}
-		selection, decision, err := selectAccount(t, newSvc(accounts, true, nil), "", map[int64]struct{}{38101: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
-		require.NoError(t, err)
-		require.Equal(t, int64(38102), selection.Account.ID)
-		require.True(t, decision.TypePreferenceUsed)
-		require.False(t, decision.CrossTypeFallback)
-		selection.ReleaseFunc()
-	})
-
-	t.Run("oauth falls back to compatible apikey", func(t *testing.T) {
-		accounts := []Account{account(38111, AccountTypeOAuth, 0), account(38112, AccountTypeAPIKey, 0)}
-		selection, decision, err := selectAccount(t, newSvc(accounts, true, nil), "", map[int64]struct{}{38111: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
-		require.NoError(t, err)
-		require.Equal(t, int64(38112), selection.Account.ID)
-		require.True(t, decision.CrossTypeFallback)
-		selection.ReleaseFunc()
-	})
-
-	t.Run("apikey prefers another apikey before oauth", func(t *testing.T) {
-		accounts := []Account{account(38121, AccountTypeAPIKey, 0), account(38122, AccountTypeAPIKey, 10), account(38123, AccountTypeOAuth, 0)}
-		selection, decision, err := selectAccount(t, newSvc(accounts, true, nil), "", map[int64]struct{}{38121: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeAPIKey)
-		require.NoError(t, err)
-		require.Equal(t, int64(38122), selection.Account.ID)
-		require.False(t, decision.CrossTypeFallback)
-		selection.ReleaseFunc()
-	})
-
-	t.Run("incompatible apikey cannot be a fallback", func(t *testing.T) {
-		oauth := account(38131, AccountTypeOAuth, 0)
-		apiKey := account(38132, AccountTypeAPIKey, 0)
-		apiKey.Extra = map[string]any{"openai_responses_supported": false}
-		selection, decision, err := selectAccount(t, newSvc([]Account{oauth, apiKey}, true, nil), "", map[int64]struct{}{38131: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
-		require.ErrorIs(t, err, ErrNoAvailableAccounts)
-		require.Nil(t, selection)
-		require.True(t, decision.TypePreferenceUsed)
-	})
-
-	t.Run("websocket transport capability is preserved", func(t *testing.T) {
-		oauth := account(38141, AccountTypeOAuth, 0)
-		apiKey := account(38142, AccountTypeAPIKey, 0)
-		selection, _, err := selectAccount(t, newSvc([]Account{oauth, apiKey}, true, nil), "", map[int64]struct{}{38141: {}}, OpenAIUpstreamTransportResponsesWebsocketV2, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
-		require.ErrorIs(t, err, ErrNoAvailableAccounts)
-		require.Nil(t, selection)
-	})
-
-	t.Run("single failed account is never retried", func(t *testing.T) {
-		selection, _, err := selectAccount(t, newSvc([]Account{account(38151, AccountTypeOAuth, 0)}, true, nil), "", map[int64]struct{}{38151: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
-		require.ErrorIs(t, err, ErrNoAvailableAccounts)
-		require.Nil(t, selection)
-	})
-
-	t.Run("failed sticky account is excluded", func(t *testing.T) {
-		cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"cyber-sticky": 38161}}
-		accounts := []Account{account(38161, AccountTypeOAuth, 0), account(38162, AccountTypeOAuth, 10)}
-		selection, _, err := selectAccount(t, newSvc(accounts, true, cache), "cyber-sticky", map[int64]struct{}{38161: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
-		require.NoError(t, err)
-		require.Equal(t, int64(38162), selection.Account.ID)
-		selection.ReleaseFunc()
-	})
-
-	t.Run("cross group and cross platform candidates are forbidden", func(t *testing.T) {
-		failed := account(38171, AccountTypeOAuth, 0)
-		otherGroup := account(38172, AccountTypeOAuth, 0)
-		otherGroup.GroupIDs = []int64{groupID + 1}
-		otherPlatform := account(38173, AccountTypeOAuth, 0)
-		otherPlatform.Platform = PlatformGrok
-		selection, _, err := selectAccount(t, newSvc([]Account{failed, otherGroup, otherPlatform}, true, nil), "", map[int64]struct{}{38171: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
-		require.ErrorIs(t, err, ErrNoAvailableAccounts)
-		require.Nil(t, selection)
 	})
 }
 
@@ -1687,7 +1695,7 @@ func TestOpenAIGatewayService_OpenAIAccountSchedulerMetrics_DisabledNoOp(t *test
 
 	svc := &OpenAIGatewayService{}
 	ttft := 120
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, 10, "", true, &ttft)
+	svc.ReportOpenAIAccountScheduleResult(&Account{ID: 10}, "", true, &ttft)
 	svc.RecordOpenAIAccountSwitch()
 
 	snapshot := svc.SnapshotOpenAIAccountSchedulerMetrics()
@@ -2911,44 +2919,15 @@ func TestOpenAIAccountScheduler_SkipsAccountBlockedForRequestedModel(t *testing.
 	require.True(t, scheduler.isAccountRequestCompatible(context.Background(), account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.6-sol"}))
 }
 
-func TestOpenAIAccountScheduler_ReportsPersistentModelCooldown(t *testing.T) {
-	reset := time.Now().Add(time.Minute)
-	account := &Account{
-		ID: 21634, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
-		Status: StatusActive, Schedulable: true,
-		Credentials: map[string]any{
-			"base_url":      "https://api.laxarouter.ai",
-			"model_mapping": map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
-		},
-		Extra: map[string]any{modelRateLimitsKey: map[string]any{
-			"openai/gpt-5.6-luna": map[string]any{"rate_limit_reset_at": reset.UTC().Format(time.RFC3339)},
-		}},
-	}
-	scheduler := &defaultOpenAIAccountScheduler{}
-	ok, reason := scheduler.isAccountRequestCompatibleReason(context.Background(), account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.6-luna"})
-	require.False(t, ok)
-	require.Equal(t, "model_rate_limited", reason)
-}
-
-func TestReportOpenAIAccountScheduleResult_SuccessClearsOnlyExpiredModelTransientState(t *testing.T) {
+func TestReportOpenAIAccountScheduleResult_SuccessClearsModelTransientState(t *testing.T) {
 	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(128)}
 	now := time.Now()
 	svc.openaiModelTransient.recordFailure(21636, "gpt-5.5", now)
 	svc.openaiModelTransient.recordFailure(21636, "gpt-5.5", now.Add(time.Millisecond))
 	require.True(t, svc.openaiModelTransient.isBlocked(21636, "gpt-5.5", now.Add(2*time.Millisecond)))
 
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, 21636, "gpt-5.5", true, nil)
-	require.True(t, svc.openaiModelTransient.isBlocked(21636, "gpt-5.5", now.Add(2*time.Millisecond)), "a late success must not clear an active cooldown")
+	svc.ReportOpenAIAccountScheduleResult(&Account{ID: 21636}, "gpt-5.5", true, nil)
 
-	key, ok := openAIAccountModelTransientKey(21636, "gpt-5.5")
-	require.True(t, ok)
-	svc.openaiModelTransient.mu.Lock()
-	entry := svc.openaiModelTransient.entries[key]
-	entry.blockUntil = time.Now().Add(-time.Millisecond)
-	svc.openaiModelTransient.entries[key] = entry
-	svc.openaiModelTransient.mu.Unlock()
-
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, 21636, "gpt-5.5", true, nil)
 	require.False(t, svc.openaiModelTransient.isBlocked(21636, "gpt-5.5", now.Add(2*time.Millisecond)))
 }
 
@@ -3407,7 +3386,7 @@ func TestOpenAIGatewayService_OpenAIAccountSchedulerMetrics(t *testing.T) {
 	selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "session_hash_metrics", "gpt-5.1", nil, OpenAIUpstreamTransportAny, false)
 	require.NoError(t, err)
 	require.NotNil(t, selection)
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, account.ID, "", true, intPtrForTest(120))
+	svc.ReportOpenAIAccountScheduleResult(&account, "", true, intPtrForTest(120))
 	svc.RecordOpenAIAccountSwitch()
 
 	snapshot := svc.SnapshotOpenAIAccountSchedulerMetrics()
@@ -3744,7 +3723,7 @@ func TestOpenAIGatewayService_SchedulerWrappersAndDefaults(t *testing.T) {
 
 	svc := &OpenAIGatewayService{}
 	ttft := 120
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, 10, "", true, &ttft)
+	svc.ReportOpenAIAccountScheduleResult(&Account{ID: 10}, "", true, &ttft)
 	svc.RecordOpenAIAccountSwitch()
 	snapshot := svc.SnapshotOpenAIAccountSchedulerMetrics()
 	require.Equal(t, OpenAIAccountSchedulerMetricsSnapshot{}, snapshot)

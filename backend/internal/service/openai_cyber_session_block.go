@@ -145,19 +145,3 @@ func (s *OpenAIGatewayService) FindCyberSessionBlockedForRequest(ctx context.Con
 	}
 	return key
 }
-
-func (s *OpenAIGatewayService) IsCyberSessionBlocked(ctx context.Context, key string) bool {
-	if strings.TrimSpace(key) == "" {
-		return false
-	}
-	enabled, _ := s.CyberSessionBlockRuntime(ctx)
-	if !enabled {
-		return false
-	}
-	store := s.cyberSessionBlockStore()
-	if store == nil {
-		return false
-	}
-	matched, err := store.FindCyberSessionBlocked(ctx, []string{key})
-	return err == nil && matched != ""
-}

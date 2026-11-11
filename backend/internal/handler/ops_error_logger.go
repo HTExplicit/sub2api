@@ -20,11 +20,9 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 const (
@@ -34,9 +32,8 @@ const (
 	opsRoutingCapacityLimitedKey = "ops_routing_capacity_limited"
 	opsDedicatedErrorRecordedKey = "ops_dedicated_error_recorded"
 
-	opsUpstreamModelKey          = service.OpsUpstreamModelKey
-	opsRequestTypeKey            = "ops_request_type"
-	opsDedicatedEntryEnqueuedKey = "ops_dedicated_entry_enqueued"
+	opsUpstreamModelKey = service.OpsUpstreamModelKey
+	opsRequestTypeKey   = "ops_request_type"
 
 	// 错误过滤匹配常量 — shouldSkipOpsErrorLog 和错误分类共用
 	opsErrContextCanceled            = "context canceled"
@@ -475,7 +472,6 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 	c.Set(opsAccountIDKey, accountID)
 	if c.Request != nil {
 		ctx := context.WithValue(c.Request.Context(), ctxkey.AccountID, accountID)
-		service.ObserveQuotaAccount(ctx, accountID)
 		if len(platform) > 0 {
 			p := strings.TrimSpace(platform[0])
 			if p != "" {
@@ -486,29 +482,10 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 	}
 }
 
-// attachOpsRefusalRecoveryEvidence puts the evidence of HTTP refusal rewrites
-// and prompt retries in front of the attempts of a request that finally
-// failed. It is never classification input: the top-level upstream fields
-// keep coming from the attempts, and the last attempt stays last.
-func attachOpsRefusalRecoveryEvidence(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
-	evidence := service.OpsRefusalRecoveryEvents(c)
-	if entry == nil || len(evidence) == 0 {
-		return
-	}
-	merged := make([]*service.OpsUpstreamErrorEvent, 0, len(evidence)+len(entry.UpstreamErrors))
-	merged = append(merged, evidence...)
-	merged = append(merged, entry.UpstreamErrors...)
-	entry.UpstreamErrors = merged
-}
-
-// isOpsGatewayFixedClientMessage reports whether a client-visible message is a
-// sentence the gateway writes in place of an upstream error text.
+// isOpsGatewayFixedClientMessage identifies gateway wording that must not replace
+// a separately recorded upstream error in administrator diagnostics.
 func isOpsGatewayFixedClientMessage(message string) bool {
-	message = strings.TrimSpace(message)
-	if service.IsGatewayFixedClientMessage(message) {
-		return true
-	}
-	switch message {
+	switch strings.TrimSpace(message) {
 	case cyberSessionBlockedClientMsg,
 		"Upstream authentication failed, please contact administrator",
 		"Upstream access forbidden, please contact administrator",
@@ -533,12 +510,6 @@ func markOpsRoutingCapacityLimitedIfNoAvailable(c *gin.Context, err error) {
 		return
 	}
 	markOpsRoutingCapacityLimited(c)
-	if details := service.GetOpenAISelectionDiagnostics(err); details != nil && c != nil && c.Request != nil {
-		if details.RetryAfterSeconds > 0 && !c.Writer.Written() {
-			c.Header("Retry-After", strconv.Itoa(details.RetryAfterSeconds))
-		}
-		logger.FromContext(c.Request.Context()).Warn("gateway.selection_unavailable", zap.Any("selection", details))
-	}
 }
 
 func isOpsRoutingCapacityLimited(c *gin.Context) bool {
@@ -1121,11 +1092,6 @@ func (state *opsCaptureWriterState) shouldCapture() bool {
 // - Streaming errors after the response has started (SSE) may still need explicit logging.
 func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request != nil {
-			ctx, finish := ops.AttachQuotaActivity(c.Request.Context())
-			c.Request = c.Request.WithContext(ctx)
-			defer finish()
-		}
 		originalWriter := c.Writer
 		w := acquireOpsCaptureWriter(originalWriter)
 		w.setContext(c)
@@ -1169,7 +1135,6 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		}
 		if status < 400 {
 			if parsed.StreamFailure {
-				parsed = applyOpsResponsesServerFailureMarker(c, parsed)
 				status = inferStreamFailureStatus(c, parsed)
 			} else {
 				// A marked in-band error is a visible request failure even though its
@@ -1303,23 +1268,16 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		applyOpsLatencyFieldsFromContext(c, entry)
 		applyOpsUpstreamFieldsFromContext(c, entry)
 		if parsed.StreamFailure {
-			// The terminal text becomes the upstream message (upstream v0.2.8)
-			// unless it is a sentence the gateway wrote in place of the
-			// upstream's text; then the recorded upstream message stays.
 			if message := strings.TrimSpace(parsed.Message); message != "" && !isOpsGatewayFixedClientMessage(message) {
 				entry.UpstreamErrorMessage = &message
 			}
-			// The SSE terminal determines the client-visible semantic status, not
-			// the HTTP status of an upstream attempt. Preserve recorded upstream
-			// facts (including account-auth's explicit zero) and infer only when
-			// no attempt status was available.
+			// Keep the upstream attempt status separate from the terminal status.
 			if entry.UpstreamStatusCode == nil && status >= 400 {
 				finalStatus := status
 				entry.UpstreamStatusCode = &finalStatus
 			}
 		}
 		suppressOpsUpstreamAttributionForLocalModelConfiguration(c, entry)
-		attachOpsRefusalRecoveryEvidence(c, entry)
 
 		if apiKey != nil {
 			entry.APIKeyID = &apiKey.ID
@@ -1629,9 +1587,6 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 	if streamErr.Turn > 0 && !streamErr.RequestScoped {
 		applyOpsStreamErrorSnapshot(entry, streamErr)
 	}
-	if streamErr.Turn == 0 && !streamErr.RequestScoped {
-		attachOpsRefusalRecoveryEvidence(c, entry)
-	}
 
 	if apiKey != nil {
 		entry.APIKeyID = &apiKey.ID
@@ -1700,11 +1655,6 @@ func applyOpsStreamErrorSnapshot(entry *service.OpsInsertErrorLogInput, streamEr
 func shouldSkipFinalOpsFailure(c *gin.Context) bool {
 	if c == nil {
 		return false
-	}
-	if v, ok := c.Get(opsDedicatedEntryEnqueuedKey); ok {
-		if enqueued, _ := v.(bool); enqueued {
-			return true
-		}
 	}
 	if v, ok := c.Get(service.OpsSkipPassthroughKey); ok {
 		if skip, _ := v.(bool); skip {
@@ -2104,38 +2054,13 @@ func sanitizeOpsSSEDataForPersistence(body []byte) string {
 	return out.String()
 }
 
-// A local continuation-store outage shares the ordinary continuation rejection
-// code but is a server-side failure. Only a matching, request-local SLA marker
-// can supply that distinction; upstream attempt status and arbitrary codes must
-// not change the semantic classification of the emitted terminal.
-func applyOpsResponsesServerFailureMarker(c *gin.Context, parsed parsedOpsError) parsedOpsError {
-	if c == nil || !parsed.StreamFailure {
-		return parsed
-	}
-	switch parsed.Code {
-	case service.OpenAIRequestRejectedCode, service.OpenAIContinuationStateUnavailableCode:
-	default:
-		return parsed
-	}
-	for _, streamErr := range service.GetOpsStreamErrors(c) {
-		if streamErr.Code != parsed.Code || !streamErr.CountTowardsSLA || streamErr.Turn != 0 ||
-			streamErr.ErrType != "server_error" || streamErr.IntendedStatus < 500 || streamErr.IntendedStatus > 599 {
-			continue
-		}
-		parsed.StatusCode = streamErr.IntendedStatus
-		parsed.ErrorType = streamErr.ErrType
-		return parsed
-	}
-	return parsed
-}
-
 func inferResponsesFailedOpsErrorType(code string) string {
 	switch strings.TrimSpace(code) {
 	case "rate_limit_exceeded":
 		return "rate_limit_error"
 	case "permission_denied", "permission_error", "insufficient_permissions", "cyber_policy", "content_policy":
 		return "permission_error"
-	case "invalid_request", "context_length_exceeded", service.OpenAIRequestRejectedCode, service.OpenAIContinuationStateUnavailableCode:
+	case "invalid_request", "context_length_exceeded":
 		return "invalid_request_error"
 	case "server_is_overloaded":
 		return "overloaded_error"
@@ -2148,26 +2073,7 @@ func inferResponsesFailedOpsErrorType(code string) string {
 	}
 }
 
-func inferStreamFailureStatus(c *gin.Context, parsed parsedOpsError) int {
-	// New Claude SSE attempts preserve the existing semantic status convention
-	// and independently capture the real carrying HTTP response. Only those
-	// events may override generic terminal inference (529 would otherwise be
-	// reduced to its client-facing 503). Ordinary HTTP attempts stay independent
-	// of the terminal semantics, including earlier attempts on a recovered path.
-	if c != nil {
-		if value, ok := c.Get(service.OpsUpstreamErrorsKey); ok {
-			if events, ok := value.([]*service.OpsUpstreamErrorEvent); ok {
-				for i := len(events) - 1; i >= 0; i-- {
-					if event := events[i]; event != nil {
-						if event.Platform == service.PlatformAnthropic && event.Kind == "stream_error" && event.UpstreamHTTPStatusCode > 0 && event.UpstreamStatusCode >= 400 && event.UpstreamStatusCode <= 599 {
-							return event.UpstreamStatusCode
-						}
-						break
-					}
-				}
-			}
-		}
-	}
+func inferStreamFailureStatus(_ *gin.Context, parsed parsedOpsError) int {
 	if parsed.StatusCode >= 400 && parsed.StatusCode <= 599 {
 		return parsed.StatusCode
 	}
@@ -2176,7 +2082,7 @@ func inferStreamFailureStatus(c *gin.Context, parsed parsedOpsError) int {
 		return http.StatusTooManyRequests
 	case "permission_denied", "permission_error", "insufficient_permissions", "cyber_policy", "content_policy":
 		return http.StatusForbidden
-	case "invalid_request", "context_length_exceeded", service.OpenAIRequestRejectedCode, service.OpenAIContinuationStateUnavailableCode:
+	case "invalid_request", "context_length_exceeded":
 		return http.StatusBadRequest
 	case "server_is_overloaded":
 		return http.StatusServiceUnavailable
@@ -2280,9 +2186,6 @@ func normalizeOpsErrorType(errType string, code string) string {
 }
 
 func classifyOpsPhase(errType, message, code string) string {
-	if code == "CODEX_GATEWAY_BORROW_UNAVAILABLE" {
-		return "routing"
-	}
 	msg := strings.ToLower(message)
 	// Standardized phases: request|auth|account_auth|routing|upstream|network|internal
 	// Map billing/concurrency/response => request; scheduling => routing.
@@ -2335,11 +2238,6 @@ func classifyOpsSeverity(errType string, status int) string {
 }
 
 func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status int) (phase string, isBusinessLimited bool, errorOwner string, errorSource string) {
-	if code == "CODEX_GATEWAY_BORROW_UNAVAILABLE" {
-		// A local qualification rejection is a real client failure, but no
-		// inference request was dispatched and no upstream HTTP 503 was seen.
-		return "routing", false, "platform", "gateway"
-	}
 	phase = classifyOpsPhase(errType, message, code)
 	if service.IsOpsRequestScopedError(c) {
 		// 失败由请求内容决定：只按错误类型分类，上游错误上下文不参与归因。

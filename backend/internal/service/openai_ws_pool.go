@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -69,20 +68,15 @@ func (e *openAIWSDialError) Unwrap() error {
 }
 
 type openAIWSAcquireRequest struct {
-	BodyIdentityKey   string
-	FingerprintPolicy *codexFingerprintPolicy
-	Account           *Account
-	WSURL             string
-	Headers           http.Header
+	Account *Account
+	WSURL   string
+	Headers http.Header
 	// HeadersFactory is evaluated inside dialConn. It exists so credentials
 	// whose authorization is per-dial (Agent Identity) are never cached in
 	// lastAcquire or delayed prewarm state.
 	HeadersFactory  func(context.Context, http.Header) (http.Header, error)
 	ProxyURL        string
 	PreferredConnID string
-	// AnchorScope isolates a borrowed conversation in the original account pool.
-	// It contains the model and authenticated client identity, never a cookie generation.
-	AnchorScope string
 	// ForceNewConn: 强制本次获取新连接（避免复用导致连接内续链状态互相污染）。
 	ForceNewConn bool
 	// ForcePreferredConn: 强制本次只使用 PreferredConnID，禁止漂移到其它连接。
@@ -90,13 +84,6 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
-	bodyIdentityKey     string
-	codexPolicyRevision uint64
-	codexMode           string
-	userAgent           string
-	originator          string
-	version             string
-	anchorScope         string
 	betaFeatures        string
 	codexInstallationID string
 	sessionIDHyphen     string
@@ -305,6 +292,9 @@ type openAIWSConn struct {
 
 	readMu  sync.Mutex
 	writeMu sync.Mutex
+	// The subscription backend fixes hosted-search support on the first create.
+	responseCreateSent bool // guarded by writeMu
+	initialWebSearch   bool // guarded by writeMu
 
 	// readerLoopResults 非 nil 表示池为该连接常驻了读循环：coder/websocket 只在
 	// 阻塞读期间应答上游 ping，空闲连接没有读循环会被上游按保活超时关闭。
@@ -317,11 +307,10 @@ type openAIWSConn struct {
 	// unusable 表示空闲期收到数据被判为脏连接：持有令牌不再借出，由池在锁外关闭。
 	unusable atomic.Bool
 
-	waiters         atomic.Int32
-	createdAtNano   atomic.Int64
-	lastUsedNano    atomic.Int64
-	prewarmed       atomic.Bool
-	anchorUntilNano atomic.Int64
+	waiters       atomic.Int32
+	createdAtNano atomic.Int64
+	lastUsedNano  atomic.Int64
+	prewarmed     atomic.Bool
 }
 
 func newOpenAIWSConn(id string, _ int64, ws openAIWSClientConn, handshakeHeaders http.Header) *openAIWSConn {
@@ -614,6 +603,9 @@ func (c *openAIWSConn) writeJSON(value any, writeCtx context.Context) error {
 	if err := c.ws.WriteJSON(writeCtx, value); err != nil {
 		return err
 	}
+	if !c.responseCreateSent {
+		c.recordInitialWebSearch(value)
+	}
 	c.touch()
 	return nil
 }
@@ -766,10 +758,6 @@ func (c *openAIWSConn) age(now time.Time) time.Duration {
 		return 0
 	}
 	return now.Sub(created)
-}
-
-func (c *openAIWSConn) hasLiveAnchor(now time.Time) bool {
-	return c != nil && c.anchorUntilNano.Load() > now.UnixNano()
 }
 
 func (c *openAIWSConn) isLeased() bool {
@@ -1163,7 +1151,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 retryAcquire:
 	accountID := req.Account.ID
-	compatibility := normalizeOpenAIWSAcquireCompatibility(req)
+	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
 	routingAffinity := normalizeOpenAIWSRoutingAffinity(req.Headers)
 	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
 	if effectiveMaxConns <= 0 {
@@ -1571,9 +1559,8 @@ func (p *openAIWSConnPool) pickOldestIdleConnLocked(ap *openAIWSAccountPool) *op
 		return nil
 	}
 	var oldest *openAIWSConn
-	now := time.Now()
 	for _, conn := range ap.conns {
-		if conn == nil || conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) || conn.hasLiveAnchor(now) {
+		if conn == nil || conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
 			continue
 		}
 		if oldest == nil || conn.lastUsedAt().Before(oldest.lastUsedAt()) {
@@ -1591,11 +1578,10 @@ func (p *openAIWSConnPool) pickOldestIdleConnWithoutHandshakeCompatibilityLocked
 		return nil
 	}
 	var oldest *openAIWSConn
-	now := time.Now()
 	for _, conn := range ap.conns {
 		if conn == nil ||
 			conn.matchesHandshakeCompatibility(compatibility) ||
-			conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) || conn.hasLiveAnchor(now) {
+			conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
 			continue
 		}
 		if oldest == nil || conn.lastUsedAt().Before(oldest.lastUsedAt()) {
@@ -1683,7 +1669,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 			evicted = append(evicted, conn)
 			continue
 		}
-		if p.isConnPinnedLocked(ap, id) || conn.hasLiveAnchor(now) {
+		if p.isConnPinnedLocked(ap, id) {
 			continue
 		}
 		if !conn.isLeased() && conn.waiters.Load() == 0 &&
@@ -1724,7 +1710,7 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 				continue
 			}
 			// 有等待者的连接不能在清理阶段被淘汰，否则等待中的 acquire 会收到 closed 错误。
-			if conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) || conn.hasLiveAnchor(now) {
+			if conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
 				continue
 			}
 			idleConns = append(idleConns, conn)
@@ -1864,7 +1850,7 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	}
 	ap.mu.Lock()
 	defer ap.mu.Unlock()
-	if ap.lastAcquire == nil || stringsTrim(ap.lastAcquire.AnchorScope) != "" {
+	if ap.lastAcquire == nil {
 		return
 	}
 	if ap.prewarmActive {
@@ -2172,7 +2158,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	accountID := req.Account.ID
 	evict := func() { p.evictConn(accountID, id) }
 	pooledConn.onPeerClosed.Store(&evict)
-	pooledConn.handshakeCompatibility = normalizeOpenAIWSAcquireCompatibility(req)
+	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
 	return pooledConn, nil
 }
@@ -2339,7 +2325,6 @@ func cloneOpenAIWSAcquireRequest(req openAIWSAcquireRequest) openAIWSAcquireRequ
 	copied.WSURL = stringsTrim(req.WSURL)
 	copied.ProxyURL = stringsTrim(req.ProxyURL)
 	copied.PreferredConnID = stringsTrim(req.PreferredConnID)
-	copied.AnchorScope = stringsTrim(req.AnchorScope)
 	return copied
 }
 
@@ -2354,43 +2339,7 @@ func cloneOpenAIWSAcquireRequestPtr(req *openAIWSAcquireRequest) *openAIWSAcquir
 func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 	return stringsTrim(a.WSURL) == stringsTrim(b.WSURL) &&
 		stringsTrim(a.ProxyURL) == stringsTrim(b.ProxyURL) &&
-		normalizeOpenAIWSAcquireCompatibility(a) == normalizeOpenAIWSAcquireCompatibility(b)
-}
-
-func normalizeOpenAIWSAcquireCompatibility(req openAIWSAcquireRequest) openAIWSHandshakeCompatibilityKey {
-	key := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers, req.FingerprintPolicy)
-	key.anchorScope = stringsTrim(req.AnchorScope)
-	key.bodyIdentityKey = req.BodyIdentityKey
-	return key
-}
-
-func (key openAIWSHandshakeCompatibilityKey) changedFields(next openAIWSHandshakeCompatibilityKey) string {
-	fields := []struct {
-		name    string
-		changed bool
-	}{
-		{"body", key.bodyIdentityKey != next.bodyIdentityKey},
-		{"policy", key.codexPolicyRevision != next.codexPolicyRevision},
-		{"mode", key.codexMode != next.codexMode},
-		{"user_agent", key.userAgent != next.userAgent},
-		{"originator", key.originator != next.originator},
-		{"version", key.version != next.version},
-		{"anchor", key.anchorScope != next.anchorScope},
-		{"beta_features", key.betaFeatures != next.betaFeatures},
-		{"installation", key.codexInstallationID != next.codexInstallationID},
-		{"session", key.sessionIDHyphen != next.sessionIDHyphen},
-		{"session_alias", key.sessionIDUnderscore != next.sessionIDUnderscore},
-		{"thread", key.threadID != next.threadID},
-		{"client_request", key.clientRequestID != next.clientRequestID},
-		{"window", key.codexWindowID != next.codexWindowID},
-	}
-	changed := []string{}
-	for _, field := range fields {
-		if field.changed {
-			changed = append(changed, field.name)
-		}
-	}
-	return strings.Join(changed, ",")
+		normalizeOpenAIWSHandshakeCompatibility(a.Account, a.Headers) == normalizeOpenAIWSHandshakeCompatibility(b.Account, b.Headers)
 }
 
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
@@ -2418,38 +2367,34 @@ func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 	return strings.Join(normalized, ",")
 }
 
-func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Header, policies ...*codexFingerprintPolicy) openAIWSHandshakeCompatibilityKey {
-	policy := selectCodexFingerprintPolicy(policies)
-	if len(policies) == 0 || policies[0] == nil {
-		policy = currentCodexFingerprintPolicyForAccount(account)
-	}
+func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Header) openAIWSHandshakeCompatibilityKey {
 	key := openAIWSHandshakeCompatibilityKey{
 		betaFeatures: normalizeOpenAIWSBetaFeatures(headers),
 	}
-	if account != nil && account.IsOpenAIOAuthLike() {
-		key.codexPolicyRevision = policy.revision
-		key.codexMode = string(account.GetCodexFingerprintMode())
-		key.userAgent = headers.Get("user-agent")
-		key.originator = headers.Get("originator")
-		key.version = headers.Get("version")
-	}
-	if account == nil {
+	mode := activeCodexFingerprintMode(account)
+	if mode == codexFingerprintOff {
 		return key
 	}
 	key.codexInstallationID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-installation-id")
-	if raw := headers.Get("x-codex-turn-metadata"); raw != "" {
-		var metadata map[string]any
-		if json.Unmarshal([]byte(raw), &metadata) == nil {
-			key.codexInstallationID = stringMetadataValue(metadata, "installation_id")
-		}
+	if mode == codexFingerprintDevice {
+		return key
 	}
-
 	key.sessionIDHyphen = normalizeOpenAIWSStableIdentityHeader(headers, "session-id")
 	key.sessionIDUnderscore = normalizeOpenAIWSStableIdentityHeader(headers, "session_id")
 	key.threadID = normalizeOpenAIWSStableIdentityHeader(headers, "thread-id")
 	key.clientRequestID = normalizeOpenAIWSStableIdentityHeader(headers, "x-client-request-id")
 	key.codexWindowID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-window-id")
 	return key
+}
+
+func activeCodexFingerprintMode(account *Account) codexFingerprintMode {
+	if account == nil || account.GetCodexFingerprintMode() == codexFingerprintOff {
+		return codexFingerprintOff
+	}
+	if _, ok := codexFingerprintSeed(account.Extra); !ok {
+		return codexFingerprintOff
+	}
+	return account.GetCodexFingerprintMode()
 }
 
 func normalizeOpenAIWSStableIdentityHeader(headers http.Header, name string) string {

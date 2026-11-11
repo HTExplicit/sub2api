@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -385,10 +384,6 @@ func responsesReasoningTokens(data map[string]any) (int, bool) {
 func (s *AccountTestService) processConnectionStream(c *gin.Context, body io.Reader, protocol string, account *Account) error {
 	var reasoningTokens *int
 	limited, upstreamModel, err := parseAccountConnectionStream(protocol, body, c.GetBool("account_test_allow_media"), func(event TestEvent) { s.sendEvent(c, event) }, func(data map[string]any) {
-		if account != nil && (data["error"] != nil || data["type"] == "response.failed" || data["type"] == "error") {
-			raw, _ := json.Marshal(data)
-			s.markOpenAIBudgetExceededFromTest(c.Request.Context(), account, http.StatusOK, raw)
-		}
 		// OpenAI accounts only: the admin quality check reads this count.
 		if protocol == "responses" && account.IsOpenAI() {
 			if tokens, ok := responsesReasoningTokens(data); ok {

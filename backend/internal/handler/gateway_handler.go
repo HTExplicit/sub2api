@@ -1212,10 +1212,8 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		writeGrokModelsList(c, xai.DefaultModelIDs())
 		return
 	}
-	if platform != "" && platform != service.PlatformAnthropic {
-		// A DeepSeek/Kimi/TypeSafe/... group lists its own defaults (possibly
-		// none), never Claude's.
-		writeModelsList(c, platform, defaultModelIDsForPlatform(platform))
+	if platform == service.PlatformTypeSafe {
+		writeModelsList(c, platform, []string{typesafe.JevLatestModel})
 		return
 	}
 
@@ -1505,13 +1503,8 @@ func defaultModelIDsForPlatform(platform string) []string {
 		return xai.DefaultModelIDs()
 	case service.PlatformOpenCodeGo:
 		return service.DefaultOpenCodeGoModelIDs()
-	case service.PlatformDeepseek, service.PlatformMiniMax:
-		return defaultCodexModelIDsForPlatform(platform)
-	case service.PlatformKimi, service.PlatformZhipu:
-		// No published default list: only account mappings are listed.
-		return nil
 	case service.PlatformTypeSafe:
-		return []string{typesafe.JevLatestModel}
+		return []string{"jev-latest"}
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})
@@ -1926,12 +1919,6 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
-	if failoverErr != nil && failoverErr.IsOpenAIModelNotSupported() {
-		// The client keeps the fixed terminal; Ops records the upstream text.
-		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIFailoverUpstreamMessage(failoverErr), "")
-		h.handleStreamingAwareError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedClientMessage, streamStarted)
-		return
-	}
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
 	if service.IsOpenAISilentRefusalErrorBody(responseBody) {
@@ -1967,13 +1954,6 @@ func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *se
 	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
 	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
-
-	// Claude SSE classifications carry their own client terminal. Keep rule
-	// precedence above, and leave ordinary HTTP errors on the existing mapping.
-	if platform == service.PlatformAnthropic && failoverErr.ClientStatusCode > 0 && failoverErr.ClientErrorType != "" {
-		h.handleStreamingAwareErrorWithCode(c, failoverErr.ClientStatusCode, failoverErr.ClientErrorType, failoverErr.ClientErrorCode, failoverErr.ClientMessage, streamStarted)
-		return
-	}
 
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
@@ -2587,7 +2567,7 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 	if task == nil {
 		return
 	}
-	task, abandon := wrapTrackedUsageRecordTask(parent, task)
+	task, abandon := wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDroppedStopped {
 			if mode.Dropped() {
@@ -2620,7 +2600,7 @@ func (h *GatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, 
 	if task == nil {
 		return
 	}
-	task, _ = wrapTrackedUsageRecordTask(parent, task)
+	task, _ = wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {
 			return

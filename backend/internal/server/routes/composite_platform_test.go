@@ -2,7 +2,6 @@ package routes
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"io"
 	"mime/multipart"
@@ -17,27 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
-
-type compositeTerminalErrorReader struct {
-	data []byte
-	err  error
-	read bool
-}
-
-func (r *compositeTerminalErrorReader) Read(p []byte) (int, error) {
-	if r.read {
-		return 0, r.err
-	}
-	n := copy(p, r.data)
-	r.data = r.data[n:]
-	if len(r.data) > 0 {
-		return n, nil
-	}
-	r.read = true
-	return n, r.err
-}
-
-func (r *compositeTerminalErrorReader) Close() error { return nil }
 
 type compositeRouteRepoStub struct {
 	routes []service.CompositeModelRoute
@@ -103,95 +81,6 @@ func TestCompositeTargetPlatformMiddlewareResolvesModelAndRestoresBody(t *testin
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusNoContent, w.Code)
-}
-
-func TestCompositeTargetPlatformMiddlewareRecoversCompleteJSONUnexpectedEOF(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
-		groupID := int64(1)
-		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{Platform: service.PlatformComposite}})
-		c.Next()
-	})))
-	router.Use(compositeTargetPlatformMiddleware(nil, 1024))
-	router.POST("/v1/responses", func(c *gin.Context) {
-		body, err := io.ReadAll(c.Request.Body)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"model":"gpt-5","input":"hi"}`, string(body))
-		c.Status(http.StatusNoContent)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	req.Header.Set("Content-Type", "application/json")
-	req.Body = &compositeTerminalErrorReader{data: []byte(`{"model":"gpt-5","input":"hi"}`), err: io.ErrUnexpectedEOF}
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusNoContent, w.Code)
-}
-
-func TestCompositeTargetPlatformMiddlewareRecoversGzipJSONUnexpectedEOF(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	var compressed bytes.Buffer
-	writer := gzip.NewWriter(&compressed)
-	_, err := writer.Write([]byte(`{"model":"gpt-5","input":"hi"}`))
-	require.NoError(t, err)
-	require.NoError(t, writer.Close())
-
-	router := gin.New()
-	router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
-		groupID := int64(1)
-		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{Platform: service.PlatformComposite}})
-		c.Next()
-	})))
-	router.Use(compositeTargetPlatformMiddleware(nil, 1024))
-	router.POST("/v1/responses", func(c *gin.Context) {
-		body, readErr := io.ReadAll(c.Request.Body)
-		require.NoError(t, readErr)
-		require.JSONEq(t, `{"model":"gpt-5","input":"hi"}`, string(body))
-		require.Empty(t, c.Request.Header.Get("Content-Encoding"))
-		c.Status(http.StatusNoContent)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	req.Header.Set("Content-Type", "application/vnd.openai+json")
-	req.Header.Set("Content-Encoding", "gzip")
-	req.Body = &compositeTerminalErrorReader{data: compressed.Bytes(), err: io.ErrUnexpectedEOF}
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusNoContent, w.Code)
-}
-
-func TestCompositeTargetPlatformMiddlewareRejectsTruncatedJSONAndMultipartEOF(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		contentType string
-		body        []byte
-	}{
-		{name: "truncated JSON", contentType: "application/json", body: []byte(`{"model":"gpt-5"`)},
-		{name: "multipart", contentType: "multipart/form-data; boundary=boundary", body: []byte("--boundary\r\n")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			router := gin.New()
-			router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
-				groupID := int64(1)
-				c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{GroupID: &groupID, Group: &service.Group{Platform: service.PlatformComposite}})
-				c.Next()
-			})))
-			router.Use(compositeTargetPlatformMiddleware(nil, 1024))
-			router.POST("/v1/responses", func(c *gin.Context) { c.Status(http.StatusNoContent) })
-
-			req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-			req.Header.Set("Content-Type", tc.contentType)
-			req.Body = &compositeTerminalErrorReader{data: tc.body, err: io.ErrUnexpectedEOF}
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-
-			require.Equal(t, http.StatusBadRequest, w.Code)
-		})
-	}
 }
 
 func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteAndRewritesBody(t *testing.T) {
@@ -351,28 +240,6 @@ func TestCompositeRequestModelFromMultipartLiveSession(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	require.Equal(t, "live-alias", requestmodel.FromBody(writer.FormDataContentType(), body.Bytes()))
-}
-
-func TestReadCompositeRequestBodyPreservesNormalizedLimits(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		contentType string
-		body        string
-		limit       int64
-	}{
-		{name: "JSON control-byte expansion", contentType: "application/json", body: "{\"model\":\"a\nb\"}", limit: 15},
-		{name: "JSON suffix control-byte expansion", contentType: "application/vnd.openai+json; charset=utf-8", body: "{\"model\":\"a\nb\"}", limit: 15},
-		{name: "binary strict byte limit", contentType: "application/octet-stream", body: "raw upload", limit: 9},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", tc.contentType)
-			_, err := readCompositeRequestBody(req, tc.limit)
-			var maxErr *http.MaxBytesError
-			require.ErrorAs(t, err, &maxErr)
-			require.Equal(t, tc.limit, maxErr.Limit)
-		})
-	}
 }
 
 func TestCompositeCodexControlPathsUseResponsesRoutes(t *testing.T) {

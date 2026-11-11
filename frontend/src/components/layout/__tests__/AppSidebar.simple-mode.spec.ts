@@ -105,14 +105,12 @@ describe('AppSidebar simple mode extensions', () => {
     wrapper.unmount()
   })
 
-  it.each([true, false])('renders independent borrowing and Pelican entries (simple: %s)', async simple => {
+  it.each([true, false])('renders retained extension entries (simple: %s)', async simple => {
     const wrapper = await renderSidebar({ admin: true, simple })
 
     expect(extensionLinks(wrapper)).toEqual([
       '/admin/login-protection',
-      '/admin/deepseek-reasoning',
       '/admin/system-prompts',
-      '/admin/codex',
       '/admin/pelican-tests',
     ])
     if (simple) expect(wrapper.text()).not.toContain('nav.myAccount')
@@ -126,25 +124,12 @@ describe('AppSidebar simple mode extensions', () => {
     regularUser.unmount()
   })
 
-  it.each([
-    '/admin/codex',
-    '/admin/codex/identity',
-  ])('keeps the single borrowing entry active on %s', async path => {
-    const wrapper = await renderSidebar({ admin: true, path })
-    const section = wrapper.get('[data-testid="sidebar-extensions"]')
-
-    expect(section.get('a[href="/admin/codex"]').classes()).toContain('sidebar-link-active')
-    expect(section.find('a[href="/admin/codex/identity"]').exists()).toBe(false)
-    expect(section.find('a[href="/admin/codex-pelican-comparison"]').exists()).toBe(false)
-    expect(section.findAll('.sidebar-link-active')).toHaveLength(1)
-    wrapper.unmount()
-  })
-
   it('highlights only Pelican Tests on its independent page', async () => {
     const wrapper = await renderSidebar({ admin: true, path: '/admin/pelican-tests' })
     const section = wrapper.get('[data-testid="sidebar-extensions"]')
     expect(section.get('a[href="/admin/pelican-tests"]').classes()).toContain('sidebar-link-active')
-    expect(section.get('a[href="/admin/codex"]').classes()).not.toContain('sidebar-link-active')
+    expect(section.find('a[href="/admin/codex"]').exists()).toBe(false)
+    expect(section.find('a[href="/admin/deepseek-reasoning"]').exists()).toBe(false)
     expect(section.findAll('.sidebar-link-active')).toHaveLength(1)
     wrapper.unmount()
   })

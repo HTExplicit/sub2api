@@ -140,7 +140,6 @@ type OpenAIQuotaService struct {
 	referralClient       OpenAIReferralClient
 	agentIdentityTaskMu  sync.Mutex
 	agentIdentityWS      agentIdentityWSConnectionInvalidator
-	activity             *QuotaActivityService
 }
 
 // NewOpenAIQuotaService constructs a quota service. token provider is required —
@@ -166,7 +165,6 @@ func NewOpenAIQuotaService(
 // OAuth account. Returns infraerrors so the handler layer can map them to
 // stable error codes / HTTP statuses.
 func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error) {
-	measurement := s.beginQuotaMeasurement(ctx, accountID)
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -233,7 +231,6 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 			payload.RateLimitResetCredits.AvailableCount = details.AvailableCreditCount
 		}
 	}
-	s.finishQuotaMeasurement(ctx, accountID, &payload, measurement)
 	return &payload, nil
 }
 
@@ -687,12 +684,73 @@ func buildCodexSparkWindowExtraUpdates(usage *OpenAIQuotaUsage, now time.Time) m
 	if usage == nil {
 		return nil
 	}
-	for _, limit := range usage.AdditionalRateLimits {
-		if limit.MeteredFeature == "codex_bengalfox" {
-			return buildCodexRateLimitExtraUpdates(limit.RateLimit, now)
+	var spark *OpenAIRateLimit
+	for i := range usage.AdditionalRateLimits {
+		a := usage.AdditionalRateLimits[i]
+		if a.MeteredFeature == "codex_bengalfox" {
+			spark = a.RateLimit
+			break
 		}
 	}
-	return nil
+	if spark == nil {
+		return nil
+	}
+
+	// Reuse OpenAICodexUsageSnapshot / Normalize to map primary/secondary windows
+	// to canonical 5h/7d buckets (same logic as probeOpenAICodexSnapshot).
+	snap := &OpenAICodexUsageSnapshot{}
+	if w := spark.PrimaryWindow; w != nil {
+		p := w.UsedPercent
+		snap.PrimaryUsedPercent = &p
+		ra := int(w.ResetAfterSeconds)
+		snap.PrimaryResetAfterSeconds = &ra
+		wm := int(w.LimitWindowSeconds / 60)
+		snap.PrimaryWindowMinutes = &wm
+	}
+	if w := spark.SecondaryWindow; w != nil {
+		p := w.UsedPercent
+		snap.SecondaryUsedPercent = &p
+		ra := int(w.ResetAfterSeconds)
+		snap.SecondaryResetAfterSeconds = &ra
+		wm := int(w.LimitWindowSeconds / 60)
+		snap.SecondaryWindowMinutes = &wm
+	}
+
+	normalized := snap.Normalize()
+	if normalized == nil {
+		return nil
+	}
+
+	updates := make(map[string]any)
+	if normalized.Used5hPercent != nil {
+		updates["codex_5h_used_percent"] = *normalized.Used5hPercent
+	}
+	if normalized.Reset5hSeconds != nil {
+		updates["codex_5h_reset_after_seconds"] = *normalized.Reset5hSeconds
+	}
+	if normalized.Window5hMinutes != nil {
+		updates["codex_5h_window_minutes"] = *normalized.Window5hMinutes
+	}
+	if normalized.Used7dPercent != nil {
+		updates["codex_7d_used_percent"] = *normalized.Used7dPercent
+	}
+	if normalized.Reset7dSeconds != nil {
+		updates["codex_7d_reset_after_seconds"] = *normalized.Reset7dSeconds
+	}
+	if normalized.Window7dMinutes != nil {
+		updates["codex_7d_window_minutes"] = *normalized.Window7dMinutes
+	}
+	if r := codexResetAtRFC3339(now, normalized.Reset5hSeconds); r != nil {
+		updates["codex_5h_reset_at"] = *r
+	}
+	if r := codexResetAtRFC3339(now, normalized.Reset7dSeconds); r != nil {
+		updates["codex_7d_reset_at"] = *r
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	updates["codex_usage_updated_at"] = now.Format(time.RFC3339)
+	return updates
 }
 
 // mapUpstreamStatus collapses upstream HTTP statuses into a stable set we

@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -14,7 +13,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -31,7 +29,6 @@ type Application struct {
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
 	AccountJobs   *service.AccountJobRuntime
-	CodexIdentity *service.CodexClientIdentityBackfillService
 	Cleanup       func()
 }
 
@@ -57,13 +54,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		// BuildInfo provider
 		provideServiceBuildInfo,
 		providePluginHostInfo,
-		provideUsageCommitObserver,
 
 		// Cleanup function provider
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "CodexIdentity", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -86,16 +82,9 @@ func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 	}
 }
 
-func provideUsageCommitObserver() service.UsageCommitObserver {
-	return func(accountID int64) {
-		admin.InvalidateAccountTodayStatsCache(accountID)
-	}
-}
-
 func provideCleanup(
 	entClient *ent.Client,
 	rdb *redis.Client,
-	gatewayCache service.GatewayCache,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAggregation *service.OpsAggregationService,
 	opsAlertEvaluator *service.OpsAlertEvaluatorService,
@@ -111,7 +100,6 @@ func provideCleanup(
 	accountExpiry *service.AccountExpiryService,
 	cnProviderBalanceCheck *service.CNProviderBalanceCheckService,
 	codexVersionSync *service.OpenAICodexVersionSyncService,
-	codexClientIdentityBackfill *service.CodexClientIdentityBackfillService,
 	claudeCodeVersionSync *service.ClaudeCodeVersionSyncService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
@@ -326,10 +314,6 @@ func provideCleanup(
 				codexVersionSync.Stop()
 				return nil
 			}},
-			{"CodexClientIdentityBackfillService", func() error {
-				codexClientIdentityBackfill.Stop()
-				return nil
-			}},
 			{"ClaudeCodeVersionSyncService", func() error {
 				claudeCodeVersionSync.Stop()
 				return nil
@@ -450,14 +434,7 @@ func provideCleanup(
 			}},
 		}
 
-		// The production gateway cache owns the Redis client of its rejected-cipher memory.
 		infraSteps := []cleanupStep{
-			{"GatewayCache", func() error {
-				if closer, ok := gatewayCache.(io.Closer); ok {
-					return closer.Close()
-				}
-				return nil
-			}},
 			{"Redis", func() error {
 				if rdb == nil {
 					return nil

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -71,18 +70,13 @@ func insertJSONArrayItem(body []byte, path string, items []gjson.Result, at int,
 	return sjson.SetRawBytes(body, path, out.Bytes())
 }
 
-// systemPromptEcho remembers what one Responses send changed, so the echoed
-// instructions, integrity checks and retry indices can refer to the client's
-// request instead of the injected one.
+// systemPromptEcho keeps only the instructions needed to restore the client's
+// value in Responses JSON, SSE and WS echoes.
 type systemPromptEcho struct {
-	instructions        bool
-	finalInstructions   string
-	clientInstructions  string
-	clientHadInstructs  bool
-	inputIndex          int
-	inputWasString      bool
-	clientInputText     string
-	developerPromptText string
+	instructions       bool
+	finalInstructions  string
+	clientInstructions string
+	clientHadInstructs bool
 }
 
 // injectResponsesSystemPrompt: auto/system extend instructions; developer adds
@@ -91,7 +85,7 @@ func injectResponsesSystemPrompt(body []byte, prompt SystemPrompt) ([]byte, *sys
 	if !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
 		return nil, nil, errSystemPromptCarrier
 	}
-	echo := &systemPromptEcho{inputIndex: -1}
+	echo := &systemPromptEcho{}
 	if prompt.Role != SystemPromptRoleDeveloper {
 		current := gjson.GetBytes(body, "instructions")
 		if current.Exists() && current.Type != gjson.String && current.Type != gjson.Null {
@@ -111,7 +105,6 @@ func injectResponsesSystemPrompt(body []byte, prompt SystemPrompt) ([]byte, *sys
 	if err != nil {
 		return nil, nil, err
 	}
-	echo.developerPromptText = prompt.Body
 	input := gjson.GetBytes(body, "input")
 	var items []gjson.Result
 	switch {
@@ -121,7 +114,6 @@ func injectResponsesSystemPrompt(body []byte, prompt SystemPrompt) ([]byte, *sys
 		if marshalErr != nil {
 			return nil, nil, marshalErr
 		}
-		echo.inputWasString, echo.clientInputText = true, input.String()
 		items = []gjson.Result{{Type: gjson.JSON, Raw: string(user)}}
 	case input.IsArray():
 		items = input.Array()
@@ -132,7 +124,6 @@ func injectResponsesSystemPrompt(body []byte, prompt SystemPrompt) ([]byte, *sys
 	if prompt.Position != SystemPromptPositionPrepend {
 		at = leadingControlMessages(items)
 	}
-	echo.inputIndex = at
 	updated, err := insertJSONArrayItem(body, "input", items, at, item)
 	return updated, echo, err
 }
@@ -405,8 +396,4 @@ func systemPromptEchoFrom(c *gin.Context) *systemPromptEcho {
 	value, _ := c.Get(systemPromptEchoContextKey)
 	echo, _ := value.(*systemPromptEcho)
 	return echo
-}
-
-func systemPromptInputPath(index int) string {
-	return "input." + strconv.Itoa(index)
 }

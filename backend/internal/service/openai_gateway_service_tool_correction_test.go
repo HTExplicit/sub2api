@@ -85,7 +85,6 @@ func TestOpenAIGatewayService_ToolCorrectorInitialization(t *testing.T) {
 
 	if service.toolCorrector == nil {
 		t.Fatal("toolCorrector should not be nil")
-		return
 	}
 
 	// 测试修正器可以正常工作

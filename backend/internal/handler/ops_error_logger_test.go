@@ -565,76 +565,27 @@ func TestOpsErrorLoggerMiddleware_StreamFailureKeepsTerminalSemanticsAndAttemptS
 	require.Equal(t, "input exceeds the context window", *job.entry.UpstreamErrorMessage)
 }
 
-// A terminal carrying a gateway sentence is not the upstream's text: the
-// recorded upstream message stays while error_message is the client sentence.
+// A gateway terminal is client wording, while the recorded provider message
+// remains available to administrators.
 func TestOpsErrorLoggerMiddleware_StreamFailureGatewaySentenceKeepsUpstreamMessage(t *testing.T) {
 	setupOpsErrorLogTestQueue(t, 2)
 	gin.SetMode(gin.TestMode)
-
 	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.Use(OpsErrorLoggerMiddleware(ops))
 	router.POST("/v1/responses", func(c *gin.Context) {
-		service.SetOpsUpstreamError(c, http.StatusBadRequest, "Previous response with id 'resp_1' not found.", "")
+		service.SetOpsUpstreamError(c, http.StatusBadGateway, "provider transport detail", "")
 		c.Status(http.StatusOK)
 		_, _ = c.Writer.WriteString("event: response.failed\n")
-		_, _ = c.Writer.WriteString(`data: {"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"continuation_state_unavailable","message":"` + service.OpenAIContinuationStateUnavailableClientMessage + `"}}}`)
+		_, _ = c.Writer.WriteString(`data: {"type":"response.failed","response":{"error":{"code":"server_error","message":"Upstream request failed"}}}`)
 		_, _ = c.Writer.WriteString("\n\n")
 	})
-
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
-
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
 	require.Equal(t, int64(1), OpsErrorLogQueueLength())
 	job := <-opsErrorLogQueue
-	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, job.entry.ErrorMessage)
+	require.Equal(t, "Upstream request failed", job.entry.ErrorMessage)
 	require.NotNil(t, job.entry.UpstreamErrorMessage)
-	require.Equal(t, "Previous response with id 'resp_1' not found.", *job.entry.UpstreamErrorMessage)
-}
-
-// A refusal the gateway rewrote or retried away is evidence, not an upstream
-// error: a request that succeeds leaves no Ops row, and a request that
-// finally fails carries the evidence without turning it into its upstream
-// message.
-func TestOpsErrorLoggerMiddleware_RefusalEvidenceOnlyOnFailedRequests(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	evidence := []*service.OpsUpstreamErrorEvent{{
-		Kind:    "refusal_recovery",
-		Reason:  "rewritten",
-		Message: `upstream refusal matched keyword "I cannot" (rewritten, transport=http)`,
-		Detail:  "I cannot help with that request.",
-	}}
-	for _, tc := range []struct {
-		name   string
-		status int
-		rows   int64
-	}{{"rewritten_success", http.StatusOK, 0}, {"retries_exhausted", http.StatusBadGateway, 1}} {
-		t.Run(tc.name, func(t *testing.T) {
-			setupOpsErrorLogTestQueue(t, 2)
-			ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-			router := gin.New()
-			router.Use(OpsErrorLoggerMiddleware(ops))
-			router.POST("/v1/responses", func(c *gin.Context) {
-				c.Set(service.OpsRefusalRecoveryEventsKey, evidence)
-				if tc.status >= http.StatusBadRequest {
-					c.JSON(tc.status, gin.H{"error": gin.H{"type": "upstream_error", "message": "Temporary upstream failure"}})
-					return
-				}
-				c.JSON(http.StatusOK, gin.H{"id": "resp_1", "status": "completed"})
-			})
-
-			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
-
-			require.Equal(t, tc.rows, OpsErrorLogQueueLength())
-			if tc.rows == 0 {
-				return
-			}
-			job := <-opsErrorLogQueue
-			require.Nil(t, job.entry.UpstreamErrorMessage)
-			require.NotNil(t, job.entry.UpstreamErrorsJSON)
-			require.Contains(t, *job.entry.UpstreamErrorsJSON, `"kind":"refusal_recovery"`)
-		})
-	}
+	require.Equal(t, "provider transport detail", *job.entry.UpstreamErrorMessage)
 }
 
 func TestOpsErrorLoggerMiddleware_PrefersContextRequestID(t *testing.T) {

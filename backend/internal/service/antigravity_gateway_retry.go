@@ -227,7 +227,7 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 			if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
 				log.Printf("%s status=%d smart_retry_success attempt=%d/%d", p.prefix, retryResp.StatusCode, attempt, maxAttempts)
 				// 重试成功，清除 MODEL_CAPACITY_EXHAUSTED cooldown
-				if isModelCapacityExhausted && modelName != "" {
+				if !IsAccountObservation(p.ctx) && isModelCapacityExhausted && modelName != "" {
 					modelCapacityExhaustedMu.Lock()
 					delete(modelCapacityExhaustedUntil, modelName)
 					modelCapacityExhaustedMu.Unlock()
@@ -274,7 +274,7 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		// 直接返回上游错误响应，不设置模型限流，不切换账号
 		if isModelCapacityExhausted {
 			// 设置 cooldown，让后续请求快速失败，避免重复重试
-			if modelName != "" {
+			if !IsAccountObservation(p.ctx) && modelName != "" {
 				modelCapacityExhaustedMu.Lock()
 				modelCapacityExhaustedUntil[modelName] = time.Now().Add(antigravityModelCapacityCooldown)
 				modelCapacityExhaustedMu.Unlock()
@@ -893,7 +893,7 @@ func (s *AntigravityGatewayService) setAntigravityModelRateLimits(ctx context.Co
 	if account == nil || repo == nil {
 		return false
 	}
-	keys := antigravityModelRateLimitKeys(modelName)
+	keys := antigravityModelRateLimitKeys(account, modelName)
 	if len(keys) == 0 {
 		return false
 	}

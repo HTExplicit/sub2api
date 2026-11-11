@@ -22,6 +22,92 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("CONFIG_FILE", "")
 	t.Setenv("DATA_DIR", "")
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+	stubMemoryLimit(t, 0)
+}
+
+func stubMemoryLimit(t *testing.T, limit uint64) {
+	t.Helper()
+	original := detectMemoryLimitBytes
+	detectMemoryLimitBytes = func() uint64 { return limit }
+	t.Cleanup(func() { detectMemoryLimitBytes = original })
+}
+
+func TestAutoRequestBodyMemoryBudget(t *testing.T) {
+	require.Equal(t, int64(1<<30), autoRequestBodyMemoryBudget(0))
+	require.Equal(t, int64(1<<30), autoRequestBodyMemoryBudget(2<<30))
+	require.Equal(t, int64(2<<30), autoRequestBodyMemoryBudget(8<<30))
+	require.Equal(t, int64(32<<30), autoRequestBodyMemoryBudget(128<<30))
+	require.Equal(t, int64(math.MaxUint64/4), autoRequestBodyMemoryBudget(math.MaxUint64))
+}
+
+func TestLoadRequestBodyMemoryBudget(t *testing.T) {
+	t.Run("auto-sized from memory limit when unset", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		stubMemoryLimit(t, 128<<30)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, int64(32<<30), cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	})
+
+	t.Run("explicit environment value wins, including 0", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		stubMemoryLimit(t, 128<<30)
+		t.Setenv("GATEWAY_REQUEST_BODY_MEMORY_BUDGET_BYTES", "0")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Zero(t, cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	})
+
+	t.Run("empty environment value is ignored like viper does", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		stubMemoryLimit(t, 128<<30)
+		t.Setenv("GATEWAY_REQUEST_BODY_MEMORY_BUDGET_BYTES", "")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, int64(32<<30), cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	})
+
+	t.Run("explicit environment value wins over auto-sizing", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		stubMemoryLimit(t, 128<<30)
+		t.Setenv("GATEWAY_REQUEST_BODY_MEMORY_BUDGET_BYTES", "2147483648")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, int64(2<<30), cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	})
+
+	t.Run("explicit config file 0 disables the budget", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		stubMemoryLimit(t, 128<<30)
+		configFile := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configFile, []byte("gateway:\n  request_body_memory_budget_bytes: 0\n"), 0o600))
+		t.Setenv("CONFIG_FILE", configFile)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Zero(t, cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	})
+
+	t.Run("config file without the key is auto-sized", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		stubMemoryLimit(t, 128<<30)
+		configFile := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configFile, []byte("gateway:\n  max_body_size: 268435456\n"), 0o600))
+		t.Setenv("CONFIG_FILE", configFile)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, int64(32<<30), cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	})
+
+	t.Run("explicit config file value wins", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		stubMemoryLimit(t, 128<<30)
+		configFile := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configFile, []byte("gateway:\n  request_body_memory_budget_bytes: 1073741824\n"), 0o600))
+		t.Setenv("CONFIG_FILE", configFile)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, int64(1<<30), cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	})
 }
 
 func TestLoadDefaultModelsListReadMaxBytes(t *testing.T) {
@@ -612,6 +698,15 @@ func TestLoadOpenAIWSClientFirstMessageTimeoutFromEnv(t *testing.T) {
 	require.Equal(t, 120, cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds)
 }
 
+func TestLoadOpenAIWSForceHTTPFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_WS_FORCE_HTTP", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAIWS.ForceHTTP)
+}
+
 func TestLoadDefaultOpenAICompactModel(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
@@ -968,7 +1063,6 @@ func TestValidateLinuxDoFrontendRedirectURL(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for javascript scheme, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "linuxdo_connect.frontend_redirect_url") {
 		t.Fatalf("Validate() expected frontend_redirect_url error, got: %v", err)
@@ -1020,7 +1114,6 @@ func TestValidateOIDCScopesMustContainOpenID(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error when scopes do not include openid, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "oidc_connect.scopes") {
 		t.Fatalf("Validate() expected oidc_connect.scopes error, got: %v", err)
@@ -1122,7 +1215,6 @@ func TestValidateDashboardCacheConfigEnabled(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for stats_fresh_ttl_seconds > stats_ttl_seconds, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "dashboard_cache.stats_fresh_ttl_seconds") {
 		t.Fatalf("Validate() expected stats_fresh_ttl_seconds error, got: %v", err)
@@ -1142,7 +1234,6 @@ func TestValidateDashboardCacheConfigDisabled(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for negative stats_ttl_seconds, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "dashboard_cache.stats_ttl_seconds") {
 		t.Fatalf("Validate() expected stats_ttl_seconds error, got: %v", err)
@@ -1202,7 +1293,6 @@ func TestValidateDashboardAggregationConfigDisabled(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for negative dashboard_aggregation.interval_seconds, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "dashboard_aggregation.interval_seconds") {
 		t.Fatalf("Validate() expected interval_seconds error, got: %v", err)
@@ -1222,7 +1312,6 @@ func TestValidateDashboardAggregationBackfillMaxDays(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for dashboard_aggregation.backfill_max_days, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "dashboard_aggregation.backfill_max_days") {
 		t.Fatalf("Validate() expected backfill_max_days error, got: %v", err)
@@ -1282,7 +1371,6 @@ func TestValidateUsageCleanupConfigEnabled(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for usage_cleanup.max_range_days, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "usage_cleanup.max_range_days") {
 		t.Fatalf("Validate() expected max_range_days error, got: %v", err)
@@ -1302,7 +1390,6 @@ func TestValidateUsageCleanupConfigDisabled(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for usage_cleanup.batch_size, got nil")
-		return
 	}
 	if !strings.Contains(err.Error(), "usage_cleanup.batch_size") {
 		t.Fatalf("Validate() expected batch_size error, got: %v", err)
@@ -1482,7 +1569,6 @@ func TestValidateOpsCleanupScheduleRequired(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for ops.cleanup.schedule")
-		return
 	}
 	if !strings.Contains(err.Error(), "ops.cleanup.schedule") {
 		t.Fatalf("Validate() expected ops.cleanup.schedule error, got: %v", err)
@@ -1500,7 +1586,6 @@ func TestValidateConcurrencyPingInterval(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() expected error for concurrency.ping_interval")
-		return
 	}
 	if !strings.Contains(err.Error(), "concurrency.ping_interval") {
 		t.Fatalf("Validate() expected concurrency.ping_interval error, got: %v", err)
@@ -1612,7 +1697,6 @@ func TestValidateJWTSecret_UTF8Bytes(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil {
 		t.Fatalf("Validate() should reject 31-byte secret")
-		return
 	}
 	if !strings.Contains(err.Error(), "at least 32 bytes") {
 		t.Fatalf("Validate() error = %v", err)

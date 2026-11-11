@@ -423,7 +423,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersPreservesCodexIdentity(t *test
 
 	require.NoError(t, err)
 	require.Equal(t, "window-ws", headers.Get("X-Codex-Window-ID"))
-	require.Empty(t, headers.Get("X-Codex-Installation-ID"), "installation id 只在 body client_metadata")
+	require.Equal(t, "installation-ws", headers.Get("X-Codex-Installation-ID"))
 	require.Equal(t, "session-ws", headers.Get("session-id"))
 	require.Equal(t, "thread-ws", headers.Get("thread-id"))
 	require.Equal(t, "client-request-ws", headers.Get("x-client-request-id"))
@@ -463,11 +463,12 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesNamespacedC
 	)
 
 	require.NoError(t, err)
-	require.Empty(t, headers.Get("x-codex-installation-id"), "installation id 只在 body client_metadata")
-	require.Equal(t, "client-window", headers.Get("x-codex-window-id"))
-	require.Equal(t, "client-session", headers.Get("session-id"))
-	require.Equal(t, "client-thread", headers.Get("thread-id"))
-	require.Equal(t, "client-thread", headers.Get("x-client-request-id"))
+	require.Equal(t, ids.installationID, headers.Get("x-codex-installation-id"))
+	require.NotEqual(t, "client-installation", headers.Get("x-codex-installation-id"))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "window", "client-window"), headers.Get("x-codex-window-id"))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "session", "client-session"), headers.Get("session-id"))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "thread", "client-thread"), headers.Get("thread-id"))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "request", "client-request"), headers.Get("x-client-request-id"))
 }
 
 func TestLogOpenAIWSBindResponseAccountWarn(t *testing.T) {
@@ -797,11 +798,10 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, "native-wsv2", gjson.Get(requestJSON, "input.0.namespace").String(), "OAuth WSv2 应保留原生 namespace")
 	require.Equal(t, openAIWSBetaV2Value, captureDialer.lastHeaders.Get("OpenAI-Beta"))
 	require.Equal(t, "remote_compaction_v2", captureDialer.lastHeaders.Get("x-codex-beta-features"))
-	// OAuth（Codex 协议）账号只发连字符 session-id，按 API key 和上游账号作用域改写；
+	// OAuth 账号的 session_id/conversation_id 应同时按 API key 和上游账号隔离，
 	// 测试中未设置 api_key 到 context，apiKeyID=0。
-	require.Empty(t, captureDialer.lastHeaders.Get("session_id"))
-	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "sess-oauth-1"), captureDialer.lastHeaders.Get("session-id"))
+	require.Equal(t, isolateOpenAIUpstreamSessionID(0, account, "sess-oauth-1"), captureDialer.lastHeaders.Get("session_id"))
+	require.Equal(t, isolateOpenAIUpstreamSessionID(0, account, "conv-oauth-1"), captureDialer.lastHeaders.Get("conversation_id"))
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthSanitizesInvalidNativeToolItemID(t *testing.T) {
@@ -1090,9 +1090,8 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.NotNil(t, result)
 	require.Equal(t, "resp_prompt_cache_key", result.RequestID)
 
-	// OAuth 账号缺失会话头时以 prompt_cache_key 补齐连字符 session-id（apiKeyID=0）。
-	require.Empty(t, captureDialer.lastHeaders.Get("session_id"))
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "pcache_123"), captureDialer.lastHeaders.Get("session-id"))
+	// OAuth 账号的 session_id 应同时按 API key 和上游账号隔离（apiKeyID=0）。
+	require.Equal(t, isolateOpenAIUpstreamSessionID(0, account, "pcache_123"), captureDialer.lastHeaders.Get("session_id"))
 	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
 	require.NotNil(t, captureConn.lastWrite)
 	require.True(t, gjson.Get(requestToJSONString(captureConn.lastWrite), "stream").Exists())
@@ -1157,24 +1156,22 @@ func TestOpenAIGatewayService_Forward_WSv2_CodexFingerprintHandshakeBodyParityAn
 	seed, ok := codexFingerprintSeed(account.Extra)
 	require.True(t, ok)
 	wantInstall := resolveConvergedInstallationID(account, seed)
-	wantSession := scopeCodexAccountIdentityValue(account, 0, "body-session")
-	wantThread := scopeCodexAccountIdentityValue(account, 0, "body-thread")
-	wantWindow := scopeCodexWindowIdentity(account, 0, "body-window")
+	wantSession := resolveConvergedSessionID(seed)
+	wantThread := resolveConvergedThreadID(seed, "header-session")
 	payloadJSON := requestToJSONString(captureConn.lastWrite)
 
-	require.Empty(t, captureDialer.lastHeaders.Get("x-codex-installation-id"), "installation id 只在 body client_metadata")
-	require.Equal(t, wantInstall, gjson.Get(payloadJSON, "client_metadata.x-codex-installation-id").String())
+	require.Equal(t, wantInstall, captureDialer.lastHeaders.Get("x-codex-installation-id"))
 	require.Equal(t, wantSession, captureDialer.lastHeaders.Get("session-id"))
-	require.Empty(t, captureDialer.lastHeaders.Get("session_id"))
+	require.Equal(t, wantSession, captureDialer.lastHeaders.Get("session_id"))
 	require.Equal(t, wantThread, captureDialer.lastHeaders.Get("thread-id"))
 	require.Equal(t, wantThread, captureDialer.lastHeaders.Get("x-client-request-id"))
-	require.Equal(t, wantWindow, captureDialer.lastHeaders.Get("x-codex-window-id"))
+	require.Equal(t, wantThread+":0", captureDialer.lastHeaders.Get("x-codex-window-id"))
 
 	require.Equal(t, wantSession, gjson.Get(payloadJSON, "prompt_cache_key").String())
 	require.Equal(t, wantInstall, gjson.Get(payloadJSON, "client_metadata.x-codex-installation-id").String())
 	require.Equal(t, wantSession, gjson.Get(payloadJSON, "client_metadata.session_id").String())
 	require.Equal(t, wantThread, gjson.Get(payloadJSON, "client_metadata.thread_id").String())
-	require.Equal(t, wantWindow, gjson.Get(payloadJSON, "client_metadata.x-codex-window-id").String())
+	require.Equal(t, wantThread+":0", gjson.Get(payloadJSON, "client_metadata.x-codex-window-id").String())
 
 	bodyTurnMetadata := gjson.Get(payloadJSON, "client_metadata.x-codex-turn-metadata").String()
 	headerTurnMetadata := captureDialer.lastHeaders.Get("x-codex-turn-metadata")
@@ -1183,7 +1180,7 @@ func TestOpenAIGatewayService_Forward_WSv2_CodexFingerprintHandshakeBodyParityAn
 	require.Equal(t, wantThread, gjson.Get(bodyTurnMetadata, "thread_id").String())
 	require.Equal(t, wantSession, gjson.Get(headerTurnMetadata, "session_id").String())
 	require.Equal(t, gjson.Get(bodyTurnMetadata, "turn_id").String(), gjson.Get(headerTurnMetadata, "turn_id").String())
-	require.False(t, gjson.Get(bodyTurnMetadata, "turn_started_at_unix_ms").Exists(), "未提供的真实时间不生成")
+	require.NotZero(t, gjson.Get(bodyTurnMetadata, "turn_started_at_unix_ms").Int())
 	require.Equal(t,
 		gjson.Get(bodyTurnMetadata, "turn_started_at_unix_ms").Int(),
 		gjson.Get(headerTurnMetadata, "turn_started_at_unix_ms").Int(),
@@ -1410,7 +1407,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 	sessionHash, _ := resolveOpenAIWSExecutionScope(c1, reqBody, getAPIKeyIDFromContext(c1))
 	require.NotEmpty(t, sessionHash)
 	store := svc.getOpenAIWSStateStore()
-	turnState, ok := store.GetSessionTurnState(0, sessionHash, account.ID)
+	turnState, ok := store.GetSessionTurnState(0, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "turn_state_first", turnState)
 
@@ -1745,7 +1742,7 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseSessionConnIsolation(t *test
 	require.Equal(t, int64(2), upgradeCount.Load(), "不同 session(store=false) 应隔离连接，避免续链状态互相覆盖")
 }
 
-func TestOpenAIGatewayService_Forward_WSv2StoreFalseReusesOnlySameSession(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2StoreFalseDisableForceNewConnAllowsReuse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var upgradeCount atomic.Int64
@@ -1836,19 +1833,11 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseReusesOnlySameSession(t *tes
 	rec2 := httptest.NewRecorder()
 	c2, _ := gin.CreateTestContext(rec2)
 	c2.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
-	c2.Request.Header.Set("session_id", "session_store_false_reuse_a")
+	c2.Request.Header.Set("session_id", "session_store_false_reuse_b")
 	result2, err := svc.Forward(context.Background(), c2, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result2)
-	require.Equal(t, int64(1), upgradeCount.Load(), "同一 session(store=false) 继续复用连接")
-
-	c3, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c3.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
-	c3.Request.Header.Set("session_id", "session_store_false_reuse_b")
-	result3, err := svc.Forward(context.Background(), c3, account, body)
-	require.NoError(t, err)
-	require.NotNil(t, result3)
-	require.Equal(t, int64(2), upgradeCount.Load(), "独立 session 必须重新握手")
+	require.Equal(t, int64(1), upgradeCount.Load(), "关闭强制新连后，不同 session(store=false) 可复用连接")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ReadTimeoutAppliesPerRead(t *testing.T) {
@@ -1964,11 +1953,9 @@ type openAIWSCaptureConn struct {
 	mu         sync.Mutex
 	readDelays []time.Duration
 	events     [][]byte
-	// 可选：每次实际写帧后才释放一条响应，避免两轮交互依赖固定 sleep。
-	writeSignals chan struct{}
-	lastWrite    map[string]any
-	writes       []map[string]any
-	closed       bool
+	lastWrite  map[string]any
+	writes     []map[string]any
+	closed     bool
 }
 
 func (c *openAIWSCaptureConn) WriteJSON(ctx context.Context, value any) error {
@@ -1995,12 +1982,6 @@ func (c *openAIWSCaptureConn) WriteJSON(ctx context.Context, value any) error {
 			c.writes = append(c.writes, cloneMapStringAny(parsed))
 		}
 	}
-	if c.writeSignals != nil {
-		select {
-		case c.writeSignals <- struct{}{}:
-		default:
-		}
-	}
 	return nil
 }
 
@@ -2025,13 +2006,6 @@ func (c *openAIWSCaptureConn) ReadMessage(ctx context.Context) ([]byte, error) {
 	event := c.events[0]
 	c.events = c.events[1:]
 	c.mu.Unlock()
-	if c.writeSignals != nil {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-c.writeSignals:
-		}
-	}
 	if delay > 0 {
 		timer := time.NewTimer(delay)
 		defer timer.Stop()

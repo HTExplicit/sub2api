@@ -176,6 +176,9 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 		match(gjson.GetBytes(upstreamBody, "message").String()) {
 		return true
 	}
+	// A valid JSON error may echo arbitrary request content. Only its explicit
+	// error fields are authoritative; scan the whole body only for non-JSON
+	// providers that return a plain-text error response.
 	return !gjson.ValidBytes(upstreamBody) && match(string(upstreamBody))
 }
 
@@ -291,48 +294,30 @@ func isOpenAIContextWindowError(upstreamMsg string, upstreamBody []byte) bool {
 			return true
 		}
 	}
+	// Do not let echoed request content in a structured JSON error change the
+	// retry/client-status classification. Plain-text upstream errors remain
+	// supported by scanning the whole body only when it is not valid JSON.
 	return !gjson.ValidBytes(upstreamBody) && match(string(upstreamBody))
 }
 
 func (s *OpenAIGatewayService) shouldFailoverUpstreamError(statusCode int) bool {
 	switch statusCode {
-	case 401, 402, 403, http.StatusMethodNotAllowed, http.StatusRequestTimeout, 429, 529:
+	case 401, 402, 403, 405, 429, 529:
 		return true
 	default:
 		return statusCode >= 500
 	}
 }
 
-// isOpenAIRequestScopedSafetyRejection must precede generic retry and error
-// policies. A provider safety refusal is not a credential or endpoint failure.
-func isOpenAIRequestScopedSafetyRejection(body []byte) bool {
-	hit, _, _ := detectOpenAICyberPolicy(body)
-	return hit
-}
-
 func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Account, statusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	// cyber_policy is request-scoped even when an intermediary wraps the
 	// provider response in a retryable 5xx status. Never punish or rotate the
 	// selected credential for it.
-	if isOpenAIRequestScopedSafetyRejection(upstreamBody) {
-		return false
-	}
-	// A continuation-state rejection is request-scoped and never an account
-	// failure. The caller returns a bounded recovery, an account mismatch or a
-	// terminal client error before account-health side effects run.
-	if isOpenAIContinuationStateError(upstreamMsg, upstreamBody) {
+	if hit, _, _ := detectOpenAICyberPolicy(upstreamBody); hit {
 		return false
 	}
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
-	}
-	if isOpenAIRequestBudgetRejection(account, statusCode, upstreamBody) {
-		return true
-	}
-	// A structured model_not_supported rejection is distinct from the official
-	// model_not_found response below: it is scoped to the account/model pair.
-	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
-		return account != nil && account.IsOpenAICompatible()
 	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) {
 		return true
@@ -357,24 +342,6 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Acc
 		return true
 	}
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
-}
-
-func isOpenAIRequestBudgetRejection(account *Account, status int, body []byte) bool {
-	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey &&
-		(status == http.StatusForbidden || status == http.StatusPaymentRequired) &&
-		gjson.GetBytes(body, "error.type").String() == "balance_insufficient_error" &&
-		gjson.GetBytes(body, "error.code").String() == "balance_insufficient"
-}
-
-// shouldFailoverOpenAIUpstreamResponseForAccount retains the downstream call
-// surface while sharing the account-aware official classifier.
-func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
-	account *Account,
-	statusCode int,
-	upstreamMsg string,
-	upstreamBody []byte,
-) bool {
-	return s.shouldFailoverOpenAIUpstreamResponse(account, statusCode, upstreamMsg, upstreamBody)
 }
 
 func isOpenAICompatibleModelNotFound400(respBody []byte) bool {
@@ -409,182 +376,6 @@ const OpenAIRequestBodyTooLargeClientMessage = "Request payload is too large"
 
 const openAIRequestBodyTooLargeReason = GatewayFailureReason("openai_request_body_too_large")
 
-// OpenAIContinuationStateUnavailableCode identifies a request whose previous
-// response or encrypted reasoning state is no longer valid on its upstream.
-// A lost previous response is bound to its account and ends the request.
-// Rejected ciphertext is offered to a bounded number of other accounts first
-// (openAICiphertextAccountMismatch); the client receives this code only when
-// none accepts.
-const OpenAIContinuationStateUnavailableCode = "continuation_state_unavailable"
-
-// OpenAIContinuationStateUnavailableClientMessage is safe to surface to a
-// Responses client without exposing upstream account or session details.
-const OpenAIContinuationStateUnavailableClientMessage = "This conversation can no longer be resumed because its upstream state is unavailable. Start a new conversation to continue."
-
-const openAIContinuationStateUnavailableReason = GatewayFailureReason("openai_continuation_state_unavailable")
-
-type openAIContinuationStateErrorKind string
-
-const (
-	openAIContinuationStateErrorNone                     openAIContinuationStateErrorKind = ""
-	openAIContinuationStateErrorPreviousResponseNotFound openAIContinuationStateErrorKind = "previous_response_not_found"
-	openAIContinuationStateErrorInvalidEncryptedContent  openAIContinuationStateErrorKind = "invalid_encrypted_content"
-	openAIContinuationStateErrorThinkingSignatureInvalid openAIContinuationStateErrorKind = "thinking_signature_invalid"
-)
-
-func classifyOpenAIContinuationStateError(upstreamMsg string, upstreamBody []byte) openAIContinuationStateErrorKind {
-	// This new code is accepted only from a structured rejection envelope, never
-	// from a body substring. An unusable signature is request state even when
-	// recovery is disabled or cannot identify a safe, exact removal range.
-	if gjson.GetBytes(upstreamBody, "error.code").String() == "thinking_signature_invalid" || gjson.GetBytes(upstreamBody, "response.error.code").String() == "thinking_signature_invalid" {
-		return openAIContinuationStateErrorThinkingSignatureInvalid
-	}
-	const (
-		previousResponseNotFound = "previous_response_not_found"
-		invalidEncryptedContent  = "invalid_encrypted_content"
-	)
-
-	for _, path := range []string{
-		"error.code",
-		"response.error.code",
-		"code",
-		"response.code",
-	} {
-		switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, path).String())) {
-		case previousResponseNotFound:
-			return openAIContinuationStateErrorPreviousResponseNotFound
-		case invalidEncryptedContent:
-			return openAIContinuationStateErrorInvalidEncryptedContent
-		}
-	}
-
-	// Compatibility upstreams sometimes put a stable error code in the message
-	// while using a gateway status such as 502 or 503. Restrict fallback matching
-	// to exact continuation-state phrases rather than scanning arbitrary bodies.
-	for _, message := range []string{
-		upstreamMsg,
-		gjson.GetBytes(upstreamBody, "error.message").String(),
-		gjson.GetBytes(upstreamBody, "response.error.message").String(),
-		gjson.GetBytes(upstreamBody, "message").String(),
-	} {
-		lower := strings.ToLower(strings.TrimSpace(message))
-		switch {
-		case strings.Contains(lower, previousResponseNotFound),
-			strings.Contains(lower, "previous response not found"):
-			return openAIContinuationStateErrorPreviousResponseNotFound
-		case strings.Contains(lower, invalidEncryptedContent),
-			strings.Contains(lower, "encrypted content could not be verified"),
-			strings.Contains(lower, "invalid encrypted content"):
-			return openAIContinuationStateErrorInvalidEncryptedContent
-		}
-	}
-
-	return openAIContinuationStateErrorNone
-}
-
-func isOpenAIContinuationStateError(upstreamMsg string, upstreamBody []byte) bool {
-	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) != openAIContinuationStateErrorNone
-}
-
-// openAIContinuationStateErrorFromFailedEvent classifies a protocol-level
-// response.failed payload before it can be forwarded, matched by a generic
-// passthrough rule, or treated as an account failure. Upstreams may return this
-// terminal inside an otherwise successful HTTP or WebSocket transport.
-func openAIContinuationStateErrorFromFailedEvent(statusCode int, responseHeaders http.Header, payload []byte) *UpstreamFailoverError {
-	message := extractOpenAISSEErrorMessage(payload)
-	if classifyOpenAIContinuationStateError(message, payload) == openAIContinuationStateErrorNone {
-		return nil
-	}
-	return NewOpenAIContinuationStateUnavailableError(statusCode, responseHeaders, append([]byte(nil), payload...))
-}
-
-// A residual HTTP 400 is a rejected request, not evidence that its history is
-// permanently unavailable. Ops records the upstream message, the bounded body
-// and the diagnostic at the rejection site; the client receives a stable
-// terminal.
-const OpenAIRequestRejectedCode = "upstream_request_rejected"
-const OpenAIRequestRejectedClientMessage = "The upstream rejected this request. Check the request parameters before trying again."
-const openAIRequestRejectedReason = GatewayFailureReason("openai_request_rejected")
-
-// classifyOpenAIRequestRejection depends only on the actual upstream rejection,
-// never on the presence of encrypted reasoning or tool outputs in the request.
-// Callers run their existing exact-field compatibility handling before this
-// residual classifier. Known semantic errors retain their dedicated policies.
-func classifyOpenAIRequestRejection(statusCode int, upstreamMsg string, upstreamBody []byte) string {
-	if statusCode != http.StatusBadRequest {
-		return ""
-	}
-	if isOpenAIContinuationStateError(upstreamMsg, upstreamBody) ||
-		isOpenAIContextWindowError(upstreamMsg, upstreamBody) ||
-		isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody) ||
-		isOpenAIRequestScopedSafetyRejection(upstreamBody) ||
-		isOpenAICompatibleModelNotFound400(upstreamBody) ||
-		isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) ||
-		isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) {
-		return ""
-	}
-
-	// RateLimitService.HandleUpstreamError already recognizes these two narrow
-	// HTTP 400 authentication cases. Use its exact extraction/redaction/512-byte
-	// message boundary so residual validation handling cannot swallow them or
-	// expand authentication detection to echoed fields elsewhere in the body.
-	authMessage := strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody))
-	authMessage = sanitizeUpstreamErrorMessage(authMessage)
-	if authMessage != "" {
-		authMessage = strings.ToLower(truncateForLog([]byte(authMessage), 512))
-		if strings.Contains(authMessage, "organization has been disabled") ||
-			strings.Contains(authMessage, "identity verification is required") {
-			return ""
-		}
-	}
-
-	for _, path := range []string{"error", "response.error", "@this"} {
-		envelope := gjson.GetBytes(upstreamBody, path)
-		if !envelope.IsObject() {
-			continue
-		}
-		if param := envelope.Get("param"); param.Type == gjson.String && strings.TrimSpace(param.String()) != "" {
-			return "request_validation"
-		}
-		switch strings.ToLower(strings.TrimSpace(envelope.Get("type").String())) {
-		case "invalid_request_error", "invalid_argument", "bad_request", "badrequest", "validation_error", "invalid_request":
-			return "request_validation"
-		}
-		switch strings.ToLower(strings.TrimSpace(envelope.Get("code").String())) {
-		case "unsupported_parameter", "unknown_parameter", "invalid_value", "missing_required_parameter", "invalid_request":
-			return "request_validation"
-		}
-	}
-	return "unclassified_bad_request"
-}
-
-// NewOpenAIRequestRejectedError stops the current request without retrying or
-// changing selected-account health. It carries no upstream body: the caller
-// has already recorded the upstream text for Ops, and nothing downstream may
-// render it to the client.
-func NewOpenAIRequestRejectedError(
-	statusCode int,
-	responseHeaders http.Header,
-) *UpstreamFailoverError {
-	return &UpstreamFailoverError{
-		StatusCode:                   statusCode,
-		ResponseHeaders:              responseHeaders.Clone(),
-		Scope:                        GatewayFailureScopeRequest,
-		Reason:                       openAIRequestRejectedReason,
-		NextAccountAction:            NextAccountStop,
-		ClientStatusCode:             http.StatusBadRequest,
-		ClientErrorType:              "invalid_request_error",
-		ClientErrorCode:              OpenAIRequestRejectedCode,
-		ClientMessage:                OpenAIRequestRejectedClientMessage,
-		SuppressAccountHealthPenalty: true,
-	}
-}
-
-// IsOpenAIRequestRejected identifies a request-local validation terminal.
-func (e *UpstreamFailoverError) IsOpenAIRequestRejected() bool {
-	return e != nil && e.Reason == openAIRequestRejectedReason
-}
-
 func isOpenAIRequestBodyTooLargeError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	return statusCode == http.StatusRequestEntityTooLarge && !isOpenAIContextWindowError(upstreamMsg, upstreamBody)
 }
@@ -596,9 +387,6 @@ func newOpenAIUpstreamFailoverError(
 	upstreamMsg string,
 	retryableOnSameAccount bool,
 ) *UpstreamFailoverError {
-	if isOpenAIContinuationStateError(upstreamMsg, responseBody) {
-		return NewOpenAIContinuationStateUnavailableError(statusCode, responseHeaders, responseBody)
-	}
 	requestScopedCapacity := isOpenAIRequestScopedCapacityShed(upstreamMsg, responseBody)
 	failoverErr := &UpstreamFailoverError{
 		StatusCode:             statusCode,
@@ -629,10 +417,115 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.ClientStatusCode = http.StatusBadGateway
 		failoverErr.ClientMessage = openAIUpstreamAccessUnavailableClientMessage
 	} else if requestScopedCapacity {
+		// Preserve the provider's actionable overload message after gateway
+		// retries are exhausted, but expose it as a retryable server_error.
 		failoverErr.ClientStatusCode = http.StatusServiceUnavailable
 		failoverErr.ClientMessage = openAICapacityShedClientMessage(upstreamMsg, responseBody)
 	}
 	return failoverErr
+}
+
+func (s *OpenAIGatewayService) newOpenAIAccountFailoverError(
+	account *Account,
+	statusCode int,
+	responseHeaders http.Header,
+	responseBody []byte,
+	upstreamMsg string,
+	shouldDisable bool,
+	retryableOnSameAccount bool,
+) *UpstreamFailoverError {
+	return s.newOpenAIAccountFailoverErrorWithClassificationHeaders(account, statusCode, responseHeaders, responseHeaders, responseBody, upstreamMsg, shouldDisable, retryableOnSameAccount)
+}
+
+func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHeaders(
+	account *Account,
+	statusCode int,
+	responseHeaders http.Header,
+	classificationHeaders http.Header,
+	responseBody []byte,
+	upstreamMsg string,
+	shouldDisable bool,
+	retryableOnSameAccount bool,
+) *UpstreamFailoverError {
+	oauth429Retry := s.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account, statusCode, shouldDisable, classificationHeaders, responseBody)
+	failoverErr := newOpenAIUpstreamFailoverError(
+		statusCode,
+		responseHeaders,
+		responseBody,
+		upstreamMsg,
+		retryableOnSameAccount || oauth429Retry,
+	)
+	if shouldDisable && account != nil && account.Platform == PlatformOpenAI && failoverErr.RequestScopedTransient {
+		// A configured model cooldown takes precedence over capacity-shed replay.
+		failoverErr.RetryableOnSameAccount = false
+	}
+	if oauth429Retry {
+		failoverErr.SameAccountRetryDeadline = s.openAIOAuth429RetryDeadline(account)
+		failoverErr.SameAccountRetryDelay = openAIOAuth429SameAccountRetryDelay(responseHeaders, failoverErr.SameAccountRetryDeadline)
+	}
+	return failoverErr
+}
+
+const (
+	openAIUpstreamAccessUnavailableClientMessage = "Upstream access is temporarily unavailable, please retry later"
+	// OpenAIUpstreamAccessStateReason marks a provider credential whose
+	// account, workspace, or organization is unavailable.
+	OpenAIUpstreamAccessStateReason = GatewayFailureReason("openai_upstream_access_state")
+	// OpenAIHTTPContinuationUnsupportedReason identifies accounts that cannot
+	// preserve an official Responses HTTP continuation without dropping state.
+	OpenAIHTTPContinuationUnsupportedReason = GatewayFailureReason("openai_http_continuation_unsupported")
+)
+
+// isOpenAIUpstreamAccessStateError recognizes provider-side credential state
+// failures only from explicit structured codes. Free-form messages may contain
+// echoed user input, including inside stream terminal error.message fields.
+func isOpenAIUpstreamAccessStateError(_ string, body []byte) bool {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return false
+	}
+	for _, path := range []string{"error.code", "response.error.code", "detail.code", "code"} {
+		if isOpenAIUpstreamAccessStateCode(gjson.GetBytes(body, path).String()) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOpenAIUpstreamAccessStateCode(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "deactivated_workspace" {
+		return true
+	}
+	for _, subject := range []string{"workspace", "account", "organization", "org"} {
+		for _, state := range []string{"deactivated", "disabled", "suspended"} {
+			if value == subject+"_"+state || value == state+"_"+subject {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isOpenAIHTTPUpstreamAccessStateError is deliberately status-independent:
+// known provider codes are durable evidence, while 401/403 messages without
+// such a code must flow through the existing authentication/403 policies.
+func isOpenAIHTTPUpstreamAccessStateError(_ int, _ string, body []byte) bool {
+	return isOpenAIUpstreamAccessStateError("", body)
+}
+
+func openAICapacityShedClientMessage(upstreamMsg string, body []byte) string {
+	for _, candidate := range []string{
+		upstreamMsg,
+		gjson.GetBytes(body, "error.message").String(),
+		gjson.GetBytes(body, "response.error.message").String(),
+		gjson.GetBytes(body, "message").String(),
+	} {
+		candidate = sanitizeUpstreamErrorMessage(strings.TrimSpace(candidate))
+		if candidate != "" && isOpenAICapacityShedMessage(candidate) {
+			return candidate
+		}
+	}
+	return "Upstream service is temporarily overloaded, please retry later"
 }
 
 // IsOpenAIRequestBodyTooLarge reports whether another account may accept the
@@ -641,81 +534,11 @@ func (e *UpstreamFailoverError) IsOpenAIRequestBodyTooLarge() bool {
 	return e != nil && e.Reason == openAIRequestBodyTooLargeReason
 }
 
-// NewOpenAIContinuationStateUnavailableError creates a request-scoped terminal
-// error. It intentionally carries the original upstream response only for
-// internal correlation; clients receive the fixed, non-sensitive message.
-func NewOpenAIContinuationStateUnavailableError(
-	statusCode int,
-	responseHeaders http.Header,
-	responseBody []byte,
-) *UpstreamFailoverError {
-	return &UpstreamFailoverError{
-		StatusCode:                   statusCode,
-		ResponseBody:                 responseBody,
-		ResponseHeaders:              responseHeaders.Clone(),
-		Scope:                        GatewayFailureScopeRequest,
-		Reason:                       openAIContinuationStateUnavailableReason,
-		NextAccountAction:            NextAccountStop,
-		ClientStatusCode:             http.StatusBadRequest,
-		ClientMessage:                OpenAIContinuationStateUnavailableClientMessage,
-		SuppressAccountHealthPenalty: true,
-	}
+// IsOpenAICapacityShed reports whether typed client fields were derived from a
+// recognized provider overload rather than supplied by an unrelated failure.
+func (e *UpstreamFailoverError) IsOpenAICapacityShed() bool {
+	return e != nil && e.RequestScopedTransient && isOpenAIRequestScopedCapacityShed("", e.ResponseBody)
 }
-
-// NewOpenAIContinuationStoreUnavailableError distinguishes an authoritative
-// state-store failure from a genuine binding miss.
-func NewOpenAIContinuationStoreUnavailableError() *UpstreamFailoverError {
-	err := NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
-	err.ClientStatusCode = http.StatusServiceUnavailable
-	return err
-}
-
-// IsOpenAIContinuationStateUnavailable reports a continuation-state failure.
-// It never reduces selected-account health, and it stops the request unless it
-// is marked as an account mismatch.
-func (e *UpstreamFailoverError) IsOpenAIContinuationStateUnavailable() bool {
-	return e != nil && e.Reason == openAIContinuationStateUnavailableReason
-}
-
-// openAICiphertextAccountMismatch marks the request-scoped failure of one
-// account as an account mismatch: the request carries ciphertext this account
-// cannot verify and nothing on this account repairs it. Ciphertext is readable
-// only by the upstream organisation that issued it, so the unchanged request
-// may still be accepted by another account. The caller tries the next account;
-// when none accepts, the failure renders with its own classification, exactly
-// as it would have without the mark.
-
-// IsOpenAICiphertextAccountMismatch reports a failure that another account
-// may not have for the same request.
-
-// openAIRecoveryRetryAccountFailure marks the failure of a stripped retry that
-// is the account's own, such as exhausted credit or a provider error. The
-// request goes to the next account as for any account failure. The mark
-// changes nothing else: classification, body and the fields account health
-// reads stay as the attempt built them. The mark alone tells the handler that
-// this account, whose one stripped retry is spent, is not asked again.
-
-// openAIRecoveryRetryHTTPFailure classifies an HTTP answer to the stripped
-// retry that a first send would move to another account, as that first send
-// classifies it: a request-budget rejection stays the request's, an
-// unsupported model stays the account/model pair's, a budget 429 stays the
-// account's, and any other status the pool retries stays the pool's.
-//
-// It writes no account state and opens no same-account retry window. Whether
-// a first send would also have disabled the account, which makes it count a
-// pool-retryable status against the account, is not known here.
-
-// IsOpenAIRecoveryRetrySpent reports an account failure that ended an attempt
-// whose stripped retry was already sent.
-
-// openAIUpstreamReportsUndecryptableCiphertext reads an upstream failure for a
-// statement that ciphertext in the request could not be decrypted or verified.
-// Besides the continuation-state classification it accepts the wording used
-// for inter-agent message bodies and encrypted tool arguments, which arrives
-// without a stable code.
-
-// openAIRequestHoldsServerContext reports a request whose history lives with
-// the upstream account that created it.
 
 func marshalOpenAIUpstreamJSON(v any) ([]byte, error) {
 	var buf bytes.Buffer
@@ -767,16 +590,18 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
-	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(ctx, c, account, resp.StatusCode, resp.Header, body); ok {
-		return nil, failoverErr
-	}
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
-	body = restoreSystemPromptEcho(c, body)
 
-	// Safety refusals are terminal for this request, independent of legacy
-	// recovery settings. Retain diagnostics without rotating or cooling accounts.
-	if hit, _, cyberMsg := detectOpenAICyberPolicy(body); hit {
-		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
+	// cyber_policy 硬阻断：透传上游原始错误体给客户端（不重包成通用 502），不冷却账号。
+	// 当前请求恒透传（需求1）；标记供 handler 事后写风控/邮件。400 cyber 不可 failover
+	// （shouldFailoverUpstreamError(400)=false），故走到此处即可安全早返回。
+	if hit, code, cyberMsg := detectOpenAICyberPolicy(body); hit {
+		MarkOpsCyberPolicy(c, CyberPolicyMark{
+			Code:           code,
+			Message:        cyberMsg,
+			Body:           truncateString(string(body), 4096),
+			UpstreamStatus: resp.StatusCode,
+		})
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		contentType := resp.Header.Get("Content-Type")
@@ -1016,13 +841,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
-	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
-		c.Request.Context(), c, account, resp.StatusCode, resp.Header, body,
-	); ok {
-		return nil, failoverErr
-	}
 	body = s.redactAgentIdentitySensitiveBody(context.Background(), account, body)
-	body = restoreSystemPromptEcho(c, body)
 
 	// cyber_policy：兼容路径（Chat Completions / Anthropic）以各自格式回写错误，
 	// 不原样透传 responses 格式的 cyber body（否则对下游格式不合法）。cyber 是上游网络

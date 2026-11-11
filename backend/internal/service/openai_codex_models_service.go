@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -482,7 +481,7 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 	}
 
 	if isClaudeCodexModel(modelID) {
-		if claude.IsOpus55(modelID) || claude.IsSonnet55(modelID) || claude.IsHaiku55(modelID) {
+		if claude.IsOpus55(modelID) || claude.IsSonnet55(modelID) || claude.IsHaiku55(modelID) || claude.IsFable52(modelID) || claude.IsMythos52(modelID) {
 			descriptor.ContextWindow = 1_000_000
 			descriptor.MaxContextWindow = 1_000_000
 		}
@@ -491,7 +490,7 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 		descriptor.SupportsParallelToolCalls = true
 		if levels := configuredCodexClaudeReasoningLevels(modelID); len(levels) > 0 {
 			defaultReasoningLevel := claudeCodexDefaultReasoningLevel(levels)
-			if claude.IsSonnet55(modelID) {
+			if claude.IsSonnet55(modelID) || claude.IsFable52(modelID) || claude.IsMythos52(modelID) {
 				defaultReasoningLevel = "high"
 			}
 			descriptor.DefaultReasoningLevel = &defaultReasoningLevel
@@ -1536,7 +1535,7 @@ func isRetryableCodexModelsManifestStatus(statusCode int, useAPIKeyUpstream bool
 }
 
 func isRetryableCodexModelsManifestTransportError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || codextransport.IsFailure(err) {
+	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}
 	if errors.Is(err, context.DeadlineExceeded) ||
@@ -1554,7 +1553,6 @@ func isRetryableCodexModelsManifestTransportError(err error) bool {
 	if errors.As(err, &dnsErr) {
 		return true
 	}
-	//lint:ignore SA1019 Compatibility with GOAWAY errors returned by existing x/net-based clients is still required.
 	var goAwayErr http2.GoAwayError
 	if errors.As(err, &goAwayErr) {
 		return true
@@ -1771,11 +1769,10 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	}
 	headers.Set("Accept", "application/json")
 	overrideUA := ""
-	identity := resolveCodexOutboundIdentity(overrideUA)
 	if !useAPIKeyUpstream {
-		overrideUA = codexAccountIdentityOverrideUA(credAccount)
-		identity = resolveCodexOutboundIdentityForAccount(credAccount, overrideUA)
+		overrideUA = credAccount.GetOpenAIUserAgent()
 	}
+	identity := resolveCodexOutboundIdentity(overrideUA)
 	headers.Set("Originator", identity.originator)
 	headers.Set("User-Agent", identity.userAgent)
 	// Version 头优先与 client_version 查询参数同源：客户端自报版本合法且不低于上游
@@ -1946,24 +1943,10 @@ func (s *OpenAIGatewayService) fetchOpenAIModelsUpstream(ctx context.Context, re
 		req.Header.Set("If-None-Match", ifNoneMatch)
 	}
 
-	req, err = bindCodexTransport(req, request.credentialAccount, currentCodexFingerprintPolicyForAccount(request.credentialAccount), "http")
-	if err != nil {
-		return nil, err
-	}
-
 	var resp *http.Response
 	if request.useAPIKeyUpstream {
 		if s.httpUpstream == nil {
 			return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_UPSTREAM_NOT_CONFIGURED", "Codex models upstream HTTP client is not configured")
-		}
-		req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
-		resp, err = s.httpUpstream.Do(req, request.proxyURL, request.accountID, request.accountConcurrency)
-	} else if request.credentialAccount != nil && request.credentialAccount.IsOpenAIOAuthLike() && currentCodexFingerprintPolicyForAccount(request.credentialAccount).enabled {
-		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(request.credentialAccount) {
-			return nil, codexStrictClientError(fmt.Errorf("third-party model transport cannot attest the verified Codex profile"))
-		}
-		if s.httpUpstream == nil {
-			return nil, fmt.Errorf("strict Codex models transport is not configured")
 		}
 		req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 		resp, err = s.httpUpstream.Do(req, request.proxyURL, request.accountID, request.accountConcurrency)

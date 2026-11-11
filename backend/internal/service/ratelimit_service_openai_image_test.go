@@ -61,7 +61,7 @@ func TestRateLimitService_HandleOpenAIImageRateLimit_DefaultsToOneMinute(t *test
 	require.WithinDuration(t, before.Add(time.Minute), call.resetAt, time.Second)
 }
 
-func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImageRateLimitDefersCooldownToHandler(t *testing.T) {
+func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImageRateLimitDoesNotBlockWholeAccount(t *testing.T) {
 	repo := &modelNotFoundAccountRepoStub{}
 	svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{accountRepo: repo}}
 	account := &Account{ID: 203, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -70,12 +70,13 @@ func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImageRateLimitDef
 	disabled := svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, body, "gpt-image-2")
 
 	require.False(t, disabled)
-	require.Empty(t, repo.modelRateLimitCalls)
+	require.Len(t, repo.modelRateLimitCalls, 1)
+	require.Equal(t, openAIImageGenerationRateLimitKey, repo.modelRateLimitCalls[0].scope)
 	_, wholeAccountBlocked := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	require.False(t, wholeAccountBlocked)
 }
 
-func TestOpenAIGatewayServiceForwardImages_ImageRateLimitReturnsFailoverWithoutPersistentState(t *testing.T) {
+func TestOpenAIGatewayServiceForwardImages_ImageRateLimitReturnsFailoverAndCoolsCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &modelNotFoundAccountRepoStub{}
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat"}`)
@@ -116,7 +117,8 @@ func TestOpenAIGatewayServiceForwardImages_ImageRateLimitReturnsFailoverWithoutP
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.Contains(t, string(failoverErr.ResponseBody), "input-images per min")
-	require.Empty(t, repo.modelRateLimitCalls)
+	require.Len(t, repo.modelRateLimitCalls, 1)
+	require.Equal(t, openAIImageGenerationRateLimitKey, repo.modelRateLimitCalls[0].scope)
 }
 
 // issue #6171：上游"回文字没回图"是**这一轮**的结果（模型选择了说话），不是账号能力

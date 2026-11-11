@@ -117,8 +117,6 @@ const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
-	OpenAIEndpointCapabilityMessages        OpenAIEndpointCapability = "messages"
-	OpenAIEndpointCapabilityCountTokens     OpenAIEndpointCapability = "count_tokens"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
 	OpenAIEndpointCapabilityAlphaSearch     OpenAIEndpointCapability = "alpha_search"
 	OpenAIEndpointCapabilityLive            OpenAIEndpointCapability = "live"
@@ -230,9 +228,6 @@ func (a *Account) IsSchedulable() bool {
 	if a.RateLimitResetAt != nil && now.Before(*a.RateLimitResetAt) {
 		return false
 	}
-	if quota := a.QuotaState(now); quota != nil && quota.Blocked {
-		return false
-	}
 	if a.TempUnschedulableUntil != nil && now.Before(*a.TempUnschedulableUntil) {
 		return false
 	}
@@ -317,7 +312,7 @@ func (a *Account) IsGrokOAuth() bool {
 	return a.IsGrok() && a.Type == AccountTypeOAuth
 }
 
-// IsKimi / IsZhipu / IsDeepseek / IsMiniMax 标识国产 OpenAI 兼容供应商账号。
+// IsKimi / IsZhipu / IsDeepseek 标识国产 OpenAI 兼容供应商账号。
 func (a *Account) IsKimi() bool {
 	return a.Platform == PlatformKimi
 }
@@ -1475,7 +1470,7 @@ func (a *Account) SupportsAccountQuota() bool {
 }
 
 func (a *Account) IsOpenAI() bool {
-	return a != nil && a.Platform == PlatformOpenAI
+	return a.Platform == PlatformOpenAI
 }
 
 func (a *Account) IsOpenAILongContextBillingEnabled() bool {
@@ -1958,7 +1953,7 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	}
 	if a.IsGrok() {
 		switch capability {
-		case OpenAIEndpointCapabilityChatCompletions, OpenAIEndpointCapabilityMessages:
+		case OpenAIEndpointCapabilityChatCompletions:
 			return true
 		case OpenAIEndpointCapabilityGrokMediaGeneration:
 			eligible, reason := a.GrokMediaGenerationEligibility()
@@ -1973,15 +1968,6 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	}
 	switch capability {
 	case OpenAIEndpointCapabilityChatCompletions:
-	case OpenAIEndpointCapabilityCountTokens:
-		// OpenAI-compatible accounts retain the existing Anthropic-to-Responses
-		// input_tokens bridge.
-		capability = OpenAIEndpointCapabilityChatCompletions
-	case OpenAIEndpointCapabilityMessages:
-		// /v1/messages is an inbound protocol capability. Ordinary OpenAI-
-		// compatible accounts still use the established chat/Responses adapter,
-		// so existing chat_completions capability declarations remain valid.
-		capability = OpenAIEndpointCapabilityChatCompletions
 	case OpenAIEndpointCapabilityLive:
 		return a.Platform == PlatformOpenAI &&
 			a.Type == AccountTypeOAuth &&
@@ -2216,10 +2202,6 @@ func (a *Account) IsOveragesEnabled() bool {
 	}
 	return false
 }
-
-// supportsOpenAIReasoningRecovery reports whether the bounded HTTP
-// reasoning-signature recovery applies to this kind of account, including
-// passthrough accounts. Whether it runs is the global switch.
 
 // IsOpenAIPassthroughEnabled 返回 OpenAI 账号是否启用"自动透传（仅替换认证）"。
 //

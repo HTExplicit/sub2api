@@ -61,46 +61,6 @@ func TestClassifyOpenAIWSAcquireError(t *testing.T) {
 	})
 }
 
-func TestOpenAIWSInitialDialFailover(t *testing.T) {
-	modelNotSupported := []byte(`{"error":{"code":400,"type":"model_not_supported","message":"model is temporarily not supported"}}`)
-	apiKey := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: map[string]any{"base_url": "https://relay.example.test"},
-	}
-	tests := []struct {
-		name       string
-		account    *Account
-		err        error
-		wantRetry  bool
-		wantStatus int
-		wantReason GatewayFailureReason
-	}{
-		{name: "auth switches immediately", err: &openAIWSDialError{StatusCode: http.StatusUnauthorized}, wantStatus: http.StatusUnauthorized},
-		{name: "rate limit switches immediately", err: &openAIWSDialError{StatusCode: http.StatusTooManyRequests}, wantStatus: http.StatusTooManyRequests},
-		{name: "server failure retries once", err: &openAIWSDialError{StatusCode: http.StatusBadGateway}, wantRetry: true, wantStatus: http.StatusBadGateway},
-		{name: "network failure retries once", err: &openAIWSDialError{Err: errors.New("no such host")}, wantRetry: true, wantStatus: http.StatusBadGateway, wantReason: OpenAIPersistentTransportFailureReason},
-		{name: "ordinary client rejection stays terminal", err: &openAIWSDialError{StatusCode: http.StatusBadRequest}},
-		{name: "structured model rejection without an account stays terminal", err: &openAIWSDialError{StatusCode: http.StatusBadRequest, ResponseBody: modelNotSupported}},
-		{name: "OpenAI-compatible structured model rejection switches immediately", account: apiKey, err: &openAIWSDialError{StatusCode: http.StatusBadRequest, ResponseBody: modelNotSupported}, wantStatus: http.StatusBadRequest, wantReason: openAIModelNotSupportedReason},
-		{name: "local pool pressure stays local", err: errOpenAIWSConnQueueFull},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			retry, failoverErr := openAIWSInitialDialFailover(tt.account, tt.err)
-			require.Equal(t, tt.wantRetry, retry)
-			if tt.wantStatus == 0 {
-				require.Nil(t, failoverErr)
-				return
-			}
-			require.NotNil(t, failoverErr)
-			require.Equal(t, tt.wantStatus, failoverErr.StatusCode)
-			require.Equal(t, tt.wantReason, failoverErr.Reason)
-		})
-	}
-}
-
 func TestClassifyOpenAIWSDialError(t *testing.T) {
 	t.Run("handshake_not_finished", func(t *testing.T) {
 		err := &openAIWSDialError{

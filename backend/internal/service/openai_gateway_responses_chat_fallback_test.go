@@ -90,7 +90,7 @@ func TestForwardResponses_ForceChatCompletionsRoutesNonStreamingToChatCompletion
 }
 
 // Scenario: 第三方无推理模型不收到兼容档位。
-func TestForwardResponses_ForceChatCompletionsPreservesExplicitNoneReasoningEffort(t *testing.T) {
+func TestForwardResponses_ForceChatCompletionsOmitsNoneReasoningEffort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"company-coding-model","input":"hello","reasoning":{"effort":"none"},"stream":false}`)
@@ -115,9 +115,8 @@ func TestForwardResponses_ForceChatCompletionsPreservesExplicitNoneReasoningEffo
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "company-coding-model", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
-	require.NotNil(t, result.ReasoningEffort)
-	require.Equal(t, "none", *result.ReasoningEffort)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning_effort").Exists())
+	require.Nil(t, result.ReasoningEffort)
 }
 
 func TestForwardResponses_PassthroughFlagWithUnsupportedResponsesUsesAccountMapping(t *testing.T) {
@@ -213,7 +212,7 @@ func TestForwardResponses_ForceChatCompletionsRoutesStreamingToChatCompletions(t
 	require.NotNil(t, result.FirstTokenMs)
 }
 
-func TestForwardResponses_ChatFallbackMarksTruncatedToolsIncomplete(t *testing.T) {
+func TestForwardResponses_ChatFallbackRejectsInvalidToolArgumentsAtOutputLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"deepseek-v4-flash","input":"run the command","stream":true}`)
@@ -241,17 +240,16 @@ func TestForwardResponses_ChatFallbackMarksTruncatedToolsIncomplete(t *testing.T
 	}
 
 	result, err := svc.Forward(context.Background(), c, forceChatResponsesFallbackAccount(), body)
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "invalid JSON")
 	require.NotNil(t, result)
 	require.Equal(t, 4, result.Usage.InputTokens)
 	require.Equal(t, 6492, result.Usage.OutputTokens)
 	require.NotContains(t, rec.Body.String(), "response.function_call_arguments.done")
 	require.NotContains(t, rec.Body.String(), "response.output_item.done")
-	require.Contains(t, rec.Body.String(), "event: response.incomplete")
-	require.NotContains(t, rec.Body.String(), "event: response.completed")
+	require.NotContains(t, rec.Body.String(), "data: [DONE]")
 }
 
-func TestForwardResponses_ReasoningOnlyStreamPreservesReasoningWithoutAnswer(t *testing.T) {
+func TestForwardResponses_DeepSeekReasoningOnlyStreamProducesVisibleText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"deepseek-reasoner","input":"hello","stream":true}`)
@@ -284,8 +282,7 @@ func TestForwardResponses_ReasoningOnlyStreamPreservesReasoningWithoutAnswer(t *
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.Stream)
-	require.NotContains(t, rec.Body.String(), "event: response.output_text.delta")
-	require.Contains(t, rec.Body.String(), "event: response.reasoning_summary_text.delta")
+	require.Contains(t, rec.Body.String(), "event: response.output_text.delta")
 	require.Contains(t, rec.Body.String(), `"delta":"visible fallback"`)
 	require.Contains(t, rec.Body.String(), `"status":"incomplete"`)
 	require.Contains(t, rec.Body.String(), "data: [DONE]")

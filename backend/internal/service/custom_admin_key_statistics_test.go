@@ -253,7 +253,7 @@ func TestScopedAdminOpenAIUsageRefreshNeverGeneratesModelRequests(t *testing.T) 
 			}))
 			defer upstream.Close()
 			quota := NewOpenAIQuotaService(repo, nil, NewOpenAITokenProvider(repo, nil, nil), newQuotaRedirectingFactory(upstream), nil)
-			client, err := httppool.GetClient(httppool.Options{Timeout: 15 * time.Second, ResponseHeaderTimeout: 10 * time.Second, DisableCompression: true})
+			client, err := httppool.GetClient(httppool.Options{Timeout: 15 * time.Second, ResponseHeaderTimeout: 10 * time.Second})
 			require.NoError(t, err)
 			previous := client.Transport
 			defer func() { client.Transport = previous }()

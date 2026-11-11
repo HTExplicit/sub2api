@@ -15,7 +15,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -70,8 +69,6 @@ var schedulerNeutralExtraKeys = map[string]struct{}{
 	"codex_referral_snapshot":    {},
 	"grok_billing_snapshot":      {},
 	"session_window_utilization": {},
-	// Administrator record of the last upstream 401/403/429; scheduling never reads it.
-	service.OpenAILastUpstreamErrorExtraKey: {},
 }
 
 const postgresParameterBatchSize = 50000
@@ -2035,6 +2032,7 @@ func (r *accountRepository) ListSchedulableAccountLoads(ctx context.Context) ([]
 		Select(
 			dbaccount.FieldID,
 			dbaccount.FieldConcurrency,
+			dbaccount.FieldLoadFactor,
 		).
 		All(ctx)
 	if err != nil {
@@ -2043,9 +2041,14 @@ func (r *accountRepository) ListSchedulableAccountLoads(ctx context.Context) ([]
 
 	loads := make([]service.AccountWithConcurrency, 0, len(accounts))
 	for _, account := range accounts {
+		projection := service.Account{
+			ID:          account.ID,
+			Concurrency: account.Concurrency,
+			LoadFactor:  account.LoadFactor,
+		}
 		loads = append(loads, service.AccountWithConcurrency{
 			ID:             account.ID,
-			MaxConcurrency: account.Concurrency,
+			MaxConcurrency: projection.EffectiveLoadFactor(),
 		})
 	}
 	return loads, nil
@@ -2306,14 +2309,21 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	return r.accountsToService(ctx, accounts)
 }
 
-// SetRateLimited marks an account rate limited until resetAt. It delegates to
-// SetRateLimitedIfLater, so the write is monotonic: a later, shorter reset can
-// never shorten a longer window that is already stored, and rate_limited_at is
-// refreshed only on extending writes (a no-op write keeps the first
-// observation). Only an explicit clear (ClearRateLimit, ClearRateLimitIfObserved
-// and the admin update path) shortens or removes the window.
 func (r *accountRepository) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
-	return r.SetRateLimitedIfLater(ctx, id, resetAt)
+	now := time.Now()
+	_, err := r.client.Account.Update().
+		Where(dbaccount.IDEQ(id)).
+		SetRateLimitedAt(now).
+		SetRateLimitResetAt(resetAt).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue rate limit failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return nil
 }
 
 // SetRateLimitedIfLater atomically extends an account-level rate limit. Grok
@@ -2601,40 +2611,6 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 	return nil
 }
 
-// ClearTempUnschedulableIfMatch 原值受限清除临时停调：仅当该行当前的
-// (temp_unschedulable_reason, temp_unschedulable_until) 与调用方读到的快照完全一致时才清除，
-// 并在同一条语句中为「确实被更新的行」写入 scheduler_outbox（无行匹配则不写 outbox、
-// 不同步调度器快照，返回 (false, nil)）。
-//
-// reason/until 必须是从数据库读出的快照值：NULL reason 以 "" 传入（SQL 侧用 COALESCE 匹配）；
-// until 为 timestamptz（微秒精度），应直接使用仓储读回的值，不重新按本地时钟计算期限。
-func (r *accountRepository) ClearTempUnschedulableIfMatch(ctx context.Context, id int64, reason string, until time.Time) (bool, error) {
-	result, err := r.sql.ExecContext(ctx, `
-		WITH updated AS (
-		UPDATE accounts AS a
-		SET temp_unschedulable_until = NULL,
-			temp_unschedulable_reason = NULL,
-			updated_at = NOW()
-		WHERE a.id = $1
-			AND a.deleted_at IS NULL
-			AND COALESCE(a.temp_unschedulable_reason, '') = $2
-			AND a.temp_unschedulable_until = $3
-		RETURNING a.id
-		)
-		INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload)
-		SELECT $4, updated.id, NULL, NULL FROM updated
-	`, id, reason, until, service.SchedulerOutboxEventAccountChanged)
-	if err != nil {
-		return false, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil || affected == 0 {
-		return false, err
-	}
-	r.syncSchedulerAccountSnapshotDetached(ctx, id)
-	return true, nil
-}
-
 func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error {
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearRateLimit(ctx, id)
@@ -2841,87 +2817,26 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 			client = tx.Client()
 		}
 	}
-	candidateUpdatedAt, monotonicSnapshot := codexUsageUpdatedAtFromExtraUpdates(updates)
-	baseExtraExpression := "COALESCE(extra, '{}'::jsonb)"
-	if monotonicSnapshot {
-		// Freeze legacy per-window observation times before replacing the shared
-		// timestamp. A partial primary update must not advance the secondary clock.
-		baseExtraExpression += ` || jsonb_strip_nulls(jsonb_build_object(
-			'codex_primary_observed_at', COALESCE(extra->'codex_primary_observed_at', extra->'codex_usage_updated_at'),
-			'codex_secondary_observed_at', COALESCE(extra->'codex_secondary_observed_at', extra->'codex_usage_updated_at')))`
-	}
-	extraExpression := baseExtraExpression + " || $1::jsonb"
+	extraExpression := "COALESCE(extra, '{}'::jsonb) || $1::jsonb"
 	if clearProbeSnapshot {
 		extraExpression = "(" + extraExpression + ") - 'upstream_billing_probe'"
 	}
 	if service.ShouldEnsureCodexFingerprintSeedForExtraUpdates(updates) {
 		extraExpression = ensureCodexFingerprintSeedSQL(extraExpression)
 	}
-	affected := int64(0)
-	if monotonicSnapshot {
-		rows, queryErr := client.QueryContext(ctx, `
-			WITH target AS MATERIALIZED (
-				SELECT id, extra ->> 'codex_usage_updated_at' AS current_updated_at
-				FROM accounts
-				WHERE id = $2 AND deleted_at IS NULL
-				FOR NO KEY UPDATE
-			), updated AS (
-				UPDATE accounts AS a
-				SET extra = `+extraExpression+`, updated_at = NOW()
-				FROM target
-				WHERE a.id = target.id
-					AND (
-						target.current_updated_at IS NULL
-						OR target.current_updated_at !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$'
-						OR target.current_updated_at::timestamptz <= $3::timestamptz
-					)
-				RETURNING a.id
-			)
-			SELECT EXISTS (SELECT 1 FROM target), EXISTS (SELECT 1 FROM updated)
-		`, string(payload), id, candidateUpdatedAt.Format(time.RFC3339Nano))
-		if queryErr != nil {
-			return queryErr
-		}
-		var exists, updated bool
-		if !rows.Next() {
-			_ = rows.Close()
-			if rowsErr := rows.Err(); rowsErr != nil {
-				return rowsErr
-			}
-			return service.ErrAccountNotFound
-		}
-		if scanErr := rows.Scan(&exists, &updated); scanErr != nil {
-			_ = rows.Close()
-			return scanErr
-		}
-		if closeErr := rows.Close(); closeErr != nil {
-			return closeErr
-		}
-		if !exists {
-			return service.ErrAccountNotFound
-		}
-		if !updated {
-			slog.Info("codex_quota_snapshot_stale_ignored",
-				"account_id", id,
-				"candidate_updated_at", candidateUpdatedAt.Format(time.RFC3339Nano),
-			)
-			return nil
-		}
-		affected = 1
-	} else {
-		result, execErr := client.ExecContext(
-			ctx,
-			"UPDATE accounts SET extra = "+extraExpression+", updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL",
-			string(payload), id,
-		)
-		if execErr != nil {
-			return execErr
-		}
-		var rowsErr error
-		affected, rowsErr = result.RowsAffected()
-		if rowsErr != nil {
-			return rowsErr
-		}
+	result, err := client.ExecContext(
+		ctx,
+		"UPDATE accounts SET extra = "+extraExpression+", updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL",
+		string(payload), id,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
 	}
 	if affected == 0 {
 		return service.ErrAccountNotFound
@@ -2947,22 +2862,6 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 		}
 	}
 	return nil
-}
-
-func codexUsageUpdatedAtFromExtraUpdates(updates map[string]any) (time.Time, bool) {
-	raw, ok := updates["codex_usage_updated_at"]
-	if !ok || raw == nil {
-		return time.Time{}, false
-	}
-	value, ok := raw.(string)
-	if !ok {
-		return time.Time{}, false
-	}
-	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
-	if err != nil {
-		return time.Time{}, false
-	}
-	return parsed.UTC(), true
 }
 
 // UpdateUpstreamBillingProbeSnapshot stores a probe result only while the

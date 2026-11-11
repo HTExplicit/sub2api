@@ -60,7 +60,11 @@ func TestAccountConnectionStreamContract(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c, recorder := newTestContext()
-			err := (&AccountTestService{}).processConnectionStream(c, strings.NewReader(tc.wire), tc.protocol, nil)
+			var account *Account
+			if tc.protocol == "responses" {
+				account = &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+			}
+			err := (&AccountTestService{}).processConnectionStream(c, strings.NewReader(tc.wire), tc.protocol, account)
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
 			} else {

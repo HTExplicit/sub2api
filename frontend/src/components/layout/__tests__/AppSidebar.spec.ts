@@ -66,7 +66,10 @@ describe('AppSidebar header styles', () => {
 describe('AppSidebar extensions section', () => {
   it('keeps downstream tools in a dedicated section', () => {
     expect(componentSource).toContain("{{ t('nav.extensions') }}")
-    expect(componentSource).toContain("{ path: '/admin/codex'")
+    expect(componentSource).toContain("{ path: '/admin/login-protection'")
+    expect(componentSource).toContain("{ path: '/admin/system-prompts'")
+    expect(componentSource).toContain("{ path: '/admin/pelican-tests'")
+    expect(componentSource).not.toContain("{ path: '/admin/codex'")
   })
 
 })

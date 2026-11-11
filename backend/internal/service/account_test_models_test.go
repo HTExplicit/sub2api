@@ -11,6 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The management picker tests use only their local httptest model endpoint.
+func newAccountModelsLoopbackUpstream() HTTPUpstream {
+	return &codexModelsHTTPUpstreamStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+		return http.DefaultClient.Do(req)
+	}}
+}
+
 func TestFetchOpenAIAccountModelsOAuthPopulatesPickerFields(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[
 		{"slug":"new-oauth-model","display_name":"New OAuth Model"},
@@ -18,7 +25,7 @@ func TestFetchOpenAIAccountModelsOAuthPopulatesPickerFields(t *testing.T) {
 		{"slug":"blank-display-name","display_name":"   "},
 		{"slug":"gpt-6-astra"}
 	]}`)
-	gateway := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	gateway := &OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()}
 	svc := &AccountTestService{}
 	svc.SetOpenAIGatewayService(gateway)
 	account := newCodexModelsTestAccount()
@@ -121,7 +128,7 @@ func TestFetchOpenAIAccountModelsPreservesEmptyCatalog(t *testing.T) {
 
 func TestFetchOpenAIAccountModelsOAuthLabelsLocalImageModelsLikeUpstream(t *testing.T) {
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-5.6-sol"}]}`)
-	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}}
+	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()}}
 	account := newCodexModelsTestAccount()
 	// This case is about label sources, so it must configure the upstream slug it
 	// asserts on: the picker is scoped to the account mapping, and an unconfigured
@@ -143,7 +150,7 @@ func TestFetchOpenAIAccountModelsOAuthLabelsLocalImageModelsLikeUpstream(t *test
 func TestFetchOpenAIAccountModelsOAuthRespectsImageAllowlist(t *testing.T) {
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-6-astra"}]}`)
 	svc := &AccountTestService{}
-	svc.SetOpenAIGatewayService(&OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()})
+	svc.SetOpenAIGatewayService(&OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()})
 	account := newCodexModelsTestAccount()
 	account.Credentials["model_mapping"] = map[string]any{"gpt-image-2.5-flare": "gpt-image-2.5-flare"}
 	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
@@ -168,7 +175,7 @@ func pickerModelIDs(models []openai.Model) []string {
 // not configure must not become a testable choice.
 func TestFetchOpenAIAccountModelsOAuthExcludesUnconfiguredTextModels(t *testing.T) {
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-5.6-sol"},{"slug":"gpt-6-astra"}]}`)
-	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}}
+	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()}}
 	account := newCodexModelsTestAccount()
 	account.Credentials["model_mapping"] = map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}
 
@@ -181,7 +188,7 @@ func TestFetchOpenAIAccountModelsOAuthExcludesUnconfiguredTextModels(t *testing.
 // the picker has to resolve the target before deciding to offer the public name.
 func TestFetchOpenAIAccountModelsOAuthLocalImageAlias(t *testing.T) {
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-6-astra"}]}`)
-	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}}
+	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()}}
 	account := newCodexModelsTestAccount()
 	account.Credentials["model_mapping"] = map[string]any{"paint": "gpt-image-2.5-flare"}
 
@@ -198,7 +205,7 @@ func TestFetchOpenAIAccountModelsOAuthImageNamesMappedToText(t *testing.T) {
 		for _, target := range []string{"text-target-missing", "gpt-6-astra"} {
 			t.Run(publicID+"/"+target, func(t *testing.T) {
 				newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-6-astra","display_name":"Upstream Text Model"}]}`)
-				svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}}
+				svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()}}
 				account := newCodexModelsTestAccount()
 				account.Credentials["model_mapping"] = map[string]any{publicID: target}
 
@@ -219,7 +226,7 @@ func TestFetchOpenAIAccountModelsOAuthPassthroughIgnoresMappingTargets(t *testin
 	for _, flag := range []string{"openai_passthrough", "openai_oauth_passthrough"} {
 		t.Run(flag, func(t *testing.T) {
 			newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-6-astra"}]}`)
-			svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}}
+			svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{httpUpstream: newAccountModelsLoopbackUpstream()}}
 			account := newCodexModelsTestAccount()
 			account.Extra = map[string]any{flag: true}
 			account.Credentials["model_mapping"] = map[string]any{

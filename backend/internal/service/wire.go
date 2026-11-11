@@ -48,9 +48,7 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
 }
 
-// ProvideOpenAIGatewayService keeps the existing constructor signature used by
-// tests while wiring the system prompt service and the reasoning recovery
-// switch into the production gateway.
+// ProvideOpenAIGatewayService wires the independent system prompt library.
 func ProvideOpenAIGatewayService(
 	accountRepo AccountRepository,
 	usageLogRepo UsageLogRepository,
@@ -75,7 +73,6 @@ func ProvideOpenAIGatewayService(
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	systemPrompts *SystemPromptService,
-	deepseekReasoning *DeepSeekReasoningService,
 ) *OpenAIGatewayService {
 	svc := NewOpenAIGatewayService(
 		accountRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo,
@@ -85,7 +82,6 @@ func ProvideOpenAIGatewayService(
 		channelService, balanceNotifyService, settingService, userPlatformQuotaRepo,
 	)
 	svc.SetSystemPromptService(systemPrompts)
-	svc.SetDeepSeekReasoningService(deepseekReasoning)
 	return svc
 }
 
@@ -119,11 +115,9 @@ func ProvideGatewayService(
 	balanceNotifyService *BalanceNotifyService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	systemPrompts *SystemPromptService,
-	deepseekReasoning *DeepSeekReasoningService,
 ) *GatewayService {
 	svc := NewGatewayService(accountRepo, groupRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo, userGroupRateRepo, cache, cfg, schedulerSnapshot, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, claudeTokenProvider, sessionLimitCache, rpmCache, digestStore, settingService, tlsFPProfileService, channelService, resolver, compositeResolver, balanceNotifyService, userPlatformQuotaRepo)
 	svc.SetSystemPromptService(systemPrompts)
-	svc.SetDeepSeekReasoningService(deepseekReasoning)
 	return svc
 }
 
@@ -308,11 +302,9 @@ func ProvideOpenAIQuotaService(
 	privacyClientFactory PrivacyClientFactory,
 	referralClient OpenAIReferralClient,
 	openAIGatewayService *OpenAIGatewayService,
-	activity *QuotaActivityService,
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory, referralClient)
 	service.agentIdentityWS = openAIGatewayService
-	service.activity = activity
 	return service
 }
 
@@ -351,14 +343,8 @@ func ProvideAccountUsageService(
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
-	gatewayService *GatewayService,
 	openAIGatewayService *OpenAIGatewayService,
-	usageCommitObserver UsageCommitObserver,
 ) *AccountUsageService {
-	gatewayService.SetUsageCache(cache)
-	openAIGatewayService.SetUsageCache(cache)
-	gatewayService.SetUsageCommitObserver(usageCommitObserver)
-	openAIGatewayService.SetUsageCommitObserver(usageCommitObserver)
 	service := NewAccountUsageService(
 		accountRepo,
 		usageLogRepo,
@@ -388,7 +374,6 @@ func ProvideAccountTestService(
 	openAIGatewayService *OpenAIGatewayService,
 	settingService *SettingService,
 	pluginManager *PluginManager,
-	activity *QuotaActivityService,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -404,7 +389,6 @@ func ProvideAccountTestService(
 	service.SetOpenAIGatewayService(openAIGatewayService)
 	service.SetSettingService(settingService)
 	service.SetPluginManager(pluginManager)
-	service.quotaActivity = activity
 	return service
 }
 
@@ -539,13 +523,6 @@ func ProvideOpenAICodexVersionSyncService(
 ) *OpenAICodexVersionSyncService {
 	svc := NewOpenAICodexVersionSyncService(settingRepo, settingService, githubClient, openAICodexVersionSyncInterval)
 	svc.Start()
-	return svc
-}
-
-// ProvideCodexClientIdentityBackfillService creates the one-shot backfill that
-// persists a Codex client identity for every existing OpenAI OAuth-like account.
-func ProvideCodexClientIdentityBackfillService(accountRepo AccountRepository) *CodexClientIdentityBackfillService {
-	svc := NewCodexClientIdentityBackfillService(accountRepo)
 	return svc
 }
 
@@ -885,7 +862,6 @@ func ProvideOpsService(
 	settingService *SettingService,
 	authCacheInvalidationWorker *AuthCacheInvalidationWorker,
 	apiKeyService *APIKeyService,
-	activity *QuotaActivityService,
 ) *OpsService {
 	svc := NewOpsService(
 		opsRepo,
@@ -908,7 +884,6 @@ func ProvideOpsService(
 	}
 	svc.authCacheInvalidationWorker = authCacheInvalidationWorker
 	svc.apiKeyService = apiKeyService
-	svc.quotaActivity = activity
 	svc.StartRuntimeSettingsRefresh(context.Background())
 	return svc
 }
@@ -930,12 +905,9 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 func ProvideSettingService(scopedKeys ScopedAdminKeyRepository, settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config) (*SettingService, error) {
 	svc := NewSettingService(settingRepo, cfg)
 	svc.scopedAdminKeyRepo = scopedKeys
-	// Observability and Codex request compression switches are read by
-	// package-level gates before the gateway starts.
-	for _, load := range []func(context.Context) error{svc.LoadAdminObservabilityConfig, svc.LoadCodexRuntimeConfig, svc.LoadCodexFingerprintSettings} {
-		if err := load(context.Background()); err != nil {
-			return nil, err
-		}
+	// Load the retained administrator observability settings before serving.
+	if err := svc.LoadAdminObservabilityConfig(context.Background()); err != nil {
+		return nil, err
 	}
 	svc.SetDefaultSubscriptionGroupReader(groupRepo)
 	svc.SetProxyRepository(proxyRepo)
@@ -1024,7 +996,6 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	ProvideGatewayService,
 	ProvideSystemPromptService,
-	ProvideDeepSeekReasoningService,
 	ProvidePelicanTestRunner,
 	NewPelicanPreviewService,
 	NewPelicanTestCatalog,
@@ -1055,7 +1026,6 @@ var ProviderSet = wire.NewSet(
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
 	ProvideOpenAIQuotaService,
-	NewQuotaActivityService,
 	ProvideOpenAIQuotaAutoResetService,
 	ProvideGrokQuotaService,
 	ProvideCNProviderQuotaService,
@@ -1100,7 +1070,6 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(GrokOAuthReconciler), new(*TokenRefreshService)),
 	ProvideAccountExpiryService,
 	ProvideOpenAICodexVersionSyncService,
-	ProvideCodexClientIdentityBackfillService,
 	ProvideClaudeCodeVersionSyncService,
 	ProvideProxyExpiryService,
 	ProvideSubscriptionExpiryService,

@@ -139,7 +139,7 @@ func groupAllowlistPatternMatches(pattern, model string) bool {
 
 // groupModelAllowlistCandidates 返回客户端模型名在白名单匹配中的候选形式（均已小写）。
 func groupModelAllowlistCandidates(model string) []string {
-	candidates := make([]string, 0, 5)
+	candidates := make([]string, 0, 4)
 	add := func(value string) {
 		value = strings.ToLower(strings.TrimSpace(value))
 		if value == "" {
@@ -157,30 +157,7 @@ func groupModelAllowlistCandidates(model string) []string {
 	add(strings.TrimPrefix(model, "models/"))
 	add(claude.NormalizeModelID(strings.TrimSuffix(model, "-thinking")))
 	add(NormalizeOpenAICompatRequestedModel(model))
-	add(groupModelAllowlistLegacyOpenAIReasoningBase(model))
 	return candidates
-}
-
-// groupModelAllowlistLegacyOpenAIReasoningBase 保留官方白名单的旧 Codex 后缀等价，
-// 但仅匹配明确的基名与官方有限 effort 集合。它不进入请求归一化、账号映射或计费，
-// 不能借助通用模型家族回退把未知模型 ID 改写为另一个模型。
-func groupModelAllowlistLegacyOpenAIReasoningBase(model string) string {
-	model = strings.TrimSpace(model)
-	if separator := strings.LastIndexByte(model, '/'); separator >= 0 &&
-		!strings.EqualFold(strings.TrimSpace(model[:separator]), "openai") {
-		return ""
-	}
-	key := canonicalizeOpenAIModelAliasSpelling(model)
-	separator := strings.LastIndexByte(key, '-')
-	if separator < 0 || key[:separator] != "gpt-5.5-codex" {
-		return ""
-	}
-	switch key[separator+1:] {
-	case "none", "minimal", "low", "medium", "high", "xhigh", "extrahigh":
-		return "gpt-5.5"
-	default:
-		return ""
-	}
 }
 
 // FilterForListing 按白名单条目顺序生成模型列表输出。

@@ -58,6 +58,13 @@ class ChangeSelectionTests(unittest.TestCase):
                 self.assertIn("unclassified_input:" + path, plan["failures"])
                 self.assertFalse(plan["backend_tests"])
 
+    def test_alternate_go_builder_dockerfiles_select_candidate_image_only(self):
+        for path in ("backend/Dockerfile", "deploy/Dockerfile"):
+            with self.subTest(path=path):
+                plan = ci_plan.classify_paths([path])
+                self.assertTrue(plan["passed"], plan["failures"])
+                self.assertEqual(["candidate_image"], plan["groups"])
+
     def test_go_dependency_graph_selects_security_and_build_without_business_suite(self):
         plan = ci_plan.classify_paths(["backend/go.mod", "backend/go.sum"])
         self.assertTrue(plan["passed"], plan["failures"])
@@ -85,10 +92,10 @@ class ChangeSelectionTests(unittest.TestCase):
 
     def test_shared_entry_cannot_claim_sibling_tests_are_complete(self):
         plan = ci_plan.classify_paths(["backend/internal/service/account_job.go",
-                                       "backend/internal/service/gateway_service.go"])
+                                       "backend/internal/service/unreviewed_shared_gateway.go"])
         self.assertFalse(plan["passed"])
         self.assertIn("account_jobs", plan["groups"])
-        self.assertIn("unclassified_input:backend/internal/service/gateway_service.go", plan["failures"])
+        self.assertIn("unclassified_input:backend/internal/service/unreviewed_shared_gateway.go", plan["failures"])
 
     def test_reviewed_session_source_selects_its_cache_contract_only(self):
         with patch.object(ci_plan, "direct_importers", return_value=[]):
@@ -212,10 +219,51 @@ class ChangeSelectionTests(unittest.TestCase):
         self.assertFalse(plan["backend_tests"])
         self.assertNotIn("pelican", plan["groups"])
 
-    def test_embedded_transport_reference_is_a_runtime_build_input(self):
+    def test_retired_transport_reference_requires_caller_build_not_capture(self):
         plan = ci_plan.classify_paths(["backend/internal/pkg/codextransport/reference.json"])
-        self.assertTrue(plan["passed"])
-        self.assertEqual(["candidate_image", "transport"], plan["groups"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["backend_compile", "candidate_image"], plan["groups"])
+        self.assertIn("./cmd/server", plan["backend_compile_packages"])
+        self.assertFalse(plan["backend_tests"])
+
+    def test_empty_retired_package_directory_does_not_select_a_missing_go_package(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "backend/internal/pkg/codextransport"
+            directory.mkdir(parents=True)
+            with patch.object(ci_plan, "direct_importers", return_value=[]):
+                plan = ci_plan.classify_paths(["backend/internal/pkg/codextransport/transport.go"], root)
+            self.assertTrue(plan["passed"], plan["failures"])
+            self.assertEqual(["./cmd/server"], plan["backend_compile_packages"])
+
+    def test_only_reviewed_deleted_inputs_have_retirement_ownership(self):
+        for relative in ("backend/internal/service/unknown_deleted_test.go",
+                         "frontend/src/views/admin/UnknownDeleted.vue"):
+            plan = ci_plan.classify_paths([relative])
+            self.assertFalse(plan["passed"], relative)
+        plan = ci_plan.classify_paths(["frontend/src/views/admin/CodexRuntimeView.vue"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertTrue(plan["frontend_typecheck"])
+        self.assertEqual(["candidate_image", "frontend_validate"], plan["groups"])
+
+    def test_retired_document_still_checks_remaining_links(self):
+        relative = "backend/internal/pkg/codexws/UPSTREAM.md"
+        plan = ci_plan.classify_paths([relative])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertIn("static_docs", plan["groups"])
+        self.assertEqual([relative], plan["deleted_static_files"])
+
+    def test_reintroduced_retired_source_is_not_automatically_exempt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            relative = "backend/internal/service/openai_refusal_recovery.go"
+            path = root / relative
+            path.parent.mkdir(parents=True)
+            path.write_text("package service\n", encoding="utf-8")
+            with patch.object(ci_plan, "direct_importers", return_value=[]):
+                plan = ci_plan.classify_paths([relative], root)
+            self.assertFalse(plan["passed"])
+            self.assertIn("unclassified_input:" + relative, plan["failures"])
 
     def test_go_source_selects_reachability_scan_but_test_only_does_not(self):
         source = ci_plan.classify_paths(["backend/internal/service/account_job.go"])

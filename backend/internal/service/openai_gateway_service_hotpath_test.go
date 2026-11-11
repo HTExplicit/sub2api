@@ -138,7 +138,7 @@ func TestOpenAIGatewayService_Forward_APIKeyMissingInstructionsKeepsLargeInputRa
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
-	expectedBody := `{"model":"gpt-5","stream":false,"reasoning":{"effort":"minimal"},"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`
+	expectedBody := `{"model":"gpt-5","stream":false,"reasoning":{"effort":"none"},"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`
 	require.JSONEq(t, expectedBody, string(upstream.lastBody))
 	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
 	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.lastBody, "input.0.content.0.nonce").Raw)
@@ -637,112 +637,6 @@ func TestOpenAIGatewayService_Forward_HTTPRetryRecoveryDropsCompaction(t *testin
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.1").Exists())
 }
 
-func TestOpenAIGatewayService_Forward_ResponseFailedInvalidEncryptedContentStopsWithoutReplay(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(
-				`{"type":"response.failed","response":{"id":"resp_failed","status":"failed","error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"},"usage":{"input_tokens":1,"output_tokens":0}}}`,
-			)),
-		},
-		{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_recovered","status":"completed","usage":{"input_tokens":1,"output_tokens":2}}`)),
-		},
-	}}
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
-	account := &Account{
-		ID:          14,
-		Name:        "openai-response-failed-recovery",
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://example.com"},
-		Extra:       map[string]any{"use_responses_api": true},
-	}
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
-	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
-
-	body := []byte(`{"model":"gpt-5","stream":false,"previous_response_id":"resp_previous","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep"}]},{"type":"message","content":"hi"}]}`)
-	result, err := svc.Forward(context.Background(), c, account, body)
-
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, failoverErr.ShouldRetryNextAccount())
-	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.Len(t, upstream.bodies, 1, "response.failed must not be rewritten into a successful response")
-	require.JSONEq(t, string(body), string(upstream.bodies[0]))
-	require.Equal(t, "resp_previous", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
-	require.Equal(t, "gAAA", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
-	require.Equal(t, "keep", gjson.GetBytes(upstream.bodies[0], "input.0.summary.0.text").String())
-	require.False(t, c.Writer.Written(), "response.failed must remain a terminal error, not a committed success")
-	require.NotContains(t, rec.Body.String(), "resp_recovered")
-	require.NotContains(t, rec.Body.String(), `"status":"completed"`)
-}
-
-func TestOpenAIGatewayService_Forward_StreamingResponseFailedInvalidEncryptedContentStopsBeforeSemanticOutput(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-			Body: io.NopCloser(strings.NewReader(
-				`data: {"type":"response.failed","response":{"error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}` + "\n\n",
-			)),
-		},
-		{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-			Body: io.NopCloser(strings.NewReader(
-				`data: {"type":"response.completed","response":{"id":"resp_recovered_stream","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":2}}}` + "\n\n",
-			)),
-		},
-	}}
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
-	account := &Account{
-		ID:          15,
-		Name:        "openai-stream-response-failed-recovery",
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://example.com"},
-		Extra:       map[string]any{"use_responses_api": true},
-	}
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
-	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
-
-	body := []byte(`{"model":"gpt-5","stream":true,"previous_response_id":"resp_previous","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"message","content":"hi"}]}`)
-	result, err := svc.Forward(context.Background(), c, account, body)
-
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, failoverErr.ShouldRetryNextAccount())
-	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.Len(t, upstream.bodies, 1, "a failed SSE event must not trigger a rewritten second request")
-	require.JSONEq(t, string(body), string(upstream.bodies[0]))
-	require.Equal(t, "resp_previous", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
-	require.Equal(t, "gAAA", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
-	require.False(t, c.Writer.Written(), "an early failed SSE event must not commit a successful stream")
-	require.NotContains(t, rec.Body.String(), "resp_recovered_stream")
-	require.NotContains(t, rec.Body.String(), "response.completed")
-	require.NotContains(t, rec.Body.String(), "[DONE]")
-}
-
 func TestOpenAIGatewayService_Forward_HTTPThinkingSignatureRecoveryAndLineage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	response := func(status int, body string) *http.Response {
@@ -1095,11 +989,11 @@ func TestExtractOpenAIReasoningEffortFromBody(t *testing.T) {
 			wantValue: "max",
 		},
 		{
-			name:      "实际发送 max 不根据模型改写",
+			name:      "旧模型仍将 max 归一化为 xhigh",
 			body:      []byte(`{"reasoning_effort":"max"}`),
 			model:     "gpt-5.5",
 			wantNil:   false,
-			wantValue: "max",
+			wantValue: "xhigh",
 		},
 		{
 			name:      "minimal 保留用于计费",
@@ -1108,10 +1002,11 @@ func TestExtractOpenAIReasoningEffortFromBody(t *testing.T) {
 			wantValue: "minimal",
 		},
 		{
-			name:    "缺失实际字段时不从后缀推导",
-			body:    []byte(`{"input":"hi"}`),
-			model:   "gpt-5-high",
-			wantNil: true,
+			name:      "缺失字段时从模型后缀推导",
+			body:      []byte(`{"input":"hi"}`),
+			model:     "gpt-5-high",
+			wantNil:   false,
+			wantValue: "high",
 		},
 		{
 			name:    "未知后缀不返回",

@@ -204,7 +204,7 @@ func TestGPT55RetirementSchedulerAndDiagnosis(t *testing.T) {
 		scheduler := &defaultOpenAIAccountScheduler{}
 		ok, _ := scheduler.isAccountRequestCompatibleReason(ctx, &account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.5"})
 		require.Equal(t, typ == AccountTypeAPIKey, ok)
-		_, reason := openAICompatibleAccountEligibilityBeforeProfit(ctx, &account, PlatformOpenAI, "gpt-5.5", false, "")
+		reason := openAICompatibleAccountEligibilityFailureReasonBeforeProfit(ctx, &account, PlatformOpenAI, "gpt-5.5", false, "")
 		require.Equal(t, typ == AccountTypeAPIKey, reason == "")
 	}
 	oauth.Credentials = map[string]any{"compact_model_mapping": map[string]any{"gpt-6.1-sol": "gpt-5.5"}}

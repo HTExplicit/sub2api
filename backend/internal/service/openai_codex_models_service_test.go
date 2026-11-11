@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -28,18 +27,6 @@ import (
 
 type codexModelsHTTPUpstreamStub struct {
 	do func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error)
-}
-
-// Model projection/cache tests inject a loopback sender at the same boundary as
-// production. Wire-profile conformance is verified in codextransport, separately.
-func newCodexModelsLoopbackUpstream() HTTPUpstream {
-	return &codexModelsHTTPUpstreamStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
-		ip := net.ParseIP(req.URL.Hostname())
-		if ip == nil || !ip.IsLoopback() {
-			return nil, fmt.Errorf("model fixture must use a loopback endpoint")
-		}
-		return http.DefaultClient.Do(req)
-	}}
 }
 
 type codexModelsVisibilityAccountRepo struct {
@@ -1605,8 +1592,6 @@ func TestIsRetryableCodexModelsManifestTransportError(t *testing.T) {
 		{name: "upstream configuration error", err: errors.New("upstream error: invalid proxy")},
 		{name: "proxy connection configuration error", err: errors.New("proxy connection error: invalid configuration")},
 		{name: "canceled request", err: context.Canceled},
-		{name: "strict transport deadline", err: &codextransport.Failure{Err: context.DeadlineExceeded}},
-		{name: "strict transport truncated response", err: &codextransport.Failure{Err: io.ErrUnexpectedEOF}},
 		{
 			name: "redirect policy error",
 			err: &url.Error{
@@ -1633,8 +1618,7 @@ func TestIsRetryableCodexModelsManifestTransportError(t *testing.T) {
 			retryable: true,
 		},
 		{
-			name: "typed HTTP2 GOAWAY",
-			//lint:ignore SA1019 Keep regression coverage for GOAWAY errors from existing x/net-based clients.
+			name:      "typed HTTP2 GOAWAY",
 			err:       http2.GoAwayError{ErrCode: http2.ErrCodeNo},
 			retryable: true,
 		},
@@ -1747,7 +1731,7 @@ func TestFetchCodexModelsManifestPassthrough(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.137.0", "")
 	if err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
@@ -1800,7 +1784,7 @@ func TestFetchCodexModelsManifestAgentIdentityUsesAssertionWithoutOAuthToken(t *
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	if err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
@@ -1859,7 +1843,7 @@ func TestFetchCodexModelsManifestAgentIdentityRecoversInvalidTaskOnce(t *testing
 	openAIAgentIdentityAuthAPIBaseURL = server.URL
 	t.Cleanup(func() { openAIAgentIdentityAuthAPIBaseURL = originalAuthBase })
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream(), accountRepo: repo}
+	s := &OpenAIGatewayService{accountRepo: repo}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.NoError(t, err)
 	require.Equal(t, `{"models":[]}`, string(manifest.Body))
@@ -1893,7 +1877,7 @@ func TestFetchCodexModelsManifestAgentIdentityRedactsUpstreamErrors(t *testing.T
 	chatgptCodexModelsURL = server.URL
 	t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), key.runtimeID)
@@ -1915,7 +1899,7 @@ func TestFetchCodexModelsManifestDefaultClientVersion(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	if _, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "", ""); err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
 	}
@@ -1938,7 +1922,7 @@ func TestFetchCodexModelsManifestNotModified(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	account := newCodexModelsTestAccount()
 	first, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	if err != nil {
@@ -1978,7 +1962,7 @@ func TestFetchCodexModelsManifestUpstreamError(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	if _, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.137.0", ""); err == nil {
 		t.Fatal("expected error for upstream 500, got nil")
 	}
@@ -1988,7 +1972,7 @@ func TestFetchCodexModelsManifestMissingToken(t *testing.T) {
 	account := newCodexModelsTestAccount()
 	delete(account.Credentials, "access_token")
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	if _, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", ""); err == nil {
 		t.Fatal("expected error for missing access token, got nil")
 	}
@@ -2436,7 +2420,7 @@ func TestFetchCodexModelsManifestOAuthPreservesResponsesLite(t *testing.T) {
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.145.0", "")
 	require.NoError(t, err)
 	require.Equal(t, manifestBody, string(manifest.Body))
@@ -2542,7 +2526,7 @@ func TestFetchCodexModelsManifestAcceptsConfiguredLimitAboveLegacyBoundary(t *te
 	chatgptCodexModelsURL = server.URL
 	defer func() { chatgptCodexModelsURL = original }()
 
-	s := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{cfg: &config.Config{}}
 	s.cfg.Gateway.ModelsListReadMaxBytes = 16 << 20
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsTestAccount(), "0.144.0", "")
 	require.NoError(t, err)
@@ -3285,7 +3269,7 @@ func (r *codexModelsAccountStateRepo) SetTempUnschedulable(_ context.Context, _ 
 
 func newCodexModels401TestService(repo AccountRepository) *OpenAIGatewayService {
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
-	s := &OpenAIGatewayService{rateLimitService: rateLimitService, httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{rateLimitService: rateLimitService}
 	rateLimitService.SetAccountRuntimeBlocker(s)
 	return s
 }
@@ -3498,7 +3482,7 @@ func expireCodexModelsManifestCache(s *OpenAIGatewayService, age time.Duration) 
 
 func TestFetchCodexModelsManifestOAuthFreshWindowZeroUpstreamRequests(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-5.5"}]}`)
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	account := newCodexModelsTestAccount()
 
 	for i := 0; i < 10; i++ {
@@ -3528,7 +3512,7 @@ func TestFetchCodexModelsManifestOAuthStaleServesOldValueAndRefreshesInBackgroun
 	chatgptCodexModelsURL = server.URL
 	t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	account := newCodexModelsTestAccount()
 	first, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.NoError(t, err)
@@ -3594,7 +3578,7 @@ func TestFetchCodexModelsManifestOAuthOverdueSynchronousRefreshAndFailure(t *tes
 		chatgptCodexModelsURL = server.URL
 		t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-		s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+		s := &OpenAIGatewayService{}
 		account := newCodexModelsTestAccount()
 		_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 		require.NoError(t, err)
@@ -3630,7 +3614,7 @@ func TestFetchCodexModelsManifestOAuthOverdueSynchronousRefreshAndFailure(t *tes
 		chatgptCodexModelsURL = server.URL
 		t.Cleanup(func() { chatgptCodexModelsURL = original })
 
-		s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+		s := &OpenAIGatewayService{}
 		account := newCodexModelsTestAccount()
 		_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 		require.NoError(t, err)
@@ -3646,7 +3630,7 @@ func TestFetchCodexModelsManifestOAuthOverdueSynchronousRefreshAndFailure(t *tes
 
 func TestFetchCodexModelsManifestOAuthTokenChangeCacheMiss(t *testing.T) {
 	_, calls := newCodexModelsOAuthCacheServer(t, `{"models":[]}`)
-	s := &OpenAIGatewayService{httpUpstream: newCodexModelsLoopbackUpstream()}
+	s := &OpenAIGatewayService{}
 	account := newCodexModelsTestAccount()
 
 	_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
@@ -3679,7 +3663,6 @@ func TestFetchCodexModelsManifestOAuthSharedAcrossGroupsWithIndependentFiltering
 	t.Cleanup(func() { chatgptCodexModelsURL = original })
 
 	s := &OpenAIGatewayService{
-		httpUpstream: newCodexModelsLoopbackUpstream(),
 		accountRepo: codexModelsVisibilityAccountRepo{
 			byGroup: map[int64][]Account{
 				91: {},

@@ -32,13 +32,10 @@ func runOpenAIOAuthNonStreamRegression(t *testing.T, passthrough bool, requestBo
 		sseBody = upstreamSSE[0]
 	}
 	header := http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_7978"}}
-	rec, upstream, result, err := runOpenAIOAuthNonStreamRegressionWithHeader(t, passthrough, requestBody, header, sseBody)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	return rec, upstream, result
+	return runOpenAIOAuthNonStreamRegressionWithHeader(t, passthrough, requestBody, header, sseBody)
 }
 
-func runOpenAIOAuthNonStreamRegressionWithHeader(t *testing.T, passthrough bool, requestBody string, upstreamHeader http.Header, sseBody string) (*httptest.ResponseRecorder, *httpUpstreamRecorder, *OpenAIForwardResult, error) {
+func runOpenAIOAuthNonStreamRegressionWithHeader(t *testing.T, passthrough bool, requestBody string, upstreamHeader http.Header, sseBody string) (*httptest.ResponseRecorder, *httpUpstreamRecorder, *OpenAIForwardResult) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -67,7 +64,9 @@ func runOpenAIOAuthNonStreamRegressionWithHeader(t *testing.T, passthrough bool,
 	}
 
 	result, err := svc.Forward(context.Background(), c, account, []byte(requestBody))
-	return rec, upstream, result, err
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	return rec, upstream, result
 }
 
 func requireSingleJSONResponsesObject(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -118,12 +117,11 @@ const openAINonStreamIncompleteSSE = "event: response.created\n" +
 
 func TestOpenAIGatewayService_OAuthStreamFalseIncompleteReturnsJSON(t *testing.T) {
 	for _, passthrough := range []bool{true, false} {
-		rec, _, result, err := runOpenAIOAuthNonStreamRegressionWithHeader(t, passthrough,
+		rec, _, result := runOpenAIOAuthNonStreamRegression(t, passthrough,
 			`{"model":"gpt-5.4","instructions":"x","input":"hi","max_output_tokens":16,"stream":false}`,
-			http.Header{"Content-Type": []string{"text/event-stream"}}, openAINonStreamIncompleteSSE)
+			openAINonStreamIncompleteSSE)
 
-		require.ErrorContains(t, err, "upstream response terminated with incomplete")
-		require.Nil(t, result, "an incomplete response is delivered as JSON without reporting a successful forwarding result")
+		require.False(t, result.Stream)
 		require.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"), "passthrough=%v Content-Type=%q", passthrough, rec.Header().Get("Content-Type"))
 		var obj map[string]any
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &obj), "passthrough=%v body=%s", passthrough, rec.Body.String())
@@ -131,8 +129,8 @@ func TestOpenAIGatewayService_OAuthStreamFalseIncompleteReturnsJSON(t *testing.T
 		require.Equal(t, "incomplete", obj["status"])
 		require.Equal(t, "max_output_tokens", gjson.GetBytes(rec.Body.Bytes(), "incomplete_details.reason").String())
 		require.Equal(t, "Hel", gjson.GetBytes(rec.Body.Bytes(), "output.0.content.0.text").String())
-		require.EqualValues(t, 5, gjson.GetBytes(rec.Body.Bytes(), "usage.input_tokens").Int())
-		require.EqualValues(t, 16, gjson.GetBytes(rec.Body.Bytes(), "usage.output_tokens").Int())
+		require.Equal(t, 5, result.Usage.InputTokens)
+		require.Equal(t, 16, result.Usage.OutputTokens)
 	}
 }
 
@@ -140,12 +138,9 @@ func TestOpenAIGatewayService_OAuthStreamFalseCancelledReturnsJSON(t *testing.T)
 	cancelledSSE := "event: response.cancelled\n" +
 		`data: {"type":"response.cancelled","response":{"id":"resp_7978","object":"response","status":"cancelled","output":[],"usage":{"input_tokens":5,"output_tokens":0,"total_tokens":5}}}` + "\n\n"
 	for _, passthrough := range []bool{true, false} {
-		rec, _, result, err := runOpenAIOAuthNonStreamRegressionWithHeader(t, passthrough,
-			`{"model":"gpt-5.4","instructions":"x","input":"hi","stream":false}`,
-			http.Header{"Content-Type": []string{"text/event-stream"}}, cancelledSSE)
+		rec, _, _ := runOpenAIOAuthNonStreamRegression(t, passthrough,
+			`{"model":"gpt-5.4","instructions":"x","input":"hi","stream":false}`, cancelledSSE)
 
-		require.ErrorContains(t, err, "upstream response terminated with cancelled")
-		require.Nil(t, result, "cancellation must not report a successful forwarding result")
 		require.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"), "passthrough=%v Content-Type=%q", passthrough, rec.Header().Get("Content-Type"))
 		require.Equal(t, "cancelled", gjson.GetBytes(rec.Body.Bytes(), "status").String(), "passthrough=%v body=%s", passthrough, rec.Body.String())
 	}
@@ -156,12 +151,10 @@ func TestOpenAIGatewayService_OAuthStreamFalseCancelledReturnsJSON(t *testing.T)
 func TestOpenAIGatewayService_OAuthStreamFalseWithoutUpstreamContentTypeReturnsJSON(t *testing.T) {
 	for _, passthrough := range []bool{true, false} {
 		header := http.Header{"x-request-id": []string{"rid_7978"}}
-		rec, upstream, result, err := runOpenAIOAuthNonStreamRegressionWithHeader(t, passthrough,
+		rec, upstream, result := runOpenAIOAuthNonStreamRegressionWithHeader(t, passthrough,
 			`{"model":"gpt-5.4","instructions":"x","input":"Reply with exactly OK.","stream":false}`,
 			header, openAINonStreamRegressionSSE)
 
-		require.NoError(t, err)
-		require.NotNil(t, result)
 		require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool(), "passthrough=%v", passthrough)
 		require.False(t, result.Stream, "passthrough=%v", passthrough)
 		requireSingleJSONResponsesObject(t, rec)

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -84,25 +83,20 @@ func (w *openAIResponseFlushRecorder) snapshot() (string, []string) {
 }
 
 type stagedOpenAISSEReadCloser struct {
-	segments        [][]byte
-	gates           []<-chan struct{}
-	waiting         []chan struct{}
-	allSegmentsRead chan struct{}
-	closed          chan struct{}
-	closeOnce       sync.Once
-	current         []byte
-	index           int
+	segments   [][]byte
+	gates      []<-chan struct{}
+	waiting    []chan struct{}
+	eofReached chan struct{}
+	current    []byte
+	index      int
 }
 
 func (r *stagedOpenAISSEReadCloser) Read(data []byte) (int, error) {
 	if len(r.current) == 0 {
 		if r.index >= len(r.segments) {
-			if r.allSegmentsRead != nil {
-				close(r.allSegmentsRead)
-				r.allSegmentsRead = nil
-			}
-			if r.closed != nil {
-				<-r.closed
+			if r.eofReached != nil {
+				close(r.eofReached)
+				r.eofReached = nil
 			}
 			return 0, io.EOF
 		}
@@ -121,12 +115,7 @@ func (r *stagedOpenAISSEReadCloser) Read(data []byte) (int, error) {
 	return n, nil
 }
 
-func (r *stagedOpenAISSEReadCloser) Close() error {
-	if r.closed != nil {
-		r.closeOnce.Do(func() { close(r.closed) })
-	}
-	return nil
-}
+func (r *stagedOpenAISSEReadCloser) Close() error { return nil }
 
 type openAIResponseFlushReadError struct {
 	payload []byte
@@ -147,16 +136,12 @@ func (r *openAIResponseFlushReadError) Read(data []byte) (int, error) {
 
 func (r *openAIResponseFlushReadError) Close() error { return nil }
 
-func openAIResponseFlushCompletedData(text string) string {
-	return `data: {"type":"response.completed","response":{"id":"resp_flush","created_at":1700000000,"status":"completed","output":[{"type":"message","id":"msg_flush","role":"assistant","status":"completed","content":[{"type":"output_text","text":` + strconv.Quote(text) + `}]}],"usage":{"input_tokens":9,"output_tokens":3}}}`
-}
-
 func TestOpenAIResponseFlush_SlowEventsFlushOnceAtBoundaries(t *testing.T) {
 	events := []string{
 		`data: {"type":"response.output_text.delta","delta":"a"}`,
 		`data: {"type":"response.output_text.delta","delta":"b"}`,
 		`data: {"type":"response.output_text.delta","delta":"c"}`,
-		openAIResponseFlushCompletedData("abc"),
+		`data: [DONE]`,
 	}
 	body := strings.Join(events, "\n\n") + "\n\n"
 	recorder := newOpenAIResponseFlushRecorder()
@@ -176,7 +161,7 @@ func TestOpenAIResponseFlush_SlowEventsFlushOnceAtBoundaries(t *testing.T) {
 func TestOpenAIResponseFlush_DataQueuedButBlankDrainsFlushesOnce(t *testing.T) {
 	first := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"first\"}\n\n"
 	second := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"second\"}\n\n"
-	terminal := openAIResponseFlushCompletedData("firstsecond") + "\n\n"
+	terminal := "data: [DONE]\n\n"
 	allowSecond := make(chan struct{})
 	allowTerminal := make(chan struct{})
 	terminalWaiting := make(chan struct{})
@@ -213,17 +198,15 @@ func TestOpenAIResponseFlush_BurstDoesNotIncreaseFlushes(t *testing.T) {
 	burst := strings.Join([]string{
 		`data: {"type":"response.output_text.delta","delta":"second"}`,
 		`data: {"type":"response.output_text.delta","delta":"third"}`,
-		openAIResponseFlushCompletedData("firstsecondthird"),
+		`data: [DONE]`,
 	}, "\n\n") + "\n\n"
 	allowBurst := make(chan struct{})
-	allSegmentsRead := make(chan struct{})
+	eofReached := make(chan struct{})
 	reader := &stagedOpenAISSEReadCloser{
-		segments:        [][]byte{[]byte(first), []byte(burst)},
-		gates:           []<-chan struct{}{nil, allowBurst},
-		allSegmentsRead: allSegmentsRead,
-		closed:          make(chan struct{}),
+		segments:   [][]byte{[]byte(first), []byte(burst)},
+		gates:      []<-chan struct{}{nil, allowBurst},
+		eofReached: eofReached,
 	}
-	t.Cleanup(func() { _ = reader.Close() })
 	releaseFirstFlush := make(chan struct{})
 	recorder := newOpenAIResponseFlushRecorder()
 	recorder.blockFlush = 1
@@ -233,9 +216,7 @@ func TestOpenAIResponseFlush_BurstDoesNotIncreaseFlushes(t *testing.T) {
 
 	waitOpenAIResponseFlushSignal(t, recorder.flushBlocked)
 	close(allowBurst)
-	// The burst is queued while the first flush is blocked. The upstream then
-	// stays open, so returning after the terminal cannot depend on EOF.
-	waitOpenAIResponseFlushSignal(t, allSegmentsRead)
+	waitOpenAIResponseFlushSignal(t, eofReached)
 	close(releaseFirstFlush)
 
 	require.NoError(t, <-errCh)
@@ -248,10 +229,9 @@ func TestOpenAIResponseFlush_BurstDoesNotIncreaseFlushes(t *testing.T) {
 }
 
 func TestOpenAIResponseFlush_CommentAndEOFOnlyFlushCompleteResidual(t *testing.T) {
-	terminal := openAIResponseFlushCompletedData("a") + "\n"
 	body := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"a\"}\n\n" +
 		": upstream-comment\n\n" +
-		terminal
+		"data: [DONE]\n"
 	recorder := newOpenAIResponseFlushRecorder()
 
 	result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{})
@@ -263,11 +243,11 @@ func TestOpenAIResponseFlush_CommentAndEOFOnlyFlushCompleteResidual(t *testing.T
 	require.Len(t, flushes, 3)
 	require.True(t, strings.HasSuffix(flushes[0], "\n\n"))
 	require.True(t, strings.HasSuffix(flushes[1], "\n\n"))
-	require.True(t, strings.HasSuffix(flushes[2], terminal), "EOF must flush only the remaining bytes")
+	require.True(t, strings.HasSuffix(flushes[2], "data: [DONE]\n"), "EOF must flush only the remaining bytes")
 }
 
-func TestOpenAIResponseFlush_TerminalBoundaryReturnsBeforeReadError(t *testing.T) {
-	body := openAIResponseFlushCompletedData("done") + "\n\n"
+func TestOpenAIResponseFlush_TerminalReadErrorFlushesResidual(t *testing.T) {
+	body := "data: [DONE]\n"
 	recorder := newOpenAIResponseFlushRecorder()
 
 	result, err := runOpenAIResponseFlushTest(recorder, &openAIResponseFlushReadError{payload: []byte(body)}, config.GatewayConfig{})
@@ -323,7 +303,6 @@ func TestOpenAIResponseFlush_CanceledAfterOutputFlushesResidualWithoutErrorEvent
 }
 
 func TestOpenAIResponseFlush_KeepaliveFlushesImmediately(t *testing.T) {
-	terminal := openAIResponseFlushCompletedData("done") + "\n\n"
 	recorder := newOpenAIResponseFlushRecorder()
 	reader, writer := io.Pipe()
 	resultCh, errCh := runOpenAIResponseFlushTestAsync(recorder, reader, config.GatewayConfig{StreamKeepaliveInterval: 1})
@@ -331,14 +310,14 @@ func TestOpenAIResponseFlush_KeepaliveFlushesImmediately(t *testing.T) {
 	waitOpenAIResponseFlushCount(t, recorder, 1)
 	_, flushes := recorder.snapshot()
 	require.Equal(t, ":\n\n", flushes[0])
-	_, err := writer.Write([]byte(terminal))
+	_, err := writer.Write([]byte("data: [DONE]\n\n"))
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
 
 	require.NoError(t, <-errCh)
 	require.NotNil(t, <-resultCh)
 	gotBody, flushes := recorder.snapshot()
-	require.Equal(t, ":\n\n"+terminal, gotBody)
+	require.Equal(t, ":\n\ndata: [DONE]\n\n", gotBody)
 	require.Len(t, flushes, 2)
 }
 
@@ -351,7 +330,7 @@ func TestOpenAIResponseFlush_KeepaliveDoesNotSplitOpenEvent(t *testing.T) {
 	}
 	partialEvent := strings.Join(dataLines, "\n") + "\n"
 	completeEvent := partialEvent + "\n"
-	terminal := openAIResponseFlushCompletedData(strings.Repeat("a", len(dataLines))) + "\n\n"
+	terminal := "data: [DONE]\n\n"
 	allowBlank := make(chan struct{})
 	allowTerminal := make(chan struct{})
 	blankWaiting := make(chan struct{})
@@ -408,11 +387,8 @@ func TestOpenAIResponseFlush_FailedAndErrorEventsFlushAtBoundaries(t *testing.T)
 		require.Contains(t, flushes[1], "response.failed")
 	})
 
-	t.Run("bare error waits for authoritative failed usage", func(t *testing.T) {
-		// The bare error is not a complete response. Preserve the later failed
-		// response's identity and usage without forwarding two failure events.
+	t.Run("bare error synthesizes failed before done", func(t *testing.T) {
 		body := "data: {\"type\":\"error\",\"error\":{\"message\":\"failed\"}}\n\n" +
-			`data: {"type":"response.failed","response":{"id":"resp_authoritative_failure","status":"failed","output":[],"error":{"code":"content_policy","message":"blocked"},"usage":{"input_tokens":3,"output_tokens":1}}}` + "\n\n" +
 			"data: [DONE]\n\n"
 		recorder := newOpenAIResponseFlushRecorder()
 
@@ -420,93 +396,163 @@ func TestOpenAIResponseFlush_FailedAndErrorEventsFlushAtBoundaries(t *testing.T)
 
 		require.Error(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, 3, result.usage.InputTokens)
-		require.Equal(t, 1, result.usage.OutputTokens)
 		gotBody, flushes := recorder.snapshot()
 		require.NotContains(t, gotBody, `"type":"error"`)
-		require.NotContains(t, gotBody, "[DONE]")
-		require.Equal(t, 1, strings.Count(gotBody, `"type":"response.failed"`))
-		require.Contains(t, gotBody, `"id":"resp_authoritative_failure"`)
-		require.Len(t, flushes, 1)
-		require.True(t, strings.HasSuffix(flushes[0], "\n\n"))
-	})
-
-	t.Run("bare error without a response terminal remains a failure", func(t *testing.T) {
-		body := "data: {\"type\":\"error\",\"error\":{\"code\":\"invalid_request\",\"message\":\"bad request\"},\"usage\":{\"input_tokens\":6,\"output_tokens\":0}}\n\n" +
-			"data: [DONE]\n\n"
-		recorder := newOpenAIResponseFlushRecorder()
-
-		result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{})
-
-		require.Error(t, err)
-		require.NotNil(t, result)
-		require.Equal(t, 6, result.usage.InputTokens)
-		gotBody, flushes := recorder.snapshot()
-		require.NotContains(t, gotBody, `"type":"error"`)
-		require.NotContains(t, gotBody, "[DONE]")
 		require.Equal(t, 1, strings.Count(gotBody, `"type":"response.failed"`))
 		require.Contains(t, gotBody, `"status":"failed"`)
+		require.NotContains(t, gotBody, "[DONE]")
 		require.Len(t, flushes, 1)
-		require.True(t, strings.HasSuffix(flushes[0], "\n\n"))
+	})
+
+	t.Run("bare error forwards following failed and drains terminal usage", func(t *testing.T) {
+		errorEvent := "data: {\"type\":\"error\",\"error\":{\"code\":\"invalid_request\",\"message\":\"bad request\"}}\n\n"
+		body := errorEvent +
+			"data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed\",\"usage\":{\"input_tokens\":9,\"output_tokens\":2},\"error\":{\"code\":\"invalid_request\",\"message\":\"bad request\"}}}\n\n" +
+			"data: [DONE]\n\n"
+		recorder := newOpenAIResponseFlushRecorder()
+
+		result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{})
+
+		require.Error(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, 9, result.usage.InputTokens)
+		require.Equal(t, 2, result.usage.OutputTokens)
+		gotBody, flushes := recorder.snapshot()
+		require.NotContains(t, gotBody, `"type":"error"`)
+		require.Equal(t, 1, strings.Count(gotBody, `"type":"response.failed"`))
+		require.Contains(t, gotBody, `"id":"resp_failed"`)
+		require.NotContains(t, gotBody, "[DONE]")
+		require.Len(t, flushes, 1)
+	})
+
+	t.Run("non-retryable error event flushes at boundary", func(t *testing.T) {
+		body := "data: {\"type\":\"error\",\"error\":{\"code\":\"invalid_request\",\"message\":\"bad request\"}}\n\n" +
+			"data: [DONE]\n\n"
+		recorder := newOpenAIResponseFlushRecorder()
+
+		result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{})
+
+		require.Error(t, err)
+		require.NotNil(t, result)
+		gotBody, flushes := recorder.snapshot()
+		require.NotContains(t, gotBody, `"type":"error"`)
+		require.Equal(t, 1, strings.Count(gotBody, `"type":"response.failed"`))
+		require.Len(t, flushes, 1)
 	})
 }
 
-func TestOpenAIResponseFlush_ContinuationFailedEventIsNeverForwarded(t *testing.T) {
+func TestOpenAIResponseFlush_BareErrorFollowedByCompletedUsesCompletedTerminal(t *testing.T) {
+	body := "data: {\"type\":\"error\",\"error\":{\"code\":\"transient\",\"message\":\"retrying\"}}\n\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_recovered\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":7,\"output_tokens\":3}}}\n\n"
+	recorder := newOpenAIResponseFlushRecorder()
+
+	result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 7, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
+	gotBody, _ := recorder.snapshot()
+	require.NotContains(t, gotBody, `"type":"error"`)
+	require.NotContains(t, gotBody, `"type":"response.failed"`)
+	require.Contains(t, gotBody, `"type":"response.completed"`)
+}
+
+func TestOpenAIResponseFlush_CompatibleAPIKeyDoesNotUseCodexBareErrorSynthesis(t *testing.T) {
+	body := "data: {\"type\":\"error\",\"error\":{\"code\":\"provider_error\",\"message\":\"provider failed\"}}\n\n"
+	recorder := newOpenAIResponseFlushRecorder()
+	account := &Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	result, err := runOpenAIResponseFlushTestWithAccount(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{}, account)
+
+	require.Error(t, err)
+	require.NotNil(t, result)
+	gotBody, _ := recorder.snapshot()
+	require.Contains(t, gotBody, `"type":"error"`)
+	require.NotContains(t, gotBody, `"type":"response.failed"`)
+}
+
+func TestOpenAIResponseFlush_RecentBareErrorAllowsCompletedBeforeIdleTimeout(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer func() { _ = writer.Close() }()
+	recorder := newOpenAIResponseFlushRecorder()
+	resultCh, errCh := runOpenAIResponseFlushTestAsync(recorder, reader, config.GatewayConfig{StreamDataIntervalTimeout: 1})
+
+	// Place the bare error shortly before the first ticker firing. It is fresh
+	// data, so the ticker must leave the stream open for an authoritative event.
+	time.Sleep(700 * time.Millisecond)
+	_, err := io.WriteString(writer, "data: {\"type\":\"error\",\"error\":{\"code\":\"transient\",\"message\":\"retrying\"}}\n\n")
+	require.NoError(t, err)
+	time.Sleep(500 * time.Millisecond)
+	_, err = io.WriteString(writer, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_late\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":1}}}\n\n")
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	require.NoError(t, <-errCh)
+	result := <-resultCh
+	require.NotNil(t, result)
+	require.Equal(t, 5, result.usage.InputTokens)
+	gotBody, _ := recorder.snapshot()
+	require.Contains(t, gotBody, `"type":"response.completed"`)
+	require.NotContains(t, gotBody, `"type":"response.failed"`)
+}
+
+func TestOpenAIResponseFlush_BareErrorTimeoutSynthesizesFailed(t *testing.T) {
 	tests := []struct {
-		name       string
-		prefix     string
-		wantPrefix string
+		name string
+		cfg  config.GatewayConfig
 	}{
-		{name: "before semantic output"},
 		{
-			name:       "after semantic output",
-			prefix:     "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
-			wantPrefix: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
+			name: "stream interval timeout",
+			cfg:  config.GatewayConfig{StreamDataIntervalTimeout: 1},
+		},
+		{
+			name: "first output timeout",
+			cfg:  config.GatewayConfig{OpenAIFirstOutputTimeoutSeconds: 1},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			failed := "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"previous_response_not_found\",\"message\":\"previous response not found\"}}}\n\n"
+			reader, writer := io.Pipe()
+			defer func() { _ = writer.Close() }()
 			recorder := newOpenAIResponseFlushRecorder()
+			resultCh, errCh := runOpenAIResponseFlushTestAsync(recorder, reader, tt.cfg)
 
-			result, err := runOpenAIResponseFlushTest(
-				recorder,
-				io.NopCloser(strings.NewReader(tt.prefix+failed)),
-				config.GatewayConfig{},
-			)
+			_, writeErr := io.WriteString(writer, "data: {\"type\":\"error\",\"error\":{\"code\":\"invalid_request\",\"message\":\"bad request\"}}\n\n")
+			require.NoError(t, writeErr)
 
-			require.Error(t, err)
-			require.NotNil(t, result)
-			var failoverErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &failoverErr)
-			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-			body, _ := recorder.snapshot()
-			require.Equal(t, tt.wantPrefix, body)
-			require.NotContains(t, body, "previous_response_not_found")
-			require.False(t, failoverErr.ShouldRetryNextAccount())
-			require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
+			select {
+			case err := <-errCh:
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "upstream response failed")
+			case <-time.After(3 * time.Second):
+				t.Fatal("timed out waiting for bare error terminal synthesis")
+			}
+			require.NotNil(t, <-resultCh)
+			body, flushes := recorder.snapshot()
+			require.NotContains(t, body, `"type":"error"`)
+			require.Equal(t, 1, strings.Count(body, `"type":"response.failed"`))
+			require.Len(t, flushes, 1)
 		})
 	}
 }
 
-func TestOpenAIResponseFlush_RejectsDoneWithoutAuthoritativeTerminal(t *testing.T) {
+func TestOpenAIResponseFlush_ReusedTypeKeepsSSEBytesAndTerminalSemantics(t *testing.T) {
 	tests := []struct {
 		name       string
 		body       string
-		wantBody   string
 		flushCount int
 	}{
 		{
 			name:       "whitespace around done",
 			body:       "data: \t[DONE]  \n\n",
-			flushCount: 0,
+			flushCount: 1,
 		},
 		{
 			name:       "invalid JSON before done",
 			body:       "data: {\"type\":\n\ndata: [DONE]\n\n",
-			wantBody:   "data: {\"type\":\n\n",
-			flushCount: 1,
+			flushCount: 2,
 		},
 	}
 
@@ -516,11 +562,10 @@ func TestOpenAIResponseFlush_RejectsDoneWithoutAuthoritativeTerminal(t *testing.
 
 			result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(tt.body)), config.GatewayConfig{})
 
-			require.Error(t, err)
+			require.NoError(t, err)
 			require.NotNil(t, result)
 			gotBody, flushes := recorder.snapshot()
-			require.Equal(t, tt.wantBody, gotBody)
-			require.NotContains(t, gotBody, "[DONE]")
+			require.Equal(t, tt.body, gotBody)
 			require.Len(t, flushes, tt.flushCount)
 		})
 	}
@@ -545,7 +590,7 @@ func TestOpenAIResponseFlush_ClientDisconnectStillDrainsUsage(t *testing.T) {
 }
 
 func runOpenAIResponseFlushTest(recorder *openAIResponseFlushRecorder, body io.ReadCloser, gatewayCfg config.GatewayConfig) (*openaiStreamingResult, error) {
-	return runOpenAIResponseFlushTestWithAccount(recorder, body, gatewayCfg, &Account{ID: 1, Platform: PlatformOpenAI})
+	return runOpenAIResponseFlushTestWithAccount(recorder, body, gatewayCfg, &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth})
 }
 
 func runOpenAIResponseFlushTestWithAccount(recorder *openAIResponseFlushRecorder, body io.ReadCloser, gatewayCfg config.GatewayConfig, account *Account) (*openaiStreamingResult, error) {

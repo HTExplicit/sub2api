@@ -5,10 +5,7 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,937 +13,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type runtimeBreakerTestEntry struct {
-	blockUntil time.Time
-	reason     string
-	owner      string
+type oauth429RateLimitRepo struct {
+	mockAccountRepoForGemini
+	setRateLimitedCalls       int
+	lastRateLimitedUntil      time.Time
+	setModelRateLimitCalls    int
+	lastModelRateLimitKey     string
+	lastModelRateLimitedUntil time.Time
 }
 
-type runtimeBreakerTestCache struct {
-	stubGatewayCache
-	mu            sync.Mutex
-	entries       map[string]runtimeBreakerTestEntry
-	renewCalls    int
-	renewFailures int
-	releaseCalls  int
-}
-
-func runtimeBreakerTestKey(accountID int64, model string) string {
-	return fmt.Sprintf("%d:%s", accountID, normalizeOpenAIAccountModelTransientModel(model))
-}
-
-func (c *runtimeBreakerTestCache) BlockOpenAIRuntimeBreaker(_ context.Context, accountID int64, model, reason string, ttl time.Duration) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.entries == nil {
-		c.entries = make(map[string]runtimeBreakerTestEntry)
-	}
-	key := runtimeBreakerTestKey(accountID, model)
-	entry := c.entries[key]
-	requestedUntil := time.Now().Add(ttl)
-	if entry.blockUntil.Before(requestedUntil) {
-		entry.blockUntil = requestedUntil
-		entry.reason = reason
-	}
-	entry.owner = ""
-	c.entries[key] = entry
+func (r *oauth429RateLimitRepo) SetRateLimited(_ context.Context, _ int64, until time.Time) error {
+	r.setRateLimitedCalls++
+	r.lastRateLimitedUntil = until
 	return nil
 }
 
-func (c *runtimeBreakerTestCache) AllowOpenAIRuntimeBreakerProbe(_ context.Context, accountID int64, model, owner string, _ time.Duration) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
-	if !ok {
-		return true, nil
-	}
-	if time.Now().Before(entry.blockUntil) {
-		return false, nil
-	}
-	if entry.owner == "" {
-		entry.owner = owner
-		c.entries[runtimeBreakerTestKey(accountID, model)] = entry
-		return true, nil
-	}
-	return entry.owner == owner, nil
-}
-
-func (c *runtimeBreakerTestCache) AllowOpenAIRuntimeBreakerProbes(_ context.Context, accountID int64, models []string, owner string, _ time.Duration) (bool, []string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	now := time.Now()
-	for _, model := range models {
-		entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
-		if !ok {
-			continue
-		}
-		if now.Before(entry.blockUntil) || (entry.owner != "" && entry.owner != owner) {
-			return false, nil, nil
-		}
-	}
-	claimed := make([]string, 0, len(models))
-	for _, model := range models {
-		key := runtimeBreakerTestKey(accountID, model)
-		entry, ok := c.entries[key]
-		if !ok {
-			continue
-		}
-		entry.owner = owner
-		c.entries[key] = entry
-		claimed = append(claimed, model)
-	}
-	return true, claimed, nil
-}
-
-func (c *runtimeBreakerTestCache) RenewOpenAIRuntimeBreakerProbes(_ context.Context, accountID int64, models []string, owner string, _ time.Duration) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.renewCalls++
-	if c.renewFailures > 0 {
-		c.renewFailures--
-		return false, nil
-	}
-	for _, model := range models {
-		entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
-		if !ok || entry.owner != owner {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-func TestOpenAIRuntimeBreaker_FailedPromotionDoesNotReturnSelection(t *testing.T) {
-	cache := &runtimeBreakerTestCache{
-		entries: map[string]runtimeBreakerTestEntry{
-			runtimeBreakerTestKey(4718, ""):        {blockUntil: time.Now().Add(-time.Second)},
-			runtimeBreakerTestKey(4718, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-		},
-		renewFailures: 1,
-	}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4718, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	released := false
-	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "promotion-owner")
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
-		Account:     account,
-		Acquired:    true,
-		ReleaseFunc: func() { released = true },
-	})
-
-	require.Nil(t, selection)
-	require.True(t, released, "failed lease promotion must release the acquired account slot")
-	cache.mu.Lock()
-	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
-	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
-	cache.mu.Unlock()
-	require.Empty(t, accountOwner)
-	require.Empty(t, modelOwner)
-}
-
-func (c *runtimeBreakerTestCache) ReleaseOpenAIRuntimeBreakerProbes(_ context.Context, accountID int64, models []string, owner string) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.releaseCalls++
-	for _, model := range models {
-		entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
-		if ok && entry.owner != "" && entry.owner != owner {
-			return false, nil
-		}
-	}
-	released := false
-	for _, model := range models {
-		key := runtimeBreakerTestKey(accountID, model)
-		entry, ok := c.entries[key]
-		if ok && entry.owner == owner {
-			entry.owner = ""
-			c.entries[key] = entry
-			released = true
-		}
-	}
-	return released, nil
-}
-
-func (c *runtimeBreakerTestCache) ClearOpenAIRuntimeBreaker(_ context.Context, accountID int64, model, owner string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	key := runtimeBreakerTestKey(accountID, model)
-	entry, ok := c.entries[key]
-	if ok && !time.Now().Before(entry.blockUntil) && entry.owner == owner {
-		delete(c.entries, key)
-	}
+func (r *oauth429RateLimitRepo) SetModelRateLimit(_ context.Context, _ int64, scope string, until time.Time, _ ...string) error {
+	r.setModelRateLimitCalls++
+	r.lastModelRateLimitKey = scope
+	r.lastModelRateLimitedUntil = until
 	return nil
 }
 
-func (c *runtimeBreakerTestCache) ClearAllOpenAIRuntimeBreakers(_ context.Context, accountID int64) error {
-	c.mu.Lock()
-	for key := range c.entries {
-		if strings.HasPrefix(key, fmt.Sprintf("%d:", accountID)) {
-			delete(c.entries, key)
-		}
-	}
-	c.mu.Unlock()
-	return nil
-}
-
-type pausedClearRuntimeBreakerTestCache struct {
-	*runtimeBreakerTestCache
-	started chan struct{}
-	proceed chan struct{}
-}
-
-func (c *pausedClearRuntimeBreakerTestCache) ClearAllOpenAIRuntimeBreakers(ctx context.Context, accountID int64) error {
-	close(c.started)
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-c.proceed:
-		return c.runtimeBreakerTestCache.ClearAllOpenAIRuntimeBreakers(ctx, accountID)
-	}
-}
-
-func TestOpenAIRuntimeBreaker_ClearDoesNotDeleteConcurrentNewBlock(t *testing.T) {
-	baseCache := &runtimeBreakerTestCache{}
-	cache := &pausedClearRuntimeBreakerTestCache{
-		runtimeBreakerTestCache: baseCache,
-		started:                 make(chan struct{}),
-		proceed:                 make(chan struct{}),
-	}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4720, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "old")
-
-	clearDone := make(chan struct{})
-	go func() {
-		svc.ClearAccountSchedulingBlock(account.ID)
-		close(clearDone)
-	}()
-	select {
-	case <-cache.started:
-	case <-time.After(time.Second):
-		close(cache.proceed)
-		t.Fatal("clear did not reach the Redis boundary")
-	}
-
-	blockDone := make(chan struct{})
-	go func() {
-		svc.BlockAccountScheduling(account, time.Now().Add(2*time.Minute), "new")
-		close(blockDone)
-	}()
-	select {
-	case <-blockDone:
-		close(cache.proceed)
-		t.Fatal("new block must wait until clear has completed")
-	case <-time.After(20 * time.Millisecond):
-	}
-	close(cache.proceed)
-
-	select {
-	case <-clearDone:
-	case <-time.After(time.Second):
-		t.Fatal("clear did not finish")
-	}
-	select {
-	case <-blockDone:
-	case <-time.After(time.Second):
-		t.Fatal("new block did not finish")
-	}
-
-	baseCache.mu.Lock()
-	entry := baseCache.entries[runtimeBreakerTestKey(account.ID, "")]
-	baseCache.mu.Unlock()
-	require.Equal(t, "new", entry.reason)
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-}
-
-func TestOpenAIRuntimeBreaker_PersistsAcrossServiceInstancesAndClaimsHalfOpen(t *testing.T) {
-	cache := &runtimeBreakerTestCache{}
-	account := &Account{ID: 4705, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	first := &OpenAIGatewayService{cache: cache}
-	first.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-		StatusCode: http.StatusServiceUnavailable,
-	})
-
-	cache.mu.Lock()
-	entry := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
-	cache.mu.Unlock()
-	require.Equal(t, "retry_exhausted_transient", entry.reason)
-	require.True(t, entry.blockUntil.After(time.Now()))
-
-	second := &OpenAIGatewayService{cache: cache}
-	require.True(t, second.isOpenAIAccountRequestRuntimeBlockedContext(
-		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-2"), account, "gpt-5.4",
-	))
-
-	cache.mu.Lock()
-	entry = cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
-	entry.blockUntil = time.Now().Add(-time.Second)
-	cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")] = entry
-	cache.mu.Unlock()
-
-	owner1 := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1")
-	owner2 := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-2")
-	require.False(t, second.isOpenAIAccountRequestRuntimeBlockedContext(owner1, account, "gpt-5.4"))
-	require.True(t, (&OpenAIGatewayService{cache: cache}).isOpenAIAccountRequestRuntimeBlockedContext(owner2, account, "gpt-5.4"))
-	require.False(t, second.isOpenAIAccountRequestRuntimeBlockedContext(owner1, account, "gpt-5.4"))
-
-	second.ReportOpenAIAccountScheduleResultForSelection(
-		&AccountSelectionResult{runtimeBreakerProbeOwner: "stale-owner"},
-		account.ID,
-		"gpt-5.4",
-		true,
-		nil,
-	)
-	require.True(t, (&OpenAIGatewayService{cache: cache}).isOpenAIAccountRequestRuntimeBlockedContext(owner2, account, "gpt-5.4"))
-	second.ReportOpenAIAccountScheduleResultForSelection(
-		&AccountSelectionResult{runtimeBreakerProbeOwner: "owner-1"},
-		account.ID,
-		"gpt-5.4",
-		true,
-		nil,
-	)
-	owner3 := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-3")
-	require.False(t, (&OpenAIGatewayService{cache: cache}).isOpenAIAccountRequestRuntimeBlockedContext(owner3, account, "gpt-5.4"))
-}
-
-func TestOpenAIRuntimeBreaker_RechecksRedisAfterAnAllowedDecision(t *testing.T) {
-	cache := &runtimeBreakerTestCache{}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4708, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1")
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	require.NoError(t, cache.BlockOpenAIRuntimeBreaker(
-		context.Background(),
-		account.ID,
-		"",
-		"concurrent_failure",
-		time.Minute,
-	))
-
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"),
-		"an allowed decision must not hide a breaker opened later in the same request")
-}
-
-func TestOpenAIRuntimeBreaker_DoesNotPartiallyClaimAccountWhenModelScopeIsBlocked(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4709, ""): {
-			blockUntil: time.Now().Add(-time.Second),
-		},
-		runtimeBreakerTestKey(4709, "gpt-5.4"): {
-			blockUntil: time.Now().Add(time.Minute),
-		},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4709, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(
-		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"),
-		account,
-		"gpt-5.4",
-	))
-
-	cache.mu.Lock()
-	accountScope := cache.entries[runtimeBreakerTestKey(account.ID, "")]
-	cache.mu.Unlock()
-	require.Empty(t, accountScope.owner,
-		"denying the model scope must atomically roll back the earlier account claim")
-}
-
-func TestOpenAIStrictContinuation_RuntimeBlockStopsFallbackAndPreservesResponseBinding(t *testing.T) {
-	ctx := context.Background()
-	groupID := int64(47)
-	bound := Account{
-		ID:          4712,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		Priority:    1,
-		Extra: map[string]any{
-			"openai_apikey_responses_websockets_v2_enabled": true,
-		},
-	}
-	fallback := bound
-	fallback.ID = 4713
-	fallback.Priority = 100
-	cache := &runtimeBreakerTestCache{}
-	store := NewOpenAIWSStateStore(cache)
-	svc := &OpenAIGatewayService{
-		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
-		cache:              cache,
-		cfg:                newOpenAIWSV2TestConfig(),
-		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
-		openaiWSStateStore: store,
-	}
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_runtime_open", bound.ID, time.Hour))
-	svc.BlockAccountScheduling(&bound, time.Now().Add(time.Minute), "test_runtime_open")
-
-	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		ctx,
-		&groupID,
-		"resp_runtime_open",
-		"",
-		"gpt-5.4",
-		nil,
-		OpenAIUpstreamTransportResponsesWebsocketV2,
-		OpenAIEndpointCapabilityChatCompletions,
-		false,
-		false,
-		true,
-	)
-	require.Nil(t, selection)
-	var continuationErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &continuationErr)
-	require.True(t, continuationErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, continuationErr.ShouldRetryNextAccount())
-
-	accountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_runtime_open")
-	require.NoError(t, getErr)
-	require.Equal(t, bound.ID, accountID, "runtime cooldown must preserve the strict continuation anchor")
-}
-
-func TestOpenAIStrictContinuation_MissingBindingDoesNotFallBackToAnotherAccount(t *testing.T) {
-	ctx := context.Background()
-	groupID := int64(4711)
-	bound := Account{
-		ID:          4716,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		Priority:    1,
-		Extra: map[string]any{
-			"openai_apikey_responses_websockets_v2_enabled": true,
-		},
-	}
-	fallback := bound
-	fallback.ID = 4717
-	fallback.Priority = 100
-	cache := &runtimeBreakerTestCache{}
-	svc := &OpenAIGatewayService{
-		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
-		cache:              cache,
-		cfg:                newOpenAIWSV2TestConfig(),
-		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
-		openaiWSStateStore: NewOpenAIWSStateStore(cache),
-	}
-
-	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		ctx,
-		&groupID,
-		"resp_missing_binding",
-		"",
-		"gpt-5.4",
-		nil,
-		OpenAIUpstreamTransportResponsesWebsocketV2,
-		OpenAIEndpointCapabilityChatCompletions,
-		false,
-		false,
-		true,
-	)
-	require.Nil(t, selection)
-	var continuationErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &continuationErr)
-	require.True(t, continuationErr.IsOpenAIContinuationStateUnavailable())
-	require.False(t, continuationErr.ShouldRetryNextAccount())
-}
-
-func TestOpenAIStrictContinuation_APIKeyIgnoresRedisHalfOpenProbe(t *testing.T) {
-	ctx := context.Background()
-	groupID := int64(48)
-	bound := Account{
-		ID:          4714,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		Priority:    1,
-		Extra: map[string]any{
-			"openai_apikey_responses_websockets_v2_enabled": true,
-		},
-	}
-	fallback := bound
-	fallback.ID = 4715
-	fallback.Priority = 100
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(bound.ID, ""): {
-			blockUntil: time.Now().Add(-time.Second),
-			owner:      "other-request",
-		},
-	}}
-	store := NewOpenAIWSStateStore(cache)
-	svc := &OpenAIGatewayService{
-		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
-		cache:              cache,
-		cfg:                newOpenAIWSV2TestConfig(),
-		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
-		openaiWSStateStore: store,
-	}
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_probe_busy", bound.ID, time.Hour))
-	require.NoError(t, cache.SetSessionAccountID(ctx, groupID, "strict-session", bound.ID, time.Hour))
-
-	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		ctx,
-		&groupID,
-		"resp_probe_busy",
-		"strict-session",
-		"gpt-5.4",
-		nil,
-		OpenAIUpstreamTransportResponsesWebsocketV2,
-		OpenAIEndpointCapabilityChatCompletions,
-		false,
-		false,
-		true,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, selection)
-	require.Equal(t, bound.ID, selection.Account.ID)
-	if selection.ReleaseFunc != nil {
-		selection.ReleaseFunc()
-	}
-
-	accountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_probe_busy")
-	require.NoError(t, getErr)
-	require.Equal(t, bound.ID, accountID, "API-key scheduling must preserve the strict anchor")
-	stickyAccountID, stickyErr := cache.GetSessionAccountID(ctx, groupID, "strict-session")
-	require.NoError(t, stickyErr)
-	require.Equal(t, bound.ID, stickyAccountID, "API-key scheduling must preserve the session sticky binding")
-}
-
-func TestOpenAIRuntimeBreaker_OrdinarySessionStickyProbeBusyPreservesBinding(t *testing.T) {
-	ctx := context.Background()
-	groupID := int64(49)
-	bound := Account{
-		ID:          4718,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		Priority:    1,
-		Extra: map[string]any{
-			"openai_apikey_responses_websockets_v2_enabled": true,
-		},
-	}
-	fallback := bound
-	fallback.ID = 4719
-	fallback.Priority = 100
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(bound.ID, ""): {
-			blockUntil: time.Now().Add(-time.Second),
-			owner:      "other-request",
-		},
-	}}
-	svc := &OpenAIGatewayService{
-		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
-		cache:              cache,
-		cfg:                newOpenAIWSV2TestConfig(),
-		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
-	}
-	require.NoError(t, cache.SetSessionAccountID(ctx, groupID, "ordinary-session", bound.ID, time.Hour))
-
-	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		ctx,
-		&groupID,
-		"",
-		"ordinary-session",
-		"gpt-5.4",
-		nil,
-		OpenAIUpstreamTransportResponsesWebsocketV2,
-		OpenAIEndpointCapabilityChatCompletions,
-		false,
-		false,
-		true,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, selection)
-	require.Equal(t, bound.ID, selection.Account.ID)
-	if selection.ReleaseFunc != nil {
-		selection.ReleaseFunc()
-	}
-	stickyAccountID, stickyErr := cache.GetSessionAccountID(ctx, groupID, "ordinary-session")
-	require.NoError(t, stickyErr)
-	require.Equal(t, bound.ID, stickyAccountID)
-}
-
-func TestOpenAIRuntimeBreaker_FailedSelectionReleasesItsProbeClaims(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4710, ""): {
-			blockUntil: time.Now().Add(-time.Second),
-			owner:      "owner-1",
-		},
-		runtimeBreakerTestKey(4710, "gpt-5.4"): {
-			blockUntil: time.Now().Add(-time.Second),
-			owner:      "owner-1",
-		},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	selection := &AccountSelectionResult{runtimeBreakerProbeOwner: "owner-1"}
-	account := &Account{ID: 4710, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-
-	svc.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "gpt-5.4", false, nil)
-
-	cache.mu.Lock()
-	accountScope := cache.entries[runtimeBreakerTestKey(account.ID, "")]
-	modelScope := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
-	cache.mu.Unlock()
-	require.Empty(t, accountScope.owner)
-	require.Empty(t, modelScope.owner)
-}
-
-func TestOpenAIRuntimeBreaker_SelectedHalfOpenClaimStartsRenewableLease(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4711, ""): {
-			blockUntil: time.Now().Add(-time.Second),
-		},
-		runtimeBreakerTestKey(4711, "gpt-5.4"): {
-			blockUntil: time.Now().Add(-time.Second),
-		},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4711, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
-	defer cancel()
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
-		Account:     account,
-		Acquired:    true,
-		ReleaseFunc: func() {},
-	})
-	require.NotNil(t, selection)
-	defer selection.ReleaseFunc()
-
-	cache.mu.Lock()
-	renewCalls := cache.renewCalls
-	cache.mu.Unlock()
-	require.Equal(t, 1, renewCalls,
-		"promoting a claimed account to the selected lease must renew Redis ownership immediately")
-}
-
-func TestOpenAIRuntimeBreaker_APIKeySameAccountRetryDoesNotUseRedisLease(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4712, ""): {
-			blockUntil: time.Now().Add(-time.Second),
-		},
-		runtimeBreakerTestKey(4712, "gpt-5.4"): {
-			blockUntil: time.Now().Add(-time.Second),
-		},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{
-		ID:          4712,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-	}
-	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
-	defer cancel()
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	first := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
-		Account:     account,
-		Acquired:    true,
-		ReleaseFunc: func() {},
-	})
-	require.Nil(t, first.runtimeBreakerProbeLease)
-	require.Empty(t, first.runtimeBreakerProbeModels)
-	svc.ReportOpenAIAccountScheduleResultForSelection(first, account.ID, "gpt-5.4", false, nil)
-
-	retry, err := svc.ReacquireOpenAISameAccountSelection(context.Background(), first)
-	require.NoError(t, err)
-	require.NotNil(t, retry)
-	require.Nil(t, retry.runtimeBreakerProbeLease)
-	require.Empty(t, retry.runtimeBreakerProbeModels)
-	cache.mu.Lock()
-	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
-	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
-	cache.mu.Unlock()
-	require.Empty(t, accountOwner)
-	require.Empty(t, modelOwner)
-
-	svc.ReportOpenAIAccountScheduleResultForSelection(retry, account.ID, "gpt-5.4", true, nil)
-}
-
-func TestOpenAIRuntimeBreaker_OAuthSameAccountRetryTransfersProbeUntilFinalFailure(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4719, ""):        {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4719, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{
-		ID:          4719,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-	}
-	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1")
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	first := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
-		Account:     account,
-		Acquired:    true,
-		ReleaseFunc: func() {},
-	})
-	require.NotNil(t, first.runtimeBreakerProbeLease)
-	first.ReleaseFunc()
-	svc.ReportOpenAIAccountSameAccountRetry(first, account.ID, "gpt-5.4")
-
-	cache.mu.Lock()
-	require.Equal(t, "owner-1", cache.entries[runtimeBreakerTestKey(account.ID, "")].owner)
-	require.Equal(t, "owner-1", cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner)
-	require.Zero(t, cache.releaseCalls)
-	cache.mu.Unlock()
-
-	retry, err := svc.ReacquireOpenAISameAccountSelection(context.Background(), first)
-	require.NoError(t, err)
-	require.NotNil(t, retry)
-	require.NotNil(t, retry.runtimeBreakerProbeLease)
-	retry.ReleaseFunc()
-	svc.ReportOpenAIAccountScheduleResultForSelection(retry, account.ID, "gpt-5.4", false, nil)
-	svc.ReleaseOpenAIRuntimeBreakerProbeForSelection(retry)
-
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	require.Empty(t, cache.entries[runtimeBreakerTestKey(account.ID, "")].owner)
-	require.Empty(t, cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner)
-	require.Equal(t, 1, cache.releaseCalls, "final failure must release the transferred probe exactly once")
-}
-
-func TestOpenAIRuntimeBreaker_SuppressedRetryReleasesSelectionClaim(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4718, ""):        {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4718, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4718, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1")
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
-		Account:     account,
-		Acquired:    true,
-		ReleaseFunc: func() {},
-	})
-	require.NotNil(t, selection)
-	require.NotNil(t, selection.runtimeBreakerProbeLease)
-
-	svc.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-	svc.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-	cache.mu.Lock()
-	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
-	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
-	releaseCalls := cache.releaseCalls
-	cache.mu.Unlock()
-	require.Empty(t, accountOwner)
-	require.Empty(t, modelOwner)
-	require.Equal(t, 1, releaseCalls, "selection probe release must be idempotent")
-}
-
-func TestOpenAIRuntimeBreaker_SelectedAccountReleasesOtherCandidateClaims(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4713, ""):        {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4713, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4714, ""):        {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4714, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	first := &Account{ID: 4713, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	selected := &Account{ID: 4714, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
-	defer cancel()
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, first, "gpt-5.4"))
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, selected, "gpt-5.4"))
-	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
-		Account:     selected,
-		Acquired:    true,
-		ReleaseFunc: func() {},
-	})
-	require.NotNil(t, selection)
-	defer selection.ReleaseFunc()
-
-	cache.mu.Lock()
-	firstAccountOwner := cache.entries[runtimeBreakerTestKey(first.ID, "")].owner
-	firstModelOwner := cache.entries[runtimeBreakerTestKey(first.ID, "gpt-5.4")].owner
-	selectedAccountOwner := cache.entries[runtimeBreakerTestKey(selected.ID, "")].owner
-	selectedModelOwner := cache.entries[runtimeBreakerTestKey(selected.ID, "gpt-5.4")].owner
-	cache.mu.Unlock()
-	require.Empty(t, firstAccountOwner)
-	require.Empty(t, firstModelOwner)
-	require.Equal(t, "owner-1", selectedAccountOwner)
-	require.Equal(t, "owner-1", selectedModelOwner)
-}
-
-func TestOpenAIRuntimeBreaker_NoSelectionReleasesAllCandidateClaims(t *testing.T) {
-	groupID := int64(4715)
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4715, ""):        {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4715, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-	}}
-	account := Account{
-		ID:          4715,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		GroupIDs:    []int64{groupID},
-	}
-	svc := &OpenAIGatewayService{
-		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
-		cache:            cache,
-		cfg:              &config.Config{},
-		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true"),
-	}
-
-	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		context.Background(),
-		&groupID,
-		"",
-		"",
-		"gpt-5.4",
-		nil,
-		OpenAIUpstreamTransportAny,
-		OpenAIEndpointCapability("unsupported-for-test"),
-		false,
-		false,
-		false,
-	)
-	require.Error(t, err)
-	require.Nil(t, selection)
-
-	cache.mu.Lock()
-	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
-	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
-	cache.mu.Unlock()
-	require.Empty(t, accountOwner)
-	require.Empty(t, modelOwner)
-}
-
-func TestOpenAIRuntimeBreaker_SchedulerSelectionOwnsRenewableLease(t *testing.T) {
-	groupID := int64(4716)
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4716, ""):        {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4716, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-	}}
-	account := Account{
-		ID:          4716,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		GroupIDs:    []int64{groupID},
-	}
-	svc := &OpenAIGatewayService{
-		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
-		cache:            cache,
-		cfg:              &config.Config{},
-		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true"),
-	}
-
-	selection, _, err := svc.SelectAccountWithScheduler(
-		context.Background(),
-		&groupID,
-		"",
-		"",
-		"gpt-5.4",
-		nil,
-		OpenAIUpstreamTransportAny,
-		false,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, selection)
-	require.NotNil(t, selection.runtimeBreakerProbeLease)
-	require.ElementsMatch(t, []string{"", "gpt-5.4"}, selection.runtimeBreakerProbeModels)
-	cache.mu.Lock()
-	renewCalls := cache.renewCalls
-	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
-	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
-	cache.mu.Unlock()
-	require.Equal(t, 1, renewCalls)
-	require.NotEmpty(t, accountOwner)
-	require.Equal(t, accountOwner, modelOwner)
-
-	svc.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "gpt-5.4", true, nil)
-}
-
-func TestOpenAIRuntimeBreaker_SuccessClearsSelectionClaimScopesWhenModelChanges(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
-		runtimeBreakerTestKey(4717, ""):        {blockUntil: time.Now().Add(-time.Second)},
-		runtimeBreakerTestKey(4717, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
-	}}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4717, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
-	defer cancel()
-
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
-		Account:     account,
-		Acquired:    true,
-		ReleaseFunc: func() {},
-	})
-	require.NotNil(t, selection.runtimeBreakerProbeLease)
-
-	svc.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "gpt-5.5", true, nil)
-	cache.mu.Lock()
-	_, accountExists := cache.entries[runtimeBreakerTestKey(account.ID, "")]
-	_, originalModelExists := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
-	cache.mu.Unlock()
-	require.False(t, accountExists)
-	require.False(t, originalModelExists, "success must close the exact model scope claimed during scheduling")
-}
-
-func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveCooldown(t *testing.T) {
-	cache := &runtimeBreakerTestCache{}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4706, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-
-	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "concurrent_failure")
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, account.ID, "gpt-5.4", true, nil)
-
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-	cache.mu.Lock()
-	_, exists := cache.entries[runtimeBreakerTestKey(account.ID, "")]
-	cache.mu.Unlock()
-	require.False(t, exists, "API-key cooldown must remain process-local")
-}
-
-func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveModelCooldown(t *testing.T) {
-	cache := &runtimeBreakerTestCache{}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 4707, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-
-	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-		StatusCode: http.StatusServiceUnavailable,
-	})
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute))
-	svc.ReportOpenAIAccountScheduleResultForSelection(nil, account.ID, "gpt-5.4", true, nil)
-
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
-	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "cleared DB cooldown must release only the stale account scope")
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))
-	cache.mu.Lock()
-	_, exists := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
-	cache.mu.Unlock()
-	require.False(t, exists, "API-key model cooldown must remain process-local")
-}
-
-func TestOpenAI429LegacySideEffects_DoNotPersistOrDuplicateRuntimeCooldown(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+func TestOpenAI429FastPath_KeepsOAuthAccountSchedulableDuringRetryWindow(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	apiKeyAccount := &Account{ID: 43, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	setupTokenAccount := &Account{ID: 44, Platform: PlatformOpenAI, Type: AccountTypeSetupToken}
+	grokOAuthAccount := &Account{ID: 45, Platform: PlatformGrok, Type: AccountTypeOAuth}
 
 	shouldDisable := svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, nil)
 	apiKeyShouldDisable := svc.handleOpenAIAccountUpstreamError(context.Background(), apiKeyAccount, http.StatusTooManyRequests, http.Header{}, nil)
@@ -954,11 +51,29 @@ func TestOpenAI429LegacySideEffects_DoNotPersistOrDuplicateRuntimeCooldown(t *te
 	require.False(t, shouldDisable)
 	require.False(t, apiKeyShouldDisable)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-	require.False(t, svc.isOpenAIAccountRuntimeBlocked(apiKeyAccount))
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(apiKeyAccount), "API-key 429 keeps the existing scheduler cooldown behavior")
+	require.Equal(t, 1, repo.setRateLimitedCalls, "only the API-key 429 should persist a scheduler block")
+	require.True(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(account, http.StatusTooManyRequests, false))
+	require.True(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(setupTokenAccount, http.StatusTooManyRequests, false))
+	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(apiKeyAccount, http.StatusTooManyRequests, false))
+	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(grokOAuthAccount, http.StatusTooManyRequests, false))
+	require.WithinDuration(t, time.Now().Add(openAIOAuth429RetryWindow), svc.openAIOAuth429RetryDeadline(account), time.Second)
+	require.WithinDuration(t, time.Now().Add(openAIOAuth429RetryWindow), svc.openAIOAuth429RetryDeadline(setupTokenAccount), time.Second)
+}
+
+func TestOpenAI429FastPath_BlocksOAuthOnlyAfterRetryWindow(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 420, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow-time.Second))
+
+	svc.markOpenAIOAuth429RateLimited(context.Background(), account, http.Header{}, nil)
+
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(account, http.StatusTooManyRequests, false))
 }
 
 func TestOpenAI429FastPath_DoesNotBlockOAuthWhenFallbackDisabled(t *testing.T) {
-	repo := &openAI429SnapshotRepo{}
+	repo := &oauth429RateLimitRepo{}
 	settingRepo := newMockSettingRepo()
 	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":12}`
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
@@ -971,11 +86,11 @@ func TestOpenAI429FastPath_DoesNotBlockOAuthWhenFallbackDisabled(t *testing.T) {
 	svc.markOpenAIOAuth429RateLimited(context.Background(), account, http.Header{}, []byte(`{"detail":"Rate limit exceeded"}`))
 
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "disabled 429 fallback must not create an OAuth runtime cooldown")
-	require.Zero(t, repo.rateLimitedID, "disabled 429 fallback must not persist a scheduler cooldown")
+	require.Zero(t, repo.setRateLimitedCalls, "disabled 429 fallback must not persist a scheduler cooldown")
 }
 
 func TestOpenAI429FastPath_DoesNotBlockOAuthWhenQuotaWindowIsNotExhausted(t *testing.T) {
-	repo := &openAI429SnapshotRepo{}
+	repo := &oauth429RateLimitRepo{}
 	settingRepo := newMockSettingRepo()
 	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":12}`
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
@@ -995,7 +110,288 @@ func TestOpenAI429FastPath_DoesNotBlockOAuthWhenQuotaWindowIsNotExhausted(t *tes
 	svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"detail":"Rate limit exceeded"}`))
 
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "non-exhausted quota headers must use the configurable fallback")
-	require.Zero(t, repo.rateLimitedID, "disabled 429 fallback must not persist a scheduler cooldown")
+	require.Zero(t, repo.setRateLimitedCalls, "disabled 429 fallback must not persist a scheduler cooldown")
+}
+
+func TestOpenAI429FastPath_BlocksOAuthImmediatelyWhenSevenDayQuotaIsExhausted(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 423, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	headers.Set("x-codex-secondary-used-percent", "20")
+	headers.Set("x-codex-secondary-reset-after-seconds", "3600")
+	headers.Set("x-codex-secondary-window-minutes", "300")
+
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`))
+
+	require.False(t, shouldDisable)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 1, repo.setRateLimitedCalls)
+	require.Greater(t, time.Until(repo.lastRateLimitedUntil), 6*24*time.Hour)
+	require.False(t, svc.ShouldRetryOpenAIOAuth429(account, headers, nil))
+}
+
+func TestOpenAI429FastPath_SparkQuotaOnlyBlocksSparkModel(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 425, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	headers.Set("x-codex-secondary-used-percent", "20")
+	headers.Set("x-codex-secondary-reset-after-seconds", "3600")
+	headers.Set("x-codex-secondary-window-minutes", "300")
+
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusTooManyRequests, headers,
+		[]byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`),
+		"gpt-5.3-codex-spark",
+	)
+
+	require.False(t, shouldDisable)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "Spark quota must not create an account runtime block")
+	require.Equal(t, 0, repo.setRateLimitedCalls, "Spark quota must not persist account-level rate limit")
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Equal(t, "gpt-5.3-codex-spark", repo.lastModelRateLimitKey)
+	require.Greater(t, time.Until(repo.lastModelRateLimitedUntil), 6*24*time.Hour)
+}
+
+func TestOpenAI429FastPath_SparkTransient429UsesShortFallback(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 428, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "37")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	headers.Set("x-codex-secondary-used-percent", "20")
+	headers.Set("x-codex-secondary-reset-after-seconds", "3600")
+	headers.Set("x-codex-secondary-window-minutes", "300")
+
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusTooManyRequests, headers,
+		[]byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`),
+		"gpt-5.3-codex-spark",
+	)
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Less(t, time.Until(repo.lastModelRateLimitedUntil), time.Minute)
+	require.Greater(t, time.Until(repo.lastModelRateLimitedUntil), time.Second)
+}
+
+func TestOpenAIStream429_SparkQuotaUsesQuotaHeaders(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 429, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	headers.Set("x-codex-secondary-used-percent", "20")
+	headers.Set("x-codex-secondary-reset-after-seconds", "3600")
+	headers.Set("x-codex-secondary-window-minutes", "300")
+	payload := []byte(`{"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`)
+
+	status, shouldDisable := svc.handleOpenAIStreamTerminalAccountSideEffects(
+		nil, account, payload, "quota exhausted", headers, "gpt-5.3-codex-spark",
+	)
+
+	require.Equal(t, http.StatusTooManyRequests, status)
+	require.False(t, shouldDisable)
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Equal(t, "gpt-5.3-codex-spark", repo.lastModelRateLimitKey)
+	require.Greater(t, time.Until(repo.lastModelRateLimitedUntil), 6*24*time.Hour)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIStreamFailover_Spark429KeepsModelScope(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 432, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	headers.Set("x-codex-secondary-used-percent", "20")
+	headers.Set("x-codex-secondary-reset-after-seconds", "3600")
+	headers.Set("x-codex-secondary-window-minutes", "300")
+	payload := []byte(`{"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`)
+
+	failoverErr := svc.newOpenAIStreamFailoverErrorWithModel(
+		nil, account, false, "", payload, "quota exhausted", "gpt-5.3-codex-spark", headers,
+	)
+
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Equal(t, 0, repo.setRateLimitedCalls)
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Equal(t, "gpt-5.3-codex-spark", repo.lastModelRateLimitKey)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIWSErrorEvent_OrdinaryModelIgnoresHandshakeQuotaHeaders(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 430, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	payload := []byte(`{"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`)
+
+	svc.persistOpenAIWSRateLimitSignal(context.Background(), account, headers, payload, "rate_limit_exceeded", "rate_limit_error", "quota exhausted", "gpt-5.3-codex")
+
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Zero(t, repo.setRateLimitedCalls)
+}
+
+func TestOpenAIWSErrorEvent_SparkQuotaUsesHandshakeQuotaHeaders(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 431, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	payload := []byte(`{"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`)
+
+	svc.persistOpenAIWSRateLimitSignal(context.Background(), account, headers, payload, "rate_limit_exceeded", "rate_limit_error", "quota exhausted", "gpt-5.3-codex-spark")
+
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Equal(t, "gpt-5.3-codex-spark", repo.lastModelRateLimitKey)
+	require.Greater(t, time.Until(repo.lastModelRateLimitedUntil), 6*24*time.Hour)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAI429FastPath_SparkShadowQuotaStaysModelScoped(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	parentID := int64(426)
+	shadow := &Account{ID: 427, Platform: PlatformOpenAI, Type: AccountTypeOAuth, ParentAccountID: &parentID, QuotaDimension: QuotaDimensionSpark}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(
+		context.Background(), shadow, http.StatusTooManyRequests, headers,
+		[]byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`),
+		"gpt-5.3-codex-spark",
+	)
+
+	require.False(t, shouldDisable)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(shadow))
+	require.Equal(t, 0, repo.setRateLimitedCalls)
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Equal(t, "gpt-5.3-codex-spark", repo.lastModelRateLimitKey)
+}
+
+func TestOpenAI429FastPath_RetriesOAuthWhenNoQuotaSignalExists(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 424, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{"Retry-After": []string{"1"}}
+
+	require.True(t, svc.ShouldRetryOpenAIOAuth429(account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`)))
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIStream429IgnoresSuccessfulQuotaSnapshotHeaders(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 421, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow-time.Second))
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "37")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	payload := []byte(`{"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"slow down"}}`)
+
+	status, disabled := svc.handleOpenAIStreamTerminalAccountSideEffects(nil, account, payload, "slow down", headers)
+
+	require.Equal(t, http.StatusTooManyRequests, status)
+	require.False(t, disabled)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.True(t, ok)
+	blockedUntil, ok := value.(time.Time)
+	require.True(t, ok)
+	require.Less(t, time.Until(blockedUntil), time.Minute, "stream 429 must not inherit the normal seven-day quota snapshot")
+	if !repo.lastRateLimitedUntil.IsZero() {
+		require.Less(t, time.Until(repo.lastRateLimitedUntil), time.Minute)
+	}
+}
+
+func TestOpenAIHTTP429StillUsesQuotaResetHeaders(t *testing.T) {
+	svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{}}
+	account := &Account{ID: 422, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow-time.Second))
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+
+	svc.markOpenAIOAuth429RateLimited(context.Background(), account, headers, nil)
+
+	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.True(t, ok)
+	blockedUntil, ok := value.(time.Time)
+	require.True(t, ok)
+	require.Greater(t, time.Until(blockedUntil), 6*24*time.Hour, "real HTTP 429 must retain the upstream quota reset")
+}
+
+func TestOpenAI429RetryDelayHonorsBoundedRetryAfter(t *testing.T) {
+	deadline := time.Now().Add(openAIOAuth429RetryWindow)
+	require.Equal(t, openAIOAuth429RetryDelay, openAIOAuth429SameAccountRetryDelay(nil, deadline))
+	require.Equal(t, openAIOAuth429MaxRetryDelay, openAIOAuth429SameAccountRetryDelay(http.Header{"Retry-After": []string{"90"}}, deadline))
+}
+
+func TestOpenAI429FastPath_OpenCodeGoUsageLimitUsesMessageResetDuration(t *testing.T) {
+	repo := &rateLimit429AccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 44, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := []byte(`{"type":"error","error":{"type":"GoUsageLimitError","message":"5-hour usage limit reached. Resets in 4hr 59min. To continue using this model now, enable usage from your available balance: https://opencode.ai/workspace/wrk_test/go"},"metadata":{"workspace":"wrk_test","limitName":"5 hour"}}`)
+
+	before := time.Now()
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(
+		context.Background(),
+		account,
+		http.StatusTooManyRequests,
+		http.Header{},
+		body,
+	)
+	after := time.Now()
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 1, repo.rateLimitCalls)
+	require.Equal(t, account.ID, repo.lastRateLimitID)
+	expectedResetAfter := 4*time.Hour + 59*time.Minute
+	require.False(t, repo.lastRateLimitReset.Before(before.Add(expectedResetAfter-time.Second)))
+	require.False(t, repo.lastRateLimitReset.After(after.Add(expectedResetAfter)))
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
 // TestOpenAI429FastPath_SkipsSparkShadow 外审第8轮 P1:spark 影子被选中后若 /responses 返回 429,
@@ -1021,30 +417,7 @@ func TestOpenAI429FastPath_SkipsSparkShadow(t *testing.T) {
 	svc.markOpenAIOAuth429RateLimited(context.Background(), normal, headers, nil)
 
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(shadow), "spark shadow must not be runtime-blocked by /responses global 429")
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(normal), "normal OpenAI OAuth account should still be runtime-blocked")
-}
-
-func TestMarkOpenAIOAuth429RateLimited_IncidentHeadersStayShortAfterRetryWindow(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := &Account{ID: 803, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	headers := http.Header{}
-	headers.Set("x-codex-primary-used-percent", "24")
-	headers.Set("x-codex-primary-reset-after-seconds", "18000")
-	headers.Set("x-codex-primary-window-minutes", "300")
-	headers.Set("x-codex-secondary-used-percent", "71")
-	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
-	headers.Set("x-codex-secondary-window-minutes", "10080")
-	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow-time.Second))
-	now := time.Now()
-
-	svc.markOpenAIOAuth429RateLimited(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
-
-	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	require.True(t, ok)
-	until, ok := value.(time.Time)
-	require.True(t, ok)
-	require.WithinDuration(t, now.Add(openAIOAuth429FallbackCooldown), until, 2*time.Second)
-	require.Less(t, until.Sub(now), time.Minute)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(normal), "normal OpenAI OAuth account with an exhausted 5h window must be paused")
 }
 
 func TestOpenAIRuntimeBlock_AppliesToOpenAIAPIKeyWhenRateLimitServiceStopsScheduling(t *testing.T) {
@@ -1121,6 +494,7 @@ func TestOpenAIPoolModeTempRule_StopsSameAccountRetryAndIsolatesBlockToModel(t *
 		account,
 		resp,
 		body,
+		"Service temporarily unavailable",
 		"gpt-5.4",
 	)
 
@@ -1162,135 +536,6 @@ func TestOpenAIPoolModeRetryable5xx_DoesNotCreateModelTransientBlock(t *testing.
 	}
 
 	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
-}
-
-func TestCooldownOpenAIRetryExhausted_AccountAndModelScopes(t *testing.T) {
-	t.Run("API key 429 uses account cooldown", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
-		account := &Account{ID: 4701, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-
-		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-			StatusCode:      http.StatusTooManyRequests,
-			ResponseHeaders: http.Header{"Retry-After": []string{"45"}},
-		})
-
-		require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"),
-			"the retry owner deliberately creates a cooldown without DB fields")
-	})
-
-	t.Run("503 uses immediate model cooldown", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
-		account := &Account{ID: 4702, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-
-		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-			StatusCode: http.StatusServiceUnavailable,
-		})
-
-		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
-		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))
-	})
-
-	t.Run("503 honors Retry-After for model cooldown", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
-		account := &Account{ID: 4706, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-		now := time.Now()
-
-		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-			StatusCode:      http.StatusServiceUnavailable,
-			ResponseHeaders: http.Header{"Retry-After": []string{"45"}},
-		})
-
-		state := svc.getOpenAIAccountModelTransientState()
-		state.mu.Lock()
-		entry := state.entries[openAIAccountModelKey{AccountID: account.ID, Model: "gpt-5.4"}]
-		state.mu.Unlock()
-		require.Greater(t, entry.blockUntil.Sub(now), 35*time.Second)
-	})
-
-	t.Run("request scoped failure does not cool account", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
-		account := &Account{ID: 4703, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-
-		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-			StatusCode:             http.StatusServiceUnavailable,
-			RequestScopedTransient: true,
-			Scope:                  GatewayFailureScopeRequest,
-		})
-
-		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
-	})
-}
-
-func TestCooldownOpenAIRetryExhausted_DoesNotShortenExistingBlock(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := &Account{ID: 4704, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-	wantMinimum := time.Now().Add(30 * time.Minute)
-	svc.BlockAccountScheduling(account, time.Now().Add(time.Hour), "existing")
-
-	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-		StatusCode:      http.StatusTooManyRequests,
-		ResponseHeaders: http.Header{"Retry-After": []string{"1"}},
-	})
-
-	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	require.True(t, ok)
-	until, ok := value.(time.Time)
-	require.True(t, ok)
-	require.True(t, until.After(wantMinimum))
-}
-
-func TestCooldownOpenAIRetryExhausted_Transient429IgnoresUnderLimitCodexResets(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := &Account{ID: 4799, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	headers := http.Header{"Retry-After": []string{"7"}}
-	headers.Set("x-codex-primary-used-percent", "18")
-	headers.Set("x-codex-primary-reset-after-seconds", "18000")
-	headers.Set("x-codex-primary-window-minutes", "300")
-	headers.Set("x-codex-secondary-used-percent", "64")
-	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
-	headers.Set("x-codex-secondary-window-minutes", "10080")
-	now := time.Now()
-
-	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-		StatusCode:      http.StatusTooManyRequests,
-		ResponseHeaders: headers,
-		ResponseBody:    []byte(`{"error":{"type":"rate_limit_error"}}`),
-	})
-
-	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	require.True(t, ok)
-	until, ok := value.(time.Time)
-	require.True(t, ok)
-	require.WithinDuration(t, now.Add(7*time.Second), until, 2*time.Second)
-	require.Less(t, until.Sub(now), time.Minute)
-}
-
-func TestCooldownOpenAIRetryExhausted_DisabledFallbackDoesNotReopenRuntimeBreaker(t *testing.T) {
-	repo := &openAI429SnapshotRepo{}
-	settingRepo := newMockSettingRepo()
-	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":12}`
-	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
-	rateLimits.SetSettingService(NewSettingService(settingRepo, &config.Config{}))
-	cache := &runtimeBreakerTestCache{}
-	svc := &OpenAIGatewayService{rateLimitService: rateLimits, cache: cache}
-	account := &Account{ID: 4798, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	headers := http.Header{}
-	headers.Set("x-codex-primary-used-percent", "37")
-	headers.Set("x-codex-primary-reset-after-seconds", "604800")
-	headers.Set("x-codex-primary-window-minutes", "10080")
-
-	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
-		StatusCode:      http.StatusTooManyRequests,
-		ResponseHeaders: headers,
-		ResponseBody:    []byte(`{"error":{"type":"rate_limit_error"}}`),
-	})
-
-	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-	require.Empty(t, cache.entries, "retry exhaustion must not restore a disabled OAuth Redis fallback")
-	require.Zero(t, repo.rateLimitedID)
 }
 
 func TestOpenAIPoolModeNonRetryable5xx_StillCreatesModelTransientBlock(t *testing.T) {
@@ -1414,25 +659,64 @@ func TestOpenAIModelTempUnschedulable_WriteFailureDoesNotRuntimeBlockWholeAccoun
 	require.Len(t, repo.modelRateLimitCalls, 1)
 }
 
-func TestOpenAIAuthAndQuotaErrorsSkipLegacySchedulingState(t *testing.T) {
-	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests} {
-		t.Run(http.StatusText(statusCode), func(t *testing.T) {
-			repo := &modelNotFoundAccountRepoStub{}
-			svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{accountRepo: repo}}
-			account := openAIModelNotFoundTempAccount()
-			account.Type = AccountTypeOAuth
-
-			shouldDisable := svc.handleOpenAIAccountUpstreamError(
-				context.Background(), account, statusCode, http.Header{},
-				[]byte(`{"error":{"message":"credential or quota failure"}}`), "gpt-5.4",
-			)
-
-			require.False(t, shouldDisable)
-			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-			require.Zero(t, repo.tempCalls)
-			require.Empty(t, repo.modelRateLimitCalls)
-		})
+func TestOpenAIOAuth429_MatchingModelTempRuleAvoidsAccountRuntimeBlock(t *testing.T) {
+	repo := &modelNotFoundAccountRepoStub{}
+	svc := &OpenAIGatewayService{
+		rateLimitService: &RateLimitService{accountRepo: repo},
 	}
+	account := openAIModelNotFoundTempAccount()
+	account.Type = AccountTypeOAuth
+	account.Credentials["temp_unschedulable_rules"] = []any{
+		map[string]any{
+			"error_code":       float64(http.StatusTooManyRequests),
+			"keywords":         []any{"model quota"},
+			"duration_minutes": float64(10),
+		},
+	}
+
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(
+		context.Background(),
+		account,
+		http.StatusTooManyRequests,
+		http.Header{},
+		[]byte(`{"error":{"message":"model quota exhausted"}}`),
+		"gpt-5.4",
+	)
+
+	require.True(t, shouldDisable)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Len(t, repo.modelRateLimitCalls, 1)
+	require.Equal(t, "gpt-5.4", repo.modelRateLimitCalls[0].scope)
+}
+
+func TestOpenAIOAuth429_NonmatchingModelTempRuleKeepsAccountRuntimeBlock(t *testing.T) {
+	repo := &modelNotFoundAccountRepoStub{}
+	svc := &OpenAIGatewayService{
+		rateLimitService: &RateLimitService{accountRepo: repo},
+	}
+	account := openAIModelNotFoundTempAccount()
+	account.Type = AccountTypeOAuth
+	account.Credentials["temp_unschedulable_rules"] = []any{
+		map[string]any{
+			"error_code":       float64(http.StatusTooManyRequests),
+			"keywords":         []any{"different marker"},
+			"duration_minutes": float64(10),
+		},
+	}
+
+	shouldDisable := svc.handleOpenAIAccountUpstreamError(
+		context.Background(),
+		account,
+		http.StatusTooManyRequests,
+		http.Header{},
+		[]byte(`{"error":{"message":"global rate limit"}}`),
+		"gpt-5.4",
+	)
+
+	require.False(t, shouldDisable)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.True(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(account, http.StatusTooManyRequests, false))
+	require.Empty(t, repo.modelRateLimitCalls)
 }
 
 func TestOpenAITempUnschedulable_UnknownModelKeepsAccountRuntimeBlock(t *testing.T) {
@@ -1485,58 +769,24 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 func TestRuntimeBlockHonorsClearedPersistedCooldown(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 92, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(30*time.Minute))
+	svc.BlockAccountScheduling(account, time.Now().Add(30*time.Minute), "grok payment required")
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestRuntimeBlockConditionalClearSkipsNewerGeneration(t *testing.T) {
-	for _, testCase := range []struct {
-		name      string
-		extension time.Duration
-	}{
-		{name: "later deadline", extension: 20 * time.Minute},
-		{name: "same deadline new owner"},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			svc := &OpenAIGatewayService{}
-			account := &Account{ID: 94, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
-			firstUntil := time.Now().Add(10 * time.Minute)
-			svc.BlockAccountSchedulingFromPersistedCooldown(account, firstUntil)
-			snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
-			require.True(t, snapshot.blocked)
-			svc.BlockAccountSchedulingFromPersistedCooldown(account, firstUntil.Add(testCase.extension))
-			svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
-			require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-			require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
-			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		})
-	}
-}
-
-func TestRuntimeBlockConditionalClearKeepsOAuthProbeOwnership(t *testing.T) {
-	cache := &runtimeBreakerTestCache{entries: make(map[string]runtimeBreakerTestEntry)}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 95, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute))
-	cache.mu.Lock()
-	cache.entries[runtimeBreakerTestKey(account.ID, "")] = runtimeBreakerTestEntry{
-		blockUntil: time.Now().Add(-time.Second), owner: "current-owner",
-	}
-	cache.mu.Unlock()
-
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(
-		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "another-owner"), account, "gpt-5.4",
-	))
-	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "DB cleanup must release the stale local scope")
-	cache.mu.Lock()
-	entry, exists := cache.entries[runtimeBreakerTestKey(account.ID, "")]
-	cache.mu.Unlock()
-	require.True(t, exists)
-	require.Equal(t, "current-owner", entry.owner, "local CAS must not delete or steal a Redis half-open lease")
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(
-		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "current-owner"), account, "gpt-5.4",
-	))
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 94, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	firstUntil := time.Now().Add(10 * time.Minute)
+	svc.BlockAccountScheduling(account, firstUntil, "stale")
+	snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
+	require.True(t, snapshot.blocked)
+	newerUntil := time.Now().Add(30 * time.Minute)
+	svc.BlockAccountScheduling(account, newerUntil, "fresh")
+	svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestRuntimeBlockKeepsActivePersistedCooldown(t *testing.T) {
@@ -1550,110 +800,12 @@ func TestRuntimeBlockKeepsActivePersistedCooldown(t *testing.T) {
 		Schedulable:            true,
 		TempUnschedulableUntil: &until,
 	}
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, until)
+	svc.BlockAccountScheduling(account, until, "grok payment required")
 	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestRuntimeBlockPersistedNotificationDoesNotBecomeIndependentBridge(t *testing.T) {
-	cache := &runtimeBreakerTestCache{}
-	rateLimits := NewRateLimitService(&openAI429SnapshotRepo{}, nil, &config.Config{}, nil, nil)
-	svc := &OpenAIGatewayService{rateLimitService: rateLimits, cache: cache}
-	rateLimits.SetAccountRuntimeBlocker(svc)
-	account := &Account{
-		ID: 99, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
-		Credentials: map[string]any{"refresh_token": "fixture-refresh-token"},
-	}
-	require.True(t, svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusUnauthorized, nil,
-		[]byte(`{"error":{"message":"invalid or expired token"}}`)))
-	snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
-	require.True(t, snapshot.blocked)
-	require.True(t, snapshot.sources.hasPersisted)
-	require.False(t, snapshot.sources.hasIndependent, "the fallback bridge must preserve the DB notification's origin")
-	require.Empty(t, cache.entries)
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
-}
-
-func TestRuntimeBlockSourcesKeepIndependentDeadlineAndClearWithoutResurrection(t *testing.T) {
-	for _, persistedFirst := range []bool{true, false} {
-		t.Run(fmt.Sprintf("persisted_first_%t", persistedFirst), func(t *testing.T) {
-			svc := &OpenAIGatewayService{}
-			account := &Account{ID: 96, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-			independentUntil := time.Now().Add(time.Minute)
-			persistedUntil := independentUntil.Add(time.Hour)
-			if persistedFirst {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil)
-			}
-			svc.BlockAccountScheduling(account, independentUntil, "429")
-			if !persistedFirst {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil)
-			}
-			require.Equal(t, persistedUntil, svc.peekOpenAIAccountRuntimeBlock(account).until)
-			require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
-			snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
-			require.Equal(t, independentUntil, snapshot.until, "DB recovery removes only the persisted contribution")
-			require.False(t, snapshot.sources.hasPersisted)
-
-			svc.ClearAccountSchedulingBlock(account.ID)
-			_, sourcesRemain := svc.openaiAccountRuntimeBlockSources.Load(account.ID)
-			require.False(t, sourcesRemain)
-			svc.BlockAccountSchedulingFromPersistedCooldown(account, persistedUntil)
-			require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"),
-				"a cleared independent contribution must not reappear behind a new DB mirror")
-		})
-	}
-}
-
-func TestRuntimeBlockSourcesDoNotExtendIndependentRedisDeadline(t *testing.T) {
-	cache := &runtimeBreakerTestCache{}
-	svc := &OpenAIGatewayService{cache: cache}
-	account := &Account{ID: 97, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	independentUntil := time.Now().Add(time.Minute)
-	svc.BlockAccountSchedulingFromPersistedCooldown(account, independentUntil.Add(time.Hour))
-	require.Empty(t, cache.entries, "DB mirrors do not create independent Redis breakers")
-	svc.BlockAccountScheduling(account, independentUntil, "429")
-	cache.mu.Lock()
-	entry := cache.entries[runtimeBreakerTestKey(account.ID, "")]
-	cache.mu.Unlock()
-	require.WithinDuration(t, independentUntil, entry.blockUntil, time.Second)
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
-	require.Equal(t, independentUntil, svc.peekOpenAIAccountRuntimeBlock(account).until)
-}
-
-func TestRuntimeBlockSourcesRollbackOnlyOwnedIndependentContribution(t *testing.T) {
-	for _, testCase := range []struct {
-		name      string
-		beforeDB  time.Duration
-		tentative time.Duration
-		afterDB   time.Duration
-		wantDB    time.Duration
-	}{
-		{name: "DB extended under a longer tentative guard", beforeDB: 100 * time.Second, tentative: 200 * time.Second, afterDB: 150 * time.Second, wantDB: 150 * time.Second},
-		{name: "tentative does not change aggregate deadline", beforeDB: 200 * time.Second, tentative: 100 * time.Second, wantDB: 200 * time.Second},
-		{name: "DB mirror installed during tentative guard", tentative: 200 * time.Second, afterDB: 100 * time.Second, wantDB: 100 * time.Second},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			svc := &OpenAIGatewayService{}
-			account := &Account{ID: 98, Platform: PlatformGrok, Type: AccountTypeOAuth}
-			now := time.Now()
-			if testCase.beforeDB > 0 {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, now.Add(testCase.beforeDB))
-			}
-			rollback := svc.blockGrokCredentialRuntime(account, now.Add(testCase.tentative), "credential_tentative")
-			if testCase.afterDB > 0 {
-				svc.BlockAccountSchedulingFromPersistedCooldown(account, now.Add(testCase.afterDB))
-			}
-			rollback()
-			snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
-			require.True(t, snapshot.blocked)
-			require.False(t, snapshot.sources.hasIndependent)
-			require.Equal(t, now.Add(testCase.wantDB), snapshot.until)
-			require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
-		})
-	}
-}
-
-func TestShouldStopOpenAIOAuth429Failover_OnlyDuringStorm(t *testing.T) {
+func TestShouldStopOpenAIOAuth429Failover_AfterBoundedFullWindows(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	apiKeyAccount := &Account{ID: 43, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
@@ -1661,11 +813,9 @@ func TestShouldStopOpenAIOAuth429Failover_OnlyDuringStorm(t *testing.T) {
 
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1, &state))
 
-	for i := 0; i < openAIOAuth429StormThreshold; i++ {
-		svc.recordOpenAIOAuth429()
-	}
-
-	require.True(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1, &state))
+	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1, &state))
+	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 2, &state))
+	require.True(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 3, &state))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 1, &state))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusInternalServerError, 1, &state))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 0, &state))

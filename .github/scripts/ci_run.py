@@ -26,8 +26,8 @@ OWNERS = {
     "Downstream backend": {
         "static_docs", "ci_contracts", "release_contracts", "upstream_contracts",
         "deploy_docker_contracts",
-        "transport", "agent_protocol", "deepseek", "claude",
-        "pelican_race", "keepalive_race", "probe_race", "management_race",
+        "agent_protocol", "claude",
+        "pelican_race", "keepalive_race",
         "request_body", "account_jobs", "taxonomy_db", "retirement_migration", "repository_audit",
         "model_list", "turn_state",
     },
@@ -150,12 +150,9 @@ def go_test(packages: list[str], pattern: str, tags=(), race: bool = False) -> l
 
 
 GO_GROUPS = {
-    "deepseek": (["./internal/service", "./internal/handler/admin", "./internal/server/routes"], "^TestDeepSeekDefault", ("unit",), False),
     "claude": (["./internal/service", "./internal/handler"], "^TestClaude(ThinkingSignatureError|Signature|OpsErrorLogger)|^TestGatewayService_Forward_(PreOutputSSE|PostOutputSSE)", ("unit",), False),
     "pelican_race": (["./internal/service"], "^TestPelican(RunnerCancellationStopsQueuedAndInflightAndRetainsRawOutput|RepeatModel.*|AccountWaitReleases.*)$", ("unit",), True),
     "keepalive_race": (["./internal/service"], "^TestAccountTestKeepalive", ("unit",), True),
-    "probe_race": (["./internal/service"], "TestOpenAIRuntimeBreaker_(APIKeySameAccountRetryDoesNotUseRedisLease|OAuthSameAccountRetryTransfersProbeUntilFinalFailure|SuppressedRetryReleasesSelectionClaim)", ("unit",), True),
-    "management_race": (["./internal/handler"], "^TestOpenAIBlockedUpstreamsDoNotSerializeManagementPlane$", (), True),
     "model_list": (["./internal/service", "./internal/handler", "./internal/handler/admin"], "^Test.*(GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels|AccountAvailableModels|FetchOpenAIAccountModels)", ("unit",), False),
     "turn_state": (["./internal/service"], "^Test.*TurnState", ("unit",), False),
     "request_body": (["./internal/pkg/httputil", "./internal/handler"], "Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)", (), False),
@@ -328,13 +325,6 @@ def run_group(group: str, plan: dict) -> None:
         if not plan.get("backend_compile_packages"):
             raise ValueError("backend_compile_selection_empty")
         command(["go", "test", *plan["backend_compile_packages"], "-run", "^$"], "backend")
-    elif group == "transport":
-        command([sys.executable, "-m", "pip", "install", "cryptography==48.0.1", "h2==4.3.0"])
-        probe = str(Path(os.environ["RUNNER_TEMP"]) / "codex-transport-probe")
-        command(["go", "-C", "backend", "build", "-o", probe, "./cmd/codex-transport-probe"])
-        command([sys.executable, ".github/scripts/verify_codex_transport.py", "--probe", probe,
-                 "--reference", "backend/internal/pkg/codextransport/reference.json",
-                 "--output", str(Path(os.environ["RUNNER_TEMP"]) / "codex-wire.json")])
     elif group == "frontend_validate":
         files = [path for path in plan.get("frontend_files", []) if (ROOT / "frontend" / path).is_file()]
         if files:

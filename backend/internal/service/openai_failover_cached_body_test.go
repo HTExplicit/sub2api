@@ -128,6 +128,7 @@ func TestOpenAIGatewayService_HandleFailoverSideEffects_DoesNotRereadResponseBod
 	})
 
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.True(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(account, http.StatusTooManyRequests, false))
 }
 
 func TestGetOpenAIRequestBodyMap_IgnoresLegacyContextCache(t *testing.T) {

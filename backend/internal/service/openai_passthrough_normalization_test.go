@@ -32,7 +32,7 @@ func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesCompatibilityFields(t *te
 	}
 }
 
-func TestNormalizeOpenAIPassthroughOAuthBody_AppliesOfficialReasoningMode(t *testing.T) {
+func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesReasoningMode(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-sol","input":"hello","reasoning":{"mode":"pro"}}`)
 
 	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
@@ -110,12 +110,32 @@ func TestNormalizeOpenAIResponsesWebSocketCompatibilityBody_APIKeyStoreFalseRepl
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.False(t, gjson.GetBytes(normalized, "parallel_tool_calls").Exists())
-	require.Equal(t, int64(3), gjson.GetBytes(normalized, "input.#").Int())
-	require.Equal(t, "rs_drop", gjson.GetBytes(normalized, "input.0.id").String())
-	require.Equal(t, "rs_keep", gjson.GetBytes(normalized, "input.1.id").String())
-	require.Equal(t, "cipher", gjson.GetBytes(normalized, "input.1.encrypted_content").String())
+	require.Equal(t, int64(2), gjson.GetBytes(normalized, "input.#").Int())
+	require.False(t, gjson.GetBytes(normalized, "input.0.id").Exists())
+	require.False(t, gjson.GetBytes(normalized, "input.0.call_id").Exists())
 	require.True(t, gjson.GetBytes(normalized, "input.0.summary").IsArray())
-	require.Equal(t, "message", gjson.GetBytes(normalized, "input.2.type").String())
+	require.Equal(t, "message", gjson.GetBytes(normalized, "input.1.type").String())
+}
+
+func TestNormalizeOpenAIResponsesReasoningMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantEffort string
+	}{
+		{name: "pro maps to max", body: `{"reasoning":{"mode":"pro"}}`, wantEffort: "max"},
+		{name: "explicit effort wins", body: `{"reasoning":{"mode":"pro","effort":"high"}}`, wantEffort: "high"},
+		{name: "other mode only removed", body: `{"reasoning":{"mode":"standard"}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			normalized, changed, err := normalizeOpenAIResponsesReasoningMode([]byte(tt.body), "")
+			require.NoError(t, err)
+			require.True(t, changed)
+			require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
+			require.Equal(t, tt.wantEffort, gjson.GetBytes(normalized, "reasoning.effort").String())
+		})
+	}
 }
 
 func TestNormalizeOpenAIResponsesReasoningMode_AstraPreservesBody(t *testing.T) {
@@ -162,52 +182,6 @@ func TestNormalizeOpenAIResponsesReasoningMode_NonAstraKeepsLegacyBehavior(t *te
 	}
 }
 
-func TestNormalizeOpenAIResponsesReasoningModeForModel_UsesResolvedTarget(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		body        string
-		target      string
-		wantMode    string
-		wantEffort  string
-		wantChanged bool
-	}{
-		{"alias to Astra", `{"model":"assistant","reasoning":{"mode":"pro","context":"all_turns","future":9007199254740993}}`, "gpt-6-astra", "pro", "", false},
-		{"inherited Astra", `{"reasoning":{"mode":"pro"}}`, "gpt-6-astra", "pro", "", false},
-		{"alias to non-Astra", `{"model":"assistant","reasoning":{"mode":"pro"}}`, "gpt-5.6-sol", "", "max", true},
-		{"Astra public alias to non-Astra target", `{"model":"gpt-6-astra","reasoning":{"mode":"pro","effort":"high"}}`, "gpt-5.4", "", "high", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			original := []byte(tc.body)
-			normalized, changed, err := normalizeOpenAIResponsesReasoningMode(original, tc.target)
-			require.NoError(t, err)
-			require.Equal(t, tc.wantChanged, changed)
-			require.Equal(t, tc.wantMode, gjson.GetBytes(normalized, "reasoning.mode").String())
-			require.Equal(t, tc.wantEffort, gjson.GetBytes(normalized, "reasoning.effort").String())
-			require.Equal(t, gjson.GetBytes(original, "model").Raw, gjson.GetBytes(normalized, "model").Raw)
-			require.Equal(t, gjson.GetBytes(original, "reasoning.future").Raw, gjson.GetBytes(normalized, "reasoning.future").Raw)
-			require.Equal(t, tc.body, string(original), "caller-owned bytes must remain unchanged")
-		})
-	}
-}
-
-func TestNormalizeOpenAICompatibilityBodiesForModel_PreserveMappedAstraMode(t *testing.T) {
-	body := []byte(`{"model":"assistant","input":[],"reasoning":{"mode":"pro","context":"all_turns"}}`)
-	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken, AccountTypeAPIKey} {
-		for _, target := range []string{"gpt-6-astra", "gpt-5.4"} {
-			normalized, _, err := normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body, &Account{Platform: PlatformOpenAI, Type: accountType}, false, target)
-			require.NoError(t, err)
-			require.Equal(t, "assistant", gjson.GetBytes(normalized, "model").String())
-			if target == "gpt-5.4" && accountType != AccountTypeAPIKey {
-				require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
-				require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
-			} else {
-				require.Equal(t, "pro", gjson.GetBytes(normalized, "reasoning.mode").String())
-				require.False(t, gjson.GetBytes(normalized, "reasoning.effort").Exists())
-			}
-		}
-	}
-}
-
 func TestNormalizeOpenAIPassthroughOAuthBody_AstraPreservesReasoningMode(t *testing.T) {
 	body := []byte(`{"model":"gpt-6-astra","reasoning":{"mode":"pro","effort":"max"}}`)
 
@@ -232,10 +206,9 @@ func TestNormalizeOpenAIResponsesWebSocketCompatibilityBody_ReasoningModeAccount
 	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
 		normalized, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformOpenAI, Type: accountType}, false)
 		require.NoError(t, err)
-		// The official IsOAuth gate includes both OAuth and SetupToken.
 		require.True(t, changed)
-		require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
 		require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
+		require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
 	}
 	apiKeyBody, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
 	require.NoError(t, err)

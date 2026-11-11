@@ -44,7 +44,6 @@ type AdminHandlers struct {
 	Affiliate              *admin.AffiliateHandler
 	Compliance             *admin.ComplianceHandler
 	AuditLog               *admin.AuditLogHandler
-	DeepSeekReasoning      *admin.DeepSeekReasoningHandler
 	SystemPrompt           *admin.SystemPromptHandler
 	PelicanTest            *admin.PelicanTestHandler
 }

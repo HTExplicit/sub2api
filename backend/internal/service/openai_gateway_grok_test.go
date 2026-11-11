@@ -2629,7 +2629,7 @@ func TestForwardAsChatCompletionsForGrokStreamingUsesRawXAIChatCompletions(t *te
 		},
 	}
 	upstreamBody := strings.Join([]string{
-		`data: {"id":"chatcmpl_grok","object":"chat.completion.chunk","model":"grok-4.3","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
+		`data: {"id":"chatcmpl_grok","object":"chat.completion.chunk","model":"grok-4.3","choices":[{"index":0,"delta":{"content":"ok"}}]}`,
 		"",
 		`data: {"id":"chatcmpl_grok","object":"chat.completion.chunk","model":"grok-4.3","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":4,"total_tokens":10,"prompt_tokens_details":{"cached_tokens":1}}}`,
 		"",
@@ -2802,7 +2802,7 @@ func TestForwardAsChatCompletionsForGrokStreamingStopFallsBackToRawXAIChatComple
 		},
 	}
 	upstreamBody := strings.Join([]string{
-		`data: {"id":"chatcmpl_grok","object":"chat.completion.chunk","model":"grok-4.3","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
+		`data: {"id":"chatcmpl_grok","object":"chat.completion.chunk","model":"grok-4.3","choices":[{"index":0,"delta":{"content":"ok"}}]}`,
 		"",
 		`data: {"id":"chatcmpl_grok","object":"chat.completion.chunk","model":"grok-4.3","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":4,"total_tokens":10,"prompt_tokens_details":{"cached_tokens":1}}}`,
 		"",
@@ -3658,11 +3658,7 @@ func TestOpenAIWSHTTPBridgeSSEErrorSideEffectsRunOncePerPlatform(t *testing.T) {
 			require.ErrorAs(t, err, &failoverErr)
 			require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 			require.Zero(t, writes)
-			if platform == PlatformOpenAI {
-				require.Zero(t, repo.rateLimitedCalls)
-			} else {
-				require.Equal(t, 1, repo.rateLimitedCalls)
-			}
+			require.Equal(t, 1, repo.rateLimitedCalls)
 		})
 	}
 }
@@ -3707,7 +3703,7 @@ func TestFailoverOpenAIUpstreamHTTPErrorUsesOnlyGrokRateLimitPolicy(t *testing.T
 
 	failoverErr := svc.failoverOpenAIUpstreamHTTPError(
 		context.Background(), c, account, resp,
-		[]byte(`{"error":{"message":"rate limited"}}`), "grok-4.3",
+		[]byte(`{"error":{"message":"rate limited"}}`), "rate limited", "grok-4.3",
 	)
 
 	require.NotNil(t, failoverErr)

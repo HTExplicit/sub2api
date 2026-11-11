@@ -107,8 +107,8 @@ func (s *OpenAIGatewayService) forwardAnthropicViaNativeAnthropicEndpoint(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := s.readOpenAIUpstreamError(resp, c)
-		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamModel); foErr != nil {
+		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp)
+		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel); foErr != nil {
 			return nil, foErr
 		}
 		// 非 failover 错误：经共享 compat handler 以 Anthropic 格式回写

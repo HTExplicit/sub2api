@@ -28,30 +28,25 @@ func TestOpenAIWSStateStore_BindGetDeleteResponseAccount(t *testing.T) {
 	require.Zero(t, accountID)
 }
 
-func TestOpenAIWSStateStore_DeleteResponseAccountIfMatchesPreservesConcurrentRebind(t *testing.T) {
+func TestOpenAIWSStateStore_HTTPResponseOwnerPersistsAcrossStoreInstances(t *testing.T) {
 	cache := &stubGatewayCache{}
-	store := NewOpenAIWSStateStore(cache)
 	ctx := context.Background()
-	groupID := int64(7)
-	responseID := "resp_cas_rebind"
+	groupID := int64(8)
+	writer := NewOpenAIWSStateStore(cache)
 
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, responseID, 101, time.Minute))
-	require.NoError(t, store.BindResponseAccount(ctx, groupID, responseID, 202, time.Minute))
+	require.NoError(t, writer.BindHTTPResponseOwner(ctx, groupID, "resp_owned", 201, 301, time.Minute))
+	userID, apiKeyID, found, err := writer.GetHTTPResponseOwner(ctx, groupID, "resp_owned")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, int64(201), userID)
+	require.Equal(t, int64(301), apiKeyID)
 
-	deleted, err := store.DeleteResponseAccountIfMatches(ctx, groupID, responseID, 101)
+	reader := NewOpenAIWSStateStore(cache)
+	userID, apiKeyID, found, err = reader.GetHTTPResponseOwner(ctx, groupID, "resp_owned")
 	require.NoError(t, err)
-	require.False(t, deleted, "stale cleanup must not delete a newer response binding")
-
-	accountID, err := store.GetResponseAccount(ctx, groupID, responseID)
-	require.NoError(t, err)
-	require.Equal(t, int64(202), accountID)
-
-	deleted, err = store.DeleteResponseAccountIfMatches(ctx, groupID, responseID, 202)
-	require.NoError(t, err)
-	require.True(t, deleted)
-	accountID, err = store.GetResponseAccount(ctx, groupID, responseID)
-	require.NoError(t, err)
-	require.Zero(t, accountID)
+	require.True(t, found)
+	require.Equal(t, int64(201), userID)
+	require.Equal(t, int64(301), apiKeyID)
 }
 
 func TestOpenAIWSStateStore_ResponseConnTTL(t *testing.T) {
@@ -69,22 +64,18 @@ func TestOpenAIWSStateStore_ResponseConnTTL(t *testing.T) {
 
 func TestOpenAIWSStateStore_SessionTurnStateTTL(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
-	store.BindSessionTurnState(9, "session_hash_1", 101, "turn_state_1", 30*time.Millisecond)
+	store.BindSessionTurnState(9, "session_hash_1", "turn_state_1", 30*time.Millisecond)
 
-	state, ok := store.GetSessionTurnState(9, "session_hash_1", 101)
+	state, ok := store.GetSessionTurnState(9, "session_hash_1")
 	require.True(t, ok)
 	require.Equal(t, "turn_state_1", state)
 
 	// group 隔离
-	_, ok = store.GetSessionTurnState(10, "session_hash_1", 101)
-	require.False(t, ok)
-
-	// account 隔离
-	_, ok = store.GetSessionTurnState(9, "session_hash_1", 202)
+	_, ok = store.GetSessionTurnState(10, "session_hash_1")
 	require.False(t, ok)
 
 	time.Sleep(60 * time.Millisecond)
-	_, ok = store.GetSessionTurnState(9, "session_hash_1", 101)
+	_, ok = store.GetSessionTurnState(9, "session_hash_1")
 	require.False(t, ok)
 }
 
@@ -193,7 +184,6 @@ type openAIWSStateStoreTimeoutProbeCache struct {
 	setDeadlineDelta  time.Duration
 	getDeadlineDelta  time.Duration
 	delDeadlineDelta  time.Duration
-	getErr            error
 }
 
 func (c *openAIWSStateStoreTimeoutProbeCache) GetSessionAccountID(ctx context.Context, _ int64, _ string) (int64, error) {
@@ -201,7 +191,7 @@ func (c *openAIWSStateStoreTimeoutProbeCache) GetSessionAccountID(ctx context.Co
 		c.getHasDeadline = true
 		c.getDeadlineDelta = time.Until(deadline)
 	}
-	return 123, c.getErr
+	return 123, nil
 }
 
 func (c *openAIWSStateStoreTimeoutProbeCache) SetSessionAccountID(ctx context.Context, _ int64, _ string, _ int64, _ time.Duration) error {
@@ -222,10 +212,6 @@ func (c *openAIWSStateStoreTimeoutProbeCache) DeleteSessionAccountID(ctx context
 		c.delDeadlineDelta = time.Until(deadline)
 	}
 	return nil
-}
-
-func (c *openAIWSStateStoreTimeoutProbeCache) DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, _ int64) (bool, error) {
-	return true, c.DeleteSessionAccountID(ctx, groupID, sessionHash)
 }
 
 func (c *openAIWSStateStoreTimeoutProbeCache) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
@@ -280,27 +266,6 @@ func TestOpenAIWSStateStore_RedisOpsUseShortTimeout(t *testing.T) {
 	require.True(t, probe2.getHasDeadline, "GetSessionAccountID 在缓存未命中时应携带独立超时上下文")
 	require.Greater(t, probe2.getDeadlineDelta, 2*time.Second)
 	require.LessOrEqual(t, probe2.getDeadlineDelta, 3*time.Second)
-}
-
-func TestLookupOpenAIContinuationBindingDistinguishesMissAndStoreError(t *testing.T) {
-	ctx := context.Background()
-	groupID := int64(5)
-
-	miss := LookupOpenAIContinuationBinding(ctx, NewOpenAIWSStateStore(nil), groupID, "resp_miss")
-	require.Equal(t, OpenAIContinuationBindingMiss, miss.State)
-	sentinelMiss := LookupOpenAIContinuationBinding(
-		ctx,
-		NewOpenAIWSStateStore(&openAIWSStateStoreTimeoutProbeCache{getErr: ErrStickySessionNotFound}),
-		groupID,
-		"resp_sentinel_miss",
-	)
-	require.Equal(t, OpenAIContinuationBindingMiss, sentinelMiss.State)
-
-	storeErr := errors.New("redis unavailable")
-	probe := &openAIWSStateStoreTimeoutProbeCache{getErr: storeErr}
-	lookup := LookupOpenAIContinuationBinding(ctx, NewOpenAIWSStateStore(probe), groupID, "resp_store_error")
-	require.Equal(t, OpenAIContinuationBindingStoreError, lookup.State)
-	require.Zero(t, lookup.AccountID)
 }
 
 func TestWithOpenAIWSStateStoreRedisTimeout_WithParentContext(t *testing.T) {

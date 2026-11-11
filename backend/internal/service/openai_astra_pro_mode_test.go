@@ -91,53 +91,6 @@ func astraRequestBody(model string, stream bool, mode, effort string) []byte {
 		reasoning + `}`)
 }
 
-func TestForward_OAuthReasoningModeUsesMappedUpstreamModel(t *testing.T) {
-	for _, tc := range []struct {
-		name           string
-		requestedModel string
-		upstreamModel  string
-		effort         string
-		wantMode       string
-		wantEffort     string
-	}{
-		{
-			name:           "public alias to Astra preserves pro without injecting effort",
-			requestedModel: "assistant", upstreamModel: "gpt-6-astra", wantMode: "pro",
-		},
-		{
-			name:           "public alias to non-Astra retains official pro to max rule",
-			requestedModel: "assistant", upstreamModel: "gpt-5.6-sol", wantEffort: "max",
-		},
-		{
-			name:           "Astra spelling mapped to non-Astra preserves explicit effort only",
-			requestedModel: "gpt-6-astra", upstreamModel: "gpt-5.6-sol", effort: "medium", wantEffort: "medium",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			setup := newAstraOAuthSetup(t, false)
-			setup.account.Credentials["model_mapping"] = map[string]any{tc.requestedModel: tc.upstreamModel}
-			setup.upstream.resp = &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-				Body: io.NopCloser(strings.NewReader(codexCompletedSSE(
-					`{"id":"resp_mapped_mode","status":"completed","model":"` + tc.upstreamModel + `","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
-				))),
-			}
-			body := astraRequestBody(tc.requestedModel, true, "pro", tc.effort)
-
-			result, err := setup.svc.Forward(context.Background(), setup.c, setup.account, body)
-
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.NotNil(t, setup.upstream.lastReq)
-			require.Equal(t, tc.upstreamModel, gjson.GetBytes(setup.upstream.lastBody, "model").String())
-			require.Equal(t, tc.wantMode, gjson.GetBytes(setup.upstream.lastBody, "reasoning.mode").String())
-			require.Equal(t, tc.wantEffort, gjson.GetBytes(setup.upstream.lastBody, "reasoning.effort").String())
-			require.Equal(t, tc.requestedModel, gjson.GetBytes(body, "model").String(), "policy lookup must not mutate the caller's model ID")
-		})
-	}
-}
-
 // TestForward_AstraOAuth_NonAstraLegacyStillStrips asserts the historical strip
 // behavior is preserved for a non-Astra model on an OAuth account.
 func TestForward_AstraOAuth_NonAstraLegacyStillStrips(t *testing.T) {

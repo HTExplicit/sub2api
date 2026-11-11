@@ -69,6 +69,9 @@ func isOpenAIImagesErrorContainer(key string) bool {
 }
 
 func (s *OpenAIGatewayService) coolOpenAIImagesInsufficientBalance(ctx context.Context, account *Account) {
+	if IsAccountObservation(ctx) {
+		return
+	}
 	if s == nil || s.accountRepo == nil || account == nil {
 		return
 	}

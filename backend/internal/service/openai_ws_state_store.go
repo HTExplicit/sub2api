@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -39,7 +38,6 @@ type openAIWSConnBinding struct {
 }
 
 type openAIWSTurnStateBinding struct {
-	accountID int64
 	turnState string
 	expiresAt time.Time
 }
@@ -71,7 +69,6 @@ type OpenAIWSStateStore interface {
 	BindResponseAccount(ctx context.Context, groupID int64, responseID string, accountID int64, ttl time.Duration) error
 	GetResponseAccount(ctx context.Context, groupID int64, responseID string) (int64, error)
 	DeleteResponseAccount(ctx context.Context, groupID int64, responseID string) error
-	DeleteResponseAccountIfMatches(ctx context.Context, groupID int64, responseID string, expectedAccountID int64) (bool, error)
 	BindHTTPResponseOwner(ctx context.Context, groupID int64, responseID string, userID, apiKeyID int64, ttl time.Duration) error
 	GetHTTPResponseOwner(ctx context.Context, groupID int64, responseID string) (userID, apiKeyID int64, found bool, err error)
 
@@ -79,8 +76,8 @@ type OpenAIWSStateStore interface {
 	GetResponseConn(responseID string) (string, bool)
 	DeleteResponseConn(responseID string)
 
-	BindSessionTurnState(groupID int64, sessionHash string, args ...any)
-	GetSessionTurnState(groupID int64, sessionHash string, accountIDs ...int64) (string, bool)
+	BindSessionTurnState(groupID int64, sessionHash, turnState string, ttl time.Duration)
+	GetSessionTurnState(groupID int64, sessionHash string) (string, bool)
 	DeleteSessionTurnState(groupID int64, sessionHash string)
 
 	BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration)
@@ -95,33 +92,6 @@ type OpenAIWSStateStore interface {
 	// HasAnySessionInvalidEncryptedContent 是热路径快速探测：全局无记录时
 	// 调用方可跳过会话哈希计算与摘要匹配。
 	HasAnySessionInvalidEncryptedContent() bool
-}
-
-type OpenAIContinuationBindingState string
-
-const (
-	OpenAIContinuationBindingHit        OpenAIContinuationBindingState = "hit"
-	OpenAIContinuationBindingMiss       OpenAIContinuationBindingState = "miss"
-	OpenAIContinuationBindingStoreError OpenAIContinuationBindingState = "store_error"
-)
-
-type OpenAIContinuationBindingLookup struct {
-	State     OpenAIContinuationBindingState
-	AccountID int64
-}
-
-func LookupOpenAIContinuationBinding(ctx context.Context, store OpenAIWSStateStore, groupID int64, responseID string) OpenAIContinuationBindingLookup {
-	if store == nil || strings.TrimSpace(responseID) == "" {
-		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingMiss}
-	}
-	accountID, err := store.GetResponseAccount(ctx, groupID, responseID)
-	if err != nil {
-		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingStoreError}
-	}
-	if accountID <= 0 {
-		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingMiss}
-	}
-	return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingHit, AccountID: accountID}
 }
 
 type defaultOpenAIWSStateStore struct {
@@ -170,7 +140,9 @@ func (s *defaultOpenAIWSStateStore) BindHTTPResponseOwner(ctx context.Context, g
 	mapKey := openAIWSResponseAccountMapKey(groupID, id)
 	s.responseOwnerMu.Lock()
 	ensureBindingCapacity(s.responseOwners, mapKey, openAIWSStateStoreMaxEntriesPerMap)
-	s.responseOwners[mapKey] = openAIHTTPResponseOwnerBinding{userID: userID, apiKeyID: apiKeyID, expiresAt: time.Now().Add(ttl)}
+	s.responseOwners[mapKey] = openAIHTTPResponseOwnerBinding{
+		userID: userID, apiKeyID: apiKeyID, expiresAt: time.Now().Add(ttl),
+	}
 	s.responseOwnerMu.Unlock()
 
 	if s.cache == nil {
@@ -207,22 +179,18 @@ func (s *defaultOpenAIWSStateStore) GetHTTPResponseOwner(ctx context.Context, gr
 	defer cancel()
 	userID, err := s.cache.GetSessionAccountID(cacheCtx, groupID, openAIHTTPResponseOwnerCacheKey(openAIHTTPResponseOwnerUserPrefix, id))
 	if err != nil || userID <= 0 {
-		if errors.Is(err, ErrStickySessionNotFound) {
-			return 0, 0, false, nil
-		}
 		return 0, 0, false, err
 	}
 	apiKeyID, err := s.cache.GetSessionAccountID(cacheCtx, groupID, openAIHTTPResponseOwnerCacheKey(openAIHTTPResponseOwnerKeyPrefix, id))
 	if err != nil || apiKeyID <= 0 {
-		if errors.Is(err, ErrStickySessionNotFound) {
-			return 0, 0, false, nil
-		}
 		return 0, 0, false, err
 	}
 
 	s.responseOwnerMu.Lock()
 	ensureBindingCapacity(s.responseOwners, mapKey, openAIWSStateStoreMaxEntriesPerMap)
-	s.responseOwners[mapKey] = openAIHTTPResponseOwnerBinding{userID: userID, apiKeyID: apiKeyID, expiresAt: now.Add(time.Minute)}
+	s.responseOwners[mapKey] = openAIHTTPResponseOwnerBinding{
+		userID: userID, apiKeyID: apiKeyID, expiresAt: now.Add(time.Minute),
+	}
 	s.responseOwnerMu.Unlock()
 	return userID, apiKeyID, true, nil
 }
@@ -249,6 +217,22 @@ func (s *defaultOpenAIWSStateStore) BindResponseAccount(ctx context.Context, gro
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	return s.cache.SetSessionAccountID(cacheCtx, groupID, cacheKey, accountID, ttl)
+}
+
+func cleanupExpiredHTTPResponseOwnerBindings(bindings map[string]openAIHTTPResponseOwnerBinding, now time.Time, maxScan int) {
+	if len(bindings) == 0 || maxScan <= 0 {
+		return
+	}
+	scanned := 0
+	for key, binding := range bindings {
+		if now.After(binding.expiresAt) {
+			delete(bindings, key)
+		}
+		scanned++
+		if scanned >= maxScan {
+			break
+		}
+	}
 }
 
 func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, groupID int64, responseID string) (int64, error) {
@@ -278,13 +262,8 @@ func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, grou
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	accountID, err := s.cache.GetSessionAccountID(cacheCtx, groupID, cacheKey)
-	if err != nil {
-		if errors.Is(err, ErrStickySessionNotFound) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	if accountID <= 0 {
+	if err != nil || accountID <= 0 {
+		// 缓存读取失败不阻断主流程，按未命中降级。
 		return 0, nil
 	}
 	return accountID, nil
@@ -305,42 +284,6 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseAccount(ctx context.Context, g
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	return s.cache.DeleteSessionAccountID(cacheCtx, groupID, openAIWSResponseAccountCacheKey(id))
-}
-
-// DeleteResponseAccountIfMatches removes a stale response binding from each
-// backing layer only while that layer still points at expectedAccountID.
-func (s *defaultOpenAIWSStateStore) DeleteResponseAccountIfMatches(
-	ctx context.Context,
-	groupID int64,
-	responseID string,
-	expectedAccountID int64,
-) (bool, error) {
-	id := normalizeOpenAIWSResponseID(responseID)
-	if id == "" || expectedAccountID <= 0 {
-		return false, nil
-	}
-
-	mapKey := openAIWSResponseAccountMapKey(groupID, id)
-	localDeleted := false
-	s.responseToAccountMu.Lock()
-	if binding, ok := s.responseToAccount[mapKey]; ok && binding.accountID == expectedAccountID {
-		delete(s.responseToAccount, mapKey)
-		localDeleted = true
-	}
-	s.responseToAccountMu.Unlock()
-
-	if s.cache == nil {
-		return localDeleted, nil
-	}
-	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
-	defer cancel()
-	redisDeleted, err := s.cache.DeleteSessionAccountIDIfMatches(
-		cacheCtx,
-		groupID,
-		openAIWSResponseAccountCacheKey(id),
-		expectedAccountID,
-	)
-	return localDeleted || redisDeleted, err
 }
 
 func (s *defaultOpenAIWSStateStore) BindResponseConn(responseID, connID string, ttl time.Duration) {
@@ -388,29 +331,10 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseConn(responseID string) {
 	s.responseToConnMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionHash string, args ...any) {
-	accountID := int64(0)
-	turnState := ""
-	ttl := time.Duration(0)
-	switch len(args) {
-	case 2:
-		turnState, _ = args[0].(string)
-		ttl, _ = args[1].(time.Duration)
-	case 3:
-		switch value := args[0].(type) {
-		case int64:
-			accountID = value
-		case int:
-			accountID = int64(value)
-		}
-		turnState, _ = args[1].(string)
-		ttl, _ = args[2].(time.Duration)
-	default:
-		return
-	}
+func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionHash, turnState string, ttl time.Duration) {
 	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
 	state := strings.TrimSpace(turnState)
-	if key == "" || accountID <= 0 || state == "" {
+	if key == "" || state == "" {
 		return
 	}
 	ttl = normalizeOpenAIWSTTL(ttl)
@@ -419,18 +343,13 @@ func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionH
 	s.sessionToTurnStateMu.Lock()
 	ensureBindingCapacity(s.sessionToTurnState, key, openAIWSStateStoreMaxEntriesPerMap)
 	s.sessionToTurnState[key] = openAIWSTurnStateBinding{
-		accountID: accountID,
 		turnState: state,
 		expiresAt: time.Now().Add(ttl),
 	}
 	s.sessionToTurnStateMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHash string, accountIDs ...int64) (string, bool) {
-	accountID := int64(0)
-	if len(accountIDs) > 0 {
-		accountID = accountIDs[0]
-	}
+func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHash string) (string, bool) {
 	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
 	if key == "" {
 		return "", false
@@ -441,7 +360,7 @@ func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHa
 	s.sessionToTurnStateMu.RLock()
 	binding, ok := s.sessionToTurnState[key]
 	s.sessionToTurnStateMu.RUnlock()
-	if !ok || (accountID > 0 && binding.accountID != accountID) || now.After(binding.expiresAt) || strings.TrimSpace(binding.turnState) == "" {
+	if !ok || now.After(binding.expiresAt) || strings.TrimSpace(binding.turnState) == "" {
 		return "", false
 	}
 	return binding.turnState, true
@@ -612,22 +531,6 @@ func (s *defaultOpenAIWSStateStore) maybeCleanup() {
 }
 
 func cleanupExpiredInvalidEncryptedBindings(bindings map[string]openAIWSInvalidEncryptedBinding, now time.Time, maxScan int) {
-	if len(bindings) == 0 || maxScan <= 0 {
-		return
-	}
-	scanned := 0
-	for key, binding := range bindings {
-		if now.After(binding.expiresAt) {
-			delete(bindings, key)
-		}
-		scanned++
-		if scanned >= maxScan {
-			break
-		}
-	}
-}
-
-func cleanupExpiredHTTPResponseOwnerBindings(bindings map[string]openAIHTTPResponseOwnerBinding, now time.Time, maxScan int) {
 	if len(bindings) == 0 || maxScan <= 0 {
 		return
 	}

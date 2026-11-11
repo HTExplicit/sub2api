@@ -17,63 +17,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
 	"github.com/tidwall/gjson"
 )
 
 type pelicanGenerationContextKey struct{}
-type pelicanFirstOutputPolicyContextKey struct{}
-
-// Retain the existing first-output policy, but arm its header phase only once
-// preparation and account/global admission have completed.
-type pelicanFirstOutputPolicy struct {
-	timeout         time.Duration
-	guard           *openAIFirstOutputHeaderGuard
-	startedAt       time.Time
-	headersOnce     sync.Once
-	headersTimedOut bool
-	newGuard        func(context.Context, context.CancelFunc, time.Time) (context.Context, *openAIFirstOutputHeaderGuard)
-}
-
-func (p *pelicanFirstOutputPolicy) arm(ctx context.Context) context.Context {
-	if p == nil || p.timeout <= 0 {
-		return ctx
-	}
-	p.startedAt = PelicanFirstOutputStart(ctx, time.Now())
-	create := p.newGuard
-	if create == nil {
-		create = newOpenAIFirstOutputHeaderGuard
-	}
-	var guarded context.Context
-	guarded, p.guard = create(ctx, func() {}, p.startedAt.Add(p.timeout))
-	return guarded
-}
-
-func (p *pelicanFirstOutputPolicy) stopHeaderWait() bool {
-	if p == nil || p.guard == nil {
-		return false
-	}
-	p.headersOnce.Do(func() { p.headersTimedOut = p.guard.stopHeaderWait() })
-	return p.headersTimedOut
-}
-
-// PelicanFirstOutputStart is shared by header and semantic-output guards. The
-// first actual send remains the origin for ordinary same-account retries.
-func PelicanFirstOutputStart(ctx context.Context, fallback time.Time) time.Time {
-	if ctx != nil && IsPelicanGeneration(ctx) {
-		if state := pelicanExecutionFromContext(ctx); state != nil {
-			state.mu.Lock()
-			started := state.generationAt
-			state.mu.Unlock()
-			if !started.IsZero() {
-				return started
-			}
-		}
-	}
-	return fallback
-}
 
 // The capture belongs to one administrator's fixed-account invocation. It does
 // not replace gateway dependencies, create an API key, or enter a selector.
@@ -149,8 +98,6 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 		release()
 		return nil, finish, err
 	}
-	firstOutputPolicy, _ := ctx.Value(pelicanFirstOutputPolicyContextKey{}).(*pelicanFirstOutputPolicy)
-	ctx = firstOutputPolicy.arm(ctx)
 	req = req.WithContext(ctx)
 	invocation := PelicanInvocation{Platform: capture.account.Platform, Model: model, Effort: effort,
 		Endpoint: req.URL.Scheme + "://" + req.URL.Host + req.URL.EscapedPath(), Protocol: protocol, Transport: transport}
@@ -162,7 +109,6 @@ func PreparePelicanHTTPRequest(req *http.Request, accountID int64, accountConcur
 	finish = func(resp *http.Response, sendErr error) (*http.Response, error) {
 		attempt.mu.Lock()
 		defer attempt.mu.Unlock()
-		firstOutputPolicy.stopHeaderWait()
 		attempt.err = sendErr
 		if resp == nil || resp.Body == nil {
 			release()
@@ -385,7 +331,7 @@ func (s *AccountTestService) PelicanImageCapability(ctx context.Context, account
 	if account.Platform == PlatformAnthropic || account.IsGemini() || account.Platform == PlatformAntigravity && account.Type != AccountTypeUpstream {
 		return true, nil
 	}
-	descriptor := newConfiguredCodexModelDescriptorForAccount(mapped, account)
+	descriptor := newConfiguredCodexModelDescriptor(mapped)
 	return slices.Contains(descriptor.InputModalities, "image"), nil
 }
 
@@ -454,13 +400,7 @@ func (s *AccountTestService) GeneratePelicanInput(ctx context.Context, accountID
 	if last.wsFrames && last.raw.Len() == 0 && sendErr != nil {
 		// A normal generate:false prewarm can reject a route before the题面.
 		// Its complete native error is useful even though no work was generated.
-		var eventErr *openAIWSUpstreamEventError
-		if errors.As(sendErr, &eventErr) && len(eventErr.payload) > 0 {
-			result.RawResponse = string(eventErr.payload)
-			result.Error = string(eventErr.payload)
-		} else {
-			result.Error = sendErr.Error()
-		}
+		result.Error = sendErr.Error()
 		return result, sendErr
 	}
 	if last.status >= http.StatusBadRequest {
@@ -516,7 +456,7 @@ func pelicanMessagesInputBody(model, upstreamModel, effort string, budget int64,
 	}
 	if effort != "" {
 		payload["output_config"] = map[string]any{"effort": effort}
-		if claude.EffortUsesAdaptiveThinking(upstreamModel) {
+		if accountTestClaudeUsesAdaptiveThinking(upstreamModel) {
 			payload["thinking"] = map[string]any{"type": "adaptive"}
 		}
 	}

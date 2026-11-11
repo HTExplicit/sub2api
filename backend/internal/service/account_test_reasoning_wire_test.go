@@ -20,18 +20,17 @@ type reasoningTestRepo struct {
 func (r *reasoningTestRepo) GetByID(context.Context, int64) (*Account, error)         { return r.account, nil }
 func (r *reasoningTestRepo) UpdateExtra(context.Context, int64, map[string]any) error { return nil }
 
-func TestAccountTestReasoningSurvivesMappingAndWireCompression(t *testing.T) {
+func TestAccountTestReasoningSurvivesMappingAndOfficialWire(t *testing.T) {
 	a := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
 		Credentials: map[string]any{"access_token": "test-access", "model_mapping": map[string]any{"friendly": "gpt-6-astra"}}}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")}}
 	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: a}, httpUpstream: upstream}
 	c, rec := newTestContext()
-	enableCodexRequestZstd(t)
 	require.NoError(t, svc.TestAccountConnection(c, a.ID, "friendly", "test", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "max"}))
 	require.Len(t, upstream.requests, 1)
 	raw, err := io.ReadAll(upstream.requests[0].Body)
 	require.NoError(t, err)
-	body := zstdDecodeForTest(t, raw)
+	body := raw
 	require.Equal(t, "gpt-6-astra", gjson.GetBytes(body, "model").String())
 	require.Equal(t, "max", gjson.GetBytes(body, "reasoning.effort").String())
 	require.Contains(t, rec.Body.String(), `"effective_reasoning_effort":"max"`)
@@ -98,7 +97,7 @@ func TestAccountTestReasoningGrokSendsForwardedEffort(t *testing.T) {
 	account := &Account{ID: 46, Platform: PlatformGrok, Type: AccountTypeAPIKey, Status: StatusActive, Credentials: map[string]any{"api_key": "test-key"}}
 	supported := true
 	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"grok-4.3": {Reasoning: &supported, SupportedReasoningLevels: []string{"low", "high", "xhigh"}}}})
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\"}\n\n")}}
+	upstream := &httpUpstreamRecorder{resp: newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\"}\n\n")}
 	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: account}, httpUpstream: upstream}
 	c, recorded := newTestContext()
 	require.NoError(t, svc.TestAccountConnection(c, account.ID, "grok-4.3", "", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "xhigh"}))

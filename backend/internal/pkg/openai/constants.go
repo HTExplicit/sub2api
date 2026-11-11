@@ -10,15 +10,12 @@ import (
 
 // Model represents an OpenAI model
 type Model struct {
-	ID                     string   `json:"id"`
-	Object                 string   `json:"object"`
-	Created                int64    `json:"created"`
-	OwnedBy                string   `json:"owned_by"`
-	Type                   string   `json:"type"`
-	DisplayName            string   `json:"display_name"`
-	Description            string   `json:"description,omitempty"`
-	ReasoningEfforts       []string `json:"reasoning_efforts,omitempty"`
-	DefaultReasoningEffort string   `json:"default_reasoning_effort,omitempty"`
+	ID          string `json:"id"`
+	Object      string `json:"object"`
+	Created     int64  `json:"created"`
+	OwnedBy     string `json:"owned_by"`
+	Type        string `json:"type"`
+	DisplayName string `json:"display_name"`
 }
 
 // DefaultModels OpenAI models list

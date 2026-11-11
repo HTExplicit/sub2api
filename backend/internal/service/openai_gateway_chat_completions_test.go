@@ -458,15 +458,6 @@ func TestForwardAsChatCompletions_StructuredInputRejectionDoesNotRetryIneligible
 			if status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusTooManyRequests {
 				require.ErrorAs(t, err, &failover)
 				require.Equal(t, status, failover.StatusCode)
-			} else if test.nativeIngress {
-				// Downstream native ingress returns request-terminal metadata for
-				// its handler to render. The error's shared type never permits retry.
-				require.ErrorAs(t, err, &failover)
-				require.Equal(t, GatewayFailureScopeRequest, failover.Scope)
-				require.Equal(t, NextAccountStop, failover.NextAccountAction)
-				require.False(t, failover.ShouldRetryNextAccount())
-				require.False(t, failover.ShouldReportAccountScheduleFailure())
-				require.Equal(t, http.StatusBadRequest, failover.ClientStatusCode)
 			} else {
 				require.False(t, errors.As(err, &failover))
 				require.True(t, c.Writer.Written())

@@ -30,6 +30,9 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	if s == nil || c == nil || account == nil {
 		return nil, fmt.Errorf("service, context, and account are required")
 	}
+	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
+		return nil, err
+	}
 	modelResult := gjson.GetBytes(body, "model")
 	requestedModel := strings.TrimSpace(modelResult.String())
 	if modelResult.Type != gjson.String || requestedModel == "" {
@@ -58,6 +61,7 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	if err := s.ensureOpenAIAlphaSearchAuthMetadata(ctx, account, token, proxyURL); err != nil {
 		return nil, err
 	}
+	SetOpsUpstreamModel(c, upstreamModel)
 
 	// Codex Personal Access Token（at-...）目前可访问 ChatGPT Codex
 	// /responses，但会被 standalone /alpha/search 的 access enforcement
@@ -73,7 +77,7 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	}
 
 	upstreamStart := time.Now()
-	resp, err := s.doOpenAICodexUpstream(req, account, proxyURL)
+	resp, err := s.doOpenAIUpstream(req, proxyURL, account)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -83,9 +87,6 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, fmt.Errorf("read alpha search response: %w", err)
-	}
-	if s.forwardAlphaSearchSafetyRejection(c, resp, respBody) {
-		return nil, errOpenAICyberPolicyForwarded
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
@@ -103,9 +104,6 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 				shouldDisable = s.handleFailoverSideEffects(ctx, resp, account, respBody, openAIAlphaSearchSchedulingModel(account, requestedModel))
 			}
 			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
-			if account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMessage, respBody) {
-				return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, respBody)
-			}
 			if account.IsOpenAIOAuthLike() && resp.StatusCode == http.StatusTooManyRequests {
 				return nil, s.newOpenAIAccountFailoverError(account, resp.StatusCode, resp.Header, respBody, upstreamMessage, shouldDisable, retryableOnSameAccount)
 			}
@@ -163,7 +161,7 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	SetActualOpenAIUpstreamEndpoint(c, "/v1/responses")
 
 	upstreamStart := time.Now()
-	resp, err := s.doOpenAICodexUpstream(req, account, proxyURL)
+	resp, err := s.doOpenAIUpstream(req, proxyURL, account)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -173,9 +171,6 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, fmt.Errorf("read alpha search responses fallback response: %w", err)
-	}
-	if s.forwardAlphaSearchSafetyRejection(c, resp, respBody) {
-		return nil, errOpenAICyberPolicyForwarded
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
@@ -228,45 +223,8 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	}, nil
 }
 
-// A structured request-level refusal is not a missing search capability. Keep
-// it terminal before endpoint/model fallbacks, including a failed Responses
-// SSE event that would otherwise look like an empty web-search result.
-func (s *OpenAIGatewayService) forwardAlphaSearchSafetyRejection(c *gin.Context, resp *http.Response, body []byte) bool {
-	payload := body
-	streamEvent := false
-	if !gjson.ValidBytes(payload) || !isOpenAIRequestScopedSafetyRejection(payload) {
-		payload = nil
-		forEachOpenAISSEDataPayload(string(body), func(event []byte) {
-			if payload == nil && isOpenAIRequestScopedSafetyRejection(event) {
-				payload = append([]byte(nil), event...)
-				streamEvent = true
-			}
-		})
-	}
-	if len(payload) == 0 {
-		return false
-	}
-	markOpenAICyberPolicyFromResponse(c, resp.StatusCode, payload)
-	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(payload)))
-	setOpsUpstreamError(c, resp.StatusCode, message, truncateString(string(payload), 2048))
-	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-	MarkResponseCommitted(c)
-	if streamEvent {
-		// alpha/search is a non-streaming JSON tool endpoint even when its
-		// internal Responses bridge uses SSE upstream.
-		errorPayload := gjson.GetBytes(payload, "error")
-		if !errorPayload.Exists() {
-			errorPayload = gjson.GetBytes(payload, "response.error")
-		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": json.RawMessage(errorPayload.Raw)})
-		return true
-	}
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/json"
-	}
-	c.Data(resp.StatusCode, contentType, body)
-	return true
+func openAIAlphaSearchSchedulingModel(account *Account, requestedModel string) string {
+	return canonicalOpenAIAccountSchedulingModel(account, requestedModel)
 }
 
 func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(ctx context.Context, c *gin.Context, account *Account, alphaBody []byte, body []byte, token string) (*http.Request, error) {
@@ -319,12 +277,12 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 	}
 	apiKeyID := getAPIKeyIDFromContext(c)
 	if sessionID := strings.TrimSpace(gjson.GetBytes(alphaBody, "id").String()); sessionID != "" {
-		// 搜索会话 id 以连字符会话头（UUID 形态）补齐缺失的会话头；账号/Key 作用域改写由
-		// 下面的 applyCodexAccountIdentityHeaders 统一完成，与其他 Codex 路径一致。
-		fillCodexSessionIdentityHeaders(req.Header, generateSessionUUID(sessionID))
+		isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), sessionID)
+		req.Header.Set("Session_ID", isolated)
+		req.Header.Set("Conversation_ID", isolated)
 	}
-	applyCodexAccountIdentityHeaders(req.Header, codexAccountProjectionSource(c, account), apiKeyID)
-	enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), apiKeyID)
+	enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
 }
@@ -432,7 +390,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	if account.IsOpenAIOAuthLike() {
+	if account.Type == AccountTypeOAuth {
 		req.Host = "chatgpt.com"
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
 			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
@@ -441,6 +399,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 		if turnMetadata := openAIAlphaSearchInboundHeader(c, "X-Codex-Turn-Metadata"); turnMetadata != "" {
 			req.Header.Set("X-Codex-Turn-Metadata", turnMetadata)
 		}
+		applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 		canonical := resolveCodexOutboundIdentity("")
 		if version := openAIAlphaSearchInboundHeader(c, "Version"); version != "" {
 			req.Header.Set("Version", version)
@@ -462,8 +421,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 		if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 			req.Header.Set("User-Agent", canonical.userAgent)
 		}
-		applyCodexAccountIdentityHeaders(req.Header, codexAccountProjectionSource(c, account), getAPIKeyIDFromContext(c))
-		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	}
 
 	account.ApplyHeaderOverrides(req.Header)

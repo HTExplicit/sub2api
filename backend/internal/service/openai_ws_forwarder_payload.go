@@ -105,6 +105,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		}
 		for _, name := range [...]string{
 			"x-codex-window-id",
+			"x-codex-installation-id",
 			"session-id",
 			"thread-id",
 			"x-client-request-id",
@@ -120,9 +121,16 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// 之外：该头是账号/会话级属性，不依赖入站请求是否存在，也避免预热与
 	// 实际请求因头差异落进不同的连接池兼容分桶。
 	applyOpenAICodexBetaFeatures(c, account, headers)
-	// OAuth（Codex 协议）账号：真实 Codex 握手只带连字符 session-id / thread-id，
-	// 下划线形式的 session_id / conversation_id 不再发送；其他账号类型保持原样。
-	if account == nil || !account.UsesOpenAICodexProtocol() {
+	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
+	if account != nil && account.UsesOpenAICodexProtocol() {
+		apiKeyID := getAPIKeyIDFromContext(c)
+		if sessionResolution.SessionID != "" {
+			headers.Set("session_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), sessionResolution.SessionID))
+		}
+		if sessionResolution.ConversationID != "" {
+			headers.Set("conversation_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), sessionResolution.ConversationID))
+		}
+	} else {
 		if sessionResolution.SessionID != "" {
 			headers.Set("session_id", sessionResolution.SessionID)
 		}
@@ -136,20 +144,13 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
 		headers.Set(openAIWSTurnMetadataHeader, metadata)
 	}
-	applyCodexAccountIdentityHeaders(headers, codexAccountProjectionSource(c, account), getAPIKeyIDFromContext(c), codexFingerprintPolicyForContext(c, account))
+	applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	applyStagedCodexFingerprintHeaders(c, account, headers)
-	if account != nil && account.UsesOpenAICodexProtocol() {
-		// 入站缺失连字符会话头时补齐：来自帧体 prompt_cache_key 的回退值由调用方传入最终线上值
-		//（已随帧体做过账号作用域改写），不再二次映射；来自入站下划线头的原始值仍按账号作用域
-		// 改写。两者都与 WS 帧 client_metadata 的改写结果同源。
-		fallback := sessionResolution.SessionID
-		if sessionResolution.SessionSource != "prompt_cache_key" {
-			fallback = scopeCodexAccountIdentityValue(codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), fallback)
-		}
-		ensureCodexSessionIdentityHeaders(headers, fallback)
-	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {
+		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {
+			return nil, sessionResolution, fmt.Errorf("resolve chatgpt account headers: %w", err)
+		}
 		headers.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 	}
 
@@ -173,15 +174,16 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		headers.Set("user-agent", CodexCanonicalUserAgent())
 	}
+	// 终态收口：WS 握手与 HTTP 出站共用同一套身份语义，账号级自定义 UA 同样作为
+	// 管理员显式配置传入（上面写进 headers 的值只在强制统一被关闭时才参与配对）。
+	if account != nil && account.UsesOpenAICodexProtocol() {
+		enforceCodexIdentityHeadersWithUA(headers, s.codexIdentityOverrideUA(account))
+	}
+
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）。
 	// 覆盖所有 WS 模式（ctx_pool/dedicated/passthrough）的握手头。
 	account.ApplyHeaderOverrides(headers)
-	// turn-state is minted under the outbound account identity. A value known
-	// to come from another account must not survive an account failover.
-	s.guardOpenAICodexTurnStateEcho(c, account, headers)
-	if err := s.finalizeCodexOutboundHeaders(ctx, c, account, headers, routingModel, routingServiceTier); err != nil {
-		return nil, sessionResolution, err
-	}
+	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(
 		ctx,
 		account,
@@ -639,7 +641,6 @@ func openAIWSRawItemsHasPrefix(items []json.RawMessage, prefix []json.RawMessage
 	return true
 }
 
-//nolint:unused // upstream parity, see openAIWSIngressPreviousTurnStrictState
 func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 	for _, item := range items {
 		if isCodexToolCallOutputItemType(gjson.GetBytes(item, "type").String()) {
@@ -647,6 +648,73 @@ func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 		}
 	}
 	return false
+}
+
+func openAIWSRawItemsHaveToolCallContextForOutputs(items []json.RawMessage) bool {
+	if len(items) == 0 {
+		return false
+	}
+	contextCallIDs := make(map[string]struct{})
+	outputCallIDs := make(map[string]struct{})
+	for _, item := range items {
+		itemType := gjson.GetBytes(item, "type").String()
+		callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String())
+		switch {
+		case isCodexToolCallContextItemType(itemType):
+			if callID != "" {
+				contextCallIDs[callID] = struct{}{}
+			}
+		case isCodexToolCallOutputItemType(itemType):
+			if callID == "" {
+				return false
+			}
+			outputCallIDs[callID] = struct{}{}
+		}
+	}
+	if len(outputCallIDs) == 0 || len(contextCallIDs) == 0 {
+		return false
+	}
+	for callID := range outputCallIDs {
+		if _, ok := contextCallIDs[callID]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// sanitizeOpenAIWSHistoricalReplayToolCalls 返回的新头数组与 previousItems 共享正文。
+func sanitizeOpenAIWSHistoricalReplayToolCalls(
+	previousItems []json.RawMessage,
+	currentItems []json.RawMessage,
+) []json.RawMessage {
+	if len(previousItems) == 0 {
+		return previousItems
+	}
+	outputCallIDs := make(map[string]struct{})
+	collectOutputCallIDs := func(items []json.RawMessage) {
+		for _, item := range items {
+			if !isCodexToolCallOutputItemType(gjson.GetBytes(item, "type").String()) {
+				continue
+			}
+			if callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String()); callID != "" {
+				outputCallIDs[callID] = struct{}{}
+			}
+		}
+	}
+	collectOutputCallIDs(previousItems)
+	collectOutputCallIDs(currentItems)
+
+	sanitized := make([]json.RawMessage, 0, len(previousItems))
+	for _, item := range previousItems {
+		if isCodexToolCallContextItemType(gjson.GetBytes(item, "type").String()) {
+			callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String())
+			if _, paired := outputCallIDs[callID]; !paired {
+				continue
+			}
+		}
+		sanitized = append(sanitized, item)
+	}
+	return sanitized
 }
 
 func openAIWSRawPayloadHasToolCallOutput(payload []byte) bool {
@@ -685,9 +753,7 @@ func buildOpenAIWSReplayInputSequenceFromItems(
 	if !hasPreviousResponseID || !previousFullInputExists {
 		return currentItems, currentExists
 	}
-	// An unfinished tool call is still part of the original output. A client
-	// may supply its result in a later turn; deleting it is not proof that a
-	// shorter transcript is a complete replay of the response chain.
+	previousFullInput = sanitizeOpenAIWSHistoricalReplayToolCalls(previousFullInput, currentItems)
 	if !currentExists || len(currentItems) == 0 {
 		return previousFullInput, true
 	}
@@ -740,54 +806,17 @@ func setOpenAIWSPayloadInputSequence(
 	return sjson.SetRawBytes(payload, "input", inputRaw)
 }
 
-func prepareOpenAIContinuationReplayPayload(
-	payload []byte,
-	fullInput []json.RawMessage,
-	fullInputExists bool,
-	verifiedFullHistory bool,
-) ([]byte, OpenAIContinuationClassification, bool) {
-	classification := OpenAIContinuationClassification{}
-	candidate, err := setOpenAIWSPayloadInputSequence(payload, fullInput, fullInputExists)
-	if err != nil {
-		return payload, classification, false
-	}
-	classification, err = ClassifyOpenAIContinuation(candidate, OpenAIContinuationProof{VerifiedFullHistory: verifiedFullHistory})
-	if err != nil {
-		return payload, classification, false
-	}
-	switch classification.Mode {
-	case OpenAIContinuationAnchorPlusFull:
-		withoutAnchor, removed, dropErr := dropPreviousResponseIDFromRawPayload(candidate)
-		if dropErr != nil || !removed {
-			return payload, classification, false
-		}
-		return withoutAnchor, classification, true
-	case OpenAIContinuationFullReplay, OpenAIContinuationOpaqueFull:
-		return candidate, classification, true
-	default:
-		return payload, classification, false
-	}
-}
-
 func buildOpenAIWSCurrentTurnRetryPayload(
 	payload []byte,
 	fullInput []json.RawMessage,
 	fullInputExists bool,
-	verifiedFullHistory bool,
 	originalModel string,
 ) ([]byte, bool, error) {
-	if !fullInputExists || !verifiedFullHistory {
+	if !fullInputExists {
 		return nil, false, nil
 	}
 	retryPayload, err := setOpenAIWSPayloadInputSequence(payload, fullInput, true)
 	if err != nil {
-		return nil, false, err
-	}
-	// This payload is handed to a different account. Classify the intact
-	// candidate before removing its anchor, so opaque or unresolved state can
-	// never become "portable" as a consequence of deleting its requirements.
-	classification, err := ClassifyOpenAIContinuation(retryPayload, OpenAIContinuationProof{VerifiedFullHistory: verifiedFullHistory})
-	if err != nil || !classification.CanSwitchAccount() || openAIWSHasConversationReference(retryPayload) {
 		return nil, false, err
 	}
 	retryPayload = RemovePreviousResponseIDFromBody(retryPayload)
@@ -802,35 +831,6 @@ func buildOpenAIWSCurrentTurnRetryPayload(
 		return nil, false, nil
 	}
 	return retryPayload, true, nil
-}
-
-func openAIWSHasConversationReference(payload []byte) bool {
-	conversation := gjson.GetBytes(payload, "conversation")
-	return conversation.Exists() && conversation.Type != gjson.Null &&
-		(conversation.Type != gjson.String || strings.TrimSpace(conversation.String()) != "")
-}
-
-// A locally accumulated input is complete only if its first request had no
-// external history dependency, and every anchored successor names that exact
-// completed baseline. Nonempty input and paired tool IDs alone prove neither.
-func openAIWSReplayHistoryVerified(payload []byte, baselineResponseID string, baselineVerified bool) bool {
-	if openAIWSHasConversationReference(payload) {
-		return false
-	}
-	anchor := strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String())
-	if anchor != "" {
-		return baselineVerified && anchor == strings.TrimSpace(baselineResponseID)
-	}
-	classification, err := ClassifyOpenAIContinuation(payload, OpenAIContinuationProof{})
-	return err == nil && classification.CanReplayWithoutAnchor()
-}
-
-func prepareOpenAIWSVerifiedReplayPayload(payload []byte, fullInput []json.RawMessage, fullInputExists, verifiedFullHistory bool) ([]byte, bool) {
-	if !fullInputExists || !verifiedFullHistory || openAIWSHasConversationReference(payload) {
-		return payload, false
-	}
-	candidate, classification, replayable := prepareOpenAIContinuationReplayPayload(payload, fullInput, true, true)
-	return candidate, replayable && classification.CanReplayWithoutAnchor()
 }
 
 func shouldKeepIngressPreviousResponseID(
@@ -871,15 +871,10 @@ func shouldKeepIngressPreviousResponseID(
 	return true, "strict_incremental_ok", nil
 }
 
-// Upstream's strict previous_response_id comparison. The fork never rewrites a
-// client anchor, so nothing calls it; it stays for upstream parity.
-//
-//nolint:unused
 type openAIWSIngressPreviousTurnStrictState struct {
 	nonInputComparable []byte
 }
 
-//nolint:unused // upstream parity, see openAIWSIngressPreviousTurnStrictState
 func buildOpenAIWSIngressPreviousTurnStrictState(payload []byte) (*openAIWSIngressPreviousTurnStrictState, error) {
 	if len(payload) == 0 {
 		return nil, nil
@@ -893,7 +888,6 @@ func buildOpenAIWSIngressPreviousTurnStrictState(payload []byte) (*openAIWSIngre
 	}, nil
 }
 
-//nolint:unused // upstream parity, see openAIWSIngressPreviousTurnStrictState
 func shouldKeepIngressPreviousResponseIDWithStrictState(
 	previousState *openAIWSIngressPreviousTurnStrictState,
 	currentPayload []byte,

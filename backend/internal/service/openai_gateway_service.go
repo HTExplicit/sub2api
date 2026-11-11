@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/codextransport"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -62,7 +61,7 @@ const (
 	// 陈旧版本可能被优先丢弃（HTTP 200 + 流内 server_is_overloaded）；非官方客户端配不出
 	// 官方身份时整体回退到本常量，因此它必须跟随官方 CLI 的当前发布版本，
 	// 落后多个版本会让这些请求稳定落在被优先丢弃的一侧。
-	codexCLIVersion = "0.163.0"
+	codexCLIVersion = "0.146.0"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
 	// 配额自动暂停时，超过该时长仍未刷新的 used% 快照视为陈旧，不再据此暂停账号。
@@ -73,42 +72,38 @@ const (
 
 // OpenAI allowed headers whitelist (for non-passthrough).
 var openaiAllowedHeaders = map[string]bool{
-	"accept-language":       true,
-	"content-type":          true,
-	"conversation_id":       true,
-	"openai-beta":           true,
-	"user-agent":            true,
-	"originator":            true,
-	"session_id":            true,
-	"session-id":            true,
-	"thread-id":             true,
-	"x-client-request-id":   true,
-	"x-codex-beta-features": true,
-	"x-codex-turn-state":    true,
-	"x-codex-turn-metadata": true,
-	"x-codex-window-id":     true,
-	responsesLiteHeaderKey:  true,
+	"accept-language":         true,
+	"content-type":            true,
+	"conversation_id":         true,
+	"openai-beta":             true,
+	"user-agent":              true,
+	"originator":              true,
+	"session_id":              true,
+	"x-codex-beta-features":   true,
+	"x-codex-installation-id": true,
+	"x-codex-turn-state":      true,
+	"x-codex-turn-metadata":   true,
+	"x-codex-window-id":       true,
+	responsesLiteHeaderKey:    true,
 }
 
 // OpenAI passthrough allowed headers whitelist.
 // 透传模式下仅放行这些低风险请求头，避免将非标准/环境噪声头传给上游触发风控。
 var openaiPassthroughAllowedHeaders = map[string]bool{
-	"accept":                true,
-	"accept-language":       true,
-	"content-type":          true,
-	"conversation_id":       true,
-	"openai-beta":           true,
-	"user-agent":            true,
-	"originator":            true,
-	"session_id":            true,
-	"session-id":            true,
-	"thread-id":             true,
-	"x-client-request-id":   true,
-	"x-codex-beta-features": true,
-	"x-codex-turn-state":    true,
-	"x-codex-turn-metadata": true,
-	"x-codex-window-id":     true,
-	responsesLiteHeaderKey:  true,
+	"accept":                  true,
+	"accept-language":         true,
+	"content-type":            true,
+	"conversation_id":         true,
+	"openai-beta":             true,
+	"user-agent":              true,
+	"originator":              true,
+	"session_id":              true,
+	"x-codex-beta-features":   true,
+	"x-codex-installation-id": true,
+	"x-codex-turn-state":      true,
+	"x-codex-turn-metadata":   true,
+	"x-codex-window-id":       true,
+	responsesLiteHeaderKey:    true,
 }
 
 // codex_cli_only 拒绝时记录的请求头白名单（仅用于诊断日志，不参与上游透传）
@@ -129,16 +124,14 @@ var codexCLIOnlyDebugHeaderWhitelist = []string{
 
 // OpenAICodexUsageSnapshot represents Codex API usage limits from response headers
 type OpenAICodexUsageSnapshot struct {
-	PrimaryUsedPercent          *float64   `json:"primary_used_percent,omitempty"`
-	PrimaryResetAfterSeconds    *int       `json:"primary_reset_after_seconds,omitempty"`
-	PrimaryResetAt              *time.Time `json:"primary_reset_at,omitempty"`
-	PrimaryWindowMinutes        *int       `json:"primary_window_minutes,omitempty"`
-	SecondaryUsedPercent        *float64   `json:"secondary_used_percent,omitempty"`
-	SecondaryResetAfterSeconds  *int       `json:"secondary_reset_after_seconds,omitempty"`
-	SecondaryResetAt            *time.Time `json:"secondary_reset_at,omitempty"`
-	SecondaryWindowMinutes      *int       `json:"secondary_window_minutes,omitempty"`
-	PrimaryOverSecondaryPercent *float64   `json:"primary_over_secondary_percent,omitempty"`
-	UpdatedAt                   string     `json:"updated_at,omitempty"`
+	PrimaryUsedPercent          *float64 `json:"primary_used_percent,omitempty"`
+	PrimaryResetAfterSeconds    *int     `json:"primary_reset_after_seconds,omitempty"`
+	PrimaryWindowMinutes        *int     `json:"primary_window_minutes,omitempty"`
+	SecondaryUsedPercent        *float64 `json:"secondary_used_percent,omitempty"`
+	SecondaryResetAfterSeconds  *int     `json:"secondary_reset_after_seconds,omitempty"`
+	SecondaryWindowMinutes      *int     `json:"secondary_window_minutes,omitempty"`
+	PrimaryOverSecondaryPercent *float64 `json:"primary_over_secondary_percent,omitempty"`
+	UpdatedAt                   string   `json:"updated_at,omitempty"`
 }
 
 // NormalizedCodexLimits contains normalized 5h/7d rate limit data
@@ -229,20 +222,22 @@ func (s *OpenAICodexUsageSnapshot) Normalize() *NormalizedCodexLimits {
 
 // OpenAIUsage represents OpenAI API response usage
 type OpenAIUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	ImageInputTokens         int `json:"image_input_tokens,omitempty"`
-	ImageCacheReadTokens     int `json:"image_cache_read_tokens,omitempty"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
-	ImageOutputTokens        int `json:"image_output_tokens,omitempty"`
+	InputTokens                 int `json:"input_tokens"`
+	ImageInputTokens            int `json:"image_input_tokens,omitempty"`
+	ImageCacheReadTokens        int `json:"image_cache_read_tokens,omitempty"`
+	OutputTokens                int `json:"output_tokens"`
+	CacheCreationInputTokens    int `json:"cache_creation_input_tokens,omitempty"`
+	CacheCreation30mInputTokens int `json:"cache_creation_30m_input_tokens,omitempty"`
+	CacheCreation12hInputTokens int `json:"cache_creation_12h_input_tokens,omitempty"`
+	CacheReadInputTokens        int `json:"cache_read_input_tokens,omitempty"`
+	ImageOutputTokens           int `json:"image_output_tokens,omitempty"`
 }
 
 // OpenAIForwardResult represents the result of forwarding
 type OpenAIForwardResult struct {
 	RequestID  string
 	ResponseID string
-	// Direct upstream headers are used for request-ID attribution.
+	// UpstreamHeaders 是直接上游的响应头，用于按账户配置解析上游请求标识。
 	UpstreamHeaders http.Header
 	Usage           OpenAIUsage
 	Model           string // 原始模型（用于响应和日志显示）
@@ -274,7 +269,6 @@ type OpenAIForwardResult struct {
 	ReasoningEffort *string
 	// RequestedReasoningEffort is the client-requested effort before mapping.
 	// Empty/nil means it should fall back to ReasoningEffort at persistence.
-	ReasoningEffortDefaulted bool
 	RequestedReasoningEffort *string
 	Stream                   bool
 	OpenAIWSMode             bool
@@ -349,9 +343,9 @@ func SetActualOpenAIUpstreamEndpoint(c *gin.Context, endpoint string) {
 	if c == nil {
 		return
 	}
-	// The handler clears this value before each account attempt so an endpoint
-	// selected by a failed bridge attempt cannot leak into the next route.
-	c.Set(openAIUpstreamEndpointContextKey, strings.TrimSpace(endpoint))
+	if endpoint = strings.TrimSpace(endpoint); endpoint != "" {
+		c.Set(openAIUpstreamEndpointContextKey, endpoint)
+	}
 }
 
 // ClearActualOpenAIUpstreamEndpoint 清理当前转发尝试记录的端点。
@@ -479,10 +473,7 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
-	deepseekReasoning     *DeepSeekReasoningService
 	systemPrompts         *SystemPromptService
-	usageCache            *UsageCache
-	usageCommitObserver   UsageCommitObserver
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
 
@@ -507,7 +498,6 @@ type OpenAIGatewayService struct {
 	openaiAccountRuntimeBlockUntil      sync.Map // key: int64(accountID), value: time.Time
 	openaiAccountRuntimeBlockLocks      sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiAccountRuntimeBlockGeneration sync.Map // key: int64(accountID), value: uint64
-	openaiAccountRuntimeBlockSources    sync.Map // key: int64(accountID), value: openAIAccountRuntimeBlockSources
 	openaiAccountRuntimeBlockSequence   atomic.Uint64
 	openaiOAuth429RetryStartedAt        sync.Map // key: int64(accountID), value: time.Time
 	grokCredentialMutationLocks         sync.Map // key: int64(accountID), value: *sync.Mutex
@@ -524,18 +514,6 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
-}
-
-func (s *OpenAIGatewayService) SetUsageCache(cache *UsageCache) {
-	if s != nil {
-		s.usageCache = cache
-	}
-}
-
-func (s *OpenAIGatewayService) SetUsageCommitObserver(observer UsageCommitObserver) {
-	if s != nil {
-		s.usageCommitObserver = observer
-	}
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -567,7 +545,6 @@ func NewOpenAIGatewayService(
 	// 拿不到配置，故在此发布进程级开关快照。配置取反义，零值即「强制统一出口开启」。
 	if cfg != nil {
 		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
-		SetCodexForceCLIEnabled(cfg.Gateway.ForceCodexCLI)
 	}
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
@@ -797,13 +774,6 @@ func (s *OpenAIGatewayService) getOpenAIWSProtocolResolver() OpenAIWSProtocolRes
 }
 
 func classifyOpenAIWSReconnectReason(err error) (string, bool) {
-	if codextransport.IsFailure(err) {
-		return "codex_strict_transport", false
-	}
-	var strict *UpstreamFailoverError
-	if errors.As(err, &strict) && strict.ClientErrorType == "codex_transport_error" {
-		return "codex_strict_transport", false
-	}
 	if err == nil {
 		return "", false
 	}
@@ -1116,12 +1086,6 @@ func SnapshotOpenAICompatibilityFallbackMetrics() OpenAICompatibilityFallbackMet
 }
 
 func (s *OpenAIGatewayService) detectCodexClientRestriction(c *gin.Context, account *Account, body []byte) CodexClientRestrictionDetectionResult {
-	// A trusted administrator operation has no downstream client to admit.
-	// Its purpose is installed internally; upstream identity/authentication and
-	// every account/global sending policy still use the ordinary gateway path.
-	if c != nil && c.Request != nil && IsPelicanGeneration(c.Request.Context()) {
-		return CodexClientRestrictionDetectionResult{Reason: CodexClientRestrictionReasonDisabled}
-	}
 	// 安全默认：即便缺 settingService（仅测试/误配可达）也保持指纹门为默认种子，
 	// 避免零值 policy（nil 信号）让指纹门失败开放。有 settingService 时整体覆盖为全局策略。
 	policy := CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}

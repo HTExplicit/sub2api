@@ -43,10 +43,9 @@ type OpsRuntimeSettingsRefreshHealth struct {
 
 // OpsService provides ingestion and query APIs for the Ops monitoring module.
 type OpsService struct {
-	quotaActivity *QuotaActivityService
-	opsRepo       OpsRepository
-	settingRepo   SettingRepository
-	cfg           *config.Config
+	opsRepo     OpsRepository
+	settingRepo SettingRepository
+	cfg         *config.Config
 
 	accountRepo AccountRepository
 	userRepo    UserRepository
@@ -590,10 +589,6 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 		// Only boundOpsUpstreamErrors may stamp this; never trust caller input.
 		out.DroppedEarlierAttempts = 0
 		keepBody := i >= firstEventWithBody
-		// Continuation diagnostics are self-bounded and stay on every retained
-		// attempt; boundOpsUpstreamErrors still enforces the entry byte budget.
-		out.ContinuationDiagnostic = sanitizeOpenAIContinuationDiagnostic(ev.ContinuationDiagnostic)
-		out.SignatureRecovery = sanitizeClaudeSignatureRecoveryDiagnostic(ev.SignatureRecovery)
 		urlMaxLen, messageMaxLen := 2048, 2048
 		if !keepBody {
 			urlMaxLen, messageMaxLen = opsUpstreamErrorsOlderURLMaxLen, opsUpstreamErrorsOlderMessageMaxLen

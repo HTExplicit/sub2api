@@ -445,6 +445,25 @@ func WithOpenAIReasoningEffortPolicy(ctx context.Context, maxEffort string, mapp
 	return context.WithValue(ctx, openAIReasoningEffortPolicyContextKey{}, policy)
 }
 
+// WithOpenAIReasoningEffortPolicyForMessages preserves ordinary bridge defaults,
+// but retains ceilings and none mappings for explicitly disabled thinking.
+func WithOpenAIReasoningEffortPolicyForMessages(ctx context.Context, body []byte, maxEffort string, mappings []ReasoningEffortMapping, overLimit string) context.Context {
+	effort := gjson.GetBytes(body, "output_config.effort")
+	if effort.Type != gjson.String || strings.TrimSpace(effort.String()) == "" {
+		if gjson.GetBytes(body, "thinking.type").String() != "disabled" {
+			maxEffort = ""
+		}
+		noneMappings := make([]ReasoningEffortMapping, 0, len(mappings))
+		for _, mapping := range mappings {
+			if normalizeReasoningEffortMappingSource(mapping.From) == "none" {
+				noneMappings = append(noneMappings, mapping)
+			}
+		}
+		mappings = noneMappings
+	}
+	return WithOpenAIReasoningEffortPolicy(ctx, maxEffort, mappings, overLimit)
+}
+
 // ApplyOpenAIReasoningEffortPolicyFromContext applies a policy previously bound
 // to the request. An unbound request is returned byte-for-byte unchanged.
 func ApplyOpenAIReasoningEffortPolicyFromContext(ctx context.Context, body []byte) ([]byte, bool, error) {
@@ -456,22 +475,6 @@ func ApplyOpenAIReasoningEffortPolicyFromContext(ctx context.Context, body []byt
 		return body, false, nil
 	}
 	return ApplyOpenAIReasoningEffortPolicy(body, policy.maxEffort, policy.mappings, policy.overLimit)
-}
-
-// A mapped alias may become known only after an account has been selected.
-// Apply the already-bound policy to that newly materialized value exactly
-// once; explicit fields have already passed ingress policy and must not be
-// mapped a second time (mapping rules need not be idempotent).
-func materializeOpenAIForwardReasoningEffort(ctx context.Context, body []byte, modelCandidates ...string) ([]byte, bool, error) {
-	updated, changed, err := materializeOpenAIModelReasoningEffort(body, modelCandidates...)
-	if err != nil || !changed {
-		return updated, changed, err
-	}
-	governed, _, err := ApplyOpenAIReasoningEffortPolicyFromContext(ctx, updated)
-	if err != nil {
-		return body, false, err
-	}
-	return governed, true, nil
 }
 
 func mapReasoningEffort(raw string, mappings []ReasoningEffortMapping, requestModel string) (string, bool) {
@@ -568,32 +571,20 @@ func ApplyReasoningEffortPolicy(body []byte, maxEffort string, mappings []Reason
 }
 
 func applyOpenAIWSReasoningEffortPolicy(payload []byte, hooks *OpenAIWSIngressHooks) ([]byte, error) {
-	withEffort, _, err := materializeOpenAIModelReasoningEffort(payload)
-	if err != nil {
-		return payload, err
-	}
 	if hooks == nil || (hooks.MaxReasoningEffort == "" && len(hooks.ReasoningEffortMappings) == 0) {
-		return withEffort, nil
+		return payload, nil
 	}
-	capped, changed, err := ApplyOpenAIReasoningEffortPolicy(withEffort, hooks.MaxReasoningEffort, hooks.ReasoningEffortMappings, hooks.MaxReasoningEffortOverLimit)
+	capped, changed, err := ApplyOpenAIReasoningEffortPolicy(payload, hooks.MaxReasoningEffort, hooks.ReasoningEffortMappings, hooks.MaxReasoningEffortOverLimit)
 	if err != nil {
 		return payload, err
 	}
 	if changed {
 		return capped, nil
 	}
-	return withEffort, nil
+	return payload, nil
 }
 
 // ApplyOpenAIReasoningEffortPolicy is retained for OpenAI forwarding callers.
 func ApplyOpenAIReasoningEffortPolicy(body []byte, maxEffort string, mappings []ReasoningEffortMapping, overLimit string) ([]byte, bool, error) {
-	withEffort, aliasChanged, err := materializeOpenAIModelReasoningEffort(body)
-	if err != nil {
-		return body, false, err
-	}
-	result, policyChanged, err := ApplyReasoningEffortPolicy(withEffort, maxEffort, mappings, overLimit)
-	if err != nil {
-		return body, false, err
-	}
-	return result, aliasChanged || policyChanged, nil
+	return ApplyReasoningEffortPolicy(body, maxEffort, mappings, overLimit)
 }

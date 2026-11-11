@@ -6,12 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
 const (
 	modelRateLimitsKey                 = "model_rate_limits"
 	antigravityGeminiModelRateLimitKey = "antigravity:gemini"
+	antigravityArgonModelRateLimitKey  = "antigravity:gemini:argon"
 	openAIImageGenerationRateLimitKey  = "openai:image_generation"
 	openAICodexSparkRateLimitReason    = "openai_codex_spark_rate_limit"
 	// anthropicFableRateLimitKey 是 Anthropic 7d_oi（Fable 专属 7d 窗口）限流的
@@ -68,16 +70,7 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 		return nil
 	}
 
-	// The handler records the channel-mapped model in the request context. Use
-	// that same forwarding model when present so a cooldown written for the
-	// mapped upstream model is read back under the same key.
-	forwardModel := strings.TrimSpace(requestedModel)
-	if forwarded, ok := openAIForwardModelFromContext(ctx); ok {
-		if model := strings.TrimSpace(forwarded.model); model != "" {
-			forwardModel = model
-		}
-	}
-	modelKey := a.GetMappedModel(forwardModel)
+	modelKey := a.GetMappedModel(requestedModel)
 	if a.Platform == PlatformAntigravity {
 		modelKey = resolveFinalAntigravityModelKey(ctx, a, requestedModel)
 	}
@@ -89,9 +82,7 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 	keys := []string{modelKey}
 	switch a.Platform {
 	case PlatformAntigravity:
-		if isAntigravityGeminiModel(modelKey) && !isAntigravityGeminiImageModel(modelKey) && modelKey != antigravityGeminiModelRateLimitKey {
-			keys = append(keys, antigravityGeminiModelRateLimitKey)
-		}
+		return antigravityModelRateLimitKeys(a, modelKey)
 	case PlatformOpenAI:
 		if openAIImageGenerationRateLimitApplies(ctx, requestedModel, modelKey) && modelKey != openAIImageGenerationRateLimitKey {
 			keys = append(keys, openAIImageGenerationRateLimitKey)
@@ -168,14 +159,23 @@ func isAntigravityGeminiModel(model string) bool {
 	return strings.HasPrefix(normalizeAntigravityModelName(model), "gemini-")
 }
 
-func antigravityModelRateLimitKeys(model string) []string {
+func antigravityModelRateLimitKeys(account *Account, model string) []string {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return nil
 	}
 	keys := []string{model}
 	if isAntigravityGeminiModel(model) && !isAntigravityGeminiImageModel(model) && model != antigravityGeminiModelRateLimitKey {
-		keys = append(keys, antigravityGeminiModelRateLimitKey)
+		familyKey := antigravityGeminiModelRateLimitKey
+		// Pro has a separate Argon quota pool. Ultra and unknown plans retain
+		// the shared Gemini scope; Argon variants still cool down together.
+		if account != nil && strings.EqualFold(strings.TrimSpace(antigravity.TierIDToPlanType(account.GetCredential("plan_type"))), "Pro") {
+			normalized := normalizeAntigravityModelName(model)
+			if normalized == "gemini-4-argon" || strings.HasPrefix(normalized, "gemini-4-argon-") {
+				familyKey = antigravityArgonModelRateLimitKey
+			}
+		}
+		keys = append(keys, familyKey)
 	}
 	return keys
 }
@@ -206,34 +206,6 @@ func (a *Account) modelRateLimitResetAt(scope string) *time.Time {
 		return nil
 	}
 	return &resetAt
-}
-
-func (a *Account) hasActiveModelRateLimitReasonWithContext(ctx context.Context, requestedModel, expectedReason string) bool {
-	expectedReason = strings.TrimSpace(expectedReason)
-	if a == nil || expectedReason == "" || a.Extra == nil {
-		return false
-	}
-	rawLimits, ok := a.Extra[modelRateLimitsKey].(map[string]any)
-	if !ok {
-		return false
-	}
-	now := time.Now()
-	for _, key := range a.modelRateLimitKeysForRequest(ctx, requestedModel) {
-		rawLimit, ok := rawLimits[key].(map[string]any)
-		reason, reasonOK := rawLimit["reason"].(string)
-		if !ok || !reasonOK || strings.TrimSpace(reason) != expectedReason {
-			continue
-		}
-		resetAtRaw, ok := rawLimit["rate_limit_reset_at"].(string)
-		if !ok {
-			continue
-		}
-		resetAt, err := time.Parse(time.RFC3339, strings.TrimSpace(resetAtRaw))
-		if err == nil && now.Before(resetAt) {
-			return true
-		}
-	}
-	return false
 }
 
 // modelRateLimitReason 返回指定 scope 冷却记录中的原因；没有记录时为空。
