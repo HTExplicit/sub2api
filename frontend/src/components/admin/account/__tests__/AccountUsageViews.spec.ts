@@ -117,12 +117,14 @@ let pinia: Pinia
 const mounted: VueWrapper[] = []
 beforeEach(() => {
   pinia = createPinia()
-
+  mockViewport(1600)
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
 })
 afterEach(() => {
   mounted.splice(0).forEach(wrapper => wrapper.unmount())
   disposePinia(pinia)
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 const largeAccounts = Array.from({ length: 1000 }, (_, index) => ({ ...account, id: index + 1, name: `account-${index + 1}` }))
@@ -142,8 +144,13 @@ function mockListLayout() {
 
 function mockViewport(initialWidth: number) {
   let width = initialWidth
+  vi.stubGlobal('innerWidth', width)
   const queries: Array<{ media: string; matches: boolean; listeners: Set<(event: MediaQueryListEvent) => void> }> = []
-  const matches = (query: string) => width >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? Infinity)
+  const matches = (query: string) => {
+    const minimum = /min-width:\s*(\d+)px/.exec(query)
+    const maximum = /max-width:\s*(\d+)px/.exec(query)
+    return minimum ? width >= Number(minimum[1]) : maximum ? width <= Number(maximum[1]) : false
+  }
   vi.spyOn(window, 'matchMedia').mockImplementation(query => {
     const entry = { media: query, matches: matches(query), listeners: new Set<(event: MediaQueryListEvent) => void>() }
     queries.push(entry)
@@ -156,12 +163,14 @@ function mockViewport(initialWidth: number) {
   })
   return async (nextWidth: number) => {
     width = nextWidth
+    vi.stubGlobal('innerWidth', width)
     for (const entry of queries) {
       const next = matches(entry.media)
       if (next === entry.matches) continue
       entry.matches = next
       for (const listener of entry.listeners) listener({ matches: next, media: entry.media } as MediaQueryListEvent)
     }
+    window.dispatchEvent(new Event('resize'))
     await nextTick()
     await flushPromises()
   }
@@ -306,6 +315,112 @@ describe('account console usage views', () => {
       await flushPromises()
       expect(heightRead).not.toHaveBeenCalled()
       expect((wrapper.get('[data-account-id="1"] input').element as HTMLInputElement).checked).toBe(true)
+    } finally {
+      restoreScrollTo()
+    }
+  })
+
+  it.each([AccountCompactList, AccountCardGrid])('windows the natural mobile document even when the list grows to its full content height', async (component) => {
+    mockViewport(375)
+    vi.stubGlobal('innerHeight', 667)
+    vi.stubGlobal('scrollY', 0)
+    let documentTop = 480
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      if (this.hasAttribute('data-index')) return 180
+      if (this.hasAttribute('data-test')) return Number.parseFloat((this.firstElementChild as HTMLElement)?.style.height || '0')
+      return 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function () {
+      return this.offsetHeight
+    })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      return { top: documentTop - window.scrollY, left: 0, width: 375, height: this.offsetHeight } as DOMRect
+    })
+    const observerTargets = new Map<Element, ResizeObserverCallback>()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(target: Element) { observerTargets.set(target, this.callback) }
+      unobserve() {}
+      disconnect() {}
+    })
+    const wrapper = mount(component, {
+      attachTo: document.body,
+      props: { ...sharedProps, accounts: largeAccounts },
+      global: { plugins: [pinia], stubs: globalStubs },
+    })
+    mounted.push(wrapper)
+    await flushPromises()
+    expect(window.innerHeight).toBe(667)
+    expect(wrapper.element.offsetHeight).toBeGreaterThan(100_000)
+    expect(wrapper.element.clientHeight).toBe(wrapper.element.offsetHeight)
+    expect(wrapper.element.scrollTop).toBe(0)
+    expect(wrapper.findAll('[data-account-id]').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('[data-account-id]').length).toBeLessThan(25)
+    expect(wrapper.get('[data-index="0"]').attributes('style')).toContain('translateY(0px)')
+
+    // A wrapped filter moves the document list; the observer updates scrollMargin, not the root height.
+    documentTop = 600
+    observerTargets.get(wrapper.element)!([], {} as ResizeObserver)
+    await flushPromises()
+    expect(wrapper.get('[data-index="0"]').attributes('style')).toContain('translateY(0px)')
+
+    vi.stubGlobal('scrollY', 90_000)
+    window.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect(window.scrollY).toBe(90_000)
+    expect(wrapper.find('[data-account-id="1"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-account-id]').length).toBeLessThan(25)
+    expect(wrapper.element.scrollTop).toBe(0)
+
+    vi.stubGlobal('scrollY', 1_000_000)
+    window.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect(wrapper.find('[data-account-id="1000"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-account-id]').length).toBeLessThan(25)
+  })
+
+  it('keeps small mobile lists in normal document flow', async () => {
+    mockViewport(375)
+    const wrapper = mount(AccountCompactList, {
+      props: { ...sharedProps, accounts: largeAccounts.slice(0, 50) },
+      global: { plugins: [pinia], stubs: globalStubs },
+    })
+    mounted.push(wrapper)
+    await flushPromises()
+    expect(wrapper.findAll('[data-account-id]')).toHaveLength(50)
+    expect(wrapper.get('[data-account-id]').attributes('style')).toBeUndefined()
+  })
+
+  it.each([AccountCompactList, AccountCardGrid])('does not rerender or measure a window when native scroll stays in the same row range', async (component) => {
+    const restoreScrollTo = mockListLayout()
+    const heightRead = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+    const rowWindowUpdated = vi.fn()
+    let rootElement: Element
+    try {
+      const wrapper = mount(component, {
+        attachTo: document.body,
+        props: { ...sharedProps, accounts: largeAccounts },
+        global: {
+          plugins: [pinia],
+          stubs: globalStubs,
+          mixins: [{ updated() { if (this.$el === rootElement) rowWindowUpdated() } }],
+        },
+      })
+      rootElement = wrapper.element
+      mounted.push(wrapper)
+      await flushPromises()
+      const visibleIds = wrapper.findAll('[data-account-id]').map(row => row.attributes('data-account-id'))
+      rowWindowUpdated.mockClear()
+      heightRead.mockClear()
+      for (const top of [1, 2, 3]) {
+        wrapper.element.scrollTop = top
+        await wrapper.trigger('scroll')
+        await flushPromises()
+      }
+      expect(wrapper.findAll('[data-account-id]').map(row => row.attributes('data-account-id'))).toEqual(visibleIds)
+      expect(rowWindowUpdated).not.toHaveBeenCalled()
+      expect(heightRead).not.toHaveBeenCalled()
     } finally {
       restoreScrollTo()
     }

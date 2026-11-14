@@ -708,7 +708,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, inject, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, shallowRef, reactive, computed, inject, onMounted, onUnmounted, toRaw, watch } from 'vue'
 import { CanceledError } from 'axios'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -1094,10 +1094,10 @@ const isDesktopViewport = ref(
 let desktopViewportMediaQuery: MediaQueryList | null = null
 let desktopViewportListener: ((event: MediaQueryListEvent) => void) | null = null
 
-const usageBatchByAccountId = ref<Record<string, AccountUsageInfo | null>>({})
-const usageBatchErrorByAccountId = ref<Record<string, string | null>>({})
-const usageBatchLoadingByAccountId = ref<Record<string, boolean>>({})
-const usageBatchRequestTokenByAccountId = ref<Record<string, number>>({})
+const usageBatchByAccountId = shallowRef<Record<string, AccountUsageInfo | null>>({})
+const usageBatchErrorByAccountId = shallowRef<Record<string, string | null>>({})
+const usageBatchLoadingByAccountId = shallowRef<Record<string, boolean>>({})
+const usageBatchRequestTokenByAccountId = shallowRef<Record<string, number>>({})
 const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
 const USAGE_BATCH_CACHE_TTL = 5 * 60 * 1000
 const pendingUsageBatchIds = new Set<number>()
@@ -1125,6 +1125,7 @@ const accountSupportsBatchUsage = (account: Account) => {
 }
 
 const setUsageBatchLoading = (accountID: number, loadingState: boolean) => {
+  if (usageBatchLoadingByAccountId.value[String(accountID)] === loadingState) return
   usageBatchLoadingByAccountId.value = {
     ...usageBatchLoadingByAccountId.value,
     [String(accountID)]: loadingState
@@ -1133,18 +1134,21 @@ const setUsageBatchLoading = (accountID: number, loadingState: boolean) => {
 
 const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, error: string | null) => {
   const key = String(accountID)
-  usageBatchByAccountId.value = {
-    ...usageBatchByAccountId.value,
-    [key]: usage
+  if (usageBatchByAccountId.value[key] !== usage) {
+    usageBatchByAccountId.value = {
+      ...usageBatchByAccountId.value,
+      [key]: usage
+    }
   }
-  usageBatchErrorByAccountId.value = {
-    ...usageBatchErrorByAccountId.value,
-    [key]: error
+  if (usageBatchErrorByAccountId.value[key] !== error) {
+    usageBatchErrorByAccountId.value = {
+      ...usageBatchErrorByAccountId.value,
+      [key]: error
+    }
   }
 }
 
 const handleAccountUsageLoaded = (accountID: number, usage: AccountUsageInfo) => {
-  if (usageBatchByAccountId.value[String(accountID)] === usage) return
   setUsageBatchState(accountID, usage, null)
 }
 

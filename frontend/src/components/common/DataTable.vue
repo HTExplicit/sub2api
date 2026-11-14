@@ -896,6 +896,7 @@ const rowVirtualizer = useVirtualizer(computed(() => ({
   // 把测量类 ResizeObserver 回调批到 rAF,避免滚动中同步 reflow 风暴导致的校正抖动/空白
   useAnimationFrameWithResizeObserver: true,
 })))
+const rowVirtualizerInstance = rowVirtualizer.value
 
 const virtualItems = computed(() => rowVirtualizer.value.getVirtualItems())
 
@@ -927,7 +928,7 @@ const scheduleMeasurements = () => {
 }
 const measureElement = (el: any) => {
   if (!(el instanceof HTMLElement)) return
-  const instance = rowVirtualizer.value
+  const instance = rowVirtualizerInstance
   const key = instance.options.getItemKey(Number(el.dataset.index))
   if (instance.elementsCache.get(key) === el) return
   pendingMeasurements.add(el)

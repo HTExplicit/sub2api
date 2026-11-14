@@ -208,6 +208,40 @@ describe('DataTable', () => {
     }
   })
 
+  it('does not update its component when native scroll stays in the same row range', async () => {
+    const heightRead = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      return this.hasAttribute('data-index') ? 56 : 400
+    })
+    const tableUpdated = vi.fn()
+    const wrapper = mount(DataTable, {
+      attachTo: document.body,
+      props: {
+        columns: [{ key: 'name', label: 'Name' }],
+        data: Array.from({ length: 100 }, (_, index) => ({ id: index + 1, name: `Row ${index + 1}` })),
+        virtualizeThreshold: 10,
+      },
+      global: { mixins: [{ updated() { if (this.$el === rootElement) tableUpdated() } }] },
+    })
+    const rootElement = wrapper.element
+    try {
+      await flushPromises()
+      const visibleIds = wrapper.findAll('tbody tr[data-index]').map(row => row.attributes('data-index'))
+      tableUpdated.mockClear()
+      heightRead.mockClear()
+      for (const top of [1, 2, 3]) {
+        wrapper.element.scrollTop = top
+        await wrapper.trigger('scroll')
+        await flushPromises()
+      }
+      expect(wrapper.findAll('tbody tr[data-index]').map(row => row.attributes('data-index'))).toEqual(visibleIds)
+      expect(tableUpdated).not.toHaveBeenCalled()
+      expect(heightRead.mock.contexts.filter(element => (element as HTMLElement).hasAttribute('data-index'))).toEqual([])
+    } finally {
+      wrapper.unmount()
+      heightRead.mockRestore()
+    }
+  })
+
   it('keys the virtualizer size cache by row identity, not index (avoids stale heights on sort/filter)', async () => {
     const data = Array.from({ length: 12 }, (_, i) => ({ id: 100 + i, name: `Row ${i + 1}` }))
     const wrapper = mount(DataTable, {
