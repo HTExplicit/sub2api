@@ -88,7 +88,8 @@ const emit = defineEmits<{
 }>()
 
 const inputRef = ref<HTMLInputElement | null>(null)
-const placeholderText = computed(() => props.placeholder || '')
+// A blank placeholder lets the console distinguish an empty field via :placeholder-shown.
+const placeholderText = computed(() => props.placeholder || ' ')
 
 const onInput = (event: Event) => {
   const value = (event.target as HTMLInputElement).value

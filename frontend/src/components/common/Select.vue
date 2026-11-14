@@ -40,7 +40,7 @@
         <Icon
           name="chevronDown"
           size="md"
-          :class="['transition-transform duration-200', isOpen && 'rotate-180']"
+          :class="['select-chevron', isOpen && 'rotate-180']"
         />
       </span>
     </button>
@@ -352,28 +352,32 @@ const dropdownAnchor = (container: HTMLElement): HTMLElement =>
   (document.documentElement.classList.contains('flat-theme') &&
     container.closest<HTMLElement>('[data-ui~="select-anchor"]')) || container
 
-// Update trigger rect periodically while open to follow scroll/resize
-const updateTriggerRect = () => {
-  if (containerRef.value) {
-    triggerRect.value = dropdownAnchor(containerRef.value).getBoundingClientRect()
-  }
-}
-
 const calculateDropdownPosition = () => {
   if (!containerRef.value) return
-  updateTriggerRect()
+  // Read the anchor and menu together before publishing their new position.
+  const rect = dropdownAnchor(containerRef.value).getBoundingClientRect()
+  const dropdownHeight = dropdownRef.value?.offsetHeight || 240
+  const spaceBelow = window.innerHeight - rect.bottom
+  const spaceAbove = rect.top
+  triggerRect.value = rect
+  dropdownPosition.value = spaceBelow < dropdownHeight && spaceAbove > dropdownHeight ? 'top' : 'bottom'
+}
 
-  nextTick(() => {
-    if (!dropdownRef.value || !triggerRect.value) return
-    const dropdownHeight = dropdownRef.value.offsetHeight || 240
-    const spaceBelow = window.innerHeight - triggerRect.value.bottom
-    const spaceAbove = triggerRect.value.top
+let positionFrame: number | null = null
 
-    if (spaceBelow < dropdownHeight && spaceAbove > dropdownHeight) {
-      dropdownPosition.value = 'top'
-    } else {
-      dropdownPosition.value = 'bottom'
-    }
+const cancelPositionUpdate = () => {
+  if (positionFrame === null) return
+  window.cancelAnimationFrame(positionFrame)
+  positionFrame = null
+}
+
+const schedulePositionUpdate = (event: Event) => {
+  // Scrolling options does not move the trigger that anchors this teleported menu.
+  if (event.type === 'scroll' && event.target instanceof Node && dropdownRef.value?.contains(event.target)) return
+  if (!isOpen.value || positionFrame !== null) return
+  positionFrame = window.requestAnimationFrame(() => {
+    positionFrame = null
+    if (isOpen.value) calculateDropdownPosition()
   })
 }
 
@@ -389,6 +393,10 @@ watch(() => props.disabled, (disabled) => {
 watch(isOpen, (open) => {
   if (open) {
     calculateDropdownPosition()
+    // The first position makes the menu render; measure its actual height after mount.
+    nextTick(() => {
+      if (isOpen.value) calculateDropdownPosition()
+    })
     // Reset focused index to current selection or first item
     if (filteredOptions.value.length === 0) {
       focusedIndex.value = -1
@@ -406,9 +414,10 @@ watch(isOpen, (open) => {
       nextTick(() => dropdownRef.value?.focus())
     }
     // Add scroll listener to update position
-    window.addEventListener('scroll', updateTriggerRect, { capture: true, passive: true })
-    window.addEventListener('resize', calculateDropdownPosition)
+    window.addEventListener('scroll', schedulePositionUpdate, { capture: true, passive: true })
+    window.addEventListener('resize', schedulePositionUpdate)
   } else {
+    cancelPositionUpdate()
     searchQuery.value = ''
     focusedIndex.value = -1
     // 关闭时取消仍在排队的远程搜索（避免关闭后尾随 emit 一次 search(''))。
@@ -416,8 +425,8 @@ watch(isOpen, (open) => {
       clearTimeout(remoteSearchTimer)
       remoteSearchTimer = null
     }
-    window.removeEventListener('scroll', updateTriggerRect, { capture: true })
-    window.removeEventListener('resize', calculateDropdownPosition)
+    window.removeEventListener('scroll', schedulePositionUpdate, { capture: true })
+    window.removeEventListener('resize', schedulePositionUpdate)
   }
 })
 
@@ -515,8 +524,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
-  window.removeEventListener('scroll', updateTriggerRect, { capture: true })
-  window.removeEventListener('resize', calculateDropdownPosition)
+  window.removeEventListener('scroll', schedulePositionUpdate, { capture: true })
+  window.removeEventListener('resize', schedulePositionUpdate)
+  cancelPositionUpdate()
   if (remoteSearchTimer) {
     clearTimeout(remoteSearchTimer)
     remoteSearchTimer = null
@@ -531,7 +541,7 @@ onUnmounted(() => {
   @apply bg-white dark:bg-dark-800;
   @apply border border-gray-200 dark:border-dark-600;
   @apply text-gray-900 dark:text-gray-100;
-  @apply transition-all duration-200;
+  @apply transition-colors duration-150;
   @apply focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30;
   @apply hover:border-gray-300 dark:hover:border-dark-500;
   @apply cursor-pointer;
@@ -555,6 +565,16 @@ onUnmounted(() => {
 
 .select-icon {
   @apply flex-shrink-0 text-gray-400 dark:text-dark-400;
+}
+
+.select-chevron {
+  transition: transform 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .select-chevron {
+    transition: none;
+  }
 }
 
 .select-clear {
@@ -635,12 +655,25 @@ onUnmounted(() => {
 
 .select-dropdown-enter-active,
 .select-dropdown-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 
 .select-dropdown-enter-from,
 .select-dropdown-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .select-dropdown-enter-active,
+  .select-dropdown-leave-active {
+    transition: none;
+  }
+
+  .select-dropdown-enter-from,
+  .select-dropdown-leave-to {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>

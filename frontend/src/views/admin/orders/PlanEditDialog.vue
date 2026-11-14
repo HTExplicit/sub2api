@@ -4,7 +4,7 @@
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="input-label">{{ t('payment.admin.planName') }} <span class="text-red-500">*</span></label>
-          <input v-model="planForm.name" type="text" class="input" required />
+          <input placeholder=" " v-model="planForm.name" type="text" class="input" required />
         </div>
         <div>
           <label class="input-label">{{ t('payment.admin.group') }} <span class="text-red-500">*</span></label>
@@ -37,7 +37,7 @@
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="input-label">{{ t('payment.admin.price') }} <span class="text-red-500">*</span></label>
-          <input v-model.number="planForm.price" type="number" step="0.01" min="0.01" class="input" required />
+          <input placeholder=" " v-model.number="planForm.price" type="number" step="0.01" min="0.01" class="input" required />
           <p v-if="subscriptionCnyPreview" class="mt-1 text-xs font-medium text-primary-600 dark:text-primary-400">
             {{ t('payment.admin.subscriptionCnyPayPreview', { amount: subscriptionCnyPreview.amount }) }}
             <span v-if="subscriptionCnyPreview.feeRate > 0">
@@ -45,14 +45,14 @@
             </span>
           </p>
         </div>
-        <div><label class="input-label">{{ t('payment.admin.originalPrice') }}</label><input v-model.number="planForm.original_price" type="number" step="0.01" min="0" class="input" /></div>
+        <div><label class="input-label">{{ t('payment.admin.originalPrice') }}</label><input placeholder=" " v-model.number="planForm.original_price" type="number" step="0.01" min="0" class="input" /></div>
       </div>
       <div class="grid grid-cols-2 gap-4">
-        <div><label class="input-label">{{ t('payment.admin.validity') }} <span class="text-red-500">*</span></label><input v-model.number="planForm.validity_days" type="number" min="1" class="input" required /></div>
+        <div><label class="input-label">{{ t('payment.admin.validity') }} <span class="text-red-500">*</span></label><input placeholder=" " v-model.number="planForm.validity_days" type="number" min="1" class="input" required /></div>
         <div><label class="input-label">{{ t('payment.admin.validityUnit') }} <span class="text-red-500">*</span></label><Select v-model="planForm.validity_unit" :options="validityUnitOptions" /></div>
       </div>
       <div class="grid grid-cols-2 gap-4">
-        <div><label class="input-label">{{ t('payment.admin.sortOrder') }}</label><input v-model.number="planForm.sort_order" type="number" min="0" class="input" /></div>
+        <div><label class="input-label">{{ t('payment.admin.sortOrder') }}</label><input placeholder=" " v-model.number="planForm.sort_order" type="number" min="0" class="input" /></div>
         <div>
           <label class="input-label">{{ t('payment.admin.currency') }}</label>
           <input v-model="planForm.currency" type="text" maxlength="3" class="input uppercase" :placeholder="t('payment.admin.currencyPlaceholder')" />

@@ -332,7 +332,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] d
   opacity: 1;
 }
 
-/* B3.2 A field that is empty with no visible placeholder (utils/flatTheme.ts gives unlabelled .input fields a
+/* B3.2 A field that is empty with no visible placeholder (Input.vue and native .input templates declare a
    blank " " placeholder, so :placeholder-shown means empty), every native date / time field and every text area
    without a visible placeholder: nothing inside the box says what it is, so its outline is the 3:1 form-control
    line (WCAG 1.4.11). Focus, error and disabled states keep their own look. */
@@ -377,8 +377,7 @@ html.flat-theme .theme-tour-popover .driver-popover-close-btn {
   color: rgb(var(--ui-muted)) !important;
 }
 
-/* B3.7 Reduced motion: no press scale on buttons and no hover lift on cards (styles/theme.css already stops the
-   transitions and animations). */
+/* B3.7 Reduced motion: no press scale on buttons and no hover lift on cards. */
 @media (prefers-reduced-motion: reduce) {
   html.flat-theme :is(.btn:active, .card-hover:hover) {
     transform: none;

@@ -43,11 +43,12 @@
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label for="crs-username" class="input-label">{{ t('admin.accounts.crsUsername') }}</label>
-            <input id="crs-username" v-model="form.username" type="text" class="input" required autocomplete="username" />
+            <input placeholder=" " id="crs-username" v-model="form.username" type="text" class="input" required autocomplete="username" />
           </div>
           <div>
             <label for="crs-password" class="input-label">{{ t('admin.accounts.crsPassword') }}</label>
             <input
+              placeholder=" "
               id="crs-password"
               v-model="form.password"
               type="password"

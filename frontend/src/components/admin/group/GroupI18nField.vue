@@ -136,7 +136,7 @@ const currentValue = computed(() =>
 const currentPlaceholder = computed(() =>
   activeLocale.value
     ? t('admin.groups.i18nField.placeholder', { language: activeLocaleName.value })
-    : props.placeholder
+    : props.placeholder || ' '
 )
 
 function onInput(event: Event) {

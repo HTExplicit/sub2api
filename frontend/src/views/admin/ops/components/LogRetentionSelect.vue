@@ -29,6 +29,7 @@ function select(value: string | number | boolean | null | undefined) {
   <div class="space-y-2">
     <Select :model-value="selection" :options="options" :aria-label="label" @update:model-value="select" />
     <input
+      placeholder=" "
       v-if="selection === 'custom'"
       :value="modelValue"
       type="number"

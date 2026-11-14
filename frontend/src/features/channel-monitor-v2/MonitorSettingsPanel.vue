@@ -222,41 +222,41 @@
         <div class="grid grid-cols-1 gap-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.minimumSample') }}</span>
-            <input v-model.number="draft.health_thresholds.minimum_sample" class="input" type="number" min="1" max="10000" />
+            <input placeholder=" " v-model.number="draft.health_thresholds.minimum_sample" class="input" type="number" min="1" max="10000" />
           </label>
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.warningError') }}</span>
-            <input v-model.number="warningErrorPercent" class="input" type="number" min="0" max="100" step="0.1" />
+            <input placeholder=" " v-model.number="warningErrorPercent" class="input" type="number" min="0" max="100" step="0.1" />
           </label>
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.criticalError') }}</span>
-            <input v-model.number="criticalErrorPercent" class="input" type="number" min="0" max="100" step="0.1" />
+            <input placeholder=" " v-model.number="criticalErrorPercent" class="input" type="number" min="0" max="100" step="0.1" />
           </label>
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.targetTtft') }}</span>
-            <input v-model.number="draft.health_thresholds.target_ttft_ms" class="input" type="number" min="1" step="100" />
+            <input placeholder=" " v-model.number="draft.health_thresholds.target_ttft_ms" class="input" type="number" min="1" step="100" />
           </label>
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.warningTtft') }}</span>
-            <input v-model.number="draft.health_thresholds.warning_ttft_ms" class="input" type="number" min="1" step="100" />
+            <input placeholder=" " v-model.number="draft.health_thresholds.warning_ttft_ms" class="input" type="number" min="1" step="100" />
           </label>
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.criticalTtft') }}</span>
-            <input v-model.number="draft.health_thresholds.critical_ttft_ms" class="input" type="number" min="1" step="100" />
+            <input placeholder=" " v-model.number="draft.health_thresholds.critical_ttft_ms" class="input" type="number" min="1" step="100" />
           </label>
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.warningCache') }}</span>
-            <input v-model.number="warningCachePercent" class="input" type="number" min="0" max="100" step="0.1" />
+            <input placeholder=" " v-model.number="warningCachePercent" class="input" type="number" min="0" max="100" step="0.1" />
           </label>
           <label class="block">
             <span class="input-label">{{ t('channelMonitorV2.settings.fields.criticalCache') }}</span>
-            <input v-model.number="criticalCachePercent" class="input" type="number" min="0" max="100" step="0.1" />
+            <input placeholder=" " v-model.number="criticalCachePercent" class="input" type="number" min="0" max="100" step="0.1" />
           </label>
         </div>
       </div>
 
       <div class="space-y-2">
-        <div class="rounded-2xl border border-primary-200 bg-primary-50/80 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/50 dark:bg-primary-900/20 dark:text-primary-100">
+        <div data-console-callout class="rounded-2xl border border-primary-200 bg-primary-50/80 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/50 dark:bg-primary-900/20 dark:text-primary-100">
           <template v-if="namedModelCount === 0">
             {{ t('channelMonitorV2.settings.namedModelsEmpty') }}
           </template>

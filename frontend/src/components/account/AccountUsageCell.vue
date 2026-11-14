@@ -143,7 +143,7 @@
       <div v-else class="space-y-1">
         <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
         <!-- Always allow on-demand upstream quota probe, even before passive headers exist. -->
-        <GrokQuotaProbeCell v-if="canInteract" :account="account" />
+        <GrokQuotaProbeCell :key="account.id" v-if="canInteract" :account="account" />
       </div>
       <!--
         One stable instance for every usage state, so a reset-credit query started
@@ -153,7 +153,7 @@
         count, so `redeemed` fires only in the details drawer, which loads its own
         usage instead of the table's batch.
       -->
-      <ClaudeResetCreditsCell
+      <ClaudeResetCreditsCell :key="account.id"
         :account="account"
         :read-only="!canInteract"
         class="mt-1"
@@ -215,7 +215,7 @@
           refresh button is rendered via the pre-actions slot so the user sees a
           single row of related buttons instead of two stacked rows.
         -->
-        <OpenAIQuotaResetCell
+        <OpenAIQuotaResetCell :key="account.id"
           v-if="canInteract"
           :account="account"
           @account-updated="handleQuotaResetAccountUpdated"
@@ -261,7 +261,7 @@
       <div v-else>
         <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
-        <OpenAIQuotaResetCell
+        <OpenAIQuotaResetCell :key="account.id"
           v-if="canInteract"
           :account="account"
           class="mt-1"
@@ -557,11 +557,11 @@
         <div v-if="grokQuotaStatusLine" class="text-[10px] text-gray-500 dark:text-gray-400">
           {{ grokQuotaStatusLine }}
         </div>
-        <GrokQuotaProbeCell v-if="canInteract" :account="account" @probed="handleGrokProbed" />
+        <GrokQuotaProbeCell :key="account.id" v-if="canInteract" :account="account" @probed="handleGrokProbed" />
       </div>
       <div v-else class="space-y-1">
         <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
-        <GrokQuotaProbeCell v-if="canInteract" :account="account" compact @probed="handleGrokProbed" />
+        <GrokQuotaProbeCell :key="account.id" v-if="canInteract" :account="account" compact @probed="handleGrokProbed" />
       </div>
     </template>
 
@@ -572,7 +572,7 @@
            Ollama 用量窗口负责。这类账号不是国产厂商订阅，CN 的额度/余额探测端点由
            base_url 衍生，对 ollama.com 会被后端出站 URL 白名单拒绝，渲染出来只会
            给用户一行探测报错，因此不再渲染 CN 子单元格与占位符。 -->
-      <OllamaCloudUsageCell
+      <OllamaCloudUsageCell :key="'ollama:' + account.id"
         v-if="account.ollama_cloud_usage?.eligible"
         :account="account"
         @updated="handleOllamaCloudUsageUpdated"
@@ -586,7 +586,7 @@
            探测端点由 base_url 衍生，对 opencode.ai 会被后端出站 URL 白名单拒绝，
            渲染出来只会给用户一行探测报错。两种情况都不再渲染 CN 子单元格与
            占位符（调度停调仍由上游 CN 触发各自驱动）。 -->
-      <OpenCodeGoUsageCell
+      <OpenCodeGoUsageCell :key="'opencode:' + account.id"
         v-else-if="account.opencode_go_usage?.eligible"
         :account="account"
         @updated="handleOpenCodeGoUsageUpdated"
@@ -599,8 +599,8 @@
           class="text-xs text-gray-400"
           :title="t('admin.accounts.cnProviders.noBalanceEndpoint')"
         >-</div>
-        <CNProviderQuotaCell :account="account" />
-        <CNProviderBalanceCell :account="account" />
+        <CNProviderQuotaCell :key="'quota:' + account.id" :account="account" />
+        <CNProviderBalanceCell :key="'balance:' + account.id" :account="account" />
       </div>
     </template>
 
@@ -747,10 +747,10 @@
     <!-- Non-OAuth/Setup-Token accounts -->
     <template v-else>
     <!-- Gemini API Key accounts: show quota info -->
-    <AccountQuotaInfo v-if="account.platform === 'gemini' && !isGeminiThirdPartyApiKey" :account="account" />
+    <AccountQuotaInfo :key="account.id" v-if="account.platform === 'gemini' && !isGeminiThirdPartyApiKey" :account="account" />
     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
     <div v-else class="space-y-1">
-      <OllamaCloudUsageCell
+      <OllamaCloudUsageCell :key="'ollama:' + account.id"
         v-if="account.ollama_cloud_usage?.eligible"
         :account="account"
         :density="usageBarDensity"
@@ -758,7 +758,7 @@
       />
       <!-- 与上方 CN 分支结构对齐：Ollama 与 OpenCode 用量身份互斥（基址 host 不同），
            v-else-if 提供结构性互斥保证，不改变实际渲染结果。 -->
-      <OpenCodeGoUsageCell
+      <OpenCodeGoUsageCell :key="'opencode:' + account.id"
         v-else-if="account.opencode_go_usage?.eligible"
         :account="account"
         @updated="handleOpenCodeGoUsageUpdated"
@@ -2320,19 +2320,19 @@ watch(
     ) {
       return
     }
-    if (!managed || !shouldFetchUsage.value) return
+    if (!managed) return
     syncManagedUsageState()
     requestParentBatchUsage()
   },
-  { flush: 'post' }
+  { flush: 'pre' }
 )
 
-watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
+watch([() => props.account.id, openAIUsageRefreshKey], ([accountID, nextKey], [previousAccountID, prevKey]) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
 
   if (isBatchManaged.value) {
-    requestParentBatchUsage({ force: true })
+    if (accountID === previousAccountID) requestParentBatchUsage({ force: true })
     return
   }
 

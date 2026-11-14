@@ -5,6 +5,30 @@
 
 import { i18n, getLocale } from '@/i18n'
 
+const dateTimeOptions: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+}
+
+const dateTimeToMinuteOptions: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+}
+
+let dateTimeFormatter: Intl.DateTimeFormat | undefined
+let dateTimeFormatterLocale: string | undefined
+let dateTimeToMinuteFormatter: Intl.DateTimeFormat | undefined
+let dateTimeToMinuteFormatterLocale: string | undefined
+
 /**
  * 格式化相对时间
  * @param date 日期字符串或 Date 对象
@@ -101,15 +125,7 @@ export function formatBytes(bytes: number, decimals: number = 2): string {
  */
 export function formatDate(
   date: string | Date | null | undefined,
-  options: Intl.DateTimeFormatOptions = {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  },
+  options: Intl.DateTimeFormatOptions = dateTimeOptions,
   localeOverride?: string
 ): string {
   if (!date) return ''
@@ -118,6 +134,20 @@ export function formatDate(
   if (isNaN(d.getTime())) return ''
 
   const locale = localeOverride ?? getLocale()
+  if (options === dateTimeOptions) {
+    if (!dateTimeFormatter || dateTimeFormatterLocale !== locale) {
+      dateTimeFormatter = new Intl.DateTimeFormat(locale, options)
+      dateTimeFormatterLocale = locale
+    }
+    return dateTimeFormatter.format(d)
+  }
+  if (options === dateTimeToMinuteOptions) {
+    if (!dateTimeToMinuteFormatter || dateTimeToMinuteFormatterLocale !== locale) {
+      dateTimeToMinuteFormatter = new Intl.DateTimeFormat(locale, options)
+      dateTimeToMinuteFormatterLocale = locale
+    }
+    return dateTimeToMinuteFormatter.format(d)
+  }
   return new Intl.DateTimeFormat(locale, options).format(d)
 }
 
@@ -156,18 +186,7 @@ export function formatDateTimeToMinute(
   date: string | Date | null | undefined,
   localeOverride?: string
 ): string {
-  return formatDate(
-    date,
-    {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    },
-    localeOverride
-  )
+  return formatDate(date, dateTimeToMinuteOptions, localeOverride)
 }
 
 /**

@@ -21,7 +21,7 @@
       </div>
 
       <!-- Add Plan Form -->
-      <div
+      <div data-console-callout
         v-if="showAddForm"
         class="rounded-xl border border-primary-200 bg-primary-50/50 p-4 dark:border-primary-800 dark:bg-primary-900/20"
       >

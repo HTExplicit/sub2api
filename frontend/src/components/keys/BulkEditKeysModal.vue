@@ -60,6 +60,7 @@
           </label>
           <div v-if="enabled[field.key]">
             <input
+              placeholder=" "
               v-model="limits[field.key]"
               type="number"
               min="0"
@@ -84,6 +85,7 @@
               {{ t('keys.noExpiration') }}
             </label>
             <input
+              placeholder=" "
               v-if="!neverExpires"
               v-model="expirationDate"
               type="datetime-local"

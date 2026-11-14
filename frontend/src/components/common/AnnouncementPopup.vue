@@ -160,11 +160,19 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .popup-fade-enter-active {
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .popup-fade-leave-active {
-  transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity 180ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.popup-fade-enter-active > div {
+  transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.popup-fade-leave-active > div {
+  transition: opacity 180ms cubic-bezier(0.4, 0, 1, 1), transform 180ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 .popup-fade-enter-from,
@@ -180,6 +188,23 @@ onBeforeUnmount(() => {
 .popup-fade-leave-to > div {
   transform: scale(0.96) translateY(-8px);
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup-fade-enter-active,
+  .popup-fade-leave-active,
+  .popup-fade-enter-active > div,
+  .popup-fade-leave-active > div {
+    transition: none;
+  }
+
+  .popup-fade-enter-from,
+  .popup-fade-leave-to,
+  .popup-fade-enter-from > div,
+  .popup-fade-leave-to > div {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Scrollbar Styling */

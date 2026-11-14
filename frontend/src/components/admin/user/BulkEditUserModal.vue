@@ -23,6 +23,7 @@
             />
           </div>
           <input
+            placeholder=" "
             v-if="enableConcurrency"
             id="bulk-concurrency"
             v-model="concurrencyValue"
@@ -47,6 +48,7 @@
           </div>
           <div v-if="enableRPMLimit">
             <input
+              placeholder=" "
               id="bulk-rpm-limit"
               v-model="rpmLimitValue"
               type="number"

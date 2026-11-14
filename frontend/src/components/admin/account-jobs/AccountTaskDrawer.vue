@@ -78,4 +78,9 @@ async function loadHistory(page: number) {
 <style scoped>
 .operation-dock-enter-active, .operation-dock-leave-active { transition: opacity .18s ease, transform .18s ease; }
 .operation-dock-enter-from, .operation-dock-leave-to { opacity: 0; transform: translateY(8px); }
+@media (prefers-reduced-motion: reduce) {
+  .operation-dock-enter-active, .operation-dock-leave-active { transition: opacity 120ms ease-out; }
+  .operation-dock-enter-from, .operation-dock-leave-to { transform: none; }
+  [data-test="operation-dock"] .animate-spin { animation: none; }
+}
 </style>

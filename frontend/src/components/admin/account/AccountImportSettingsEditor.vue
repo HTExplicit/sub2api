@@ -2,14 +2,14 @@
   <div class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
     <template v-if="mode === 'uniform'">
       <SettingField v-model:enabled="draft.enabled.namePrefix" :label="t('admin.accounts.importNamePrefix')">
-        <input v-model="draft.namePrefix" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.namePrefix" />
+        <input placeholder=" " v-model="draft.namePrefix" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.namePrefix" />
       </SettingField>
       <SettingField v-model:enabled="draft.enabled.nameSuffix" :label="t('admin.accounts.importNameSuffix')">
-        <input v-model="draft.nameSuffix" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.nameSuffix" />
+        <input placeholder=" " v-model="draft.nameSuffix" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.nameSuffix" />
       </SettingField>
     </template>
     <SettingField v-else v-model:enabled="draft.enabled.name" :label="t('admin.accounts.columns.name')" class="sm:col-span-2">
-      <input v-model="draft.name" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.name" />
+      <input placeholder=" " v-model="draft.name" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.name" />
     </SettingField>
 
     <SettingField v-model:enabled="draft.enabled.notes" :label="t('admin.accounts.notes')" class="sm:col-span-2">
@@ -18,7 +18,7 @@
           <option value="append">{{ t('admin.accounts.importNotesAppend') }}</option>
           <option value="replace">{{ t('admin.accounts.importNotesReplace') }}</option>
         </select>
-        <input v-model="draft.notesValue" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.notes" />
+        <input placeholder=" " v-model="draft.notesValue" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.notes" />
       </div>
     </SettingField>
 
@@ -70,15 +70,15 @@
     </SettingField>
 
     <SettingField v-model:enabled="draft.enabled.concurrency" :label="t('admin.accounts.concurrency')">
-      <input v-model.number="draft.concurrency" type="number" min="0" step="1" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.concurrency" />
+      <input placeholder=" " v-model.number="draft.concurrency" type="number" min="0" step="1" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.concurrency" />
     </SettingField>
 
     <SettingField v-model:enabled="draft.enabled.priority" :label="t('admin.accounts.columns.priority')">
-      <input v-model.number="draft.priority" type="number" min="0" step="1" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.priority" />
+      <input placeholder=" " v-model.number="draft.priority" type="number" min="0" step="1" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.priority" />
     </SettingField>
 
     <SettingField v-model:enabled="draft.enabled.rateMultiplier" :label="t('admin.accounts.columns.billingRateMultiplier')">
-      <input v-model.number="draft.rateMultiplier" type="number" min="0" step="0.01" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.rateMultiplier" />
+      <input placeholder=" " v-model.number="draft.rateMultiplier" type="number" min="0" step="0.01" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.rateMultiplier" />
     </SettingField>
 
     <SettingField v-model:enabled="draft.enabled.schedulable" :label="t('admin.accounts.schedulable')">

@@ -2,6 +2,7 @@ vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ d
 import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { shallowRef, triggerRef, watchEffect } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AccountsView from '../AccountsView.vue'
 import { adminAPI } from '@/api/admin'
@@ -19,6 +20,7 @@ const {
   listFolders,
   listTags,
   getBatchTodayStats,
+  getBatchUsage,
   getUpstreamBillingProbeSettings,
   showError,
   showSuccess,
@@ -38,6 +40,7 @@ const {
   listFolders: vi.fn(),
   listTags: vi.fn(),
   getBatchTodayStats: vi.fn(),
+  getBatchUsage: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -78,6 +81,7 @@ vi.mock('@/api/admin', () => ({
       listFolders,
       listTags,
       getBatchTodayStats,
+      getBatchUsage,
       getUpstreamBillingProbeSettings,
       delete: vi.fn(),
       batchClearError: vi.fn(),
@@ -211,11 +215,11 @@ const commonStubs = {
   TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
   DataTable: DataTableStub,
   AccountCompactList: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'batchedUsage', 'batchedUsageErrors', 'batchedUsageLoading', 'requestBatchedUsage', 'selectedIds'],
     template: '<div data-test="view-compact" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountCardGrid: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'batchedUsage', 'batchedUsageErrors', 'batchedUsageLoading', 'requestBatchedUsage', 'selectedIds'],
     template: '<div data-test="view-cards" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountViewModeSwitcher: ViewModeStub,
@@ -332,6 +336,7 @@ describe('admin AccountsView Cockpit console', () => {
     listFolders.mockReset().mockResolvedValue([])
     listTags.mockReset().mockResolvedValue([])
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
+    getBatchUsage.mockReset().mockResolvedValue({ usage: {}, errors: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
     showError.mockReset()
     showSuccess.mockReset()
@@ -460,6 +465,178 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="mode-cards"]').trigger('click')
     expect(wrapper.get('[data-test="view-cards"]').attributes('data-requests')).toBe('8')
     expect(wrapper.get('[data-test="view-cards"]').attributes('data-refresh-token')).toBe('1')
+  })
+
+  it('shares the existing usage batch and full-page selection across compact and card windows', async () => {
+    const accounts = Array.from({ length: 1000 }, (_, index) => ({ ...account, id: index + 1 }))
+    listAccounts.mockResolvedValue({ items: accounts, total: 1000, page: 1, page_size: 1000, pages: 1 })
+    const usage = { fetched_at: '2026-11-14T00:00:00Z' }
+    getBatchUsage.mockResolvedValue({ usage: { '1': usage }, errors: {} })
+    const wrapper = mountView()
+    await flushPromises()
+    ;(wrapper.vm as any).selectPage()
+
+    await wrapper.get('[data-test="mode-compact"]').trigger('click')
+    const compact = wrapper.findComponent(commonStubs.AccountCompactList)
+    expect(compact.props('selectedIds')).toHaveLength(1000)
+    compact.props('requestBatchedUsage')(accounts[0])
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledWith([1], false))
+    await flushPromises()
+    expect(compact.props('batchedUsage')).toEqual({ '1': usage })
+    expect(compact.props('batchedUsageLoading')).toEqual({ '1': false })
+    const usageSnapshot = compact.props('batchedUsage')
+    const errorSnapshot = compact.props('batchedUsageErrors')
+    const loadingSnapshot = compact.props('batchedUsageLoading')
+    expect(usageSnapshot['1']).toBe(usage)
+
+    await wrapper.get('[data-test="mode-cards"]').trigger('click')
+    const cards = wrapper.findComponent(commonStubs.AccountCardGrid)
+    expect(cards.props('selectedIds')).toHaveLength(1000)
+    cards.props('requestBatchedUsage')(accounts[0])
+    await flushPromises()
+    expect(cards.props('batchedUsage')).toEqual({ '1': usage })
+    expect(cards.props('batchedUsage')).toBe(usageSnapshot)
+    expect(cards.props('batchedUsageErrors')).toBe(errorSnapshot)
+    expect(cards.props('batchedUsageLoading')).toBe(loadingSnapshot)
+    expect(getBatchUsage).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('updates keyed batch usage without invalidating other account effects', async () => {
+    const second = { ...account, id: 2 }
+    listAccounts.mockResolvedValue({ items: [account, second], total: 2, page: 1, page_size: 20, pages: 1 })
+    const usage = { fetched_at: '2026-11-14T00:00:00Z' }
+    const secondResult = { usage: { '2': usage }, errors: {} }
+    let finishSecond!: (result: typeof secondResult) => void
+    getBatchUsage.mockReturnValueOnce(new Promise<typeof secondResult>(resolve => { finishSecond = resolve }))
+    getBatchUsage.mockRejectedValueOnce(new Error('batch request failed'))
+    getBatchUsage.mockResolvedValueOnce({ usage: { '1': usage }, errors: {} })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="mode-compact"]').trigger('click')
+    const compact = wrapper.findComponent(commonStubs.AccountCompactList)
+    const usageRecord = compact.props('batchedUsage')
+    const errorRecord = compact.props('batchedUsageErrors')
+    const loadingRecord = compact.props('batchedUsageLoading')
+    const retainedAccountEffect = vi.fn()
+    const stopEffect = watchEffect(() => retainedAccountEffect(
+      compact.props('batchedUsage')['1'] ?? null,
+      compact.props('batchedUsageErrors')['1'] ?? null,
+      compact.props('batchedUsageLoading')['1'] === true
+    ))
+    const requestUsage = compact.props('requestBatchedUsage')
+
+    requestUsage(second)
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(1))
+    expect(loadingRecord['2']).toBe(true)
+    expect(retainedAccountEffect).toHaveBeenCalledTimes(1)
+    finishSecond(secondResult)
+    await flushPromises()
+    expect(usageRecord['2']).toBe(usage)
+    expect(loadingRecord['2']).toBe(false)
+    expect(retainedAccountEffect).toHaveBeenCalledTimes(1)
+
+    requestUsage(second, { force: true })
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(2))
+    await flushPromises()
+    expect(errorRecord['2']).toBe('Failed')
+    expect(usageRecord['2']).toBe(usage)
+    expect(loadingRecord['2']).toBe(false)
+    expect(retainedAccountEffect).toHaveBeenCalledTimes(1)
+
+    ;(wrapper.vm as any).accounts = [account]
+    await flushPromises()
+    expect(usageRecord).not.toHaveProperty('2')
+    expect(errorRecord).not.toHaveProperty('2')
+    expect(loadingRecord).not.toHaveProperty('2')
+    expect(retainedAccountEffect).toHaveBeenCalledTimes(1)
+    expect(compact.props('batchedUsage')).toBe(usageRecord)
+    expect(compact.props('batchedUsageErrors')).toBe(errorRecord)
+    expect(compact.props('batchedUsageLoading')).toBe(loadingRecord)
+
+    requestUsage(account)
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(3))
+    await flushPromises()
+    expect(retainedAccountEffect).toHaveBeenLastCalledWith(usage, null, false)
+    expect(retainedAccountEffect.mock.calls.length).toBeGreaterThan(1)
+    stopEffect()
+    wrapper.unmount()
+    logError.mockRestore()
+  })
+
+  it('prefetches adjacent table windows through the exposed virtualizer without retrying retained failures', async () => {
+    const rows = Array.from({ length: 100 }, (_, index) => ({ ...account, id: index + 1 }))
+    listAccounts.mockResolvedValue({ items: rows, total: 100, page: 1, page_size: 100, pages: 1 })
+    getBatchUsage.mockImplementation(async (ids: number[]) => ({
+      usage: Object.fromEntries(ids.filter(id => id !== 9).map(id => [String(id), { fetched_at: '2026-11-14T00:00:00Z' }])),
+      errors: ids.includes(9) ? { '9': 'failed' } : {}
+    }))
+    let items = Array.from({ length: 10 }, (_, offset) => ({ index: offset + 10 }))
+    const virtualizer = shallowRef({ getVirtualItems: () => items })
+    const wrapper = mount(AccountsView, {
+      global: { stubs: { ...commonStubs, DataTable: {
+        ...DataTableStub,
+        setup: () => ({ virtualizer })
+      } } }
+    })
+    await flushPromises()
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(1))
+    expect(getBatchUsage).toHaveBeenLastCalledWith([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30
+    ], false)
+
+    triggerRef(virtualizer)
+    await flushPromises()
+    expect(getBatchUsage).toHaveBeenCalledTimes(1)
+    items = Array.from({ length: 10 }, (_, offset) => ({ index: offset + 11 }))
+    triggerRef(virtualizer)
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(2))
+    expect(getBatchUsage).toHaveBeenLastCalledWith([11, 31], false)
+
+    ;(wrapper.vm as any).accounts = rows.map(row => ({ ...row, name: `${row.name}-updated` }))
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(3))
+    // The new snapshot may query its failed account; successful accounts still use the page cache.
+    expect(getBatchUsage).toHaveBeenLastCalledWith([9], false)
+    ;(wrapper.vm as any).toggleColumn('usage')
+    await flushPromises()
+    items = Array.from({ length: 10 }, (_, offset) => ({ index: offset + 50 }))
+    triggerRef(virtualizer)
+    await flushPromises()
+    expect(getBatchUsage).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
+
+  it('deduplicates usage already in flight while allowing a manual force request', async () => {
+    const original = { usage: { '1': { fetched_at: '2026-11-14T00:00:00Z' } }, errors: {} }
+    const forced = { usage: { '1': { fetched_at: '2026-11-14T00:01:00Z' } }, errors: {} }
+    let finishOriginal!: (result: typeof original) => void
+    getBatchUsage.mockReturnValueOnce(new Promise<typeof original>(resolve => { finishOriginal = resolve }))
+    getBatchUsage.mockResolvedValueOnce(forced)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="mode-compact"]').trigger('click')
+    const compact = wrapper.findComponent(commonStubs.AccountCompactList)
+    const requestUsage = compact.props('requestBatchedUsage')
+    requestUsage(account)
+    requestUsage(account)
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(1))
+    expect(getBatchUsage).toHaveBeenLastCalledWith([1], false)
+    requestUsage(account)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(getBatchUsage).toHaveBeenCalledTimes(1)
+    expect(compact.props('batchedUsageLoading')).toEqual({ '1': true })
+
+    requestUsage(account, { force: true })
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledTimes(2))
+    expect(getBatchUsage).toHaveBeenLastCalledWith([1], true)
+    await flushPromises()
+    expect(compact.props('batchedUsage')).toEqual(forced.usage)
+    expect(compact.props('batchedUsageLoading')).toEqual({ '1': false })
+    finishOriginal(original)
+    await flushPromises()
+    expect(compact.props('batchedUsage')).toEqual(forced.usage)
+    wrapper.unmount()
   })
 
   it('opens details on row click and edits only after the explicit edit command', async () => {

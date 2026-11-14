@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { chartTooltipMotion, useChartMotion } from '@/composables/useChartMotion'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Legend, Tooltip } from 'chart.js'
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 const colors = computed(() => ({
   blue: presentation.value.tone('#3b82f6'),
   red: presentation.value.tone('#ef4444'),
@@ -104,11 +106,13 @@ const chartData = computed(() => {
 })
 
 const options = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
     tooltip: {
+      ...chartTooltipMotion,
       backgroundColor: presentation.value.tooltip,
       titleColor: presentation.value.title,
       bodyColor: presentation.value.body
@@ -146,7 +150,7 @@ const options = computed(() => ({
     <div class="relative min-h-0 flex-1">
       <div v-if="state === 'ready' && chartData" class="flex h-full flex-col">
         <div class="flex-1">
-          <Doughnut :data="chartData" :options="{ ...options, cutout: '65%' }" />
+          <Doughnut :data="chartData" :options="{ ...options, cutout: '65%' }" update-mode="none" />
         </div>
         <div class="mt-4 flex flex-col items-center gap-2">
           <div v-if="topReason" class="text-xs font-bold text-gray-900 dark:text-white">

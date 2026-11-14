@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="space-y-6" data-ui="risk-page">
       <div v-if="loading" class="flex items-center justify-center py-16">
         <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
@@ -78,7 +77,7 @@
 
             <div class="p-6">
               <div data-test="pre-block-metric-grid" class="grid grid-cols-2 gap-3 md:grid-cols-3">
-                <div
+                <div :data-console-callout="item.key === 'active' || item.key === 'latency' ? '' : undefined"
                   v-for="item in preBlockMetricItems"
                   :key="item.key"
                   class="rounded-lg p-4"
@@ -275,8 +274,8 @@
               <Select v-model="filters.group_id" :options="groupFilterOptions" @change="reloadLogsFromFirstPage" />
               <Select v-model="filters.endpoint" :options="endpointOptions" @change="reloadLogsFromFirstPage" />
               <input v-model.trim="filters.search" type="search" class="input" :placeholder="t('admin.riskControl.filters.search')" @keyup.enter="reloadLogsFromFirstPage" />
-              <input v-model="filters.from" type="datetime-local" class="input" :title="t('admin.riskControl.filters.from')" @change="reloadLogsFromFirstPage" />
-              <input v-model="filters.to" type="datetime-local" class="input" :title="t('admin.riskControl.filters.to')" @change="reloadLogsFromFirstPage" />
+              <input placeholder=" " v-model="filters.from" type="datetime-local" class="input" :title="t('admin.riskControl.filters.from')" @change="reloadLogsFromFirstPage" />
+              <input placeholder=" " v-model="filters.to" type="datetime-local" class="input" :title="t('admin.riskControl.filters.to')" @change="reloadLogsFromFirstPage" />
             </div>
           </div>
 
@@ -425,16 +424,16 @@
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.timeoutMs') }}</label>
-                <input v-model.number="configForm.timeout_ms" type="number" min="500" max="30000" class="input" />
+                <input placeholder=" " v-model.number="configForm.timeout_ms" type="number" min="500" max="30000" class="input" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.retryCount') }}</label>
-                <input v-model.number="configForm.retry_count" type="number" min="0" max="5" class="input" />
+                <input placeholder=" " v-model.number="configForm.retry_count" type="number" min="0" max="5" class="input" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.sampleRate') }}</label>
                 <div class="relative">
-                  <input v-model.number="configForm.sample_rate" type="number" min="0" max="100" step="1" class="input pr-8" />
+                  <input placeholder=" " v-model.number="configForm.sample_rate" type="number" min="0" max="100" step="1" class="input pr-8" />
                   <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
                 </div>
               </div>
@@ -823,11 +822,11 @@
           <div v-else-if="activeSettingsTab === 'runtime'" class="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div>
               <label class="input-label">{{ t('admin.riskControl.workerCount') }}</label>
-              <input v-model.number="configForm.worker_count" type="number" min="1" max="32" class="input" />
+              <input placeholder=" " v-model.number="configForm.worker_count" type="number" min="1" max="32" class="input" />
             </div>
             <div>
               <label class="input-label">{{ t('admin.riskControl.queueSize') }}</label>
-              <input v-model.number="configForm.queue_size" type="number" min="100" max="100000" class="input" />
+              <input placeholder=" " v-model.number="configForm.queue_size" type="number" min="100" max="100000" class="input" />
             </div>
             <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
               <div>
@@ -887,11 +886,11 @@
             <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <div>
                 <label class="input-label">{{ t('admin.riskControl.blockStatus') }}</label>
-                <input v-model.number="configForm.block_status" type="number" min="400" max="599" class="input" />
+                <input placeholder=" " v-model.number="configForm.block_status" type="number" min="400" max="599" class="input" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.blockMessage') }}</label>
-                <input v-model.trim="configForm.block_message" type="text" class="input" />
+                <input placeholder=" " v-model.trim="configForm.block_message" type="text" class="input" />
               </div>
               <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700">
                 <div>
@@ -916,11 +915,11 @@
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.banThreshold') }}</label>
-                <input v-model.number="configForm.ban_threshold" type="number" min="1" max="1000" class="input" />
+                <input placeholder=" " v-model.number="configForm.ban_threshold" type="number" min="1" max="1000" class="input" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.violationWindowHours') }}</label>
-                <input v-model.number="configForm.violation_window_hours" type="number" min="1" max="8760" class="input" />
+                <input placeholder=" " v-model.number="configForm.violation_window_hours" type="number" min="1" max="8760" class="input" />
               </div>
             </div>
           </div>
@@ -968,6 +967,7 @@
                   </label>
                   <div class="relative">
                     <input
+                      placeholder=" "
                       :id="`risk-threshold-${row.category}`"
                       v-model.number="configForm.thresholds[row.category]"
                       :data-test="`risk-threshold-${row.category}`"
@@ -985,7 +985,7 @@
           </div>
 
           <div v-else-if="activeSettingsTab === 'keywords'" class="space-y-5">
-            <div
+            <div :data-console-callout="keywordNotice.icon === 'infoCircle' ? '' : undefined"
               class="flex items-start gap-3 rounded-lg border p-4"
               :class="keywordNotice.toneClass"
             >
@@ -1051,11 +1051,11 @@
           <div v-else class="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div>
               <label class="input-label">{{ t('admin.riskControl.hitRetentionDays') }}</label>
-              <input v-model.number="configForm.hit_retention_days" type="number" min="1" max="3650" class="input" />
+              <input placeholder=" " v-model.number="configForm.hit_retention_days" type="number" min="1" max="3650" class="input" />
             </div>
             <div>
               <label class="input-label">{{ t('admin.riskControl.nonHitRetentionDays') }}</label>
-              <input v-model.number="configForm.non_hit_retention_days" type="number" min="1" max="3" class="input" />
+              <input placeholder=" " v-model.number="configForm.non_hit_retention_days" type="number" min="1" max="3" class="input" />
             </div>
             <div class="rounded-lg border border-gray-100 p-4 text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400 lg:col-span-2">
               <div class="flex flex-wrap items-center gap-3">
@@ -1143,13 +1143,11 @@
         </template>
       </BaseDialog>
     </div>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'

@@ -30,12 +30,12 @@
         </button>
       </div>
     </div>
-    <div v-if="loading" class="flex h-48 items-center justify-center">
+    <div v-if="loading && !chartData" class="flex h-48 items-center justify-center">
       <LoadingSpinner />
     </div>
     <div v-else-if="displayGroupStats.length > 0 && chartData" class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
       <div class="h-48 w-48 shrink-0">
-        <Doughnut :data="chartData" :options="doughnutOptions" />
+        <Doughnut update-mode="none" :data="chartData" :options="doughnutOptions" />
       </div>
       <div data-ui="dist-table" class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
@@ -112,6 +112,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { useChartMotion, chartTooltipMotion } from '@/composables/useChartMotion'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
@@ -124,6 +125,7 @@ ChartJS.register(ArcElement, Tooltip, Legend)
 
 const { t } = useI18n()
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
 
@@ -204,6 +206,7 @@ const chartData = computed(() => {
 })
 
 const doughnutOptions = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -211,6 +214,7 @@ const doughnutOptions = computed(() => ({
       display: false
     },
     tooltip: {
+      ...chartTooltipMotion,
       callbacks: {
         label: (context: any) => {
           const value = context.raw as number

@@ -8,7 +8,7 @@
     <form v-if="user" id="edit-user-form" @submit.prevent="handleUpdateUser" class="space-y-5">
       <div>
         <label class="input-label">{{ t('admin.users.email') }}</label>
-        <input v-model="form.email" type="email" class="input" />
+        <input placeholder=" " v-model="form.email" type="email" class="input" />
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.password') }}</label>
@@ -27,7 +27,7 @@
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.username') }}</label>
-        <input v-model="form.username" type="text" class="input" />
+        <input placeholder=" " v-model="form.username" type="text" class="input" />
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.form.roleLabel') }}</label>

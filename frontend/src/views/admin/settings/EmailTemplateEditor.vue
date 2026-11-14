@@ -92,7 +92,7 @@
           </div>
         </div>
 
-        <div
+        <div data-console-callout
           v-if="selectedEventMeta"
           class="rounded-lg border border-primary-100 bg-primary-50/70 p-4 dark:border-primary-900/50 dark:bg-primary-950/20"
         >

@@ -3,6 +3,7 @@ import { RouterView, useRouter, useRoute } from 'vue-router'
 import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
+import AppLayout from '@/components/layout/AppLayout.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
@@ -182,8 +183,26 @@ onMounted(async () => {
 
 <template>
   <NavigationProgress />
-  <RouterView />
+  <RouterView v-slot="{ Component }">
+    <AppLayout v-if="route.meta.appLayout" class="persistent-console">
+      <component :is="Component" />
+    </AppLayout>
+    <component :is="Component" v-else />
+  </RouterView>
   <Toast />
   <AnnouncementPopup />
   <AdminComplianceDialog />
 </template>
+
+<style scoped>
+@media (prefers-reduced-motion: no-preference) {
+  .persistent-console :deep(.app-main > main > *) {
+    animation: console-page-enter 120ms ease-out;
+  }
+}
+
+@keyframes console-page-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+</style>

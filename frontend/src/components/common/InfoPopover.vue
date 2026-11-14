@@ -46,12 +46,13 @@
 // focus / Enter), the content is rendered only while open (v-if), teleported so tables and dialogs do
 // not clip it, placed above the trigger or below when there is more room there, clamped to the
 // viewport, and scrollable when longer than the space available. Escape or a click outside closes it.
-import { nextTick, onBeforeUnmount, ref, useId } from 'vue'
+import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   label?: string
   widthClass?: string
   triggerAttrs?: Record<string, string>
+  resetKey?: string | number
 }>(), {
   label: '',
   widthClass: 'w-max max-w-[min(26rem,calc(100vw-1rem))]',
@@ -199,6 +200,13 @@ function onDocumentPointerDown(event: PointerEvent): void {
   if (target && (triggerRef.value?.contains(target) || panelRef.value?.contains(target))) return
   close()
 }
+
+watch(() => props.resetKey, () => {
+  const active = document.activeElement
+  if (active instanceof HTMLElement && panelRef.value?.contains(active)) active.blur()
+  close()
+  suppressNextFocus = false
+})
 
 onBeforeUnmount(() => {
   cancelClose()

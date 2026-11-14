@@ -431,11 +431,16 @@ watch(
 <style scoped>
 /* Modal Animations */
 .modal-fade-enter-active {
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-fade-leave-active {
-  transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity 180ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.modal-fade-enter-active > div,
+.modal-fade-leave-active > div {
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
 }
 
 .modal-fade-enter-from,
@@ -451,6 +456,34 @@ watch(
 .modal-fade-leave-to > div {
   transform: scale(0.96) translateY(-8px);
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-fade-enter-active,
+  .modal-fade-leave-active,
+  .modal-fade-enter-active > div,
+  .modal-fade-leave-active > div {
+    transition: none;
+  }
+
+  .modal-fade-enter-from,
+  .modal-fade-leave-to,
+  .modal-fade-enter-from > div,
+  .modal-fade-leave-to > div {
+    opacity: 1;
+    transform: none;
+  }
+
+  [class~="hover:scale-105"]:hover,
+  .group:hover [class~="group-hover:translate-x-1"] {
+    transform: none;
+  }
+
+  .animate-spin,
+  .animate-pulse,
+  .animate-ping {
+    animation: none;
+  }
 }
 
 /* Scrollbar Styling */

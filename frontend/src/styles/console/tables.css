@@ -217,7 +217,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] > table > tbody.table-body
   vertical-align: top;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] > table > tbody.table-body > tr > td :is(.badge, [class~="rounded-md"][class~="px-1.5"], [class~="rounded"][class~="px-1.5"], [data-ui="group-badge"], [data-ui="platform-hue"] > span, [data-ui="platform-badge"] > div > span, [class~="font-mono"]) {
+html.flat-theme .table-wrapper[data-table="accounts"] > table > tbody.table-body > tr > td :is(.badge, .rounded-md.px-1\.5, .rounded.px-1\.5, [data-ui="group-badge"], [data-ui="platform-hue"] > span, [data-ui="platform-badge"] > div > span, .font-mono) {
   white-space: nowrap;
 }
 
@@ -326,21 +326,21 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_t
 
 /* ---- 状态 / 调度: the badge, its countdown (「自动恢复」 whole), the 429 / model / error marks, then the switch */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div:not([data-ui="cell-lines"]),
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div:not([data-ui="cell-lines"]) > div[class~="flex"][class~="items-center"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div:not([data-ui="cell-lines"]) > div.flex.items-center {
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div:is([class~="columns-2"], [class~="columns-3"]) {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div:is(.columns-2, .columns-3) {
   columns: 1;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div[class~="flex-col"][class~="items-center"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div.flex-col.items-center {
   align-items: flex-start;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div[class~="flex-col"][class~="items-center"] > span:not([class~="badge"]) {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div.flex-col.items-center > span:not(.badge) {
   max-width: 6.5rem;
   text-align: left;
   word-break: keep-all;
@@ -378,8 +378,8 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
   row-gap: 3px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div[class~="truncate"],
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div:first-child > span[class~="truncate"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div.truncate,
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div:first-child > span.truncate {
   max-width: 100%;
   min-width: 0;
   overflow: visible;
@@ -389,7 +389,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
   overflow-wrap: break-word;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span.uppercase.text-\[10px\],
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
   display: inline-block;
   flex: none;
@@ -399,7 +399,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
   line-height: 16px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span.uppercase.text-\[10px\] {
   white-space: nowrap;
 }
 
@@ -416,7 +416,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
   max-width: 100%;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] [data-line="groups"] [data-ui="group-badge"] > span[class~="truncate"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] [data-line="groups"] [data-ui="group-badge"] > span.truncate {
   overflow: visible;
   text-overflow: clip;
 }
@@ -436,11 +436,11 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [d
   row-gap: 2px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-density="list"] > div:last-child > div[class~="h-1.5"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-density="list"] > div:last-child > div.h-1\.5 {
   width: 4rem;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] span[class~="truncate"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] span.truncate {
   overflow: visible;
   white-space: normal;
   text-overflow: clip;
@@ -448,7 +448,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] sp
 
 /* the cell's hover tips (Gemini quota policy, ineligible warning: 20rem, invisible until hovered) open leftwards from
    their icon; opening rightwards, the hidden box widened the table's scroll area (1280: 17px of sideways scrolling) */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [class~="group"] > span[class~="absolute"][class~="top-full"][class~="w-80"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] .group > span.absolute.top-full.w-80 {
   left: auto;
   right: 0;
 }
@@ -470,7 +470,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] di
 
 /* ---- 优先级 / 调度权值 / 账号倍率 / 上游声明倍率: labelled lines (the value beside its label, or under it when the column is
    too narrow for both) */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="priority"] div[data-line="upstream_billing_rate"] > div[data-ui="cell-line-value"] > div[class~="min-w-[7rem]"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="priority"] div[data-line="upstream_billing_rate"] > div[data-ui="cell-line-value"] > div.min-w-\[7rem\] {
   flex-wrap: wrap;
   height: auto;
   min-height: 20px;
@@ -498,7 +498,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   margin-top: -3px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col {
   margin-block: 0;
 }
 
@@ -516,7 +516,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   }
 
   /* the plan / privacy chips (the chip group without the platform-hue hook) wrap */
-  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="platform-badge"] > div[class~="inline-flex"]:not([data-ui]) {
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="platform-badge"] > div.inline-flex:not([data-ui]) {
     flex-wrap: wrap;
     flex-shrink: 1;
     row-gap: 4px;
@@ -531,7 +531,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
     flex-direction: column;
   }
 
-  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span.uppercase.text-\[10px\],
   html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
     display: block;
     width: auto;
@@ -575,7 +575,7 @@ html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="t
   flex-direction: column;
 }
 
-html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span.uppercase.text-\[10px\],
 html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
   display: block;
   width: auto;
@@ -595,7 +595,7 @@ html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="p
     min-width: 7rem;
   }
 
-  html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+  html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span.uppercase.text-\[10px\],
   html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
     flex: 0 1 auto;
     max-width: 100%;
@@ -654,7 +654,7 @@ html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-tabl
 }
 
 /* atoms: chips, badges, figures and IPs stay whole */
-html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="tabular-nums"]) {
+html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], .rounded:is(.px-1, .px-1\.5, .px-2), .rounded-md:is(.px-1\.5, .px-2), .tabular-nums) {
   white-space: nowrap;
 }
 
@@ -709,12 +709,12 @@ html.flat-theme .table-wrapper[data-table="usage"] .table-header .sticky-header-
 
 /* upstream marks the model chain break-all (it never wrapped before): here the chain wraps between its parts only;
    the 「↳ 上游响应:」 label is one piece and the model id may start on the next line */
-html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"]))) td[data-column="model"] [class~="break-all"] {
+html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"]))) td[data-column="model"] .break-all {
   word-break: normal;
   overflow-wrap: break-word;
 }
 
-html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"]))) td[data-column="model"] [class~="break-all"] > span:is([class~="mr-1"], [class~="mr-0.5"]) {
+html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"]))) td[data-column="model"] .break-all > span:is(.mr-1, .mr-0\.5) {
   display: inline-block;
   white-space: nowrap;
 }
@@ -725,28 +725,28 @@ html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] > 
   max-width: none;
 }
 
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] div[class~="break-all"] {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] div.break-all {
   word-break: normal;
   overflow-wrap: break-word;
 }
 
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] div[class~="break-all"] > span[class~="ml-1"] {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] div.break-all > span.ml-1 {
   display: inline-block;
 }
 
 /* token in / out and cache figures: two per line, each figure whole */
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] > div,
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] div[class~="space-y-1"] > div[class~="flex"] {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] div.space-y-1 > div.flex {
   flex-wrap: wrap;
   row-gap: 2px;
 }
 
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] div[class~="inline-flex"],
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] :is(span, div[class~="text-orange-500"]) {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] div.inline-flex,
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] :is(span, div.text-orange-500) {
   white-space: nowrap;
 }
 
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] > div > div[class~="flex"] {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] > div > div.flex {
   flex-wrap: wrap;
   row-gap: 2px;
 }
@@ -754,21 +754,21 @@ html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] > div 
 /* latency: where the table is short of room (管理 below 1800px, 用户 below 1400px) each label goes over its figure
    (首字 / 3.10s / 总耗时 / 4.94s) beside the colour bar */
 @media (max-width: 1799.98px) {
-  html.flat-theme [data-ui="admin-usage"] .table-wrapper[data-table="usage"] td[data-column="latency"] div[class~="grid"] {
+  html.flat-theme [data-ui="admin-usage"] .table-wrapper[data-table="usage"] td[data-column="latency"] div.grid {
     grid-template-columns: max-content;
     row-gap: 0;
   }
 }
 
 @media (max-width: 1399.98px) {
-  html.flat-theme [data-ui="user-usage"] .table-wrapper[data-table="usage"] td[data-column="latency"] div[class~="grid"] {
+  html.flat-theme [data-ui="user-usage"] .table-wrapper[data-table="usage"] td[data-column="latency"] div.grid {
     grid-template-columns: max-content;
     row-gap: 0;
   }
 }
 
 /* the IP whole, its 「获取地区」 under it */
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="ip_address"] span[class~="font-mono"] {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="ip_address"] span.font-mono {
   white-space: nowrap;
 }
 
@@ -791,12 +791,12 @@ html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="u
   max-width: none;
 }
 
-html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="endpoint"] div[class~="break-all"] {
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="endpoint"] div.break-all {
   word-break: normal;
   overflow-wrap: break-word;
 }
 
-html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="endpoint"] div[class~="break-all"] > span[class~="ml-1"] {
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="endpoint"] div.break-all > span.ml-1 {
   display: inline-block;
 }
 
@@ -830,7 +830,7 @@ html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="u
   white-space: normal;
 }
 
-html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td:is([data-column="client_ip"], [data-column="ip_address"]) :is(span, div)[class~="font-mono"] {
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td:is([data-column="client_ip"], [data-column="ip_address"]) :is(span, div).font-mono {
   white-space: nowrap;
 }
 
@@ -841,7 +841,7 @@ html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="auth"] > di
   overflow-wrap: break-word;
 }
 
-html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="latency"] div[class~="items-center"] {
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="latency"] div.items-center {
   flex-wrap: wrap;
   row-gap: 3px;
 }
@@ -852,7 +852,7 @@ html.flat-theme .table-wrapper[data-table="proxies"] th[data-column="location"] 
 
 /* English: the account count chip (「12 accounts」, 12px) keeps 3px either side instead of 6, so the flat table fits at
    1440 (6px wider than its wrapper with the full inset); Chinese keeps the inset */
-html.flat-theme:lang(en) .table-wrapper[data-table="proxies"] :is(td[data-column="account_count"], div[data-ui="cell-line"][data-line="account_count"] > div[data-ui="cell-line-value"]) > :is(button, span)[class~="inline-flex"] {
+html.flat-theme:lang(en) .table-wrapper[data-table="proxies"] :is(td[data-column="account_count"], div[data-ui="cell-line"][data-line="account_count"] > div[data-ui="cell-line-value"]) > :is(button, span).inline-flex {
   padding-left: 3px;
   padding-right: 3px;
 }
@@ -898,12 +898,12 @@ html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] > 
   flex: 1 1 100%;
 }
 
-html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] div[class~="break-all"] {
+html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] div.break-all {
   word-break: normal;
   overflow-wrap: break-word;
 }
 
-html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] div[class~="break-all"] > span[class~="ml-1"] {
+html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] div.break-all > span.ml-1 {
   display: inline-block;
 }
 
@@ -961,7 +961,7 @@ html.flat-theme [data-ui~="channels-page"] .table-wrapper > table > tbody.table-
     overflow-wrap: break-word;
   }
 
-  html.flat-theme :is(.table-wrapper[data-table="groups"], [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+  html.flat-theme :is(.table-wrapper[data-table="groups"], [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], .rounded:is(.px-1, .px-1\.5, .px-2), .rounded-md:is(.px-1\.5, .px-2), .rounded-full.px-2, .tabular-nums) {
     white-space: nowrap;
   }
 
@@ -988,7 +988,7 @@ html.flat-theme [data-ui~="channels-page"] .table-wrapper > table > tbody.table-
     overflow-wrap: break-word;
   }
 
-  html.flat-theme .table-wrapper[data-table="users"] > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+  html.flat-theme .table-wrapper[data-table="users"] > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], .rounded:is(.px-1, .px-1\.5, .px-2), .rounded-md:is(.px-1\.5, .px-2), .rounded-full.px-2, .tabular-nums) {
     white-space: nowrap;
   }
 
@@ -1015,7 +1015,7 @@ html.flat-theme [data-ui~="channels-page"] .table-wrapper > table > tbody.table-
     overflow-wrap: break-word;
   }
 
-  html.flat-theme .table-wrapper[data-table="keys"] > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+  html.flat-theme .table-wrapper[data-table="keys"] > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], .rounded:is(.px-1, .px-1\.5, .px-2), .rounded-md:is(.px-1\.5, .px-2), .rounded-full.px-2, .tabular-nums) {
     white-space: nowrap;
   }
 
@@ -1058,7 +1058,7 @@ html.flat-theme:lang(en) .table-page-layout .table-wrapper .table-header .sticky
     overflow-wrap: break-word;
   }
 
-  html.flat-theme:lang(en) :is(.table-wrapper:is([data-table="users"], [data-table="groups"], [data-table="keys"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+  html.flat-theme:lang(en) :is(.table-wrapper:is([data-table="users"], [data-table="groups"], [data-table="keys"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], .rounded:is(.px-1, .px-1\.5, .px-2), .rounded-md:is(.px-1\.5, .px-2), .rounded-full.px-2, .tabular-nums) {
     white-space: nowrap;
   }
 
@@ -1078,7 +1078,7 @@ html.flat-theme:lang(en) .table-page-layout .table-wrapper .table-header .sticky
    figures stay whole), so the column gives back the width its official 14px lines added (measured: at 1280 the table
    scrolls 70px instead of 86; at 1366 the row actions fit two a row instead of one) */
 @media (max-width: 1399.98px) {
-  html.flat-theme:lang(en) .table-wrapper[data-table="keys"] td[data-column="usage"] div[class~="flex"] > span:first-child {
+  html.flat-theme:lang(en) .table-wrapper[data-table="keys"] td[data-column="usage"] div.flex > span:first-child {
     white-space: normal;
   }
 }

@@ -36,7 +36,7 @@
       </div>
     </div>
     <div class="card-body min-h-0 flex-1 !p-0">
-      <div v-if="loading" class="flex h-[280px] items-center justify-center sm:h-[300px]">
+      <div v-if="loading && !chartData" class="flex h-[280px] items-center justify-center sm:h-[300px]">
         <div class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
       </div>
       <div
@@ -45,7 +45,7 @@
         class="h-[280px] sm:h-[300px]"
         @wheel="onChartWheel"
       >
-        <Line :data="chartData" :options="chartOptions" />
+        <Line :data="chartData" :options="chartOptions" update-mode="none" />
       </div>
       <div v-else class="flex h-[280px] items-center justify-center sm:h-[300px]">
         <EmptyState
@@ -59,6 +59,7 @@
 
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { chartTooltipMotion, useChartMotion } from '@/composables/useChartMotion'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import {
@@ -202,6 +203,7 @@ function smoothTrend(values: Array<number | null>): Array<number | null> {
 }
 
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 const chartOptions = computed(() => {
   const text = presentation.value.axis
   const grid = presentation.value.axisGrid
@@ -210,12 +212,14 @@ const chartOptions = computed(() => {
   const tooltipBody = presentation.value.body
   const ttftText = presentation.value.toneText('#0ea5e9')
   return {
+    ...chartMotion.value,
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index' as const, intersect: false },
     plugins: {
       legend: { display: false },
       tooltip: {
+        ...chartTooltipMotion,
         backgroundColor: tooltipBg,
         titleColor: tooltipTitle,
         bodyColor: tooltipBody,

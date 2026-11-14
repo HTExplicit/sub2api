@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="announcements-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
@@ -181,7 +180,7 @@
       <form id="announcement-form" @submit.prevent="handleSave" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.announcements.form.title') }}</label>
-          <input v-model="form.title" type="text" class="input" required />
+          <input placeholder=" " v-model="form.title" type="text" class="input" required />
         </div>
 
         <div>
@@ -204,12 +203,12 @@
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label class="input-label">{{ t('admin.announcements.form.startsAt') }}</label>
-            <input v-model="form.starts_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
+            <input placeholder=" " v-model="form.starts_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
             <p class="input-hint">{{ t('admin.announcements.form.startsAtHint') }}</p>
           </div>
           <div>
             <label class="input-label">{{ t('admin.announcements.form.endsAt') }}</label>
-            <input v-model="form.ends_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
+            <input placeholder=" " v-model="form.ends_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
             <p class="input-hint">{{ t('admin.announcements.form.endsAtHint') }}</p>
           </div>
         </div>
@@ -256,7 +255,6 @@
       preview
       @close="previewAnnouncement = null"
     />
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -269,7 +267,6 @@ import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } fro
 import type { AdminGroup, Announcement, AnnouncementTargeting } from '@/types'
 import type { Column } from '@/components/common/types'
 
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'

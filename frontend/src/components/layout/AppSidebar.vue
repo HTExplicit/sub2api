@@ -1031,7 +1031,7 @@ onMounted(() => {
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }
-  // Restore sidebar scroll position after route change re-mounts the component
+  // Restore scroll when returning from a standalone page that unmounted the shell.
   if (appStore.sidebarScrollTop > 0 && sidebarNavRef.value) {
     void nextTick(() => {
       if (sidebarNavRef.value) {
@@ -1065,9 +1065,8 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   white-space: nowrap;
   transition:
-    max-width 0.22s ease,
-    opacity 0.14s ease,
-    transform 0.14s ease;
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
   max-width: 12rem;
 }
 
@@ -1145,9 +1144,8 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   transition:
-    max-width 0.2s ease,
-    opacity 0.12s ease,
-    transform 0.12s ease;
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
   max-width: 12rem;
 }
 
@@ -1174,5 +1172,21 @@ onBeforeUnmount(() => {
   display: block;
   width: 1.25rem;
   height: 1.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-brand,
+  .sidebar-label,
+  .sidebar-section-title-text,
+  .sidebar-section-title::after {
+    transition: none;
+  }
+
+  .sidebar-brand-collapsed,
+  .sidebar-label-collapsed,
+  .sidebar-section-title-text-collapsed {
+    transform: none;
+  }
 }
 </style>

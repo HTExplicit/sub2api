@@ -13,7 +13,7 @@
             {{ t('admin.settings.payment.providerName') }}
             <span class="text-red-500">*</span>
           </label>
-          <input v-model="form.name" type="text" class="input" required />
+          <input placeholder=" " v-model="form.name" type="text" class="input" required />
         </div>
         <div>
           <label class="input-label">
@@ -181,7 +181,7 @@
                 data-lpignore="true"
                 data-bwignore="true"
                 spellcheck="false"
-                :placeholder="editing ? t('admin.accounts.leaveEmptyToKeep') : (field.defaultValue || '')"
+                :placeholder="editing ? t('admin.accounts.leaveEmptyToKeep') : (field.defaultValue || ' ')"
               />
               <button
                 type="button"
@@ -203,7 +203,7 @@
               type="text"
               v-model="config[field.key]"
               class="input"
-              :placeholder="field.defaultValue || ''"
+              :placeholder="field.defaultValue || ' '"
             />
             <p v-if="field.hintKey" class="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
               {{ t(field.hintKey) }}
@@ -230,7 +230,7 @@
         </div>
 
         <!-- 服务商 Webhook 提示 -->
-        <div v-if="providerWebhookUrl" class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/50 dark:bg-blue-900/20">
+        <div data-console-callout v-if="providerWebhookUrl" class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/50 dark:bg-blue-900/20">
           <p class="text-xs text-blue-700 dark:text-blue-300">
             {{ t(providerWebhookHint) }}
           </p>

@@ -734,6 +734,7 @@
                 <div v-else class="space-y-3">
                   <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
                     <input
+                      placeholder=" "
                       :value="authUrl"
                       readonly
                       type="text"

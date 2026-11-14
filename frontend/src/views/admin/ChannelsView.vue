@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="channels-page">
       <template #filters>
         <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
@@ -627,7 +626,6 @@
       @confirm="confirmDelete"
       @cancel="showDeleteDialog = false"
     />
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -643,7 +641,6 @@ import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass, platformLabel as catalogPlatformLabel } from '@/utils/platformColors'
 import { listPlatformIds, supportsPricingModelSync } from '@/constants/platformCatalog'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'

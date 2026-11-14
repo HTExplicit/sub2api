@@ -12,7 +12,7 @@
         v-model="localValues[attr.id]"
         :type="attr.type === 'text' ? 'text' : attr.type"
         :required="attr.required"
-        :placeholder="attr.placeholder"
+        :placeholder="attr.placeholder || ' '"
         class="input"
         @input="emitChange"
       />
@@ -23,7 +23,7 @@
         :value="localValues[attr.id]"
         type="number"
         :required="attr.required"
-        :placeholder="attr.placeholder"
+        :placeholder="attr.placeholder || ' '"
         :min="attr.validation?.min"
         :max="attr.validation?.max"
         class="input"
@@ -32,6 +32,7 @@
 
       <!-- Date Input -->
       <input
+        placeholder=" "
         v-else-if="attr.type === 'date'"
         v-model="localValues[attr.id]"
         type="date"
@@ -45,7 +46,7 @@
         v-else-if="attr.type === 'textarea'"
         v-model="localValues[attr.id]"
         :required="attr.required"
-        :placeholder="attr.placeholder"
+        :placeholder="attr.placeholder || ' '"
         rows="3"
         class="input"
         @input="emitChange"

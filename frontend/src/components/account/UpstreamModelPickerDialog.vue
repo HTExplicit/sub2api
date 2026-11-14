@@ -6,7 +6,7 @@
     @close="emit('close')"
   >
     <div data-testid="upstream-model-picker" class="space-y-3">
-      <div
+      <div data-console-callout
         v-if="snapshot?.model_list_source === 'configured'"
         data-testid="upstream-picker-configured-notice"
         class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300"

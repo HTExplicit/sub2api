@@ -96,7 +96,7 @@
       </div>
     </div>
 
-    <div v-if="activeView === 'model_distribution' && loading" class="flex h-48 items-center justify-center">
+    <div v-if="activeView === 'model_distribution' && loading && !chartData" class="flex h-48 items-center justify-center">
       <LoadingSpinner />
     </div>
     <div
@@ -104,7 +104,7 @@
       class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6"
     >
       <div class="h-48 w-48 shrink-0">
-        <Doughnut :data="chartData" :options="doughnutOptions" />
+        <Doughnut update-mode="none" :data="chartData" :options="doughnutOptions" />
       </div>
       <div data-ui="dist-table" class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
@@ -175,7 +175,7 @@
       {{ t('admin.dashboard.noDataAvailable') }}
     </div>
 
-    <div v-else-if="rankingLoading" class="flex h-48 items-center justify-center">
+    <div v-else-if="rankingLoading && !rankingChartData" class="flex h-48 items-center justify-center">
       <LoadingSpinner />
     </div>
     <div
@@ -186,7 +186,7 @@
     </div>
     <div v-else-if="rankingDisplayItems.length > 0 && rankingChartData" class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
       <div class="h-48 w-48 shrink-0">
-        <Doughnut :data="rankingChartData" :options="rankingDoughnutOptions" />
+        <Doughnut update-mode="none" :data="rankingChartData" :options="rankingDoughnutOptions" />
       </div>
       <div data-ui="dist-table" class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
@@ -247,6 +247,7 @@
 
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { useChartMotion, chartTooltipMotion } from '@/composables/useChartMotion'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
@@ -260,6 +261,7 @@ ChartJS.register(ArcElement, Tooltip, Legend)
 
 const { t } = useI18n()
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
 type ModelSource = 'requested' | 'upstream' | 'mapping'
@@ -430,6 +432,7 @@ const rankingDisplayItems = computed<RankingDisplayItem[]>(() => {
 })
 
 const doughnutOptions = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -437,6 +440,7 @@ const doughnutOptions = computed(() => ({
       display: false
     },
     tooltip: {
+      ...chartTooltipMotion,
       callbacks: {
         label: (context: any) => {
           const value = context.raw as number
@@ -453,6 +457,7 @@ const doughnutOptions = computed(() => ({
 }))
 
 const rankingDoughnutOptions = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -460,6 +465,7 @@ const rankingDoughnutOptions = computed(() => ({
       display: false
     },
     tooltip: {
+      ...chartTooltipMotion,
       callbacks: {
         label: (context: any) => {
           const value = context.raw as number

@@ -231,6 +231,7 @@
           <div>
             <label class="input-label">{{ t('admin.errorPassthrough.form.priority') }}</label>
             <input
+              placeholder=" "
               v-model.number="form.priority"
               type="number"
               min="0"

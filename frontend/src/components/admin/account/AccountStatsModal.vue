@@ -398,7 +398,7 @@
             {{ t('admin.accounts.stats.usageTrend') }}
           </h3>
           <div class="h-64">
-            <Line v-if="trendChartData" :data="trendChartData" :options="lineChartOptions" />
+            <Line update-mode="none" v-if="trendChartData" :data="trendChartData" :options="lineChartOptions" />
             <div
               v-else
               class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
@@ -449,6 +449,7 @@
 
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { useChartMotion, chartTooltipMotion } from '@/composables/useChartMotion'
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -499,6 +500,7 @@ let requestVersion = 0
 
 // Dark mode detection
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 
 // Chart colors
 const chartColors = computed(() => ({
@@ -547,6 +549,7 @@ const trendChartData = computed(() => {
 
 // Line chart options with dual Y-axis
 const lineChartOptions = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   interaction: {
@@ -567,6 +570,7 @@ const lineChartOptions = computed(() => ({
       }
     },
     tooltip: {
+      ...chartTooltipMotion,
       callbacks: {
         label: (context: any) => {
           const label = context.dataset.label || ''

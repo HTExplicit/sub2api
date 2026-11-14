@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="mx-auto w-full max-w-[1920px] space-y-5 pb-5" data-ui="pelican-tests">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div><p class="text-xs font-medium text-primary-700 dark:text-primary-300">{{ text('模型观察室', 'MODEL OBSERVATORY') }}</p><h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ composerOpen ? text('新建测试', 'New test') : text('鹈鹕测试', 'Pelican tests') }}</h1><p class="mt-2 text-sm text-muted">{{ composerOpen ? text('选择账号，配置模型，一次启动。', 'Choose accounts, configure models, and start.') : text('看作品，比较表现，追踪每一次测试。', 'Explore works, compare results, and follow every test.') }}</p></div>
@@ -62,7 +61,6 @@
       <BaseDialog :show="comparisonOpen" :title="text('作品比较', 'Compare works')" width="full" @close="closeComparison"><p v-if="detailLoading" role="status" class="p-4 text-muted">{{ text('正在读取作品…', 'Loading works…') }}</p><div class="grid items-start gap-5 md:grid-cols-2" :class="comparisonDetails.length > 2 ? '2xl:grid-cols-4' : ''"><section v-for="item in comparisonDetails" :key="item.id" class="min-w-0"><PelicanWorkDetail :result="item" compact /></section></div></BaseDialog>
       <BaseDialog :show="!!deleteTarget" :title="text('删除检测记录', 'Delete observation')" width="narrow" @close="!deleting && (deleteTarget = null)"><p data-test="pelican-delete-message">{{ deleteTarget?.result ? text('删除这张作品及其检测资料？', 'Delete this work and its observation data?') : text('删除整个任务及全部作品？', 'Delete this task and all its works?') }}</p><template #footer><div class="flex justify-end gap-2"><button type="button" class="btn btn-secondary" :disabled="deleting" @click="deleteTarget = null">{{ text('取消', 'Cancel') }}</button><button type="button" class="btn bg-red-600 text-white" :disabled="deleting" data-test="pelican-confirm-delete" @click="confirmDelete">{{ text('删除', 'Delete') }}</button></div></template></BaseDialog>
     </div>
-  </AppLayout>
 </template>
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
@@ -70,7 +68,6 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import PelicanAccountFilter from '@/components/admin/codex/PelicanAccountFilter.vue'
 import { readPelicanDraft, savePelicanDraft, type PelicanDraft } from '@/utils/pelicanDraft'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import PelicanTaskComposer from '@/components/admin/codex/PelicanTaskComposer.vue'

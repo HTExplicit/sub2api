@@ -17,7 +17,7 @@
         <Icon
           name="chevronDown"
           size="md"
-          :class="['transition-transform duration-200', isOpen && 'rotate-180']"
+          :class="['proxy-chevron', isOpen && 'rotate-180']"
         />
       </span>
     </button>
@@ -319,7 +319,7 @@ onUnmounted(() => {
   @apply bg-white dark:bg-dark-800;
   @apply border border-gray-200 dark:border-dark-600;
   @apply text-gray-900 dark:text-gray-100;
-  @apply transition-all duration-200;
+  @apply transition-colors duration-150;
   @apply focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30;
   @apply hover:border-gray-300 dark:hover:border-dark-500;
   @apply cursor-pointer;
@@ -407,14 +407,36 @@ onUnmounted(() => {
 }
 
 /* Dropdown animation */
+.proxy-chevron {
+  transition: transform 120ms ease-out;
+}
+
 .select-dropdown-enter-active,
 .select-dropdown-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 
 .select-dropdown-enter-from,
 .select-dropdown-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proxy-chevron,
+  .select-dropdown-enter-active,
+  .select-dropdown-leave-active {
+    transition: none;
+  }
+
+  .select-dropdown-enter-from,
+  .select-dropdown-leave-to {
+    opacity: 1;
+    transform: none;
+  }
+
+  .animate-spin {
+    animation: none;
+  }
 }
 </style>

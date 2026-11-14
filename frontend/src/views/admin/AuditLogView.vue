@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="audit-page">
       <!-- Filters -->
       <template #filters>
@@ -27,17 +26,17 @@
 
               <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[200px]">
                 <label class="input-label">{{ t('admin.audit.filters.actorEmail') }}</label>
-                <input v-model.trim="filters.actor_email" type="text" class="input" @keyup.enter="search" />
+                <input placeholder=" " v-model.trim="filters.actor_email" type="text" class="input" @keyup.enter="search" />
               </div>
 
               <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[180px]">
                 <label class="input-label">{{ t('admin.audit.filters.action') }}</label>
-                <input v-model.trim="filters.action" type="text" class="input" @keyup.enter="search" />
+                <input placeholder=" " v-model.trim="filters.action" type="text" class="input" @keyup.enter="search" />
               </div>
 
               <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[160px]">
                 <label class="input-label">{{ t('admin.audit.filters.clientIp') }}</label>
-                <input v-model.trim="filters.client_ip" type="text" class="input" @keyup.enter="search" />
+                <input placeholder=" " v-model.trim="filters.client_ip" type="text" class="input" @keyup.enter="search" />
               </div>
 
               <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[140px]">
@@ -279,11 +278,11 @@
       <div class="space-y-4 py-2">
         <div>
           <label class="input-label">{{ t('admin.ops.customTimeRange.startTime') }}</label>
-          <input v-model="customStartTimeInput" type="datetime-local" class="input" />
+          <input placeholder=" " v-model="customStartTimeInput" type="datetime-local" class="input" />
         </div>
         <div>
           <label class="input-label">{{ t('admin.ops.customTimeRange.endTime') }}</label>
-          <input v-model="customEndTimeInput" type="datetime-local" class="input" />
+          <input placeholder=" " v-model="customEndTimeInput" type="datetime-local" class="input" />
         </div>
       </div>
       <template #footer>
@@ -348,7 +347,6 @@
         </button>
       </template>
     </BaseDialog>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -356,7 +354,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type AuditLog } from '@/api/admin'
 import { totpAPI } from '@/api'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import type { Column } from '@/components/common/types'

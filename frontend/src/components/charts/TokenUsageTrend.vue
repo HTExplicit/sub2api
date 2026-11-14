@@ -3,11 +3,11 @@
     <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
       {{ t('admin.dashboard.tokenUsageTrend') }}
     </h3>
-    <div v-if="loading" class="flex h-48 items-center justify-center">
+    <div v-if="loading && !chartData" class="flex h-48 items-center justify-center">
       <LoadingSpinner />
     </div>
     <div v-else-if="trendData.length > 0 && chartData" class="h-48">
-      <Line :data="chartData" :options="lineOptions" />
+      <Line update-mode="none" :data="chartData" :options="lineOptions" />
     </div>
     <div
       v-else
@@ -20,6 +20,7 @@
 
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { useChartMotion, chartTooltipMotion } from '@/composables/useChartMotion'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -56,6 +57,7 @@ const props = defineProps<{
 }>()
 
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 
 const chartColors = computed(() => ({
   text: presentation.value.text,
@@ -123,6 +125,7 @@ const chartData = computed(() => {
 })
 
 const lineOptions = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   interaction: {
@@ -143,6 +146,7 @@ const lineOptions = computed(() => ({
       }
     },
     tooltip: {
+      ...chartTooltipMotion,
       callbacks: {
         label: (context: any) => {
           if (context.dataset.yAxisID === 'yPercent') {

@@ -96,19 +96,19 @@
       <form v-if="editing" class="grid gap-4 sm:grid-cols-2" @submit.prevent="saveEditor">
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200">
           <span>{{ t('admin.promptAudit.pool.name') }}</span>
-          <input v-model="editing.name" class="input w-full" required :aria-label="t('admin.promptAudit.pool.name')" />
+          <input placeholder=" " v-model="editing.name" class="input w-full" required :aria-label="t('admin.promptAudit.pool.name')" />
         </label>
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200">
           <span>{{ t('admin.promptAudit.pool.id') }}</span>
-          <input v-model="editing.id" class="input w-full" required :disabled="editingIndex >= 0" :aria-label="t('admin.promptAudit.pool.id')" />
+          <input placeholder=" " v-model="editing.id" class="input w-full" required :disabled="editingIndex >= 0" :aria-label="t('admin.promptAudit.pool.id')" />
         </label>
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200 sm:col-span-2">
           <span>{{ t('admin.promptAudit.pool.baseUrl') }}</span>
-          <input v-model="editing.base_url" class="input w-full" required inputmode="url" :aria-label="t('admin.promptAudit.pool.baseUrl')" />
+          <input placeholder=" " v-model="editing.base_url" class="input w-full" required inputmode="url" :aria-label="t('admin.promptAudit.pool.baseUrl')" />
         </label>
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200 sm:col-span-2">
           <span>{{ t('admin.promptAudit.pool.apiKey') }}</span>
-          <input v-model="editing.token" class="input w-full" type="password" autocomplete="new-password" :placeholder="editing.has_token ? (editing.token_status === 'invalid' ? t('admin.promptAudit.pool.reenterSecret') : t('admin.promptAudit.pool.keepSecret')) : ''" :aria-label="t('admin.promptAudit.pool.apiKey')" />
+          <input v-model="editing.token" class="input w-full" type="password" autocomplete="new-password" :placeholder="editing.has_token ? (editing.token_status === 'invalid' ? t('admin.promptAudit.pool.reenterSecret') : t('admin.promptAudit.pool.keepSecret')) : ' '" :aria-label="t('admin.promptAudit.pool.apiKey')" />
           <span class="block text-xs text-gray-500 dark:text-dark-400">{{ t('admin.promptAudit.pool.secretHint') }}</span>
         </label>
         <label v-if="editing.has_token" class="flex items-center gap-2 text-sm text-red-600 dark:text-red-300 sm:col-span-2">
@@ -117,15 +117,15 @@
         </label>
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200 sm:col-span-2">
           <span>{{ t('admin.promptAudit.pool.model') }}</span>
-          <input v-model="editing.model" class="input w-full" :aria-label="t('admin.promptAudit.pool.model')" />
+          <input placeholder=" " v-model="editing.model" class="input w-full" :aria-label="t('admin.promptAudit.pool.model')" />
         </label>
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200">
           <span>{{ t('admin.promptAudit.pool.timeout') }}</span>
-          <input v-model.number="editing.timeout_ms" class="input w-full" type="number" min="100" max="30000" required :aria-label="t('admin.promptAudit.pool.timeout')" />
+          <input placeholder=" " v-model.number="editing.timeout_ms" class="input w-full" type="number" min="100" max="30000" required :aria-label="t('admin.promptAudit.pool.timeout')" />
         </label>
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200">
           <span>{{ t('admin.promptAudit.pool.inputLimit') }}</span>
-          <input v-model.number="editing.input_limit" class="input w-full" type="number" min="128" max="100000" required :aria-label="t('admin.promptAudit.pool.inputLimit')" />
+          <input placeholder=" " v-model.number="editing.input_limit" class="input w-full" type="number" min="128" max="100000" required :aria-label="t('admin.promptAudit.pool.inputLimit')" />
         </label>
       </form>
       <template #footer>

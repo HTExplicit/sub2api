@@ -49,7 +49,7 @@
             <Icon name="arrowsUpDown" size="sm" />
           </button>
           <template v-if="editingID === item.id">
-            <input v-model.trim="editingName" class="input h-8 min-w-0 flex-1 py-1 text-sm" maxlength="100" />
+            <input placeholder=" " v-model.trim="editingName" class="input h-8 min-w-0 flex-1 py-1 text-sm" maxlength="100" />
             <button type="button" class="icon-button" :title="t('common.save')" @click="saveEdit(item)">
               <Icon name="check" size="sm" />
             </button>

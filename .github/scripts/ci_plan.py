@@ -297,7 +297,7 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             select("candidate_image", relative)
             typecheck = True
             known = True
-        elif relative == "frontend/src/styles/console/pages/settings-ops-public.css":
+        elif relative.startswith("frontend/src/") and path.suffix == ".css":
             select("frontend_validate", relative)
             select("candidate_image", relative)
             known = True

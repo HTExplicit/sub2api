@@ -34,7 +34,7 @@
         <p class="text-sm text-gray-600 dark:text-gray-300">
           {{ t('admin.accounts.openaiReferral.fromAccount') }} <strong>{{ account.name }}</strong>
         </p>
-        <div class="flex items-center justify-between rounded-lg bg-violet-50 p-3 text-sm dark:bg-violet-900/20">
+        <div data-console-callout class="flex items-center justify-between rounded-lg bg-violet-50 p-3 text-sm dark:bg-violet-900/20">
           <div>
             <p class="font-medium text-violet-800 dark:text-violet-300">{{ programLabel }}</p>
             <p class="mt-1 text-gray-600 dark:text-gray-300">{{ t('admin.accounts.openaiReferral.available') }} {{ countDisplay }}</p>

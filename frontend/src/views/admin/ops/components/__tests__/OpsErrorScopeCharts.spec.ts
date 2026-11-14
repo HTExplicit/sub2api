@@ -26,6 +26,7 @@ vi.mock('vue-chartjs', async () => {
       props: {
         data: { type: Object, required: true },
         options: { type: Object, default: () => ({}) },
+        updateMode: { type: String },
       },
       template: '<div class="doughnut-stub" />',
     }),
@@ -34,6 +35,7 @@ vi.mock('vue-chartjs', async () => {
       props: {
         data: { type: Object, required: true },
         options: { type: Object, default: () => ({}) },
+        updateMode: { type: String },
       },
       template: '<div class="line-stub" />',
     }),
@@ -102,6 +104,12 @@ describe('Ops SLA-scoped error charts', () => {
     expect(doughnut.props('data')).toMatchObject({
       labels: ['admin.ops.client'],
       datasets: [{ data: [2] }],
+    })
+    expect(doughnut.props('updateMode')).toBe('none')
+    expect(doughnut.props('options')).toMatchObject({
+      animation: false,
+      transitions: { active: { animation: { duration: 0 } } },
+      plugins: { tooltip: { animation: { duration: 0 }, animations: { opacity: { duration: 0 } } } },
     })
   })
 

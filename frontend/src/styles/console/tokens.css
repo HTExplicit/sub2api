@@ -104,12 +104,11 @@
   --ui-select-h: 34px;
   --ui-control-h-md: 38px;
   --ui-header-h: 4rem;
-  /* motion: colour, background, border and opacity 150ms; the segmented thumb 200ms and the sidebar width
-     160ms, both ease-out; no press scale, no hover lift */
+  /* Motion: short colour feedback, menu/segment motion and sidebar labels; layout widths settle immediately. */
   --ui-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ui-ease-out: cubic-bezier(0, 0, 0.2, 1);
-  --ui-duration: 150ms;
-  --ui-duration-slide: 200ms;
+  --ui-duration: 120ms;
+  --ui-duration-slide: 120ms;
   --ui-duration-sidebar: 160ms;
   /* type: official sub2api. --ui-font is styles/theme.css' official stack (the OS UI font, no web fonts: Microsoft
      YaHei UI for every script on Windows zh-CN, SF + PingFang on macOS). Mono only for identifiers and code: the
@@ -290,7 +289,7 @@
 
 /* Upstream dims separators and decorative glyphs with dark:text-gray-600 (#4b5563). Limit that shade to those
    elements: the same utility on a table's empty-value text must keep the readable meta grey. */
-:root.flat-theme.dark [class~="dark:text-gray-600"]:is(svg, span[class~="text-gray-300"], div[class~="flex"][class~="items-center"][class~="justify-center"]) {
+:root.flat-theme.dark .dark\:text-gray-600:is(svg, span.text-gray-300, div.flex.items-center.justify-center) {
   --theme-text-gray-600: 75 85 99;
 }
 

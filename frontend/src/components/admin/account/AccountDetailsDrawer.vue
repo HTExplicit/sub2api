@@ -1,11 +1,6 @@
 <template>
   <Teleport to="#overlay-root">
-    <Transition
-      enter-active-class="transition-opacity duration-200"
-      enter-from-class="opacity-0"
-      leave-active-class="transition-opacity duration-150"
-      leave-to-class="opacity-0"
-    >
+    <Transition name="account-drawer-scrim">
       <div
         v-if="account"
         class="fixed inset-0 z-[10000] bg-black/35"
@@ -13,12 +8,7 @@
         @click="emit('close')"
       />
     </Transition>
-    <Transition
-      enter-active-class="transition-transform duration-200 ease-out"
-      enter-from-class="translate-x-full"
-      leave-active-class="transition-transform duration-150 ease-in"
-      leave-to-class="translate-x-full"
-    >
+    <Transition name="account-drawer">
       <aside
         v-if="account"
         class="fixed inset-y-0 right-0 z-[10001] flex w-full max-w-xl flex-col border-l border-gray-200 bg-white shadow-2xl dark:border-dark-700 dark:bg-dark-900"
@@ -230,3 +220,42 @@ const handleEscape = (event: KeyboardEvent) => {
 onMounted(() => document.addEventListener('keydown', handleEscape))
 onUnmounted(() => document.removeEventListener('keydown', handleEscape))
 </script>
+
+<style scoped>
+.account-drawer-scrim-enter-active,
+.account-drawer-scrim-leave-active {
+  transition: opacity 180ms ease-out;
+}
+
+.account-drawer-scrim-enter-from,
+.account-drawer-scrim-leave-to {
+  opacity: 0;
+}
+
+.account-drawer-enter-active,
+.account-drawer-leave-active {
+  transition: transform 180ms ease-out;
+}
+
+.account-drawer-enter-from,
+.account-drawer-leave-to {
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-drawer-scrim-enter-active,
+  .account-drawer-scrim-leave-active,
+  .account-drawer-enter-active,
+  .account-drawer-leave-active {
+    transition: none;
+  }
+
+  .account-drawer-scrim-enter-from,
+  .account-drawer-scrim-leave-to,
+  .account-drawer-enter-from,
+  .account-drawer-leave-to {
+    opacity: 1;
+    transform: none;
+  }
+}
+</style>

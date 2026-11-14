@@ -3,13 +3,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AccountUsageCell from '../AccountUsageCell.vue'
 import type { Account, AccountUsageInfo } from '@/types'
 
-const { getUsage } = vi.hoisted(() => ({
-  getUsage: vi.fn()
+const { getUsage, refreshOllamaCloudUsage } = vi.hoisted(() => ({
+  getUsage: vi.fn(),
+  refreshOllamaCloudUsage: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
-    accounts: { getUsage }
+    accounts: { getUsage, refreshOllamaCloudUsage }
   }
 }))
 
@@ -89,6 +90,7 @@ const stubs = {
 describe('AccountUsageCell list variants', () => {
   beforeEach(() => {
     getUsage.mockReset()
+    refreshOllamaCloudUsage.mockReset()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       writable: true,
@@ -106,6 +108,50 @@ describe('AccountUsageCell list variants', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('keeps a pending provider response owned by its original account when the list cell is reused', async () => {
+    const usageState = (accountId: number, percent: number): NonNullable<Account['ollama_cloud_usage']> => ({
+      account_id: accountId,
+      eligible: true,
+      configured: true,
+      auto_refresh_enabled: false,
+      encryption_key_configured: true,
+      snapshot: {
+        status: 'ok',
+        last_attempt_at: '2026-11-14T00:00:00Z',
+        next_refresh_at: '2026-11-14T01:00:00Z',
+        data: { five_hour: { used_percent: percent } }
+      }
+    })
+    const first = makeAccount({ id: 5201, type: 'apikey', ollama_cloud_usage: usageState(5201, 13) })
+    const second = makeAccount({ id: 5202, type: 'apikey', ollama_cloud_usage: usageState(5202, 76) })
+    let resolveFirst!: (value: NonNullable<Account['ollama_cloud_usage']>) => void
+    refreshOllamaCloudUsage.mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve }))
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: first, variant: 'list', readOnly: true, requestBatchedUsage: vi.fn() },
+      global: { stubs: { ...stubs, OllamaCloudUsageCell: false } }
+    })
+    const cellUid = wrapper.vm.$.uid
+    await wrapper.get('[data-testid="ollama-cloud-usage-query"]').trigger('click')
+    expect(refreshOllamaCloudUsage).toHaveBeenCalledWith(first.id)
+
+    await wrapper.setProps({ account: second })
+    resolveFirst(usageState(first.id, 99))
+    await flushPromises()
+    expect(wrapper.vm.$.uid).toBe(cellUid)
+    expect(wrapper.text()).toContain('5h|76|list')
+    expect(wrapper.text()).not.toContain('5h|99|list')
+    expect(wrapper.emitted('account-updated')).toBeUndefined()
+    expect(wrapper.emitted('usage-loaded')).toBeUndefined()
+
+    const next = usageState(second.id, 82)
+    refreshOllamaCloudUsage.mockResolvedValueOnce(next)
+    await wrapper.get('[data-testid="ollama-cloud-usage-query"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('account-updated')).toEqual([[{ ...second, ollama_cloud_usage: next }]])
+    expect(getUsage).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('renders OAuth 5h/7d in full list mode without query or reset controls', async () => {

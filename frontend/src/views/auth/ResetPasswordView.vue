@@ -80,6 +80,7 @@
               <Icon name="mail" size="md" class="text-gray-400 dark:text-dark-500" />
             </div>
             <input
+              placeholder=" "
               id="email"
               :value="email"
               type="email"

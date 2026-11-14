@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="mx-auto max-w-6xl space-y-6" data-ui="settings">
       <!-- Loading State -->
       <div v-if="loading" class="flex items-center justify-center py-12">
@@ -210,6 +209,7 @@
                       {{ t("admin.settings.overloadCooldown.cooldownMinutes") }}
                     </label>
                     <input
+                      placeholder=" "
                       v-model.number="overloadCooldownForm.cooldown_minutes"
                       type="number"
                       min="1"
@@ -315,6 +315,7 @@
                       }}
                     </label>
                     <input
+                      placeholder=" "
                       v-model.number="rateLimit429CooldownForm.cooldown_seconds"
                       type="number"
                       min="1"
@@ -450,6 +451,7 @@
                       {{ t("admin.settings.streamTimeout.tempUnschedMinutes") }}
                     </label>
                     <input
+                      placeholder=" "
                       v-model.number="streamTimeoutForm.temp_unsched_minutes"
                       type="number"
                       min="1"
@@ -471,6 +473,7 @@
                       {{ t("admin.settings.streamTimeout.thresholdCount") }}
                     </label>
                     <input
+                      placeholder=" "
                       v-model.number="streamTimeoutForm.threshold_count"
                       type="number"
                       min="1"
@@ -492,6 +495,7 @@
                       }}
                     </label>
                     <input
+                      placeholder=" "
                       v-model.number="
                         streamTimeoutForm.threshold_window_minutes
                       "
@@ -1717,6 +1721,7 @@
                   </p>
                 </div>
                 <input
+                  placeholder=" "
                   v-model.number="form.audit_log_retention_days"
                   type="number"
                   min="0"
@@ -1846,7 +1851,7 @@
 
               <template v-else>
                 <!-- 计数维度说明：按账号计数，反代部署无误伤 -->
-                <div
+                <div data-console-callout
                   class="rounded-lg border border-sky-200 bg-sky-50 p-4 dark:border-sky-800 dark:bg-sky-900/20"
                 >
                   <div class="flex items-start">
@@ -1886,6 +1891,7 @@
                       </label>
                       <div class="flex items-center gap-2">
                         <input
+                          placeholder=" "
                           v-model.number="panelRateLimitForm.user_rpm"
                           data-testid="panel-rate-limit-user-rpm"
                           type="number"
@@ -1910,6 +1916,7 @@
                       </label>
                       <div class="flex items-center gap-2">
                         <input
+                          placeholder=" "
                           v-model.number="panelRateLimitForm.heavy_rpm"
                           type="number"
                           min="0"
@@ -1933,6 +1940,7 @@
                       </label>
                       <div class="flex items-center gap-2">
                         <input
+                          placeholder=" "
                           v-model.number="panelRateLimitForm.public_ip_rpm"
                           type="number"
                           min="0"
@@ -3688,6 +3696,7 @@
                       {{ t("admin.settings.oidc.clockSkewSeconds") }}
                     </label>
                     <input
+                      placeholder=" "
                       v-model.number="form.oidc_connect_clock_skew_seconds"
                       type="number"
                       min="0"
@@ -4003,6 +4012,7 @@
                         }}
                       </label>
                       <input
+                        placeholder=" "
                         v-model.number="item.validity_days"
                         type="number"
                         min="1"
@@ -4339,6 +4349,7 @@
                             }}
                           </label>
                           <input
+                            placeholder=" "
                             v-model.number="item.validity_days"
                             type="number"
                             min="1"
@@ -4786,6 +4797,7 @@
                     {{ t("admin.settings.upstreamBillingProbe.intervalMinutes") }}
                   </label>
                   <input
+                    placeholder=" "
                     id="upstream-billing-probe-interval"
                     v-model.number="upstreamBillingProbeForm.interval_minutes"
                     type="number"
@@ -4858,6 +4870,7 @@
                       {{ t("admin.settings.ollamaCloudUsage.debounceMinutes") }}
                     </label>
                     <input
+                      placeholder=" "
                       id="ollama-cloud-usage-debounce"
                       v-model.number="ollamaCloudUsageForm.debounce_minutes"
                       type="number"
@@ -4876,6 +4889,7 @@
                       {{ t("admin.settings.ollamaCloudUsage.intervalMinutes") }}
                     </label>
                     <input
+                      placeholder=" "
                       id="ollama-cloud-usage-interval"
                       v-model.number="ollamaCloudUsageForm.interval_minutes"
                       type="number"
@@ -4942,6 +4956,7 @@
                       {{ t("admin.settings.opencodeGoUsage.debounceMinutes") }}
                     </label>
                     <input
+                      placeholder=" "
                       id="opencode-go-usage-debounce"
                       v-model.number="opencodeGoUsageForm.debounce_minutes"
                       type="number"
@@ -4960,6 +4975,7 @@
                       {{ t("admin.settings.opencodeGoUsage.intervalMinutes") }}
                     </label>
                     <input
+                      placeholder=" "
                       id="opencode-go-usage-interval"
                       v-model.number="opencodeGoUsageForm.interval_minutes"
                       type="number"
@@ -5128,6 +5144,7 @@
                 </div>
                 <div class="relative w-full shrink-0 sm:w-32">
                   <input
+                    placeholder=" "
                     id="openai-oauth-scheduling-rate-multiplier"
                     v-model.number="form.openai_oauth_scheduling_rate_multiplier"
                     class="input pr-8"
@@ -5218,6 +5235,7 @@
                 </div>
                 <div class="relative w-full shrink-0 sm:w-32">
                   <input
+                    placeholder=" "
                     id="openai-oauth-scheduling-rate-multiplier"
                     v-model.number="form.openai_oauth_scheduling_rate_multiplier"
                     class="input pr-8"
@@ -5262,7 +5280,7 @@
                       v-model="form[field.key]"
                       class="input mt-1"
                       inputmode="decimal"
-                      :placeholder="field.placeholder"
+                      :placeholder="field.placeholder || ' '"
                       type="text"
                     />
                   </label>
@@ -6174,6 +6192,7 @@
                           t("admin.settings.webSearchEmulation.subscribedAt")
                         }}</label>
                         <input
+                          placeholder=" "
                           :value="formatSubscribedAt(provider.subscribed_at)"
                           type="date"
                           class="input text-sm"
@@ -6484,6 +6503,7 @@
                       {{ t("admin.settings.site.tableDefaultPageSize") }}
                     </label>
                     <input
+                      placeholder=" "
                       v-model.number="form.table_default_page_size"
                       type="number"
                       min="5"
@@ -7032,6 +7052,7 @@
                     {{ localText("条款更新日期", "Updated date") }}
                   </label>
                   <input
+                    placeholder=" "
                     v-model="form.login_agreement_updated_at"
                     type="date"
                     class="input"
@@ -7242,6 +7263,7 @@
                   <span class="text-red-500">*</span>
                 </label>
                 <input
+                  placeholder=" "
                   v-model.number="form.channel_monitor_default_interval_seconds"
                   type="number"
                   min="15"
@@ -7491,6 +7513,7 @@
                 <span class="text-red-500">*</span>
               </label>
               <input
+                placeholder=" "
                 v-model.number="form.cyber_session_block_ttl_seconds"
                 type="number"
                 min="1"
@@ -7562,6 +7585,7 @@
                   {{ t('admin.settings.features.affiliate.freezeHours') }}
                 </label>
                 <input
+                  placeholder=" "
                   v-model.number="form.affiliate_rebate_freeze_hours"
                   type="number"
                   step="1"
@@ -7579,6 +7603,7 @@
                   {{ t('admin.settings.features.affiliate.durationDays') }}
                 </label>
                 <input
+                  placeholder=" "
                   v-model.number="form.affiliate_rebate_duration_days"
                   type="number"
                   step="1"
@@ -7596,6 +7621,7 @@
                   {{ t('admin.settings.features.affiliate.perInviteeCap') }}
                 </label>
                 <input
+                  placeholder=" "
                   v-model.number="form.affiliate_rebate_per_invitee_cap"
                   type="number"
                   step="0.01"
@@ -7803,6 +7829,7 @@
               <div v-else>
                 <label class="input-label">{{ t('admin.settings.features.affiliate.modal.userLabel') }}</label>
                 <input
+                  placeholder=" "
                   type="text"
                   class="input"
                   :value="affiliateModal.editingEntry ? affiliateModal.editingEntry.email : ''"
@@ -8068,6 +8095,7 @@
                       t("admin.settings.payment.balanceRechargeMultiplier")
                     }}</label>
                     <input
+                      placeholder=" "
                       :value="form.payment_balance_recharge_multiplier || ''"
                       @input="
                         form.payment_balance_recharge_multiplier =
@@ -8134,6 +8162,7 @@
                     }}</label>
                     <div class="relative">
                       <input
+                        placeholder=" "
                         :value="form.payment_recharge_fee_rate ?? ''"
                         @input="
                           form.payment_recharge_fee_rate = Math.min(
@@ -8181,6 +8210,7 @@
                       >{{ t("admin.settings.payment.orderTimeout") }}
                       <span class="text-red-500">*</span></label
                     ><input
+                      placeholder=" "
                       v-model.number="form.payment_order_timeout_minutes"
                       type="number"
                       min="1"
@@ -8199,6 +8229,7 @@
                       t("admin.settings.payment.maxPendingOrders")
                     }}</label
                     ><input
+                      placeholder=" "
                       v-model.number="form.payment_max_pending_orders"
                       type="number"
                       min="1"
@@ -8260,6 +8291,7 @@
                         }}</span
                       >
                       <input
+                        placeholder=" "
                         v-model.number="form.payment_cancel_rate_limit_window"
                         type="number"
                         min="1"
@@ -8285,6 +8317,7 @@
                         }}</span
                       >
                       <input
+                        placeholder=" "
                         v-model.number="form.payment_cancel_rate_limit_max"
                         type="number"
                         min="1"
@@ -8791,6 +8824,7 @@
                     >$</span
                   >
                   <input
+                    placeholder=" "
                     v-model.number="form.balance_low_notify_threshold"
                     type="number"
                     min="0"
@@ -8973,7 +9007,6 @@
       <!-- 关闭 step-up 开关等敏感保存操作触发的 TOTP 二次验证 -->
       <TotpStepUpDialog :controller="settingsStepUp" />
     </div>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -9015,7 +9048,6 @@ import type {
   Proxy,
 } from "@/types";
 import type { ProviderInstance } from "@/types/payment";
-import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
 import Select, { type SelectOption } from "@/components/common/Select.vue";
 import {

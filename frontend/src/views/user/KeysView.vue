@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="user-keys">
       <template #filters>
         <div class="flex flex-col gap-3">
@@ -975,6 +974,7 @@
             <div>
               <label class="input-label">{{ t('keys.expirationDate') }}</label>
               <input
+                placeholder=" "
                 v-model="formData.expiration_date"
                 type="datetime-local"
                 class="input"
@@ -1206,7 +1206,6 @@
         </div>
       </div>
     </Teleport>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -1219,7 +1218,6 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
 	import DataTable from '@/components/common/DataTable.vue'

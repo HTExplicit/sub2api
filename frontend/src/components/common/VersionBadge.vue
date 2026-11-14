@@ -235,7 +235,7 @@
 
               <!-- Priority 3: downstream releases are managed outside the official updater -->
               <div v-else-if="isDownstream" class="space-y-2">
-                <div
+                <div :data-console-callout="upstreamUpdateAvailable ? undefined : ''"
                   class="flex items-start gap-3 rounded-lg border p-3"
                   :class="upstreamUpdateAvailable
                     ? 'border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-900/20'
@@ -316,7 +316,7 @@
                   </svg>
                 </a>
                 <!-- Source build hint -->
-                <div
+                <div data-console-callout
                   class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-800/50 dark:bg-blue-900/20"
                 >
                   <svg
@@ -443,7 +443,7 @@
                   <transition name="rollback">
                     <div v-if="rollbackPanelOpen" class="mt-2 space-y-2">
                       <!-- Source build: online rollback unavailable, use git instead -->
-                      <div
+                      <div data-console-callout
                         v-if="!isReleaseBuild"
                         class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-800/50 dark:bg-blue-900/20"
                       >
@@ -1021,7 +1021,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 
 .dropdown-enter-from,
@@ -1032,13 +1032,29 @@ onBeforeUnmount(() => {
 
 .rollback-enter-active,
 .rollback-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 
 .rollback-enter-from,
 .rollback-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-enter-active,
+  .dropdown-leave-active,
+  .rollback-enter-active,
+  .rollback-leave-active {
+    transition: opacity 120ms ease-out;
+  }
+
+  .dropdown-enter-from,
+  .dropdown-leave-to,
+  .rollback-enter-from,
+  .rollback-leave-to {
+    transform: none;
+  }
 }
 
 .line-clamp-3 {

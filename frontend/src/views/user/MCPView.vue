@@ -1,9 +1,8 @@
 <template>
-  <AppLayout>
     <div class="mx-auto max-w-5xl space-y-6">
       <section class="card p-5 sm:p-6" aria-labelledby="mcp-connection-title" :aria-busy="connectionLoading">
         <div class="flex items-start gap-3">
-          <div class="rounded-xl bg-primary-50 p-3 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400">
+          <div data-console-callout class="rounded-xl bg-primary-50 p-3 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400">
             <Icon name="mcp" size="lg" />
           </div>
           <div>
@@ -14,7 +13,7 @@
         <div class="mt-5">
           <label for="mcp-endpoint" class="input-label">{{ t('mcp.endpoint') }}</label>
           <div class="flex flex-col gap-2 sm:flex-row">
-            <input id="mcp-endpoint" :value="endpoint" :placeholder="connectionLoading ? t('mcp.connectionLoading') : ''" class="input min-w-0 flex-1 font-mono text-sm" readonly />
+            <input id="mcp-endpoint" :value="endpoint" :placeholder="connectionLoading ? t('mcp.connectionLoading') : ' '" class="input min-w-0 flex-1 font-mono text-sm" readonly />
             <button data-testid="copy-endpoint" class="btn btn-secondary shrink-0" type="button" :disabled="!endpoint || connectionLoading" @click="copyToClipboard(endpoint)">{{ t('mcp.copyEndpoint') }}</button>
           </div>
           <div v-if="connectionError" class="mt-3 flex flex-wrap items-center gap-3">
@@ -75,7 +74,6 @@
         </div>
       </template>
     </BaseDialog>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -84,7 +82,6 @@ import { useI18n } from 'vue-i18n'
 import { mcpAPI, type MCPGrant } from '@/api/mcp'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import { Icon } from '@/components/icons'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores/app'
 import { formatDate } from '@/utils/format'

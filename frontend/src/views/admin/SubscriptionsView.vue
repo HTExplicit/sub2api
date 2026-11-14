@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="subscriptions-page mgmt-page">
       <template #filters>
         <!-- Top Toolbar: Left (search + filters) / Right (actions) -->
@@ -170,7 +169,7 @@
             </button>
           </div>
         </div>
-        <div
+        <div data-console-callout
           v-if="selectedCount > 0"
           class="mt-3 space-y-2 rounded-xl border border-primary-200 bg-primary-50 p-3 dark:border-primary-800 dark:bg-primary-900/20"
           data-test="subscription-bulk-actions"
@@ -613,7 +612,7 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.subscriptions.form.validityDays') }}</label>
-          <input v-model.number="assignForm.validity_days" type="number" min="1" max="36500" step="1" :disabled="submitting" class="input" />
+          <input placeholder=" " v-model.number="assignForm.validity_days" type="number" min="1" max="36500" step="1" :disabled="submitting" class="input" />
           <p class="input-hint">{{ t('admin.subscriptions.validityHint') }}</p>
         </div>
         <div v-if="batchAssignResult" class="space-y-2 text-sm" role="status" data-test="batch-assign-result">
@@ -830,7 +829,7 @@
             </div>
 
             <!-- Tip -->
-            <div class="rounded-lg bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+            <div data-console-callout class="rounded-lg bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
               {{ t('admin.subscriptions.guide.tip') }}
             </div>
 
@@ -841,7 +840,6 @@
         </div>
       </transition>
     </teleport>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -857,7 +855,6 @@ import BulkSubscriptionActionDialog from '@/components/admin/subscription/BulkSu
 import type { Column } from '@/components/common/types'
 import { formatDateTimeToMinute } from '@/utils/format'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
