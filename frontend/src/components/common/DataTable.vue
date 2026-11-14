@@ -77,13 +77,13 @@
               {{ column.label }}
             </span>
             <div class="min-w-0 max-w-full text-right text-sm text-gray-900 dark:text-gray-100">
-              <slot :name="`cell-${column.key}`" :row="row" :value="row[column.key]" :expanded="actionsExpanded">
+              <slot :name="`cell-${column.key}`" :row="row" :value="row[column.key]">
                 {{ column.formatter ? column.formatter(row[column.key], row) : row[column.key] }}
               </slot>
             </div>
           </div>
           <div v-if="hasActionsColumn" class="border-t border-gray-200 pt-3 dark:border-dark-700">
-            <slot name="cell-actions" :row="row" :value="row['actions']" :expanded="actionsExpanded"></slot>
+            <slot name="cell-actions" :row="row" :value="row['actions']"></slot>
           </div>
         </div>
       </div>
@@ -95,7 +95,6 @@
     ref="tableWrapperRef"
     class="table-wrapper"
     :class="{
-      'actions-expanded': actionsExpanded,
       'is-scrollable': isScrollable
     }"
   >
@@ -304,8 +303,7 @@
               <slot v-if="!column.stack?.length || (!column.hostHidden && !column.cellLabel)"
                     :name="`cell-${column.key}`"
                     :row="item.row"
-                    :value="item.row[column.key]"
-                    :expanded="actionsExpanded">
+                    :value="item.row[column.key]">
                 {{ column.formatter
                    ? column.formatter(item.row[column.key], item.row)
                    : item.row[column.key] }}
@@ -323,8 +321,7 @@
                   <div data-ui="cell-line-value">
                     <slot :name="`cell-${column.key}`"
                           :row="item.row"
-                          :value="item.row[column.key]"
-                          :expanded="actionsExpanded">
+                          :value="item.row[column.key]">
                       {{ column.formatter
                          ? column.formatter(item.row[column.key], item.row)
                          : item.row[column.key] }}
@@ -336,8 +333,7 @@
                   <div data-ui="cell-line-value">
                     <slot :name="`cell-${part.key}`"
                           :row="item.row"
-                          :value="item.row[part.key]"
-                          :expanded="actionsExpanded">
+                          :value="item.row[part.key]">
                       {{ part.formatter
                          ? part.formatter(item.row[part.key], item.row)
                          : item.row[part.key] }}
@@ -386,7 +382,6 @@ const emit = defineEmits<{
 // 表格容器引用
 const tableWrapperRef = ref<HTMLElement | null>(null)
 const isScrollable = ref(false)
-const actionsColumnNeedsExpanding = ref(false)
 
 // --- 虚拟滚动「整表空白」根治 ---
 // 根因:本组件根 .table-wrapper 为 flex:1 / min-h-0,高度由父级 flex 链决定。@tanstack 虚拟化器
@@ -416,57 +411,6 @@ const checkScrollable = () => {
   }
 }
 
-// 检查操作列是否需要展开
-const checkActionsColumnWidth = () => {
-  if (!props.expandableActions) {
-    actionsColumnNeedsExpanding.value = false
-    actionsExpanded.value = false
-    return
-  }
-  if (!tableWrapperRef.value) return
-
-  // 查找第一行的操作列单元格
-  const firstActionCell = tableWrapperRef.value.querySelector('tbody tr:first-child td:last-child')
-  if (!firstActionCell) return
-
-  // 查找操作列内容的容器div
-  const actionsContainer = firstActionCell.querySelector('div')
-  if (!actionsContainer) return
-
-  // 临时展开以测量完整宽度
-  const wasExpanded = actionsExpanded.value
-  actionsExpanded.value = true
-
-  // 等待DOM更新
-  nextTick(() => {
-    // 测量所有按钮的总宽度
-    const actionItems = actionsContainer.querySelectorAll('button, a, [role="button"]')
-    if (actionItems.length <= 2) {
-      actionsColumnNeedsExpanding.value = false
-      actionsExpanded.value = wasExpanded
-      return
-    }
-
-    // 计算所有按钮的总宽度（包括gap）
-    let totalWidth = 0
-    actionItems.forEach((item, index) => {
-      totalWidth += (item as HTMLElement).offsetWidth
-      if (index < actionItems.length - 1) {
-        totalWidth += 4 // gap-1 = 4px
-      }
-    })
-
-    // 获取单元格可用宽度（减去padding）
-    const cellWidth = (firstActionCell as HTMLElement).clientWidth - 32 // 减去左右padding
-
-    // 如果总宽度超过可用宽度，需要展开功能
-    actionsColumnNeedsExpanding.value = totalWidth > cellWidth
-
-    // 恢复原来的展开状态
-    actionsExpanded.value = wasExpanded
-  })
-}
-
 // 监听尺寸变化
 let resizeObserver: ResizeObserver | null = null
 let resizeHandler: (() => void) | null = null
@@ -484,25 +428,12 @@ const detachDesktopTableTracking = () => {
 
 const attachDesktopTableTracking = () => {
   checkScrollable()
-  checkActionsColumnWidth()
   if (tableWrapperRef.value && typeof ResizeObserver !== 'undefined') {
-    // 操作列探测只取决于宽度；仅高度变化（如选择托盘展开）时跳过，避免在包裹层上连续切换两次类名、整表重算样式
-    let lastObservedWidth: number | undefined
-    resizeObserver = new ResizeObserver((entries) => {
-      checkScrollable()
-      const width = entries?.[0]?.contentRect.width
-      if (width === undefined || width !== lastObservedWidth) {
-        lastObservedWidth = width
-        checkActionsColumnWidth()
-      }
-    })
+    resizeObserver = new ResizeObserver(checkScrollable)
     resizeObserver.observe(tableWrapperRef.value)
   } else {
     // 降级方案：不支持 ResizeObserver 时使用 window resize
-    resizeHandler = () => {
-      checkScrollable()
-      checkActionsColumnWidth()
-    }
+    resizeHandler = checkScrollable
     window.addEventListener('resize', resizeHandler)
   }
 }
@@ -541,8 +472,6 @@ interface Props {
   loading?: boolean
   stickyFirstColumn?: boolean
   stickyActionsColumn?: boolean
-  expandableActions?: boolean
-  actionsCount?: number // 操作按钮总数，用于判断是否需要展开功能
   rowKey?: string | ((row: any) => string | number)
   /**
    * Default sort configuration (only applied when there is no persisted sort state)
@@ -583,7 +512,6 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   stickyFirstColumn: true,
   stickyActionsColumn: true,
-  expandableActions: true,
   defaultSortOrder: 'asc',
   serverSideSort: false,
   selectable: false,
@@ -592,7 +520,6 @@ const props = withDefaults(defineProps<Props>(), {
 
 const sortKey = ref<string>('')
 const sortOrder = ref<'asc' | 'desc'>('asc')
-const actionsExpanded = ref(false)
 
 type PersistedSortState = {
   key: string
@@ -853,22 +780,14 @@ watch(
 )
 
 // 数据/列变化时重新检查滚动状态
-// 注意：不能监听 actionsExpanded，因为 checkActionsColumnWidth 会临时修改它，会导致无限循环
 watch(
   [() => props.data.length, columnsSignature],
   async () => {
     await nextTick()
     checkScrollable()
-    checkActionsColumnWidth()
   },
   { flush: 'post' }
 )
-
-// 单独监听展开状态变化，只更新滚动状态
-watch(actionsExpanded, async () => {
-  await nextTick()
-  checkScrollable()
-})
 
 const handleSort = (key: string) => {
   let newOrder: 'asc' | 'desc' = 'asc'
@@ -991,10 +910,28 @@ const virtualPaddingBottom = computed(() => {
   return rowVirtualizer.value.getTotalSize() - items[items.length - 1].end
 })
 
+const pendingMeasurements = new Set<HTMLElement>()
+let measurementQueued = false
+const scheduleMeasurements = () => {
+  if (measurementQueued) return
+  measurementQueued = true
+  void nextTick(() => {
+    measurementQueued = false
+    const instance = rowVirtualizer.value
+    instance.measureElement(null)
+    for (const node of pendingMeasurements) {
+      if (node.isConnected) instance.measureElement(node)
+    }
+    pendingMeasurements.clear()
+  })
+}
 const measureElement = (el: any) => {
-  if (el) {
-    rowVirtualizer.value.measureElement(el as Element)
-  }
+  if (!(el instanceof HTMLElement)) return
+  const instance = rowVirtualizer.value
+  const key = instance.options.getItemKey(Number(el.dataset.index))
+  if (instance.elementsCache.get(key) === el) return
+  pendingMeasurements.add(el)
+  scheduleMeasurements()
 }
 
 type RowIdentityToken = string | number | object | symbol
@@ -1032,6 +969,10 @@ watch(
     // must release detached rows and sizes, while pure reordering keeps them.
     rowVirtualizer.value.measureElement(null)
     rowVirtualizer.value.measure()
+    for (const element of rowVirtualizer.value.elementsCache.values()) {
+      pendingMeasurements.add(element as HTMLElement)
+    }
+    if (pendingMeasurements.size) scheduleMeasurements()
   },
   { flush: 'post' }
 )

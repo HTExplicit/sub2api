@@ -27,3 +27,11 @@ function toggle() {
   emit('update:modelValue', !props.modelValue)
 }
 </script>
+
+<style scoped>
+@media (prefers-reduced-motion: reduce) {
+  [role='switch'] > span {
+    transition-property: background-color;
+  }
+}
+</style>

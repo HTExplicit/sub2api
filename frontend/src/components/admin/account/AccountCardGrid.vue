@@ -1,5 +1,5 @@
 <template>
-  <div data-test="account-card-grid" class="min-h-0 overflow-y-auto p-0.5">
+  <div ref="scrollElement" data-test="account-card-grid" class="min-h-0 flex-1 overflow-y-auto p-0.5">
     <div v-if="loading" class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
       <div v-for="index in 6" :key="index" class="h-52 animate-pulse rounded-md border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800" />
     </div>
@@ -7,10 +7,13 @@
       <Icon name="inbox" size="xl" />
       <span class="mt-2 text-sm">{{ t('empty.noData') }}</span>
     </div>
-    <div v-else class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+    <div v-else class="flex flex-col gap-3" :style="containerStyle">
+      <div v-for="row in renderRows" :key="row.key" :ref="measureRow" :data-index="row.index"
+        class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3" :style="rowStyle(row.start)">
       <article
-        v-for="account in accounts"
+        v-for="account in row.accounts"
         :key="account.id"
+        :data-account-id="account.id"
         class="cursor-pointer rounded-md border bg-white p-4 transition-colors hover:border-gray-300 hover:bg-gray-50/60 dark:bg-dark-900 dark:hover:border-dark-500 dark:hover:bg-dark-800/70"
         :class="selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500' : ''"
         @click="emit('rowClick', account)"
@@ -50,6 +53,10 @@
             :today-stats-updated-at="todayStatsUpdatedAt"
             :manual-refresh-token="manualRefreshToken"
             :status-now="statusNow"
+            :batched-usage="batchedUsage?.[String(account.id)] ?? null"
+            :batched-usage-error="batchedUsageErrors?.[String(account.id)] ?? null"
+            :batched-usage-loading="batchedUsageLoading?.[String(account.id)] === true"
+            :request-batched-usage="requestBatchedUsage"
             variant="list"
             read-only
           />
@@ -79,12 +86,14 @@
         </div>
 
       </article>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, toRef } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
@@ -93,7 +102,8 @@ import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vu
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { Account, WindowStats } from '@/types'
+import type { Account, AccountUsageInfo, WindowStats } from '@/types'
+import { useAccountVirtualRows } from '@/composables/useAccountVirtualRows'
 
 const props = defineProps<{
   accounts: Account[]
@@ -105,6 +115,10 @@ const props = defineProps<{
   todayStatsUpdatedAt: number | null
   manualRefreshToken: number
   statusNow: number
+  batchedUsage?: Record<string, AccountUsageInfo | null>
+  batchedUsageErrors?: Record<string, string | null>
+  batchedUsageLoading?: Record<string, boolean>
+  requestBatchedUsage?: ((account: Account, options?: { force?: boolean }) => void) | null
 }>()
 
 const emit = defineEmits<{
@@ -117,6 +131,13 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const selectedSet = computed(() => new Set(props.selectedIds))
+const scrollElement = ref<HTMLElement | null>(null)
+const wide = useMediaQuery('(min-width: 1536px)')
+const desktop = useMediaQuery('(min-width: 1024px)')
+const columns = computed(() => wide.value ? 3 : desktop.value ? 2 : 1)
+const { renderRows, containerStyle, rowStyle, measureRow } = useAccountVirtualRows(
+  toRef(props, 'accounts'), scrollElement, columns, 360, 12,
+)
 
 const displayEmail = (account: Account) => String(
   account.extra?.email_address || account.extra?.email || account.credentials?.email || account.parent_email || ''

@@ -79,10 +79,6 @@ html.flat-theme .navigation-progress > .navigation-progress-bar {
   background: linear-gradient(90deg, transparent 0%, rgb(var(--ui-ink) / 0.55) 30%, rgb(var(--ui-ink) / 0.55) 70%, transparent 100%);
 }
 
-html.flat-theme .app-main {
-  transition: margin-left var(--ui-duration-sidebar) var(--ui-ease-out);
-}
-
 @media (min-width: 1024px) {
   html.flat-theme .app-main {
     margin-left: var(--ui-shell-sidebar-w);
@@ -142,15 +138,15 @@ html.flat-theme .custom-page-layout {
 }
 
 /* ================================================================== sidebar (REF §7.1, §8.1) */
-/* Same fill as the canvas, a 1px structural line on the right, no shadow. Width and padding follow the reference's
-   clamps and slide in 160ms ease-out. */
+/* Same fill as the canvas, a 1px structural line on the right, no shadow. Width and padding settle immediately;
+   only the mobile drawer and the sidebar labels transition. */
 html.flat-theme .sidebar {
   width: var(--ui-shell-sidebar-w);
   padding: clamp(1rem, 3vh, 1.25rem) clamp(0.75rem, 1.5vw, 1rem);
   border-right: 1px solid rgb(var(--ui-line));
   background-color: rgb(var(--ui-canvas));
   box-shadow: none;
-  transition-property: width, padding, transform;
+  transition-property: transform;
   transition-duration: var(--ui-duration-sidebar);
   transition-timing-function: var(--ui-ease-out);
 }
@@ -159,6 +155,12 @@ html.flat-theme .sidebar.w-\[72px\] {
   width: var(--ui-shell-rail-w);
   padding-left: clamp(0.5rem, 1.5vw, 0.75rem);
   padding-right: clamp(0.5rem, 1.5vw, 0.75rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.flat-theme .sidebar {
+    transition: none;
+  }
 }
 
 /* Brand: the 20px mark 8px in from the edge (x = 24), then the site name 14/600 and, under it, the version (the

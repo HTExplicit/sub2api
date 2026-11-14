@@ -121,6 +121,7 @@
                 <div class="w-full sm:flex-1">
                   <label class="input-label">{{ t('admin.announcements.form.balanceValue') }}</label>
                   <input
+                    placeholder=" "
                     :value="String(cond.value ?? '')"
                     type="number"
                     step="any"

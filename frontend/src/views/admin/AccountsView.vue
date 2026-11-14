@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div v-if="immediateAccountActions.size" role="status" class="mb-3 flex items-center gap-2 text-xs text-muted"><Icon name="refresh" size="sm" class="animate-spin" />{{ t('common.processing') }}</div>
     <TablePageLayout :content-framed="viewMode !== 'cards'">
       <template #filters>
@@ -545,6 +544,10 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
+          :batched-usage="usageBatchByAccountId"
+          :batched-usage-errors="usageBatchErrorByAccountId"
+          :batched-usage-loading="usageBatchLoadingByAccountId"
+          :request-batched-usage="isDesktopViewport ? queueBatchedUsage : null"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -562,6 +565,10 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
+          :batched-usage="usageBatchByAccountId"
+          :batched-usage-errors="usageBatchErrorByAccountId"
+          :batched-usage-loading="usageBatchLoadingByAccountId"
+          :request-batched-usage="isDesktopViewport ? queueBatchedUsage : null"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -647,6 +654,7 @@
       <form id="api-key-reveal-password-form" class="space-y-3" @submit.prevent="confirmAPIKeyRevealPassword">
         <label class="input-label">{{ t('admin.accounts.apiKeyRevealPasswordLabel') }}</label>
         <input
+          placeholder=" "
           v-model="apiKeyRevealPassword"
           type="password"
           class="input"
@@ -697,7 +705,6 @@
       @stale="handleBulkTaxonomyStale"
     />
     <TotpStepUpDialog :controller="accountExportStepUp" />
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -718,7 +725,6 @@ import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/us
 import { useTableSelection } from '@/composables/useTableSelection'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import { stackColumns, type ColumnStackSpec } from '@/components/common/columnStack'

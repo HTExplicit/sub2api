@@ -7,7 +7,7 @@
   >
     <form id="refund-form" @submit.prevent="handleSubmit" class="space-y-4">
       <!-- Refund Request Info -->
-      <div
+      <div data-console-callout
         v-if="order?.refund_requested_at || order?.refund_request_reason"
         class="rounded-lg border border-violet-200 bg-violet-50 p-3 dark:border-violet-800 dark:bg-violet-900/20"
       >
@@ -83,7 +83,7 @@
         </div>
 
         <!-- No deduction info -->
-        <div
+        <div data-console-callout
           v-if="!form.deduct_balance"
           class="mt-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/20 dark:text-blue-300"
         >
@@ -97,6 +97,7 @@
         <div class="relative">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{{ creditedAmountSymbol }}</span>
           <input
+            placeholder=" "
             v-model.number="form.amount"
             type="number"
             step="0.01"

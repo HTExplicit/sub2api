@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-0 overflow-y-auto" data-test="account-compact-list">
+  <div ref="scrollElement" class="min-h-0 flex-1 overflow-y-auto" data-test="account-compact-list">
     <div v-if="loading" class="space-y-px">
       <div v-for="index in 6" :key="index" class="h-16 animate-pulse border-b border-gray-100 bg-gray-50/70 dark:border-dark-700 dark:bg-dark-800" />
     </div>
@@ -7,12 +7,13 @@
       <Icon name="inbox" size="xl" />
       <span class="mt-2 text-sm">{{ t('empty.noData') }}</span>
     </div>
-    <div
-      v-for="account in accounts"
-      v-else
-      :key="account.id"
-      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
-      :class="selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500 bg-raised' : ''"
+    <div v-else :style="containerStyle">
+    <div v-for="{ accounts: [account], index, key, start } in renderRows" :key="key" :data-account-id="account.id"
+      :ref="measureRow"
+      :data-index="index"
+      :style="rowStyle(start)"
+      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
+      :class="[selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500 bg-raised' : '', { 'border-b-0': index === accounts.length - 1 }]"
       @click="emit('rowClick', account)"
     >
       <AccountSelectionCheckbox :checked="selectedSet.has(account.id)"
@@ -43,6 +44,10 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="manualRefreshToken"
           :status-now="statusNow"
+          :batched-usage="batchedUsage?.[String(account.id)] ?? null"
+          :batched-usage-error="batchedUsageErrors?.[String(account.id)] ?? null"
+          :batched-usage-loading="batchedUsageLoading?.[String(account.id)] === true"
+          :request-batched-usage="requestBatchedUsage"
           variant="compact"
           read-only
         />
@@ -69,11 +74,12 @@
         </button>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
@@ -82,7 +88,8 @@ import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vu
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { Account, WindowStats } from '@/types'
+import type { Account, AccountUsageInfo, WindowStats } from '@/types'
+import { useAccountVirtualRows } from '@/composables/useAccountVirtualRows'
 
 const props = defineProps<{
   accounts: Account[]
@@ -94,6 +101,10 @@ const props = defineProps<{
   todayStatsUpdatedAt: number | null
   manualRefreshToken: number
   statusNow: number
+  batchedUsage?: Record<string, AccountUsageInfo | null>
+  batchedUsageErrors?: Record<string, string | null>
+  batchedUsageLoading?: Record<string, boolean>
+  requestBatchedUsage?: ((account: Account, options?: { force?: boolean }) => void) | null
 }>()
 
 const emit = defineEmits<{
@@ -106,6 +117,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const selectedSet = computed(() => new Set(props.selectedIds))
+const scrollElement = ref<HTMLElement | null>(null)
+const { renderRows, containerStyle, rowStyle, measureRow } = useAccountVirtualRows(
+  toRef(props, 'accounts'), scrollElement, ref(1), 112,
+)
 
 const displayEmail = (account: Account) => String(
   account.extra?.email_address || account.extra?.email || account.credentials?.email || account.parent_email || ''

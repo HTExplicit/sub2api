@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="groups-page mgmt-page">
       <template #filters>
         <div
@@ -623,6 +622,7 @@
             t("admin.groups.form.rateMultiplier")
           }}</label>
           <input
+            placeholder=" "
             v-model.number="createForm.rate_multiplier"
             type="number"
             step="0.001"
@@ -1165,6 +1165,7 @@
                     {{ resolution.label }} ($/s)
                   </span>
                   <input
+                    placeholder=" "
                     v-model.number="createForm.video_model_prices[family.key][resolution.key]"
                     type="number"
                     step="0.001"
@@ -1213,6 +1214,7 @@
             <div>
               <label class="input-label">{{ t("admin.groups.peakRate.peakStart") }}</label>
               <input
+                placeholder=" "
                 v-model="createForm.peak_start"
                 type="time"
                 class="input"
@@ -1221,6 +1223,7 @@
             <div>
               <label class="input-label">{{ t("admin.groups.peakRate.peakEnd") }}</label>
               <input
+                placeholder=" "
                 v-model="createForm.peak_end"
                 type="time"
                 class="input"
@@ -2277,6 +2280,7 @@
             t("admin.groups.form.rateMultiplier")
           }}</label>
           <input
+            placeholder=" "
             v-model.number="editForm.rate_multiplier"
             type="number"
             step="0.001"
@@ -2820,6 +2824,7 @@
                     {{ resolution.label }} ($/s)
                   </span>
                   <input
+                    placeholder=" "
                     v-model.number="editForm.video_model_prices[family.key][resolution.key]"
                     type="number"
                     step="0.001"
@@ -2868,6 +2873,7 @@
             <div>
               <label class="input-label">{{ t("admin.groups.peakRate.peakStart") }}</label>
               <input
+                placeholder=" "
                 v-model="editForm.peak_start"
                 type="time"
                 class="input"
@@ -2876,6 +2882,7 @@
             <div>
               <label class="input-label">{{ t("admin.groups.peakRate.peakEnd") }}</label>
               <input
+                placeholder=" "
                 v-model="editForm.peak_end"
                 type="time"
                 class="input"
@@ -4128,6 +4135,7 @@
                   t("admin.groups.compositeRoutes.priority")
                 }}</label>
                 <input
+                  placeholder=" "
                   v-model.number="compositeRouteForm.priority"
                   type="number"
                   min="1"
@@ -4300,7 +4308,6 @@
       @close="showRPMOverridesModal = false"
       @success="loadGroups"
     />
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -4327,7 +4334,6 @@ import {
   GROUP_PLATFORM_OPTIONS,
 } from "@/constants/platforms";
 import type { Column } from "@/components/common/types";
-import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
 import DataTable from "@/components/common/DataTable.vue";
 import Pagination from "@/components/common/Pagination.vue";

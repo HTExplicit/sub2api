@@ -11,7 +11,7 @@
       <Icon
         name="chevronDown"
         size="xs"
-        class="text-gray-400 transition-transform duration-200"
+        class="locale-chevron text-gray-400"
         :class="{ 'rotate-180': isOpen }"
       />
     </button>
@@ -94,14 +94,32 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.locale-chevron {
+  transition: transform 120ms ease-out;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: all 0.15s ease;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 
 .dropdown-enter-from,
 .dropdown-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .locale-chevron,
+  .dropdown-enter-active,
+  .dropdown-leave-active {
+    transition: none;
+  }
+
+  .dropdown-enter-from,
+  .dropdown-leave-to {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>

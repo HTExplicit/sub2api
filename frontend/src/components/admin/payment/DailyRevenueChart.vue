@@ -4,10 +4,10 @@
       {{ t('payment.admin.dailyRevenue') }}
     </h3>
     <div class="h-64">
-      <div v-if="loading" class="flex h-full items-center justify-center">
+      <div v-if="loading && !chartData" class="flex h-full items-center justify-center">
         <LoadingSpinner size="md" />
       </div>
-      <Line v-else-if="chartData" :data="chartData" :options="chartOptions" />
+      <Line update-mode="none" v-else-if="chartData" :data="chartData" :options="chartOptions" />
       <div
         v-else
         class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
@@ -20,6 +20,7 @@
 
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { useChartMotion, chartTooltipMotion } from '@/composables/useChartMotion'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -40,6 +41,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 const { t } = useI18n()
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 
 const props = defineProps<{
   data: DailyPaymentStats[]
@@ -87,7 +89,8 @@ const chartData = computed(() => {
   }
 })
 
-const chartOptions = {
+const chartOptions = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index' as const, intersect: false },
@@ -108,6 +111,7 @@ const chartOptions = {
   },
   plugins: {
     legend: { position: 'top' as const },
+    tooltip: chartTooltipMotion,
   }
-}
+}))
 </script>

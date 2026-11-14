@@ -7,7 +7,7 @@
     @close="emit('close')"
   >
     <div class="space-y-5">
-      <div class="rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-100">
+      <div data-console-callout class="rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-100">
         <p class="font-medium">{{ targetLabel }}</p>
         <p class="mt-1 text-xs opacity-80">{{ operationSummary }}</p>
       </div>

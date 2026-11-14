@@ -497,7 +497,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_t
    overload's countdown, a quota's resume time) holds at most 6rem, centred under the badge, so a date and time
    break into date / time (decision 3's two-line times; 「预计 2026/09/29」 is 89px at 11px, a countdown up to 92px)
    instead of widening the column by half its width. */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div[class~="flex-col"][class~="items-center"] > span:not([class~="badge"]) {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div.flex-col.items-center > span:not(.badge) {
   max-width: 6rem;
   white-space: normal;
   text-align: center;
@@ -527,7 +527,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
 
 /* 管理分类 / 请求路由 (the fork's column; its template draws a 10px uppercase micro label): official's inline label
    (UsageTable's 「入站:」), 12 / 16 / 500 in the meta grey, sentence case; tables.css gives them their 50px gutter */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] span[class~="uppercase"][class~="text-[10px]"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] span.uppercase.text-\[10px\] {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
   text-transform: none;
@@ -577,7 +577,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   gap: 2px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col {
   position: relative;
   min-width: 28px;
   min-height: 28px;
@@ -589,50 +589,50 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"]:hover {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col:hover {
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"][class~="hover:text-red-600"]:hover {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col.hover\:text-red-600:hover {
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"]:focus-visible {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col:focus-visible {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > svg {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col > svg {
   width: 15px;
   height: 15px;
 }
 
 /* (the glyphs are upstream's inline Heroicons at a 1.5 stroke, AccountsView.vue's actions cell; every other table's row
    icons are Lucide at 1.8: the same stroke here, the glyphs unchanged. Final review V1-14.) */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > svg[stroke-width="1.5"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col > svg[stroke-width="1.5"] {
   stroke-width: 1.8;
 }
 
 /* touch: the visible label beside its glyph (one line, so the row stays 45px) */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col {
   flex-direction: row;
   gap: 4px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col > span.text-xs {
   font-size: 12px;
   line-height: 16px;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col {
     width: 28px;
     padding: 0;
   }
 
-  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col > span.text-xs {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -645,7 +645,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   }
 
   /* the tip: placed left of the button and centred on it, no delay; its bubble look (REF §8.9) is overlays.css' */
-  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button.flex-col:is(:hover, :focus-visible) > span.text-xs {
     top: 50%;
     right: calc(100% + 6px);
     z-index: 1;
@@ -662,7 +662,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
 /* The fork's own sentence lines in the 用量 cell (the stale / fetch-failed notes; upstream has no such lines)
    read at 12 / 16 like the cell's other text; upstream's micro widgets (the 9-10px bars and chips)
    keep their template sizes. */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-usage-variant="list"] [class~="max-w-[15rem]"] > div[class~="text-[10px]"][class~="leading-4"],
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-usage-variant="list"] .max-w-\[15rem\] > div.text-\[10px\].leading-4,
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] :is([data-test="usage-stale"], [data-test="usage-fetch-failed"]) {
   font-size: 12px;
   line-height: 16px;
@@ -715,11 +715,11 @@ html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact
 }
 
 /* (ids and labels sit on hovered and selected fills too: the muted grey keeps 4.5:1 there) */
-html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) span[class~="font-mono"][class~="text-[10px]"] {
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) span.font-mono.text-\[10px\] {
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) :is(div, span)[class~="uppercase"][class~="text-[10px]"] {
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) :is(div, span).uppercase.text-\[10px\] {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
   text-transform: none;
@@ -752,7 +752,7 @@ html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact
 }
 
 /* Empty: the reference's empty state (a dashed 1px control-outline box, 240px, the message 14 / 500 ink-soft). */
-html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) > div[class~="min-h-52"] {
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) > div.min-h-52 {
   min-height: 240px;
   margin: 16px;
   border: 1px dashed rgb(var(--ui-line-strong));
@@ -760,7 +760,7 @@ html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) > div[class~="min-h-52"] > span {
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) > div.min-h-52 > span {
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
@@ -782,8 +782,8 @@ html.flat-theme [data-test="account-card-grid"] article:hover {
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-test="account-card-grid"] article[class~="border-l-primary-500"],
-html.flat-theme [data-test="account-card-grid"] article[class~="border-l-primary-500"]:hover {
+html.flat-theme [data-test="account-card-grid"] article.border-l-primary-500,
+html.flat-theme [data-test="account-card-grid"] article.border-l-primary-500:hover {
   border-color: rgb(var(--ui-primary) / 0.4);
   border-left-width: 1px;
   background-color: rgb(var(--ui-primary-soft));
@@ -793,7 +793,7 @@ html.flat-theme [data-test="account-card-grid"] article > div:is([data-test="acc
   border-top-color: rgb(var(--ui-line));
 }
 
-html.flat-theme [data-test="account-card-grid"] > div[class~="grid"] > div[class~="animate-pulse"] {
+html.flat-theme [data-test="account-card-grid"] > div.grid > div.animate-pulse {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   background-color: rgb(var(--ui-subtle));
@@ -801,23 +801,23 @@ html.flat-theme [data-test="account-card-grid"] > div[class~="grid"] > div[class
 
 /* Compact list: rows like the table's (the structural line between rows, the hover fill, 10 x 16 cells); a selected
    row takes the table's selection tint instead of upstream's accent edge. */
-html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] {
+html.flat-theme [data-test="account-compact-list"] [data-account-id] {
   border-bottom-color: rgb(var(--ui-line));
   padding: 10px 16px;
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme [data-test="account-compact-list"] > div[class~="grid"]:hover {
+html.flat-theme [data-test="account-compact-list"] [data-account-id]:hover {
   background-color: rgb(var(--ui-hover));
 }
 
-html.flat-theme [data-test="account-compact-list"] > div[class~="grid"][class~="border-l-primary-500"],
-html.flat-theme [data-test="account-compact-list"] > div[class~="grid"][class~="border-l-primary-500"]:hover {
+html.flat-theme [data-test="account-compact-list"] [data-account-id].border-l-primary-500,
+html.flat-theme [data-test="account-compact-list"] [data-account-id].border-l-primary-500:hover {
   border-left-width: 0;
   background-color: rgb(var(--ui-primary-soft));
 }
 
-html.flat-theme [data-test="account-compact-list"] > div[class~="space-y-px"] > div {
+html.flat-theme [data-test="account-compact-list"] > div.space-y-px > div {
   border-bottom-color: rgb(var(--ui-line));
   background-color: rgb(var(--ui-subtle));
 }
@@ -831,7 +831,7 @@ html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
 /* The classification column in two lines, each label beside its values (upstream stacks label, status and folder,
    then label, groups and proxy on four or five lines). */
 @media (min-width: 1024px) {
-  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"]:has(> div[class~="truncate"]) {
+  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block:has(> div.truncate) {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
@@ -839,7 +839,7 @@ html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
     row-gap: 4px;
   }
 
-  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"] > div[class~="truncate"] {
+  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block > div.truncate {
     grid-column: 1 / -1;
     display: flex;
     align-items: center;
@@ -848,12 +848,12 @@ html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
     margin-top: 0;
   }
 
-  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"] > div[class~="truncate"] > span:first-child {
+  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block > div.truncate > span:first-child {
     flex-shrink: 0;
     margin-right: 0;
   }
 
-  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"] > div[class~="truncate"] > span:last-child {
+  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block > div.truncate > span:last-child {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -887,16 +887,16 @@ html.flat-theme [data-test="account-details-drawer"] > header + div dl > dd {
   font-variant-numeric: tabular-nums;
 }
 
-html.flat-theme [data-test="account-details-drawer"] > header + div :is(div, dd)[class~="font-mono"] {
+html.flat-theme [data-test="account-details-drawer"] > header + div :is(div, dd).font-mono {
   font-variant-numeric: tabular-nums;
 }
 
 /* Inner separators and the tag choices of the classification editor (a chip with its 14px checkbox). */
-html.flat-theme [data-test="account-details-drawer"] > header + div div[class~="border-t"] {
+html.flat-theme [data-test="account-details-drawer"] > header + div div.border-t {
   border-top-color: rgb(var(--ui-line));
 }
 
-html.flat-theme [data-test="account-details-drawer"] > header + div section label[class~="border"]:has(> input[type="checkbox"]) {
+html.flat-theme [data-test="account-details-drawer"] > header + div section label.border:has(> input[type="checkbox"]) {
   gap: 6px;
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
@@ -915,7 +915,7 @@ html.flat-theme [data-test="account-details-drawer"] > header + div section labe
 /* The scheduling state beside the status badge (the chip row at the top of the drawer, AccountDetailsDrawer.vue): the
    status chip it sits next to (data.css 6 .badge: a capsule, 12 / 16 / 500 sans, sentence case, 1 / 7 inset; on = the
    success pill, off = the grey pill), not a 4px rectangle. Final review V1-13. */
-html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"] {
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span.rounded.px-2.py-0\.5.text-xs {
   padding: 1px 7px;
   border-radius: 9999px;
   font-family: var(--ui-font);
@@ -926,12 +926,12 @@ html.flat-theme [data-test="account-details-drawer"] > header + div > section:fi
   text-transform: none;
 }
 
-html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"][class~="bg-emerald-50"] {
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span.rounded.px-2.py-0\.5.text-xs.bg-emerald-50 {
   background-color: rgb(var(--ui-success-soft));
   color: rgb(var(--ui-badge-success));
 }
 
-html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"][class~="bg-gray-100"] {
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span.rounded.px-2.py-0\.5.text-xs.bg-gray-100 {
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-badge-muted));
 }
@@ -940,17 +940,17 @@ html.flat-theme [data-test="account-details-drawer"] > header + div > section:fi
    the referral count and invite, the local refresh are the reference's small ghost buttons (ink-soft; the subtle fill
    and ink on hover) instead of a hue each (decision 2: colour is for status); the verification link takes the link
    colour. Status notes beside them (limits, errors, the cache warning) and plan / tier chips keep their colours. */
-html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) button[class~="rounded"][class~="px-1.5"][class~="py-0.5"][class~="text-[10px]"]:is([class~="text-blue-600"], [class~="text-orange-600"], [class~="text-emerald-700"], [class~="text-violet-600"]) {
+html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) button.rounded.px-1\.5.py-0\.5.text-\[10px\]:is(.text-blue-600, .text-orange-600, .text-emerald-700, .text-violet-600) {
   color: rgb(var(--ui-ink-soft));
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) button[class~="rounded"][class~="px-1.5"][class~="py-0.5"][class~="text-[10px]"]:is([class~="text-blue-600"], [class~="text-orange-600"], [class~="text-emerald-700"], [class~="text-violet-600"]):not(:disabled):hover {
+html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) button.rounded.px-1\.5.py-0\.5.text-\[10px\]:is(.text-blue-600, .text-orange-600, .text-emerald-700, .text-violet-600):not(:disabled):hover {
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) a[class~="text-[10px]"][class~="text-blue-600"] {
+html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) a.text-\[10px\].text-blue-600 {
   color: var(--ui-link);
 }
 
@@ -969,12 +969,12 @@ html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:f
   border-radius: var(--ui-radius-lg);
 }
 
-html.flat-theme [data-ui="account-stats"] > div:first-child[class~="bg-gradient-to-r"] {
+html.flat-theme [data-ui="account-stats"] > div:first-child.bg-gradient-to-r {
   background-image: none;
   background-color: rgb(var(--ui-subtle));
 }
 
-html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:first-child > div:first-child > div[class~="bg-gradient-to-br"] {
+html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:first-child > div:first-child > div.bg-gradient-to-br {
   width: 28px;
   height: 28px;
   flex: none;
@@ -984,7 +984,7 @@ html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:f
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:first-child > div:first-child > div[class~="bg-gradient-to-br"] > svg {
+html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:first-child > div:first-child > div.bg-gradient-to-br > svg {
   width: 15px;
   height: 15px;
   color: rgb(var(--ui-muted));
@@ -993,7 +993,7 @@ html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:f
 /* 9.2 Usage statistics, the four headline figures: the reference's KPI card (REF §8.13, the dashboards' StatTile in
    data.css 7): surface, 1px structural line, radius 6, 8 / 12 inset, the label (12 / 16 / 500), the value at the
    template's text-2xl font-bold (24 / 32 / 700) tabular ink, the detail 12px muted; no tint and no icon tile. */
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card.bg-gradient-to-br {
   min-height: 76px;
   padding: 8px 12px;
   border-color: rgb(var(--ui-line));
@@ -1003,26 +1003,26 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
   box-shadow: none;
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"]:has(> div[class~="card"][class~="bg-gradient-to-br"]) {
+html.flat-theme [data-ui="account-stats"] > div.grid:has(> div.card.bg-gradient-to-br) {
   gap: 10px;
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > div:first-child {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card.bg-gradient-to-br > div:first-child {
   margin-bottom: 2px;
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > div:first-child > span {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card.bg-gradient-to-br > div:first-child > span {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
   text-transform: none;
   color: rgb(var(--ui-label));
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > div:first-child > div[class~="rounded-lg"] {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card.bg-gradient-to-br > div:first-child > div.rounded-lg {
   display: none;
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p[class~="text-2xl"] {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card.bg-gradient-to-br > p.text-2xl {
   font-size: 24px;
   font-weight: 700;
   line-height: 32px;
@@ -1030,8 +1030,8 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p:not([class~="text-2xl"]),
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p:not([class~="text-2xl"]) > span {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card.bg-gradient-to-br > p:not(.text-2xl),
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card.bg-gradient-to-br > p:not(.text-2xl) > span {
   margin-top: 0;
   font-size: 12px;
   line-height: 16px;
@@ -1042,32 +1042,32 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
    recent activity): the title is the section label (12 / 16 / 500, REF §5) without its tinted tile, the rows are label
    (12px muted) and value (the template's 14 / 600 tabular ink); the two values upstream colours for decoration are
    ink. */
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card:not(.bg-gradient-to-br) {
   padding: 14px;
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="mb-3"]:first-child {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card:not(.bg-gradient-to-br) > div.mb-3:first-child {
   margin-bottom: 10px;
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="mb-3"]:first-child > div[class~="rounded-lg"] {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card:not(.bg-gradient-to-br) > div.mb-3:first-child > div.rounded-lg {
   display: none;
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="mb-3"]:first-child > span {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card:not(.bg-gradient-to-br) > div.mb-3:first-child > span {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
   text-transform: none;
   color: rgb(var(--ui-label));
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="space-y-2"] > div > span:first-child {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card:not(.bg-gradient-to-br) > div.space-y-2 > div > span:first-child {
   font-size: 12px;
   line-height: 18px;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="space-y-2"] > div > span:last-child {
+html.flat-theme [data-ui="account-stats"] > div.grid > div.card:not(.bg-gradient-to-br) > div.space-y-2 > div > span:last-child {
   font-size: 14px;
   line-height: 20px;
   font-variant-numeric: tabular-nums;
@@ -1090,7 +1090,7 @@ html.flat-theme:not(.dark) [data-ui="account-oauth-flow"] {
   --ui-label: var(--ui-muted);
 }
 
-html.flat-theme [data-ui="account-oauth-flow"] > div > div[class~="bg-blue-500"]:first-child {
+html.flat-theme [data-ui="account-oauth-flow"] > div > div.bg-blue-500:first-child {
   width: 28px;
   height: 28px;
   border: 1px solid rgb(var(--ui-line));
@@ -1098,7 +1098,7 @@ html.flat-theme [data-ui="account-oauth-flow"] > div > div[class~="bg-blue-500"]
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui="account-oauth-flow"] > div > div[class~="bg-blue-500"]:first-child > svg {
+html.flat-theme [data-ui="account-oauth-flow"] > div > div.bg-blue-500:first-child > svg {
   width: 15px;
   height: 15px;
   color: rgb(var(--ui-muted));
@@ -1108,7 +1108,7 @@ html.flat-theme [data-ui="account-oauth-flow"] :is(p, span, label, li, h5)[class
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui="account-oauth-flow"] :is(h4, p[class~="font-medium"], label > span[class~="text-sm"])[class*="text-blue-"] {
+html.flat-theme [data-ui="account-oauth-flow"] :is(h4, p.font-medium, label > span.text-sm)[class*="text-blue-"] {
   color: rgb(var(--ui-ink));
 }
 
@@ -1125,17 +1125,17 @@ html.flat-theme [data-ui="account-oauth-flow"] :is(a, button)[class*="text-blue-
   text-underline-offset: 2px;
 }
 
-html.flat-theme [data-ui="account-oauth-flow"] div[class~="border-blue-300"] {
+html.flat-theme [data-ui="account-oauth-flow"] div.border-blue-300 {
   border-color: rgb(var(--ui-line));
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui="account-oauth-flow"] div[class~="rounded-full"][class~="bg-blue-600"] {
+html.flat-theme [data-ui="account-oauth-flow"] div.rounded-full.bg-blue-600 {
   background-color: rgb(var(--ui-primary));
   color: rgb(var(--ui-on-primary));
 }
 
-html.flat-theme [data-ui="account-oauth-flow"] span[class~="rounded-full"][class~="bg-blue-500"] {
+html.flat-theme [data-ui="account-oauth-flow"] span.rounded-full.bg-blue-500 {
   background-color: rgb(var(--ui-subtle));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
   color: rgb(var(--ui-ink-soft));
@@ -1144,13 +1144,13 @@ html.flat-theme [data-ui="account-oauth-flow"] span[class~="rounded-full"][class
 /* 9.5 The create dialog's steps: the current and done steps keep the accent disc (the approved preview); a step to
    come is the neutral disc (the subtle fill, a 1px line, ink-soft figures: upstream's grey on grey read 4.49:1 light
    and 3.45:1 dark); the connector is the control outline. */
-html.flat-theme [data-ui="account-create-steps"] div[class~="rounded-full"][class~="bg-gray-200"] {
+html.flat-theme [data-ui="account-create-steps"] div.rounded-full.bg-gray-200 {
   background-color: rgb(var(--ui-subtle));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line-strong));
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui="account-create-steps"] div[class~="h-0.5"] {
+html.flat-theme [data-ui="account-create-steps"] div.h-0\.5 {
   background-color: rgb(var(--ui-line-strong));
 }
 
@@ -1164,7 +1164,7 @@ html.flat-theme [data-ui="account-create-steps"] div[class~="h-0.5"] {
      accent edge 2px wide on the surface.
    - The user-message limit's three modes are a segmented choice at the reference's 30px: the chosen one the solid
      primary (REF §8.5; controls.css 10.1 draws it), the others the secondary button. */
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) div[class~="flex"][class~="gap-2"]:has(> button[class~="flex-1"][class~="rounded-lg"]):not(:has(> button div[class~="text-[10px]"])) {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) div.flex.gap-2:has(> button.flex-1.rounded-lg):not(:has(> button div.text-\[10px\])) {
   width: fit-content;
   max-width: 100%;
   gap: 0;
@@ -1174,7 +1174,7 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   background-color: rgb(var(--ui-track));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg:is(.bg-gray-100, .bg-primary-100, .bg-purple-100):not(:has(div.text-\[10px\])) {
   flex: none;
   margin: 0;
   border-radius: var(--ui-radius-md);
@@ -1191,23 +1191,23 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   transition-timing-function: var(--ui-ease-out);
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"][class~="bg-gray-100"]:not(:has(div[class~="text-[10px]"])):hover {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg.bg-gray-100:not(:has(div.text-\[10px\])):hover {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg:is(.bg-primary-100, .bg-purple-100):not(:has(div.text-\[10px\])) {
   background-color: rgb(var(--ui-thumb));
   color: rgb(var(--ui-ink));
   font-weight: 500;
   box-shadow: var(--ui-thumb-shadow);
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) > svg {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg:is(.bg-gray-100, .bg-primary-100, .bg-purple-100):not(:has(div.text-\[10px\])) > svg {
   width: 0.875rem;
   height: 0.875rem;
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):has(div[class~="text-[10px]"]) {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg:is(.bg-gray-100, .bg-primary-100, .bg-purple-100):has(div.text-\[10px\]) {
   border-radius: var(--ui-radius-lg);
   background-color: rgb(var(--ui-subtle) / 0.6);
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
@@ -1220,30 +1220,30 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   transition-timing-function: var(--ui-ease);
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"][class~="bg-gray-100"]:has(div[class~="text-[10px]"]):hover {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg.bg-gray-100:has(div.text-\[10px\]):hover {
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line-strong));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):has(div[class~="text-[10px]"]) {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg:is(.bg-primary-100, .bg-purple-100):has(div.text-\[10px\]) {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 0 0 2px rgb(var(--ui-primary));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):focus-visible {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg:is(.bg-gray-100, .bg-primary-100, .bg-purple-100):focus-visible {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }
 
 /* (the strategy's hint line: upstream's 10px, muted at full opacity instead of 70 %) */
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"] div[class~="text-[10px]"][class~="opacity-70"] {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.flex-1.rounded-lg div.text-\[10px\].opacity-70 {
   font-weight: 400;
   opacity: 1;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="px-3"][class~="py-1.5"][class~="rounded-md"][class~="border"] {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.px-3.py-1\.5.rounded-md.border {
   min-height: var(--ui-control-h);
   padding: 0 0.75rem;
   border-radius: var(--ui-radius-md);
@@ -1253,13 +1253,13 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
 }
 
 /* (the chosen mode's ink is controls.css 10.1's, shared by every utility-built choice; the others are drawn here) */
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="px-3"][class~="py-1.5"][class~="rounded-md"][class~="border"]:not([class~="bg-primary-600"]) {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.px-3.py-1\.5.rounded-md.border:not(.bg-primary-600) {
   border-color: rgb(var(--ui-line-strong));
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="px-3"][class~="py-1.5"][class~="rounded-md"][class~="border"]:not([class~="bg-primary-600"]):hover {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.px-3.py-1\.5.rounded-md.border:not(.bg-primary-600):hover {
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink));
 }
@@ -1301,7 +1301,7 @@ html.flat-theme [data-test^="taxonomy-item-"] .icon-button svg {
 /* 9.10 Model mapping presets in the account forms (「+ Sonnet 4.5」, 「+ Claude→Sonnet」 ...): a hue per model family goes
    (decision 2: colour is for status, the accent's roles and platform identity; these are add actions); each is the
    secondary chip: surface, the control outline, ink-soft 12 / 500, the subtle fill and ink on hover. */
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="rounded-lg"][class~="px-3"][class~="py-1"][class~="text-xs"][class~="transition-colors"][class*="hover:bg-"] {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.rounded-lg.px-3.py-1.text-xs.transition-colors[class*="hover:bg-"] {
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line-strong));
@@ -1309,19 +1309,19 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="rounded-lg"][class~="px-3"][class~="py-1"][class~="text-xs"][class~="transition-colors"][class*="hover:bg-"]:hover {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.rounded-lg.px-3.py-1.text-xs.transition-colors[class*="hover:bg-"]:hover {
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink));
 }
 
 /* 9.11 Remove buttons of the mapping and rule rows in the account forms: muted, turning danger on hover (the table's
    row delete), instead of standing red in every row. */
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="text-red-500"][class*="hover:text-red-"] {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.text-red-500[class*="hover:text-red-"] {
   color: rgb(var(--ui-muted));
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="text-red-500"][class*="hover:text-red-"]:not(:disabled):hover {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button.text-red-500[class*="hover:text-red-"]:not(:disabled):hover {
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
 }
@@ -1331,49 +1331,49 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
    ground, no shadow; its tile the neutral square, its text ink-soft; the mode strip the surface; the chosen mode an
    option card (the accent edge 2px wide, controls.css 8.1) with an accent check disc instead of the mode's hue. The
    badge beside the title keeps its status colour (enabled / disabled / blocked). */
-html.flat-theme #edit-account-form div[class~="overflow-hidden"][class~="rounded-lg"][class~="bg-sky-50/60"] {
+html.flat-theme #edit-account-form div.overflow-hidden.rounded-lg.bg-sky-50\/60 {
   border-color: rgb(var(--ui-line));
   background-color: rgb(var(--ui-subtle));
   box-shadow: none;
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:first-child > div[class~="rounded-md"]:first-child {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:first-child > div.rounded-md:first-child {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:first-child p[class~="text-slate-600"] {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:first-child p.text-slate-600 {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:last-child {
   border-top-color: rgb(var(--ui-line));
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:last-child button {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button[class~="border-transparent"]:hover {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:last-child button.border-transparent:hover {
   border-color: rgb(var(--ui-line-strong));
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button:not([class~="border-transparent"]) {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:last-child button:not(.border-transparent) {
   border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-primary));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button span[class~="text-slate-500"] {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:last-child button span.text-slate-500 {
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button > span[class~="rounded-full"]:not([class~="border-gray-300"]) {
+html.flat-theme #edit-account-form div.bg-sky-50\/60 > div:last-child button > span.rounded-full:not(.border-gray-300) {
   border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-primary));
   color: rgb(var(--ui-on-primary));

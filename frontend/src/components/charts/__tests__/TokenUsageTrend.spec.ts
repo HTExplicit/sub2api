@@ -20,12 +20,32 @@ vi.mock('vue-i18n', async () => {
 
 vi.mock('vue-chartjs', () => ({
   Line: {
-    props: ['data', 'options'],
+    name: 'Line',
+    props: ['data', 'options', 'updateMode'],
     template: '<div class="chart-data">{{ JSON.stringify(data) }}</div>',
   },
 }))
 
 describe('TokenUsageTrend', () => {
+  it('keeps the chart mounted during refresh and updates without replaying motion', async () => {
+    const point = {
+      date: '2026-05-08', requests: 1, input_tokens: 100, output_tokens: 50,
+      cache_creation_tokens: 0, cache_read_tokens: 0, cost: 0.01, actual_cost: 0.005
+    }
+    const wrapper = mount(TokenUsageTrend, { props: { trendData: [point] } })
+    const chart = wrapper.findComponent({ name: 'Line' })
+    const element = wrapper.get('.chart-data').element
+    expect(chart.props('updateMode')).toBe('none')
+    expect(chart.props('options').transitions.active.animation.duration).toBe(0)
+    expect(chart.props('options').plugins.tooltip.animations.opacity.duration).toBe(0)
+    await wrapper.setProps({ loading: true })
+    expect(wrapper.get('.chart-data').element).toBe(element)
+    await wrapper.setProps({ loading: false, trendData: [{ ...point, input_tokens: 200 }] })
+    expect(wrapper.get('.chart-data').element).toBe(element)
+    expect(chart.props('data').datasets[0].data).toEqual([200])
+    wrapper.unmount()
+  })
+
   it('calculates cache hit rate against all prompt tokens', () => {
     const wrapper = mount(TokenUsageTrend, {
       props: {

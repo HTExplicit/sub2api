@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="mx-auto max-w-5xl space-y-5 px-1" data-ui="system-prompts">
       <header class="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
         <div class="space-y-1">
@@ -45,7 +44,7 @@
             <div class="flex flex-wrap items-end gap-3">
               <label class="min-w-[12rem] flex-1 space-y-1">
                 <span class="block text-sm">{{ t('admin.systemPrompts.name') }}</span>
-                <input v-model="prompt.name" class="input" maxlength="100" />
+                <input placeholder=" " v-model="prompt.name" class="input" maxlength="100" />
               </label>
               <label class="space-y-1">
                 <span class="block text-sm">{{ t('admin.systemPrompts.position') }}</span>
@@ -76,13 +75,11 @@
         </section>
       </template>
     </div>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'

@@ -79,6 +79,7 @@
         <label class="input-label">{{ t('admin.affiliates.withdraw.amount') }}</label>
         <div class="flex gap-2">
           <input
+            placeholder=" "
             v-model="amount"
             type="number"
             min="0"
@@ -102,7 +103,7 @@
         <p v-else class="input-hint">{{ t('admin.affiliates.withdraw.amountHint') }}</p>
       </div>
 
-      <div
+      <div data-console-callout
         v-if="outcomeUncertain"
         class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-700/50 dark:bg-blue-900/20 dark:text-blue-300"
         data-test="withdraw-uncertain-hint"

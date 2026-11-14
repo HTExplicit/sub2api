@@ -37,9 +37,9 @@
     </div>
     <div v-if="draft" class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-dark-700">
       <h3 class="font-semibold">{{ editingID ? t('adminAccessKeys.editTitle') : t('adminAccessKeys.createTitle') }}</h3>
-      <label class="block">{{ t('adminAccessKeys.name') }}<input v-model="draft.name" data-test="name" class="input mt-1" maxlength="100" /></label>
+      <label class="block">{{ t('adminAccessKeys.name') }}<input placeholder=" " v-model="draft.name" data-test="name" class="input mt-1" maxlength="100" /></label>
       <label class="block">{{ t('adminAccessKeys.description') }}<textarea v-model="draft.description" class="input mt-1" maxlength="1000" /></label>
-      <label class="block">{{ t('adminAccessKeys.expiration') }}<input v-model="expiration" type="datetime-local" class="input mt-1" /></label>
+      <label class="block">{{ t('adminAccessKeys.expiration') }}<input placeholder=" " v-model="expiration" type="datetime-local" class="input mt-1" /></label>
       <label class="block">{{ t('adminAccessKeys.allowedIps') }}<textarea v-model="ips" class="input mt-1" placeholder="192.0.2.1&#10;2001:db8::/32" /></label>
       <label class="flex gap-2"><input v-model="draft.enabled" type="checkbox" />{{ t('adminAccessKeys.enabled') }}</label>
       <div class="space-y-2 rounded-lg border border-red-300 p-3">
@@ -76,7 +76,7 @@
     </div>
     <BaseDialog :show="fullAccessPrompt" :title="t('adminAccessKeys.fullAccessConfirmTitle')" width="normal" @close="cancelFullAccess">
       <p class="text-red-700 dark:text-red-300">{{ t('adminAccessKeys.fullAccessWarning') }}</p>
-      <label class="mt-4 block">{{ t('adminAccessKeys.fullAccessPhraseHint', { phrase: t('adminAccessKeys.fullAccessPhrase') }) }}<input v-model="fullAccessPhrase" data-test="full-access-phrase" class="input mt-1" autocomplete="off" /></label>
+      <label class="mt-4 block">{{ t('adminAccessKeys.fullAccessPhraseHint', { phrase: t('adminAccessKeys.fullAccessPhrase') }) }}<input placeholder=" " v-model="fullAccessPhrase" data-test="full-access-phrase" class="input mt-1" autocomplete="off" /></label>
       <template #footer>
         <button type="button" data-test="full-access-cancel" class="btn btn-secondary" @click="cancelFullAccess">{{ t('adminAccessKeys.cancel') }}</button>
         <button type="button" data-test="full-access-confirm" class="btn btn-danger" :disabled="fullAccessPhrase !== t('adminAccessKeys.fullAccessPhrase')" @click="confirmFullAccess">{{ t('adminAccessKeys.fullAccessConfirmTitle') }}</button>

@@ -7,6 +7,9 @@ import 'vue-router'
 
 declare module 'vue-router' {
   interface RouteMeta {
+    /** Render this page inside the persistent console shell. Conditional layouts stay page-owned. */
+    appLayout?: boolean
+
     /**
      * Whether this route requires authentication
      * @default true

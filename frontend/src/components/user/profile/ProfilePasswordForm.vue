@@ -20,6 +20,7 @@
             {{ t('profile.currentPassword') }}
           </label>
           <input
+            placeholder=" "
             id="old_password"
             v-model="form.old_password"
             type="password"
@@ -34,6 +35,7 @@
             {{ t('profile.newPassword') }}
           </label>
           <input
+            placeholder=" "
             id="new_password"
             v-model="form.new_password"
             type="password"
@@ -51,6 +53,7 @@
             {{ t('profile.confirmNewPassword') }}
           </label>
           <input
+            placeholder=" "
             id="confirm_password"
             v-model="form.confirm_password"
             type="password"

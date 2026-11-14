@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="space-y-6" data-ui="admin-dashboard">
       <!-- Loading State -->
       <div v-if="loading" class="flex items-center justify-center py-12">
@@ -331,10 +330,10 @@
               </div>
             </div>
             <div class="h-64">
-              <div v-if="userTrendLoading" class="flex h-full items-center justify-center">
+              <div v-if="userTrendLoading && !userTrendChartData" class="flex h-full items-center justify-center">
                 <LoadingSpinner size="md" />
               </div>
-              <Line v-else-if="userTrendChartData" :data="userTrendChartData" :options="lineOptions" />
+              <Line update-mode="none" v-else-if="userTrendChartData" :data="userTrendChartData" :options="lineOptions" />
               <div
                 v-else
                 class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
@@ -346,11 +345,11 @@
         </div>
       </template>
     </div>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { useChartMotion, chartTooltipMotion } from '@/composables/useChartMotion'
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -365,7 +364,7 @@ import type {
   UserUsageTrendPoint,
   UserSpendingRankingItem
 } from '@/types'
-import AppLayout from '@/components/layout/AppLayout.vue'
+
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
@@ -449,6 +448,7 @@ const granularityOptions = computed(() => [
 
 // Dark mode detection
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 
 // Chart colors
 const chartColors = computed(() => ({
@@ -458,6 +458,7 @@ const chartColors = computed(() => ({
 
 // Line chart options (for user trend chart)
 const lineOptions = computed(() => ({
+  ...chartMotion.value,
   responsive: true,
   maintainAspectRatio: false,
   interaction: {
@@ -478,6 +479,7 @@ const lineOptions = computed(() => ({
       }
     },
     tooltip: {
+      ...chartTooltipMotion,
       itemSort: (a: any, b: any) => {
         const aValue = typeof a?.raw === 'number' ? a.raw : Number(a?.parsed?.y ?? 0)
         const bValue = typeof b?.raw === 'number' ? b.raw : Number(b?.parsed?.y ?? 0)

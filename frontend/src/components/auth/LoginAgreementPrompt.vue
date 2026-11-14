@@ -35,7 +35,7 @@
     </div>
   </div>
 
-  <div
+  <div data-console-callout
     v-else-if="!accepted && documents.length > 0"
     class="rounded-lg border border-primary-100 bg-primary-50/70 p-3 text-sm text-primary-900 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-100"
   >

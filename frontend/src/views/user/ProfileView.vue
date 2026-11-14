@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div
       data-testid="profile-shell"
       class="mx-auto max-w-[950px] space-y-6"
@@ -15,7 +14,7 @@
         :wechat-mp-enabled="wechatOAuthMPEnabled"
       />
 
-      <div
+      <div data-console-callout
         v-if="contactInfo"
         class="card border-primary-200 bg-primary-50 p-6 dark:bg-primary-900/20"
       >
@@ -46,14 +45,12 @@
       <ProfileTotpCard />
       <ProfilePasskeyCard :enabled="passkeyEnabled" />
     </div>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import ProfileBalanceNotifyCard from '@/components/user/profile/ProfileBalanceNotifyCard.vue'
 import ProfileInfoCard from '@/components/user/profile/ProfileInfoCard.vue'
 import ProfilePasswordForm from '@/components/user/profile/ProfilePasswordForm.vue'

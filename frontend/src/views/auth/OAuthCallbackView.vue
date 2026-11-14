@@ -23,6 +23,7 @@
           <div>
             <label class="input-label">{{ t('auth.emailLabel') }}</label>
             <input
+              placeholder=" "
               class="input w-full"
               type="email"
               :value="registrationEmail"
@@ -103,7 +104,7 @@
           <div>
             <label class="input-label">{{ t('auth.oauth.code') }}</label>
             <div class="flex gap-2">
-              <input class="input flex-1 font-mono text-sm" :value="code" readonly />
+              <input placeholder=" " class="input flex-1 font-mono text-sm" :value="code" readonly />
               <button class="btn btn-secondary" type="button" :disabled="!code" @click="copy(code)">
                 {{ t('common.copy') }}
               </button>
@@ -113,7 +114,7 @@
           <div>
             <label class="input-label">{{ t('auth.oauth.state') }}</label>
             <div class="flex gap-2">
-              <input class="input flex-1 font-mono text-sm" :value="state" readonly />
+              <input placeholder=" " class="input flex-1 font-mono text-sm" :value="state" readonly />
               <button
                 class="btn btn-secondary"
                 type="button"
@@ -128,7 +129,7 @@
           <div>
             <label class="input-label">{{ t('auth.oauth.fullUrl') }}</label>
             <div class="flex gap-2">
-              <input class="input flex-1 font-mono text-xs" :value="fullUrl" readonly />
+              <input placeholder=" " class="input flex-1 font-mono text-xs" :value="fullUrl" readonly />
               <button
                 class="btn btn-secondary"
                 type="button"

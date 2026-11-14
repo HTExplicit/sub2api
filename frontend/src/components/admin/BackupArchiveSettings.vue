@@ -47,7 +47,7 @@
           <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.archive.retention') }}</span>
           <div class="flex min-h-10 flex-wrap items-center gap-3">
             <label v-if="!forever" class="flex min-w-0 flex-1 items-center gap-2">
-              <input data-testid="archive-count" :value="modelValue.retain_count" type="number" min="1" step="1" class="input w-full min-w-0" :aria-label="t('admin.backup.archive.count')" aria-describedby="backup-archive-retention-hint" @input="setCount" />
+              <input placeholder=" " data-testid="archive-count" :value="modelValue.retain_count" type="number" min="1" step="1" class="input w-full min-w-0" :aria-label="t('admin.backup.archive.count')" aria-describedby="backup-archive-retention-hint" @input="setCount" />
               <span class="shrink-0 text-sm">{{ t('admin.backup.archive.copies') }}</span>
             </label>
             <label class="inline-flex min-h-10 shrink-0 items-center gap-2 text-sm text-gray-700 dark:text-gray-300">

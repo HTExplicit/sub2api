@@ -256,6 +256,7 @@ async function saveAllSettings() {
         <div>
           <label class="input-label">{{ t('admin.ops.settings.evaluationInterval') }}</label>
           <input
+            placeholder=" "
             v-model.number="runtimeSettings.evaluation_interval_seconds"
             type="number"
             min="1"
@@ -383,6 +384,7 @@ async function saveAllSettings() {
           <div>
             <label class="input-label">{{ t('admin.ops.settings.slaMinPercent') }}</label>
             <input
+              placeholder=" "
               v-model.number="metricThresholds.sla_percent_min"
               type="number"
               min="0"
@@ -397,6 +399,7 @@ async function saveAllSettings() {
           <div>
             <label class="input-label">{{ t('admin.ops.settings.ttftP99MaxMs') }}</label>
             <input
+              placeholder=" "
               v-model.number="metricThresholds.ttft_p99_ms_max"
               type="number"
               min="0"
@@ -409,6 +412,7 @@ async function saveAllSettings() {
           <div>
             <label class="input-label">{{ t('admin.ops.settings.requestErrorRateMaxPercent') }}</label>
             <input
+              placeholder=" "
               v-model.number="metricThresholds.request_error_rate_percent_max"
               type="number"
               min="0"
@@ -422,6 +426,7 @@ async function saveAllSettings() {
           <div>
             <label class="input-label">{{ t('admin.ops.settings.upstreamErrorRateMaxPercent') }}</label>
             <input
+              placeholder=" "
               v-model.number="metricThresholds.upstream_error_rate_percent_max"
               type="number"
               min="0"
@@ -464,6 +469,7 @@ async function saveAllSettings() {
               <div>
                 <label class="input-label">{{ t('admin.ops.settings.errorLogRetentionDays') }}</label>
                 <input
+                  placeholder=" "
                   v-model.number="advancedSettings.data_retention.error_log_retention_days"
                   type="number"
                   min="0"
@@ -474,6 +480,7 @@ async function saveAllSettings() {
               <div>
                 <label class="input-label">{{ t('admin.ops.settings.minuteMetricsRetentionDays') }}</label>
                 <input
+                  placeholder=" "
                   v-model.number="advancedSettings.data_retention.minute_metrics_retention_days"
                   type="number"
                   min="0"
@@ -484,6 +491,7 @@ async function saveAllSettings() {
               <div>
                 <label class="input-label">{{ t('admin.ops.settings.hourlyMetricsRetentionDays') }}</label>
                 <input
+                  placeholder=" "
                   v-model.number="advancedSettings.data_retention.hourly_metrics_retention_days"
                   type="number"
                   min="0"
@@ -517,6 +525,7 @@ async function saveAllSettings() {
               <div>
                 <label class="input-label">{{ t('admin.ops.settings.openaiQuotaAutoPauseDefault5h') }}</label>
                 <input
+                  placeholder=" "
                   v-model.number="quotaAutoPause5hPercent"
                   type="number"
                   min="0"
@@ -529,6 +538,7 @@ async function saveAllSettings() {
               <div>
                 <label class="input-label">{{ t('admin.ops.settings.openaiQuotaAutoPauseDefault7d') }}</label>
                 <input
+                  placeholder=" "
                   v-model.number="quotaAutoPause7dPercent"
                   type="number"
                   min="0"

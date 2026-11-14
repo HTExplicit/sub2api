@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="promo-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
@@ -181,6 +180,7 @@
         <div>
           <label class="input-label">{{ t('admin.promo.bonusAmount') }}</label>
           <input
+            placeholder=" "
             v-model.number="createForm.bonus_amount"
             type="number"
             step="0.01"
@@ -195,6 +195,7 @@
             <span class="ml-1 text-xs font-normal text-gray-400">({{ t('admin.promo.zeroUnlimited') }})</span>
           </label>
           <input
+            placeholder=" "
             v-model.number="createForm.max_uses"
             type="number"
             min="0"
@@ -207,6 +208,7 @@
             <span class="ml-1 text-xs font-normal text-gray-400">({{ t('common.optional') }})</span>
           </label>
           <input
+            placeholder=" "
             v-model="createForm.expires_at_str"
             type="datetime-local"
             class="input"
@@ -248,6 +250,7 @@
         <div>
           <label class="input-label">{{ t('admin.promo.code') }}</label>
           <input
+            placeholder=" "
             v-model="editForm.code"
             type="text"
             class="input font-mono uppercase"
@@ -256,6 +259,7 @@
         <div>
           <label class="input-label">{{ t('admin.promo.bonusAmount') }}</label>
           <input
+            placeholder=" "
             v-model.number="editForm.bonus_amount"
             type="number"
             step="0.01"
@@ -270,6 +274,7 @@
             <span class="ml-1 text-xs font-normal text-gray-400">({{ t('admin.promo.zeroUnlimited') }})</span>
           </label>
           <input
+            placeholder=" "
             v-model.number="editForm.max_uses"
             type="number"
             min="0"
@@ -286,6 +291,7 @@
             <span class="ml-1 text-xs font-normal text-gray-400">({{ t('common.optional') }})</span>
           </label>
           <input
+            placeholder=" "
             v-model="editForm.expires_at_str"
             type="datetime-local"
             class="input"
@@ -384,7 +390,6 @@
       @confirm="confirmDelete"
       @cancel="showDeleteDialog = false"
     />
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -397,7 +402,6 @@ import { adminAPI } from '@/api/admin'
 import { formatDateTime, formatDateTimeLocalInput } from '@/utils/format'
 import type { PromoCode, PromoCodeUsage } from '@/types'
 import type { Column } from '@/components/common/types'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'

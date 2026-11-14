@@ -293,7 +293,7 @@ html.flat-theme .table-wrapper > table > tbody.table-body > tr + tr {
 
 /* numbers: right-aligned columns (column.class text-right) use tabular figures (YaHei UI digits are tabular
    already; this aligns them on macOS too) */
-html.flat-theme .table-wrapper > table[data-ui~="data-table"]:is(table) :is(th, td)[class~="text-right"] {
+html.flat-theme .table-wrapper > table[data-ui~="data-table"]:is(table) :is(th, td).text-right {
   font-variant-numeric: tabular-nums;
 }
 
@@ -301,7 +301,7 @@ html.flat-theme .table-wrapper > table[data-ui~="data-table"]:is(table) :is(th, 
    billing mode, tags, cache marks): the reference's tool / prompt chip shape (REF §8.8: 4px radius, 6 / 1 inset); type
    and colour stay the template's (official; the hues fold into the status families of tokens.css). A chip that
    carries a data-ui hook (platform-chip, category-chip, a page owner's) is its owner's. */
-html.flat-theme .table-wrapper > table > tbody.table-body > tr > td span:not([data-ui]):is([class~="inline-flex"], [class~="inline-block"])[class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]):is([class~="py-0.5"], [class~="py-px"]):is([class~="text-xs"], [class~="text-[10px]"], [class~="text-[11px]"]) {
+html.flat-theme .table-wrapper > table > tbody.table-body > tr > td span:not([data-ui]):is(.inline-flex, .inline-block).rounded:is(.px-1, .px-1\.5, .px-2):is(.py-0\.5, .py-px):is(.text-xs, .text-\[10px\], .text-\[11px\]) {
   padding: 1px 6px;
   border-radius: var(--ui-radius-sm);
 }
@@ -323,12 +323,12 @@ html.flat-theme .table-wrapper .table-body > tr[data-row-id]:is(:hover, :focus-w
    (subject-position :has(), static markup only) and hands its fill to its sticky cells as --ui-row-pick-fill
    (registered below as a non-inherited property that only .sticky-col inherits explicitly), so no rule needs a
    relational selector on a row to reach its cells. */
-html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)) {
+html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is(.bg-primary-50\/40, :has(> td[data-column="select"] input[type="checkbox"]:checked)) {
   --ui-row-pick-fill: rgb(var(--ui-primary-soft));
   background-color: rgb(var(--ui-primary-soft));
 }
 
-html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)):hover {
+html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is(.bg-primary-50\/40, :has(> td[data-column="select"] input[type="checkbox"]:checked)):hover {
   --ui-row-pick-fill: var(--ui-row-pick-hover);
   background-color: var(--ui-row-pick-hover);
 }
@@ -351,7 +351,7 @@ html.flat-theme.dark .table-wrapper .table-body > tr:where([data-row-id]):has(> 
   --theme-text-dark-500: var(--ui-selected-meta);
 }
 
-html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"] {
+html.flat-theme.dark .table-wrapper .table-body > tr.bg-primary-50\/40 {
   --ui-muted: var(--ui-selected-meta);
   --ui-faint: var(--ui-selected-meta);
   --ui-label: var(--ui-selected-meta);
@@ -366,18 +366,18 @@ html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"] 
    the selected fill; the lighter red (--ui-selected-danger) keeps it a failure and readable (batch 7, reported by the
    accounts agent). Amber (6.14, 5.55 on the hover) holds as it is; the light theme's red is 4.79 on its selected
    fill and 4.53 on its hover (--ui-row-pick-hover). */
-html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
+html.flat-theme.dark .table-wrapper .table-body > tr.bg-primary-50\/40[class][class]:is(tr):is(tr) :is(.text-red-500, .text-red-600, .dark\:text-red-400) {
   color: rgb(var(--ui-selected-danger));
 }
 
 @container style(--ui-row-picked: 1) {
-  html.flat-theme.dark .table-wrapper .table-body > tr[data-row-id][data-row-id][data-row-id]:is(tr):is(tr) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
+  html.flat-theme.dark .table-wrapper .table-body > tr[data-row-id][data-row-id][data-row-id]:is(tr):is(tr) :is(.text-red-500, .text-red-600, .dark\:text-red-400) {
     color: rgb(var(--ui-selected-danger));
   }
 }
 
 @supports (-moz-appearance: none) {
-  html.flat-theme.dark .table-wrapper .table-body > tr:has(> td[data-column="select"] input[type="checkbox"]:checked) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
+  html.flat-theme.dark .table-wrapper .table-body > tr:has(> td[data-column="select"] input[type="checkbox"]:checked) :is(.text-red-500, .text-red-600, .dark\:text-red-400) {
     color: rgb(var(--ui-selected-danger));
   }
 }
@@ -401,11 +401,11 @@ html.flat-theme .table-wrapper .table-body > tr[data-row-id]:is(:hover, :focus-w
   background-color: var(--ui-row-pick-fill, rgb(var(--ui-hover)));
 }
 
-html.flat-theme .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr) > .sticky-col {
+html.flat-theme .table-wrapper .table-body > tr.bg-primary-50\/40[class][class]:is(tr):is(tr) > .sticky-col {
   background-color: rgb(var(--ui-primary-soft));
 }
 
-html.flat-theme .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr):hover > .sticky-col {
+html.flat-theme .table-wrapper .table-body > tr.bg-primary-50\/40[class][class]:is(tr):is(tr):hover > .sticky-col {
   background-color: var(--ui-row-pick-hover);
 }
 
@@ -434,8 +434,8 @@ html.flat-theme .table-wrapper {
 }
 
 html.flat-theme .table-wrapper :is(th, td)[data-column="select"],
-html.flat-theme .table-wrapper .table-header > tr > th[class~="w-11"]:first-child,
-html.flat-theme .table-wrapper .table-body > tr > td[class~="w-11"]:first-child {
+html.flat-theme .table-wrapper .table-header > tr > th.w-11:first-child,
+html.flat-theme .table-wrapper .table-body > tr > td.w-11:first-child {
   box-sizing: border-box;
   width: var(--ui-table-select-w);
   min-width: var(--ui-table-select-w);
@@ -447,7 +447,7 @@ html.flat-theme .table-wrapper .table-body > tr > td[class~="w-11"]:first-child 
 /* the select column's lone checkbox (DataTable's own column: 用户; a page's `select` column: 兑换码, IP, 订阅) sat
    inline on the text baseline, 3px above the row's centre; as a block the cell's vertical-align centres it, the left
    inset unchanged (the accounts table's label wrapper is centred already) (final review V1-09) */
-html.flat-theme .table-wrapper :is(.table-header > tr > th, .table-body > tr > td):is([class~="w-11"]:first-child, [data-column="select"]) > input[type="checkbox"]:only-child {
+html.flat-theme .table-wrapper :is(.table-header > tr > th, .table-body > tr > td):is(.w-11:first-child, [data-column="select"]) > input[type="checkbox"]:only-child {
   display: block;
   margin: 0;
 }
@@ -460,7 +460,7 @@ html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([st
   border-bottom-width: 0;
 }
 
-html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div[class~="flex-col"] {
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div.flex-col {
   display: grid;
   place-items: center;
   align-content: center;
@@ -470,14 +470,14 @@ html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([st
   border-radius: var(--ui-radius-lg);
 }
 
-html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div[class~="flex-col"] > svg {
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div.flex-col > svg {
   width: 20px;
   height: 20px;
   margin: 0;
   color: rgb(var(--ui-faint));
 }
 
-html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div[class~="flex-col"] > p {
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div.flex-col > p {
   color: rgb(var(--ui-ink-soft));
   font-size: 14px;
   font-weight: 500;
@@ -525,7 +525,7 @@ html.flat-theme .table-wrapper::-webkit-scrollbar-corner {
 }
 
 /* Loading rows: the reference's shimmer (section 9) on DataTable's placeholder blocks. */
-html.flat-theme .table-wrapper .table-body > tr > td > div[class~="animate-pulse"] {
+html.flat-theme .table-wrapper .table-body > tr > td > div.animate-pulse {
   animation: none;
 }
 
@@ -634,22 +634,22 @@ html.flat-theme .table-page-layout > .layout-section-scrollable + .layout-sectio
 /* Upstream's hand-built tables with a grey header band (thead.bg-gray-50: ops, rankings, dialogs): the header reads
    as the console's (official text-xs font-medium uppercase tracking-wider on the surface, 1px line underneath), the
    band and upstream's own insets stay out of it. */
-html.flat-theme table > thead[class~="bg-gray-50"] {
+html.flat-theme table > thead.bg-gray-50 {
   background-color: transparent;
 }
 
 /* the header draws the line under itself (it may stick), so the body's own top line is dropped, also where the table
    divides its sections (divide-y, 0,3,0: the user ranking's 2px) (final review V1-08); a white body is the surface
    in dark mode too (upstream: dark-900, a step below the card) */
-html.flat-theme table > thead[class~="bg-gray-50"] + tbody:not([hidden]) {
+html.flat-theme table > thead.bg-gray-50 + tbody:not([hidden]) {
   border-top-width: 0;
 }
 
-html.flat-theme table > thead[class~="bg-gray-50"] + tbody[class~="bg-white"] {
+html.flat-theme table > thead.bg-gray-50 + tbody.bg-white {
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme table > thead[class~="bg-gray-50"] > tr > th {
+html.flat-theme table > thead.bg-gray-50 > tr > th {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
   color: rgb(var(--ui-table-head));
@@ -668,13 +668,13 @@ html.flat-theme table > thead[class~="bg-gray-50"] > tr > th {
    and figures keep their template colours, as official (names gray-900, blue-600 when they expand; counts gray-600;
    the actual spend green; the account cost orange; the standard price gray-400). Each row carries the colour key of
    its slice, as the reference's rows carry their bar colour. */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs {
   font-size: 12px;
   line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > thead > tr > th {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > thead > tr > th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -692,34 +692,34 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
 
 /* the sticky header draws the line under itself, so the first row's own top line (upstream's border-t on every row)
    goes: one 1px line under the header, as under every other table's (final review V1-08) */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:first-child {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:first-child {
   border-top-width: 0;
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td {
   padding: 8px;
   border-color: rgb(var(--ui-line));
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > :is(thead, tbody) > tr > :first-child {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > :is(thead, tbody) > tr > :first-child {
   padding-left: 0;
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > :is(thead, tbody) > tr > :last-child {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > :is(thead, tbody) > tr > :last-child {
   padding-right: 0;
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr {
   border-color: rgb(var(--ui-line));
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr[class~="cursor-pointer"]:hover {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr.cursor-pointer:hover {
   background-color: rgb(var(--ui-hover));
 }
 
 /* the colour key: an 8px square with 2px corners (REF §8.14 legend and usage rows) in the slice's colour; slices
    follow the table's order (series 1-12), the ranking's remainder row is the "other" grey */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan])::before {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td:first-child:not([colspan])::before {
   content: '';
   display: inline-block;
   width: 8px;
@@ -732,11 +732,11 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
 
 /* a name drawn as a flex wrapper (the expandable rows' chevron, the ranking's #n) carries the key inside the wrapper;
    that name cell is marked data-ui="dist-name" */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan])[data-ui~="dist-name"]:is(td)::before {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td:first-child:not([colspan])[data-ui~="dist-name"]:is(td)::before {
   display: none;
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]) > :is(span[class~="inline-flex"], div[class~="flex"])::before {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td:first-child:not([colspan]) > :is(span.inline-flex, div.flex)::before {
   content: '';
   flex: 0 0 8px;
   width: 8px;
@@ -747,46 +747,46 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
 }
 
 /* the slices are counted over the data rows (data-ui="dist-row"; a model's breakdown row, a colspan cell, is not one) */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(1 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-1); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(2 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-2); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(3 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-3); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(4 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-4); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(5 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-5); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(6 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-6); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-7); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-8); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(9 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-9); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(10 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(11 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(12 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-12); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(1 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-1); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(2 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-2); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(3 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-3); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(4 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-4); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(5 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-5); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(6 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-6); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(7 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-7); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(8 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-8); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(9 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-9); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(10 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(11 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(12 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-12); }
 
 /* the user dashboard's doughnut takes series 1-6, 11 and 10 for its eight slices (UserDashboardCharts.vue) */
-html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
-html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
-html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(n + 9 of tr[data-ui~="dist-row"]) { --ui-row-key: transparent; }
+html.flat-theme .card.relative.overflow-hidden .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(7 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
+html.flat-theme .card.relative.overflow-hidden .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(8 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
+html.flat-theme .card.relative.overflow-hidden .max-h-48.overflow-auto > table.text-xs > tbody > tr:nth-child(n + 9 of tr[data-ui~="dist-row"]) { --ui-row-key: transparent; }
 
 /* the spending ranking's remainder row ("others", upstream's grey band) is the grey slice */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr[class~="bg-gray-50/70"] {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr.bg-gray-50\/70 {
   --ui-row-key: var(--theme-chart-gray);
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, transparent);
 }
 
 /* Grouped rows (REF §8.7 group row: the surface-subtle band at 60 %): a model's per-user breakdown opens as a
    band under its row, indented, rows 29px, its 12px text in the template's colours (official). */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div[class~="bg-gray-50/50"] {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td[colspan] > div.bg-gray-50\/50 {
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, transparent);
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td[colspan] > div > table > tbody > tr {
   border-color: rgb(var(--ui-line));
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr > td {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td[colspan] > div > table > tbody > tr > td {
   padding: 5px 8px;
   font-size: 12px;
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr > td:first-child {
+html.flat-theme .max-h-48.overflow-auto > table.text-xs > tbody > tr > td[colspan] > div > table > tbody > tr > td:first-child {
   padding-left: 24px;
 }
 
@@ -805,13 +805,13 @@ html.flat-theme [data-ui="pagination"] {
 }
 
 html.flat-theme [data-ui="pagination"] p,
-html.flat-theme [data-ui="pagination"] span[class~="text-sm"] {
+html.flat-theme [data-ui="pagination"] span.text-sm {
   color: rgb(var(--ui-ink-soft));
   font-size: 14px;
   line-height: 20px;
 }
 
-html.flat-theme [data-ui="pagination"] p > span[class~="font-medium"] {
+html.flat-theme [data-ui="pagination"] p > span.font-medium {
   color: inherit;
   font-weight: 500;
 }
@@ -899,24 +899,24 @@ html.flat-theme [data-ui~="bulk-bar"] {
   padding: 8px 12px 8px 16px;
 }
 
-html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span[class~="text-sm"] {
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span.text-sm {
   color: rgb(var(--ui-ink-soft));
   font-size: 14px;
   font-weight: 500;
 }
 
-html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button[class~="text-xs"] {
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button.text-xs {
   color: var(--ui-link);
   font-size: 12px;
   font-weight: 500;
 }
 
-html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button[class~="text-xs"]:hover:not(:disabled) {
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button.text-xs:hover:not(:disabled) {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span:not([class~="text-sm"]) {
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span:not(.text-sm) {
   color: rgb(var(--ui-faint));
 }
 
@@ -993,15 +993,15 @@ html.flat-theme [data-ui="status-badge"] > span:first-child {
   background-color: rgb(var(--ui-dot-idle));
 }
 
-html.flat-theme [data-ui="status-badge"] > span:first-child[class~="bg-green-500"] {
+html.flat-theme [data-ui="status-badge"] > span:first-child.bg-green-500 {
   background-color: rgb(var(--ui-dot-ok));
 }
 
-html.flat-theme [data-ui="status-badge"] > span:first-child[class~="bg-yellow-500"] {
+html.flat-theme [data-ui="status-badge"] > span:first-child.bg-yellow-500 {
   background-color: rgb(var(--ui-dot-warn));
 }
 
-html.flat-theme [data-ui="status-badge"] > span:first-child[class~="bg-red-500"] {
+html.flat-theme [data-ui="status-badge"] > span:first-child.bg-red-500 {
   background-color: rgb(var(--ui-dot-bad));
 }
 
@@ -1024,195 +1024,195 @@ html.flat-theme [data-ui="status-badge"] > span:last-child {
    Hooks: data-ui="platform-badge", data-ui="group-badge", data-ui="group-option" (GroupOptionItem's root, whose rate
    pill is the chip) and data-ui="platform-hue" (the platform | type chip, static): the chip takes the hue of its
    first span (subject-position :has() with a child argument, tested only on that hooked chip). */
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-orange-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-orange-"],
 html.flat-theme [data-ui="group-badge"][class*="-orange-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-orange-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-orange-"],
 html.flat-theme [data-ui~="platform-text"][class*="-orange-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-orange-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-orange-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-orange-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-orange-"]) {
   --pf-text: var(--ui-id-orange);
   --pf-soft: var(--ui-id-orange-soft);
   --pf-line: var(--ui-id-orange-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-amber-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-amber-"],
 html.flat-theme [data-ui="group-badge"][class*="-amber-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-amber-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-amber-"],
 html.flat-theme [data-ui~="platform-text"][class*="-amber-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-amber-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-amber-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-amber-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-amber-"]) {
   --pf-text: var(--ui-id-amber);
   --pf-soft: var(--ui-id-amber-soft);
   --pf-line: var(--ui-id-amber-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-emerald-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-emerald-"],
 html.flat-theme [data-ui="group-badge"][class*="-emerald-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-emerald-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-emerald-"],
 html.flat-theme [data-ui~="platform-text"][class*="-emerald-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-emerald-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-emerald-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-emerald-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-emerald-"]) {
   --pf-text: var(--ui-id-emerald);
   --pf-soft: var(--ui-id-emerald-soft);
   --pf-line: var(--ui-id-emerald-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-green-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-green-"],
 html.flat-theme [data-ui="group-badge"][class*="-green-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-green-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-green-"],
 html.flat-theme [data-ui~="platform-text"][class*="-green-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-green-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-green-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-green-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-green-"]) {
   --pf-text: var(--ui-id-green);
   --pf-soft: var(--ui-id-green-soft);
   --pf-line: var(--ui-id-green-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-teal-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-teal-"],
 html.flat-theme [data-ui="group-badge"][class*="-teal-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-teal-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-teal-"],
 html.flat-theme [data-ui~="platform-text"][class*="-teal-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-teal-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-teal-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-teal-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-teal-"]) {
   --pf-text: var(--ui-id-teal);
   --pf-soft: var(--ui-id-teal-soft);
   --pf-line: var(--ui-id-teal-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-cyan-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-cyan-"],
 html.flat-theme [data-ui="group-badge"][class*="-cyan-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-cyan-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-cyan-"],
 html.flat-theme [data-ui~="platform-text"][class*="-cyan-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-cyan-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-cyan-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-cyan-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-cyan-"]) {
   --pf-text: var(--ui-id-cyan);
   --pf-soft: var(--ui-id-cyan-soft);
   --pf-line: var(--ui-id-cyan-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-sky-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-sky-"],
 html.flat-theme [data-ui="group-badge"][class*="-sky-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-sky-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-sky-"],
 html.flat-theme [data-ui~="platform-text"][class*="-sky-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-sky-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-sky-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-sky-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-sky-"]) {
   --pf-text: var(--ui-id-sky);
   --pf-soft: var(--ui-id-sky-soft);
   --pf-line: var(--ui-id-sky-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-blue-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-blue-"],
 html.flat-theme [data-ui="group-badge"][class*="-blue-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-blue-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-blue-"],
 html.flat-theme [data-ui~="platform-text"][class*="-blue-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-blue-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-blue-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-blue-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-blue-"]) {
   --pf-text: var(--ui-id-blue);
   --pf-soft: var(--ui-id-blue-soft);
   --pf-line: var(--ui-id-blue-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-indigo-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-indigo-"],
 html.flat-theme [data-ui="group-badge"][class*="-indigo-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-indigo-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-indigo-"],
 html.flat-theme [data-ui~="platform-text"][class*="-indigo-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-indigo-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-indigo-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-indigo-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-indigo-"]) {
   --pf-text: var(--ui-id-indigo);
   --pf-soft: var(--ui-id-indigo-soft);
   --pf-line: var(--ui-id-indigo-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-violet-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-violet-"],
 html.flat-theme [data-ui="group-badge"][class*="-violet-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-violet-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-violet-"],
 html.flat-theme [data-ui~="platform-text"][class*="-violet-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-violet-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-violet-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-violet-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-violet-"]) {
   --pf-text: var(--ui-id-violet);
   --pf-soft: var(--ui-id-violet-soft);
   --pf-line: var(--ui-id-violet-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-purple-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-purple-"],
 html.flat-theme [data-ui="group-badge"][class*="-purple-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-purple-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-purple-"],
 html.flat-theme [data-ui~="platform-text"][class*="-purple-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-purple-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-purple-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-purple-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-purple-"]) {
   --pf-text: var(--ui-id-purple);
   --pf-soft: var(--ui-id-purple-soft);
   --pf-line: var(--ui-id-purple-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-fuchsia-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-fuchsia-"],
 html.flat-theme [data-ui="group-badge"][class*="-fuchsia-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-fuchsia-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-fuchsia-"],
 html.flat-theme [data-ui~="platform-text"][class*="-fuchsia-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-fuchsia-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-fuchsia-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-fuchsia-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-fuchsia-"]) {
   --pf-text: var(--ui-id-fuchsia);
   --pf-soft: var(--ui-id-fuchsia-soft);
   --pf-line: var(--ui-id-fuchsia-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-pink-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-pink-"],
 html.flat-theme [data-ui="group-badge"][class*="-pink-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-pink-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-pink-"],
 html.flat-theme [data-ui~="platform-text"][class*="-pink-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-pink-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-pink-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-pink-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-pink-"]) {
   --pf-text: var(--ui-id-pink);
   --pf-soft: var(--ui-id-pink-soft);
   --pf-line: var(--ui-id-pink-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-rose-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-rose-"],
 html.flat-theme [data-ui="group-badge"][class*="-rose-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-rose-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-rose-"],
 html.flat-theme [data-ui~="platform-text"][class*="-rose-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-rose-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-rose-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-rose-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-rose-"]) {
   --pf-text: var(--ui-id-rose);
   --pf-soft: var(--ui-id-rose-soft);
   --pf-line: var(--ui-id-rose-line);
   --pf-sub: var(--ui-surface);
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-zinc-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span:not([title])[class*="-zinc-"],
 html.flat-theme [data-ui="group-badge"][class*="-zinc-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-zinc-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-zinc-"],
 html.flat-theme [data-ui~="platform-text"][class*="-zinc-"],
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-zinc-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-zinc-"]) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:first-child[class*="-zinc-"],
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-zinc-"]) {
   --pf-text: var(--ui-id-zinc);
   --pf-soft: var(--ui-id-zinc-soft);
   --pf-line: var(--ui-id-zinc-line);
@@ -1234,14 +1234,14 @@ html.flat-theme [data-ui="platform-badge"] {
   white-space: nowrap;
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:first-child {
   flex: 0 0 auto;
   border: 1px solid rgb(var(--pf-line, var(--ui-line-strong)));
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--pf-soft, var(--ui-surface)));
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span {
   gap: 5px;
   padding: 1px 6px;
   background-color: transparent;
@@ -1250,16 +1250,16 @@ html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span {
   white-space: nowrap;
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child > span + span {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:first-child > span + span {
   border-left: 1px solid rgb(var(--pf-line, var(--ui-line)));
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span svg {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex > span svg {
   width: 11px;
   height: 11px;
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:nth-child(2) {
   flex: 0 0 auto;
   gap: 4px;
   overflow: visible;
@@ -1270,7 +1270,7 @@ html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child
 
 /* the plan: its upstream hue (Plus sky, Team / Business indigo, Pro violet, SuperGrok cyan, Heavy purple, other Grok
    tiers amber); a free plan is the neutral chip (subtle fill, muted text) */
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:nth-child(2) > span {
   border: 1px solid rgb(var(--pf-line, var(--ui-line)));
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--pf-soft, var(--ui-subtle)));
@@ -1279,25 +1279,25 @@ html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child
 
 /* an abnormal subscription is a danger state; the privacy chip is a status (private = success, Cloudflare-blocked =
    warning, failed = danger) */
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[class~="bg-red-100"] {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:nth-child(2) > span.bg-red-100 {
   border-color: rgb(var(--ui-danger) / 0.3);
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-green-100"] {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:nth-child(2) > span[title].bg-green-100 {
   border-color: rgb(var(--ui-success) / 0.3);
   background-color: rgb(var(--ui-success-soft));
   color: rgb(var(--ui-success));
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-yellow-100"] {
+html.flat-theme [data-ui="platform-badge"] > div.inline-flex:nth-child(2) > span[title].bg-yellow-100 {
   border-color: rgb(var(--ui-warning) / 0.3);
   background-color: rgb(var(--ui-warning-soft));
   color: rgb(var(--ui-warning));
 }
 
-html.flat-theme [data-ui="platform-badge"] > div:last-child:not(:first-child):not([class~="inline-flex"]) {
+html.flat-theme [data-ui="platform-badge"] > div:last-child:not(:first-child):not(.inline-flex) {
   padding-left: 1px;
   color: rgb(var(--ui-faint));
   font-size: 10px;
@@ -1336,29 +1336,29 @@ html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) {
   line-height: 16px;
 }
 
-html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) [class~="font-bold"] {
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) .font-bold {
   color: rgb(var(--pf-text, var(--ui-ink)));
   font-weight: 600;
 }
 
-html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) [class~="line-through"] {
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) .line-through {
   opacity: 1;
   color: rgb(var(--ui-faint));
 }
 
-html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is([class~="bg-red-200/80"]) {
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is(.bg-red-200\/80) {
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
 }
 
-html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is([class~="bg-amber-200/80"], [class~="bg-amber-100"]) {
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is(.bg-amber-200\/80, .bg-amber-100) {
   background-color: rgb(var(--ui-warning-soft));
   color: rgb(var(--ui-warning));
 }
 
 /* 6.3 Group pickers: GroupOptionItem's rate pill is the platform's chip in the reference's pill form (12/16, 1px
    line); its peak-window pill stays the warning chip. GroupSelector rows hold GroupBadge (6.2). */
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"] {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full {
   padding: 1px 8px;
   border: 1px solid rgb(var(--pf-line, var(--ui-line)));
   background-color: rgb(var(--pf-soft, var(--ui-subtle)));
@@ -1368,7 +1368,7 @@ html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > sp
   line-height: 16px;
 }
 
-html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:not(:first-child) {
+html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span.rounded-full:not(:first-child) {
   border-color: rgb(var(--ui-warning) / 0.3);
   background-color: rgb(var(--ui-warning-soft));
   color: rgb(var(--ui-warning));
@@ -1449,16 +1449,16 @@ html.flat-theme .model-icon-fallback {
    template hue, the detail 12/16 in its template colours); no icon tile; 10px apart. The grids and tiles are marked (static
    data-ui="kpi-grid" / "kpi-tile"; "kpi-value" on the RPM value row); the repeated [data-ui] / [class] and :is(div)
    keep the weight of the pre-pass selectors, which found them by their icon tile. */
-html.flat-theme [class~="grid"][data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) {
+html.flat-theme .grid[data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) {
   gap: 10px;
 }
 
 /* two KPI rows in a row (the admin dashboard) read as one grid: 10px apart, not the page's 24 */
-html.flat-theme [class~="grid"][data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) + [class~="grid"][data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) {
+html.flat-theme .grid[data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) + .grid[data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) {
   margin-top: 10px;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"][data-ui][data-ui][data-ui][data-ui]:is(div) {
+html.flat-theme .grid > .card.p-4[data-ui~="kpi-tile"][data-ui][data-ui][data-ui][data-ui]:is(div) {
   --ui-kpi-accent: var(--ui-ink);
   display: flex;
   flex-direction: column;
@@ -1475,23 +1475,23 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-ti
   box-shadow: none;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] > [class~="flex"]:first-child[class][class]:is(div) {
+html.flat-theme .grid > .card.p-4[data-ui~="kpi-tile"] > .flex:first-child[class][class]:is(div) {
   display: block;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] div[class~="rounded-lg"][class~="p-2"]:first-child {
+html.flat-theme .grid > .card.p-4[data-ui~="kpi-tile"] div.rounded-lg.p-2:first-child {
   display: none;
 }
 
 /* the text column: label, value, detail, 2px apart */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div {
+html.flat-theme .grid > .card.p-4 div.rounded-lg.p-2:first-child + div {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:first-child {
+html.flat-theme .grid > .card.p-4 div.rounded-lg.p-2:first-child + div > p:first-child {
   color: rgb(var(--ui-muted));
   font-size: var(--ui-label-size);
   font-weight: 500;
@@ -1500,7 +1500,7 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
   text-transform: none;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div p[class~="text-xl"] {
+html.flat-theme .grid > .card.p-4 div.rounded-lg.p-2:first-child + div p.text-xl {
   font-size: 20px;
   font-weight: 700;
   line-height: 28px;
@@ -1509,28 +1509,28 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
 /* the value's colour is the tile's accent: the ink (official text-gray-900 / dark:text-white; #f3f4f6 in dark, the
    console's ink), the danger colour in the danger tile (below). A value upstream draws in a hue keeps its template
    colour, as on official: the usage cost (text-green-600), the new-users count and the balance (text-emerald-600). */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] p[class~="text-xl"]:not([class~="text-green-600"], [class~="text-emerald-600"]) {
+html.flat-theme .grid > .card.p-4[data-ui~="kpi-tile"] p.text-xl:not(.text-green-600, .text-emerald-600) {
   color: rgb(var(--ui-kpi-accent));
 }
 
 /* the detail line(s): official 12/16 in their template colours (the meta grey, the green actual cost, the orange
    account cost, status words) */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > :is(p, div):not(:first-child):not(div[data-ui~="kpi-value"]):not([class~="text-xl"]) {
+html.flat-theme .grid > .card.p-4 div.rounded-lg.p-2:first-child + div > :is(p, div):not(:first-child):not(div[data-ui~="kpi-value"]):not(.text-xl) {
   font-size: 12px;
   line-height: 16px;
 }
 
 /* the performance tile's RPM / TPM lines: the value, then its unit (the template's classes: text-xs units, TPM
    text-sm font-semibold in its hue) */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] {
+html.flat-theme .grid > .card.p-4 div.rounded-lg.p-2:first-child + div > div.items-baseline {
   gap: 4px;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] > span {
+html.flat-theme .grid > .card.p-4 div.rounded-lg.p-2:first-child + div > div.items-baseline > span {
   line-height: 16px;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] > p[class~="text-sm"] {
+html.flat-theme .grid > .card.p-4 div.rounded-lg.p-2:first-child + div > div.items-baseline > p.text-sm {
   font-variant-numeric: tabular-nums;
 }
 
@@ -1540,7 +1540,7 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
    card, or inside its first row) and hands the colours to its own rules: --ui-kpi-accent to the value, --ui-label to
    any label in the tile that reads the label grey (the KPI label reads the meta grey, the same value). Same weight
    as the pre-pass rule (0,9,5). */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:where([data-ui~="kpi-tile"]):has(> * > div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"], > div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"]) {
+html.flat-theme .grid > .card.p-4:where([data-ui~="kpi-tile"]):has(> * > div.rounded-lg.p-2:first-child + div > p:not(:first-child) > span.text-red-500, > div.rounded-lg.p-2:first-child + div > p:not(:first-child) > span.text-red-500) {
   --ui-kpi-accent: var(--ui-danger);
   --ui-label: var(--ui-muted);
   border-color: rgb(var(--ui-danger));
@@ -1552,7 +1552,7 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:where([data-ui~=
    hover = control outline; a 28px neutral icon square with a 1px line); official's text: title 14/20/500 ink,
    description 12/16 muted.
    The buttons are data-ui="quick-action" (they were found by their icon square). */
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"])[data-ui~="quick-action"][data-ui][data-ui] {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4)[data-ui~="quick-action"][data-ui][data-ui] {
   gap: 12px;
   padding: 12px;
   border: 1px solid rgb(var(--ui-line));
@@ -1561,12 +1561,12 @@ html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][cla
   transition: border-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"])[data-ui~="quick-action"][data-ui][data-ui]:hover {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4)[data-ui~="quick-action"][data-ui][data-ui]:hover {
   border-color: rgb(var(--ui-line-strong));
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :first-child[class~="flex-shrink-0"]:is([class~="rounded-lg"], [class~="rounded-xl"]) {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4) > :first-child.flex-shrink-0:is(.rounded-lg, .rounded-xl) {
   width: 28px;
   height: 28px;
   border: 1px solid rgb(var(--ui-line));
@@ -1576,33 +1576,33 @@ html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][cla
   transform: none;
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :first-child[class~="flex-shrink-0"] svg {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4) > :first-child.flex-shrink-0 svg {
   width: 15px;
   height: 15px;
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :nth-child(2) > :first-child {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4) > :nth-child(2) > :first-child {
   color: rgb(var(--ui-ink));
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :nth-child(2) > :nth-child(2) {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4) > :nth-child(2) > :nth-child(2) {
   color: rgb(var(--ui-muted));
   font-size: 12px;
   line-height: 16px;
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > svg:last-child {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4) > svg:last-child {
   width: 13px;
   height: 13px;
   color: rgb(var(--ui-faint));
   transition: color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]):hover > svg:last-child {
+html.flat-theme button.group.flex.items-center.bg-gray-50:is(.p-3, .p-4):hover > svg:last-child {
   color: rgb(var(--ui-ink));
 }
 
@@ -1656,7 +1656,7 @@ html.flat-theme .stat-trend-down {
 /* Bars (quota windows, capacity, progress): the reference's capsule track on the subtle fill (REF §8.14 usage bar,
    §8.7 uptime), no gradient; the fill keeps its status colour; the recipe's bar is the accent (palette C marks). */
 html.flat-theme .progress,
-html.flat-theme div[class~="rounded-full"]:is([class~="h-1"], [class~="h-1.5"], [class~="h-2"]):is([class~="bg-gray-200"], [class~="bg-gray-100"]):not([class~="animate-pulse"]) {
+html.flat-theme div.rounded-full:is(.h-1, .h-1\.5, .h-2):is(.bg-gray-200, .bg-gray-100):not(.animate-pulse) {
   background-color: rgb(var(--ui-subtle));
 }
 
@@ -1728,19 +1728,29 @@ html.flat-theme .table-page-layout .table-wrapper .table-body > tr > td[colspan]
   width: calc(100cqw - 32px);
 }
 
-/* Skeletons: the reference's shimmer (REF §8.7: surface-subtle -> ink 6 % -> surface-subtle, 400 % wide, 1.4s),
-   on the .skeleton recipe, Skeleton.vue and upstream's pulsing grey placeholder blocks. Reduced motion stops it
-   (styles/theme.css). */
-html.flat-theme :is(.skeleton, [data-ui="skeleton"], [class~="animate-pulse"][class~="bg-gray-200"], [class~="animate-pulse"] > [class~="bg-gray-200"]:empty) {
+/* Skeletons keep a static fill; only the translucent highlight moves on the compositor. */
+html.flat-theme :is(.skeleton, [data-ui="skeleton"], .animate-pulse.bg-gray-200, .animate-pulse > .bg-gray-200:empty) {
+  position: relative;
+  overflow: hidden;
   background-color: rgb(var(--ui-subtle));
-  background-image: linear-gradient(90deg, rgb(var(--ui-subtle)) 0%, color-mix(in srgb, rgb(var(--ui-ink)) 6%, rgb(var(--ui-subtle))) 50%, rgb(var(--ui-subtle)) 100%);
-  background-size: 400% 100%;
-  animation: consoleDataShimmer 1.4s ease-in-out infinite;
+  background-image: none;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.flat-theme :is(.skeleton, [data-ui="skeleton"], .animate-pulse.bg-gray-200, .animate-pulse > .bg-gray-200:empty)::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgb(var(--ui-ink) / 0.06), transparent);
+    animation: consoleDataShimmer 1.4s ease-in-out infinite;
+  }
 }
 
 @keyframes consoleDataShimmer {
-  from { background-position: 100% 0; }
-  to { background-position: 0 0; }
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
 }
 
 /* ================================================================== 10 · chart cards */
@@ -1750,12 +1760,12 @@ html.flat-theme :is(.skeleton, [data-ui="skeleton"], [class~="animate-pulse"][cl
    title does not change with the data; the component marks it data-ui="chart-card" (the dist / trend chart
    components, the two account stats modals, the admin dashboard's usage trend card, the payment revenue card, the
    user dashboard's model card). :is(div) twice keeps the pre-pass weight. */
-html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) {
+html.flat-theme .card.p-4[data-ui~="chart-card"]:is(div):is(div) {
   padding: 14px;
 }
 
-html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) > h3[class~="text-sm"][class~="font-semibold"],
-html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) > div:first-child > h3[class~="text-sm"][class~="font-semibold"] {
+html.flat-theme .card.p-4[data-ui~="chart-card"]:is(div):is(div) > h3.text-sm.font-semibold,
+html.flat-theme .card.p-4[data-ui~="chart-card"]:is(div):is(div) > div:first-child > h3.text-sm.font-semibold {
   color: rgb(var(--ui-ink));
   font-size: 14px;
   font-weight: 600;
@@ -1772,10 +1782,10 @@ html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(
    that is a box (rounded, bordered or a card) with an inset; never a data-ui element, a selected option (a ring, or a
    -300..-700 border of the hue), a picked-value chip (its direct x button; the chip is data-ui="picked-chip"), the
    public pages, a button or a link.
-   Static reach 2026-09-29 (_tools/callout_reach.py): 50 boxes; skipped 14 (selected cards, the drag-over drop zone,
-   strips without a box, the header balance, the OAuth flow panel, the picked-user chips, the login agreement).
+   Templates mark the eligible boxes with data-console-callout; state-dependent boxes bind the marker to the same
+   state as their fill. Public-page ancestry, selection rings and selected borders remain excluded below.
    Specificity is kept at 0,3,1 (the conditions sit in :where()) so the page files, loaded later, can refine. */
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *))[class][class] {
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *))[class][class] {
   border: 1px solid rgb(var(--ui-line));
   background-color: rgb(var(--ui-subtle));
   background-image: none;
@@ -1785,38 +1795,38 @@ html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/5
 
 /* a box upstream draws without a radius (the plugins page's runtime notice) takes the reference callout's 6px; boxes
    with their own rounded-* and cards (their 8px) keep theirs (batch 6, reported by the settings agent) */
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *)):not([class*="rounded"], [class~="card"])[class][class] {
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *)):not([class*="rounded"], .card)[class][class] {
   border-radius: var(--ui-radius-md);
 }
 
 /* a form inside a callout (the scheduled test's new plan): its labels read the meta grey, which holds 4.5:1 on the
    subtle ground (the label grey is the same value today; this keeps it so if the label grey ever changes) */
-html.flat-theme:not(.dark) :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *))[class][class] {
+html.flat-theme:not(.dark) :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *))[class][class] {
   --ui-label: var(--ui-muted);
 }
 
 /* the box's words: body text ink-soft, its title and bold words ink; links and buttons inside keep their own colours */
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *)) :where(:is([class*="text-primary-"], [class*="text-blue-"], [class*="text-sky-"], [class*="text-purple-"], [class*="text-indigo-"], [class*="text-teal-"], [class*="text-violet-"], [class*="text-cyan-"]):not(a, button, a *, button *, code))[class][class] {
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *)) :where(:is([class*="text-primary-"], [class*="text-blue-"], [class*="text-sky-"], [class*="text-purple-"], [class*="text-indigo-"], [class*="text-teal-"], [class*="text-violet-"], [class*="text-cyan-"]):not(a, button, a *, button *, code))[class][class] {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *)) :where(:is([class~="font-medium"], [class~="font-semibold"], [class~="font-bold"], strong, h3, h4):not(a, button, a *, button *))[class][class],
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *)) :where(:is(strong, h3, h4):not(a, button, a *, button *)) {
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *)) :where(:is(.font-medium, .font-semibold, .font-bold, strong, h3, h4):not(a, button, a *, button *))[class][class],
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *)) :where(:is(strong, h3, h4):not(a, button, a *, button *)) {
   color: rgb(var(--ui-ink));
 }
 
 /* faded secondary lines (opacity-70 / -80) would fall under 4.5:1 on the subtle ground: full opacity, muted */
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *)) :where(:is([class~="opacity-70"], [class~="opacity-75"], [class~="opacity-80"], [class~="opacity-90"]))[class][class] {
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *)) :where(:is(.opacity-70, .opacity-75, .opacity-80, .opacity-90))[class][class] {
   opacity: 1;
   color: rgb(var(--ui-muted));
 }
 
 /* glyphs muted; an icon tile on a tinted ground becomes the reference's neutral square (surface, 1px line) */
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *)) :where(svg:is([class*="text-primary-"], [class*="text-blue-"], [class*="text-sky-"], [class*="text-purple-"], [class*="text-indigo-"], [class*="text-teal-"], [class*="text-violet-"], [class*="text-cyan-"]))[class][class] {
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *)) :where(svg:is([class*="text-primary-"], [class*="text-blue-"], [class*="text-sky-"], [class*="text-purple-"], [class*="text-indigo-"], [class*="text-teal-"], [class*="text-violet-"], [class*="text-cyan-"]))[class][class] {
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *)) :where(div[class*="rounded"]:is([class~="bg-primary-100"], [class~="bg-blue-100"], [class~="bg-sky-100"], [class~="bg-purple-100"], [class~="bg-indigo-100"], [class~="bg-teal-100"], [class~="bg-violet-100"], [class~="bg-cyan-100"], [class~="bg-white"]))[class][class] {
+html.flat-theme :where([data-console-callout]:not([data-ui], [class*="ring-"], .border-primary-300, .border-primary-400, .border-primary-500, .border-primary-600, .border-primary-700, .border-blue-300, .border-blue-400, .border-blue-500, .border-blue-600, .border-blue-700, .border-sky-300, .border-sky-400, .border-sky-500, .border-sky-600, .border-sky-700, .border-purple-300, .border-purple-400, .border-purple-500, .border-purple-600, .border-purple-700, .border-indigo-300, .border-indigo-400, .border-indigo-500, .border-indigo-600, .border-indigo-700, .border-teal-300, .border-teal-400, .border-teal-500, .border-teal-600, .border-teal-700, .border-violet-300, .border-violet-400, .border-violet-500, .border-violet-600, .border-violet-700, .border-cyan-300, .border-cyan-400, .border-cyan-500, .border-cyan-600, .border-cyan-700):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *)) :where(div[class*="rounded"]:is(.bg-primary-100, .bg-blue-100, .bg-sky-100, .bg-purple-100, .bg-indigo-100, .bg-teal-100, .bg-violet-100, .bg-cyan-100, .bg-white))[class][class] {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
   color: rgb(var(--ui-muted));

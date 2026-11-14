@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Ref } from 'vue'
 
@@ -59,6 +59,53 @@ describe('DataTable', () => {
     stubDesktopMatchMedia()
     setConsoleTheme(false)
     localStorage.clear()
+  })
+
+  it('updates overflow on resize without measuring or changing action buttons', async () => {
+    const resizeCallbacks = new Map<Element, ResizeObserverCallback[]>()
+    const OriginalResizeObserver = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        resizeCallbacks.set(target, [...(resizeCallbacks.get(target) ?? []), this.callback])
+      }
+      unobserve(target: Element) { resizeCallbacks.delete(target) }
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name' }, { key: 'actions', label: 'Actions' }],
+        data: [{ id: 1, name: 'Account' }]
+      },
+      slots: {
+        'cell-actions': '<div><button>Edit</button><button>Test</button><button>More</button></div>'
+      }
+    })
+
+    try {
+      await wrapper.vm.$nextTick()
+      const table = wrapper.get('.table-wrapper')
+      Object.defineProperties(table.element, {
+        scrollWidth: { configurable: true, value: 1200 },
+        clientWidth: { configurable: true, value: 800 }
+      })
+      const actionWidthRead = vi.fn(() => 80)
+      wrapper.findAll('tbody button').forEach(button => {
+        Object.defineProperty(button.element, 'offsetWidth', { get: actionWidthRead })
+      })
+      resizeCallbacks.get(table.element)!.forEach(callback => {
+        callback([{ target: table.element, contentRect: { width: 800, height: 400 } } as ResizeObserverEntry], {} as ResizeObserver)
+      })
+      await wrapper.vm.$nextTick()
+
+      expect(table.classes()).toContain('is-scrollable')
+      expect(wrapper.findAll('tbody button').map(button => button.text())).toEqual(['Edit', 'Test', 'More'])
+      expect(actionWidthRead).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      globalThis.ResizeObserver = OriginalResizeObserver
+    }
   })
 
   it('renders paired sort arrows and highlights the active direction', async () => {
@@ -134,6 +181,31 @@ describe('DataTable', () => {
     const exposed = (wrapper.vm as any).virtualizer
     const instance = exposed?.value ?? exposed
     expect(instance.options.count).toBe(data.length)
+  })
+
+  it('does not synchronously remeasure cached row elements on an ordinary patch', async () => {
+    const heightRead = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(56)
+    const wrapper = mount(DataTable, {
+      attachTo: document.body,
+      props: {
+        columns: [{ key: 'name', label: 'Name' }],
+        data: Array.from({ length: 100 }, (_, index) => ({ id: index + 1, name: `Row ${index + 1}` })),
+        virtualizeThreshold: 10,
+        selectable: true,
+      },
+    })
+    try {
+      await flushPromises()
+      expect(heightRead).toHaveBeenCalled()
+      heightRead.mockClear()
+      await wrapper.setProps({ selectedKeys: [1] })
+      await flushPromises()
+      expect(heightRead.mock.contexts.filter(element => (element as HTMLElement).hasAttribute('data-index'))).toEqual([])
+      expect((wrapper.get('tbody input').element as HTMLInputElement).checked).toBe(true)
+    } finally {
+      wrapper.unmount()
+      heightRead.mockRestore()
+    }
   })
 
   it('keys the virtualizer size cache by row identity, not index (avoids stale heights on sort/filter)', async () => {

@@ -19,6 +19,7 @@ const {
   listFolders,
   listTags,
   getBatchTodayStats,
+  getBatchUsage,
   getUpstreamBillingProbeSettings,
   showError,
   showSuccess,
@@ -38,6 +39,7 @@ const {
   listFolders: vi.fn(),
   listTags: vi.fn(),
   getBatchTodayStats: vi.fn(),
+  getBatchUsage: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -78,6 +80,7 @@ vi.mock('@/api/admin', () => ({
       listFolders,
       listTags,
       getBatchTodayStats,
+      getBatchUsage,
       getUpstreamBillingProbeSettings,
       delete: vi.fn(),
       batchClearError: vi.fn(),
@@ -211,11 +214,11 @@ const commonStubs = {
   TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
   DataTable: DataTableStub,
   AccountCompactList: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'batchedUsage', 'batchedUsageErrors', 'batchedUsageLoading', 'requestBatchedUsage', 'selectedIds'],
     template: '<div data-test="view-compact" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountCardGrid: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'batchedUsage', 'batchedUsageErrors', 'batchedUsageLoading', 'requestBatchedUsage', 'selectedIds'],
     template: '<div data-test="view-cards" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountViewModeSwitcher: ViewModeStub,
@@ -332,6 +335,7 @@ describe('admin AccountsView Cockpit console', () => {
     listFolders.mockReset().mockResolvedValue([])
     listTags.mockReset().mockResolvedValue([])
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
+    getBatchUsage.mockReset().mockResolvedValue({ usage: {}, errors: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
     showError.mockReset()
     showSuccess.mockReset()
@@ -460,6 +464,34 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="mode-cards"]').trigger('click')
     expect(wrapper.get('[data-test="view-cards"]').attributes('data-requests')).toBe('8')
     expect(wrapper.get('[data-test="view-cards"]').attributes('data-refresh-token')).toBe('1')
+  })
+
+  it('shares the existing usage batch and full-page selection across compact and card windows', async () => {
+    const accounts = Array.from({ length: 1000 }, (_, index) => ({ ...account, id: index + 1 }))
+    listAccounts.mockResolvedValue({ items: accounts, total: 1000, page: 1, page_size: 1000, pages: 1 })
+    const usage = { fetched_at: '2026-11-14T00:00:00Z' }
+    getBatchUsage.mockResolvedValue({ usage: { '1': usage }, errors: {} })
+    const wrapper = mountView()
+    await flushPromises()
+    ;(wrapper.vm as any).selectPage()
+
+    await wrapper.get('[data-test="mode-compact"]').trigger('click')
+    const compact = wrapper.findComponent(commonStubs.AccountCompactList)
+    expect(compact.props('selectedIds')).toHaveLength(1000)
+    compact.props('requestBatchedUsage')(accounts[0])
+    await vi.waitFor(() => expect(getBatchUsage).toHaveBeenCalledWith([1], false))
+    await flushPromises()
+    expect(compact.props('batchedUsage')).toEqual({ '1': usage })
+    expect(compact.props('batchedUsageLoading')).toEqual({ '1': false })
+
+    await wrapper.get('[data-test="mode-cards"]').trigger('click')
+    const cards = wrapper.findComponent(commonStubs.AccountCardGrid)
+    expect(cards.props('selectedIds')).toHaveLength(1000)
+    cards.props('requestBatchedUsage')(accounts[0])
+    await flushPromises()
+    expect(cards.props('batchedUsage')).toEqual({ '1': usage })
+    expect(getBatchUsage).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('opens details on row click and edits only after the explicit edit command', async () => {

@@ -8,7 +8,7 @@
       v-model="searchValue"
       type="text"
       class="input pl-10"
-      :placeholder="placeholder"
+      :placeholder="placeholder || ' '"
     />
   </div>
 </template>

@@ -58,6 +58,13 @@ preservation of untouched fields remain.
 
 The console theme and table/compact/card account views remain. All three views
 retain existing rows during refresh and use skeletons only for the first load.
+Regular console routes share one persistent shell; fullscreen Ops, Stripe popup
+and embedded Model Plaza keep their page-owned conditional layouts. Sidebar
+width changes settle once, with short label motion instead of continuous page
+resizing. Account lists above 50 items use measured windows in all three views;
+compact/card windows reuse the page's desktop batch-usage path. Shared chart
+updates preserve mounted canvases, animate the first draw for 180ms and apply
+later data without animation. Motion preferences apply to CSS and canvas.
 Platform/status filters use official single selection and
 `account-filter-values` storage. The official billing-rate timer retains
 `immediate: false`. Settings use the official floating save control; API-key

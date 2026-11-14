@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <TablePageLayout data-ui="redeem-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
@@ -209,7 +208,7 @@
       </template>
 
       <template #pagination>
-        <div
+        <div data-console-callout
           v-if="selectedCount > 0"
           class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary-50 p-3 dark:bg-primary-900/20"
         >
@@ -301,6 +300,7 @@
                 }}
               </label>
               <input
+                placeholder=" "
                 v-model.number="generateForm.value"
                 type="number"
                 :step="generateForm.type === 'balance' ? '0.01' : '1'"
@@ -310,7 +310,7 @@
               />
             </div>
             <!-- 邀请码类型：显示提示信息 -->
-            <div v-if="generateForm.type === 'invitation'" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+            <div data-console-callout v-if="generateForm.type === 'invitation'" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
               <p class="text-sm text-blue-700 dark:text-blue-300">
                 {{ t('admin.redeem.invitationHint') }}
               </p>
@@ -351,6 +351,7 @@
               <div>
                 <label class="input-label">{{ t('admin.redeem.validityDays') }}</label>
                 <input
+                  placeholder=" "
                   v-model.number="generateForm.validity_days"
                   type="number"
                   min="1"
@@ -392,6 +393,7 @@
             <div>
               <label class="input-label">{{ t('admin.redeem.count') }}</label>
               <input
+                placeholder=" "
                 v-model.number="generateForm.count"
                 type="number"
                 min="1"
@@ -461,6 +463,7 @@
               <template v-if="batchUpdateForm.update_expires_at">
                 <Select v-model="batchUpdateForm.expires_mode" :options="batchExpiryModeOptions" />
                 <input
+                  placeholder=" "
                   v-if="batchUpdateForm.expires_mode === 'custom'"
                   v-model="batchUpdateForm.expires_at_local"
                   type="datetime-local"
@@ -612,7 +615,6 @@
         </div>
       </div>
     </Teleport>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -637,7 +639,6 @@ import type {
   BatchUpdateRedeemCodeFields
 } from '@/types'
 import type { Column } from '@/components/common/types'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'

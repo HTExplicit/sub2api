@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePresentationColors } from '@/composables/usePresentationColors'
+import { chartTooltipMotion, useChartMotion } from '@/composables/useChartMotion'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, BarElement, CategoryScale, Legend, LinearScale, Tooltip } from 'chart.js'
@@ -20,6 +21,7 @@ const props = defineProps<Props>()
 const { t } = useI18n()
 
 const presentation = usePresentationColors()
+const chartMotion = useChartMotion()
 const colors = computed(() => ({
   blue: presentation.value.tone('#3b82f6'),
   grid: presentation.value.axisGrid,
@@ -54,10 +56,12 @@ const chartData = computed(() => {
 const options = computed(() => {
   const c = colors.value
   return {
+    ...chartMotion.value,
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: false }
+      legend: { display: false },
+      tooltip: { ...chartTooltipMotion }
     },
     scales: {
       x: {
@@ -92,7 +96,7 @@ const options = computed(() => {
     </div>
 
     <div class="min-h-0 flex-1">
-      <Bar v-if="state === 'ready' && chartData" :data="chartData" :options="options" />
+      <Bar v-if="state === 'ready' && chartData" :data="chartData" :options="options" update-mode="none" />
       <div v-else class="flex h-full items-center justify-center">
         <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
         <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyRequest')" />

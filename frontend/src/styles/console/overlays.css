@@ -52,7 +52,9 @@ html.flat-theme {
   --ui-dialog-head-y: 14px;
   --ui-dialog-body-y: 16px;
   --ui-dialog-foot-y: 12px;
-  /* the panel curve of the reference's dialog and sign-in panel (450ms) */
+  /* Shared short lifetimes keep Vue's root and child transitions in sync. */
+  --ui-duration-menu: 120ms;
+  --ui-duration-dialog: 180ms;
   --ui-ease-panel: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -86,22 +88,33 @@ html.flat-theme [data-ui="menu"] {
   padding-bottom: var(--ui-menu-inset);
 }
 
-/* reveal (REF §11: 200ms ease-out, 4px travel) instead of upstream's scale-in / 8px slide */
+/* Short compositor reveal; layout and selection update immediately. */
 html.flat-theme .dropdown {
-  animation: consoleSlideDown var(--ui-duration-slide) var(--ui-ease-out);
+  animation: consoleSlideDown var(--ui-duration-menu) var(--ui-ease-out);
 }
 
 html.flat-theme :is(.select-dropdown-enter-active, .select-dropdown-leave-active, .date-picker-dropdown-enter-active, .date-picker-dropdown-leave-active) {
-  transition: opacity var(--ui-duration-slide) var(--ui-ease-out), transform var(--ui-duration-slide) var(--ui-ease-out);
-}
-
-html.flat-theme :is(.select-dropdown-leave-active, .date-picker-dropdown-leave-active) {
-  transition-duration: var(--ui-duration);
+  transition: opacity var(--ui-duration-menu) var(--ui-ease-out), transform var(--ui-duration-menu) var(--ui-ease-out);
 }
 
 html.flat-theme :is(.select-dropdown-enter-from, .select-dropdown-leave-to, .date-picker-dropdown-enter-from, .date-picker-dropdown-leave-to) {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.flat-theme .dropdown {
+    animation: none;
+  }
+
+  html.flat-theme :is(.select-dropdown-enter-active, .select-dropdown-leave-active, .date-picker-dropdown-enter-active, .date-picker-dropdown-leave-active) {
+    transition: none;
+  }
+
+  html.flat-theme :is(.select-dropdown-enter-from, .select-dropdown-leave-to, .date-picker-dropdown-enter-from, .date-picker-dropdown-leave-to) {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* 1.2 Rows. FilterMenu option: 6/12, 14/20 (official .dropdown-item), ink-soft, 8px gap, hover = subtle fill (text
@@ -505,7 +518,7 @@ html.flat-theme.dark :is(div, span).text-white:is(.bg-gray-900, .bg-gray-800):is
 /* a grouped box inside such a tip (the 专属分组 tip's example: upstream's gray-800 box on its dark tip) is the grouped
    fill of the light tip (palette C sweep: on the near-black box its ink-soft text read 1.9:1 and the accent label
    2.8:1; on the grouped fill 7.0:1 / 4.8:1) */
-html.flat-theme div.text-white.bg-gray-900.p-3 > div[class~="rounded"][class~="bg-gray-800"] {
+html.flat-theme div.text-white.bg-gray-900.p-3 > div.rounded.bg-gray-800 {
   background-color: rgb(var(--ui-subtle));
 }
 
@@ -937,22 +950,22 @@ html.flat-theme div:where([data-ui~="h2-dlg"]).fixed.inset-0 > :is(div, section)
   line-height: 1.25rem;
 }
 
-/* 3.8 Motion: the scrim fades in 200ms; the panel settles on the reference's 450ms panel curve from 98% with a 160ms
-   fade; leaving is a 150ms fade (REF §11; reduced motion: theme.css stops all of it). */
+/* 3.8 Motion: the root scrim and child panel finish together. Vue determines the lifecycle from the root,
+   so a longer child transform would be cut short when the scrim completes. */
 html.flat-theme .modal-enter-active {
-  transition: opacity var(--ui-duration-slide) var(--ui-ease-out);
+  transition: opacity var(--ui-duration-dialog) var(--ui-ease-out);
 }
 
 html.flat-theme .modal-leave-active {
-  transition: opacity var(--ui-duration) ease-in;
+  transition: opacity var(--ui-duration-dialog) ease-in;
 }
 
 html.flat-theme .modal-enter-active .modal-content {
-  transition: transform 450ms var(--ui-ease-panel), opacity 160ms var(--ui-ease-out);
+  transition: transform var(--ui-duration-dialog) var(--ui-ease-panel), opacity var(--ui-duration-dialog) var(--ui-ease-out);
 }
 
 html.flat-theme .modal-leave-active .modal-content {
-  transition: opacity var(--ui-duration) ease-in;
+  transition: opacity var(--ui-duration-dialog) ease-in;
 }
 
 html.flat-theme :is(.modal-enter-from, .modal-leave-to) .modal-content {
@@ -962,6 +975,19 @@ html.flat-theme :is(.modal-enter-from, .modal-leave-to) .modal-content {
 
 html.flat-theme .modal-leave-to .modal-content {
   transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.flat-theme :is(.modal-enter-active, .modal-leave-active),
+  html.flat-theme :is(.modal-enter-active, .modal-leave-active) .modal-content {
+    transition: none;
+  }
+
+  html.flat-theme :is(.modal-enter-from, .modal-leave-to),
+  html.flat-theme :is(.modal-enter-from, .modal-leave-to) .modal-content {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ================================================================== 4 · drawers (derived: the reference has none) */
@@ -1117,16 +1143,6 @@ html.flat-theme [data-ui="toast"] .toast-progress {
 
 html.flat-theme [data-ui="toast-stack"] > [data-ui="toast"] + [data-ui="toast"] {
   margin-top: 8px;
-}
-
-html.flat-theme [data-ui="toast-stack"] > [data-ui="toast"]:is(.translate-x-full) {
-  --tw-translate-x: 0px;
-  --tw-translate-y: -4px;
-}
-
-html.flat-theme [data-ui="toast-stack"] > [data-ui="toast"]:is(.duration-300, .duration-200) {
-  transition-duration: var(--ui-duration-slide);
-  transition-timing-function: var(--ui-ease-out);
 }
 
 /* ================================================================== 6 · announcements (bell list, detail, popup) */

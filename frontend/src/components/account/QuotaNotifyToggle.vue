@@ -33,6 +33,7 @@ const emit = defineEmits<{
     </button>
     <template v-if="enabled">
       <input
+        placeholder=" "
         :value="threshold"
         @input="emit('update:threshold', parseFloat(($event.target as HTMLInputElement).value) || null)"
         type="number"

@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="mx-auto max-w-5xl space-y-6" data-ui="login-protection">
       <header class="space-y-1 border-b border-line pb-4">
         <h1 class="text-xl font-semibold">{{ t('admin.loginProtection.title') }}</h1>
@@ -26,6 +25,7 @@
             <div v-for="field in fields" :key="field.key" class="space-y-1">
               <label :for="`login-protection-${field.key}`" class="block text-sm font-medium">{{ t(`admin.loginProtection.${field.key}`) }}</label>
               <input
+                placeholder=" "
                 :id="`login-protection-${field.key}`" v-model.number="draft[field.key]" type="number" min="1" :max="field.max" step="1"
                 class="input w-full" :disabled="saving" :aria-invalid="!!errors[field.key]" :aria-describedby="`login-protection-${field.key}-hint`"
               />
@@ -67,13 +67,11 @@
       </section>
       <TotpStepUpDialog :controller="stepUp" />
     </div>
-  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'

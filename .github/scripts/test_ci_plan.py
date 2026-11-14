@@ -90,6 +90,20 @@ class ChangeSelectionTests(unittest.TestCase):
         self.assertFalse(plan["frontend_related"])
         self.assertFalse(plan["backend_tests"])
 
+    def test_frontend_css_selects_build_without_business_tests(self):
+        for path in ("frontend/src/style.css", "frontend/src/styles/theme.css",
+                     "frontend/src/styles/console/data.css",
+                     "frontend/src/styles/console/pages/settings-ops-public.css"):
+            with self.subTest(path=path):
+                plan = ci_plan.classify_paths([path])
+                self.assertTrue(plan["passed"], plan["failures"])
+                self.assertEqual(["candidate_image", "frontend_validate"], plan["groups"])
+                self.assertFalse(plan["frontend_typecheck"])
+                self.assertFalse(plan["frontend_files"])
+                self.assertFalse(plan["frontend_tests"])
+                self.assertFalse(plan["frontend_related"])
+                self.assertFalse(plan["backend_tests"])
+
     def test_shared_entry_cannot_claim_sibling_tests_are_complete(self):
         plan = ci_plan.classify_paths(["backend/internal/service/account_job.go",
                                        "backend/internal/service/unreviewed_shared_gateway.go"])

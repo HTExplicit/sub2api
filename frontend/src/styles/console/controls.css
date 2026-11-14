@@ -578,9 +578,9 @@ html.flat-theme [data-ui~="seg"] > button {
    sit beside: the distribution charts' metric and view switches (text-xs buttons), the monitor's window switch (a
    text-xs box) and the dashboard's 最近使用 (Top 12) metric switch (data-ui="seg", text-xs buttons); the rest of the
    recipe (inset, thumb, colours) is unchanged */
-html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button[class~="text-xs"],
-html.flat-theme :is(div, nav)[data-ui~="seg-box"][class~="text-xs"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button,
-html.flat-theme [data-ui~="seg"] > button[class~="text-xs"] {
+html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button.text-xs,
+html.flat-theme :is(div, nav)[data-ui~="seg-box"].text-xs[data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button,
+html.flat-theme [data-ui~="seg"] > button.text-xs {
   font-size: 0.75rem;
   line-height: 1rem;
 }

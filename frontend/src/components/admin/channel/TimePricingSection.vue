@@ -91,6 +91,7 @@
             {{ t('admin.channels.form.multiplier') }}
           </label>
           <input
+            placeholder=" "
             :id="`${inputIdPrefix}-multiplier-${index}`"
             :value="period.multiplier"
             type="number"
