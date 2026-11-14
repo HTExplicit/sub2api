@@ -14,74 +14,79 @@
       role="listitem" :aria-posinset="slot.row ? slot.row.index + 1 : undefined"
       :aria-setsize="slot.row ? accounts.length : undefined"
       :aria-hidden="slot.row ? undefined : true" :inert="slot.row ? undefined : true">
-    <div v-for="{ accounts: [account], index, key } in slot.row ? [slot.row] : []" :key="reusePresentation ? slot.key : key" :data-account-id="account.id"
+    <RowContent v-for="item in slot.row ? [slot.row] : []"
+      :key="reusePresentation ? slot.key : item.key" :row="item.accounts[0]" :index="item.index">
+      <template #default="r">
+    <div :data-account-id="r.row.id"
       :ref="measureRow"
-      :data-account-virtual-index="index"
+      :data-account-virtual-index="r.index"
       class="account-compact-row grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
-      :class="[selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500 bg-raised' : '', { 'border-b-0': index === accounts.length - 1 }]"
+      :class="[selectedSet.has(r.row.id) ? 'border-l-2 border-l-primary-500 bg-raised' : '', { 'border-b-0': r.index === accounts.length - 1 }]"
       @vue:before-update="onRowBeforeUpdate"
-      @pointerdown.capture="rememberPointerAccount($event, account.id)"
-      @click.capture="guardPointerClick($event, account.id)"
-      @click="emit('rowClick', account)"
+      @pointerdown.capture="rememberPointerAccount($event, r.row.id)"
+      @click.capture="guardPointerClick($event, r.row.id)"
+      @click="emit('rowClick', r.row)"
     >
-      <AccountSelectionCheckbox :checked="selectedSet.has(account.id)"
-          :label="t('admin.accounts.selectAccount', { name: account.name })"
-          @change="emit('toggle', account.id)" />
+      <AccountSelectionCheckbox :checked="selectedSet.has(r.row.id)"
+          :label="t('admin.accounts.selectAccount', { name: r.row.name })"
+          @change="emit('toggle', r.row.id)" />
 
       <div class="min-w-0">
         <div class="flex min-w-0 items-center gap-2">
-          <button type="button" class="truncate text-left text-sm font-semibold text-gray-900 dark:text-white" @click.stop="emit('rowClick', account)">{{ account.name }}</button>
-          <span class="shrink-0 font-mono text-[10px] text-gray-400">#{{ account.id }}</span>
+          <button type="button" class="truncate text-left text-sm font-semibold text-gray-900 dark:text-white" @click.stop="emit('rowClick', r.row)">{{ r.row.name }}</button>
+          <span class="shrink-0 font-mono text-[10px] text-gray-400">#{{ r.row.id }}</span>
         </div>
-        <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-dark-300">{{ displayEmail(account) || '-' }}</div>
+        <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-dark-300">{{ displayEmail(r.row) || '-' }}</div>
         <div class="mt-1 flex flex-wrap gap-1 lg:hidden">
-          <AccountIdentityBadges :account="account" />
+          <AccountIdentityBadges :account="r.row" />
         </div>
       </div>
 
       <div class="hidden min-w-0 lg:block">
-        <AccountIdentityBadges :account="account" />
+        <AccountIdentityBadges :account="r.row" />
       </div>
 
       <div class="col-start-2 row-start-2 min-w-0 lg:col-start-auto lg:row-start-auto" data-test="account-compact-usage">
         <AccountUsageCell
-          :account="account"
-          :today-stats="todayStats[String(account.id)] ?? null"
+          :account="r.row"
+          :today-stats="todayStats[String(r.row.id)] ?? null"
           :today-stats-loading="todayStatsLoading"
           :today-stats-error="todayStatsError"
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="manualRefreshToken"
           :status-now="statusNow"
-          :batched-usage="batchedUsage?.[String(account.id)] ?? null"
-          :batched-usage-error="batchedUsageErrors?.[String(account.id)] ?? null"
-          :batched-usage-loading="batchedUsageLoading?.[String(account.id)] === true"
+          :batched-usage="batchedUsage?.[String(r.row.id)] ?? null"
+          :batched-usage-error="batchedUsageErrors?.[String(r.row.id)] ?? null"
+          :batched-usage-loading="batchedUsageLoading?.[String(r.row.id)] === true"
           :request-batched-usage="requestBatchedUsage"
           variant="compact"
           read-only
         />
-        <AccountCapacityCell :account="account" compact class="mt-1" />
+        <AccountCapacityCell :account="r.row" compact class="mt-1" />
       </div>
 
       <div class="hidden min-w-0 lg:block">
         <div class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.classification') }}</div>
         <div class="flex items-center gap-2">
-          <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
-          <span class="text-xs text-gray-400">{{ account.management_folder?.name || t('admin.accounts.folderUncategorized') }}</span>
+          <AccountStatusIndicator :account="r.row" @show-temp-unsched="emit('showTempUnsched', r.row)" />
+          <span class="text-xs text-gray-400">{{ r.row.management_folder?.name || t('admin.accounts.folderUncategorized') }}</span>
         </div>
         <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
-          <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span><AccountGroupsCell :groups="account.groups" :reset-key="account.id" /><span>{{ account.proxy?.name || t('admin.accounts.directConnection') }}</span>
+          <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span><AccountGroupsCell :groups="r.row.groups" :reset-key="r.row.id" /><span>{{ r.row.proxy?.name || t('admin.accounts.directConnection') }}</span>
         </div>
       </div>
 
       <div class="col-start-3 row-span-2 row-start-1 flex items-center gap-0.5 self-start lg:col-start-auto lg:row-span-1 lg:row-start-auto lg:self-center" @click.stop>
-        <button type="button" class="icon-button" :title="t('common.edit')" @click="emit('edit', account)">
+        <button type="button" class="icon-button" :title="t('common.edit')" @click="emit('edit', r.row)">
           <Icon name="edit" size="sm" />
         </button>
-        <button type="button" class="icon-button" :title="t('common.more')" @click="emit('more', account, $event)">
+        <button type="button" class="icon-button" :title="t('common.more')" @click="emit('more', r.row, $event)">
           <Icon name="more" size="sm" />
         </button>
       </div>
     </div>
+      </template>
+    </RowContent>
     </div>
     </div>
   </div>
@@ -90,6 +95,7 @@
 <script setup lang="ts">
 import { computed, ref, toRef, useId, type VNode } from 'vue'
 import { useI18n } from 'vue-i18n'
+import RowContent from '@/components/common/DataTableRowContent.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'

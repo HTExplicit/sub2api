@@ -77,6 +77,8 @@ effect; batch usage updates affect their account keys. Desktop layer hints
 apply only to active virtual accounts rows and release on hover or focus so
 inline tooltips retain their existing stacking. Other tables keep their normal
 window lifecycle. The measured-size bridge is tied to TanStack 3.13.23.
+Measured account windows consume observer sizes without another animation
+frame, and compact row content owns its reactive render effect.
 Platform/status filters use official single selection and
 `account-filter-values` storage. The official billing-rate timer retains
 `immediate: false`. Settings use the official floating save control; API-key

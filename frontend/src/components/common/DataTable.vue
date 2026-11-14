@@ -916,8 +916,8 @@ const rowVirtualizer = useVirtualizer<HTMLElement, Element>(computed(() => ({
   initialRect: { width: 0, height: estimatedViewportHeight() },
   // 关键:过滤 0 高度读数,杜绝 scrollRect 被钉成 0 → calculateRange 返回 null → 整表空白
   observeElementRect: observeElementRectNonZero,
-  // 把测量类 ResizeObserver 回调批到 rAF,避免滚动中同步 reflow 风暴导致的校正抖动/空白
-  useAnimationFrameWithResizeObserver: true,
+  // Account windows consume precomputed row sizes in the observer delivery phase.
+  useAnimationFrameWithResizeObserver: !preservingVirtualRowShells.value,
 })))
 const rowVirtualizerInstance = rowVirtualizer.value
 // TanStack has no public unobserve method for a row that remains connected.

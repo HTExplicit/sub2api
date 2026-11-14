@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-// A row owns the reactive reads performed by its forwarded cell slots.
+// Each row owns the reactive reads in its content slot.
 defineProps<{
   row: any
   index: number

@@ -279,7 +279,7 @@
           default-sort-order="asc"
           :sort-storage-key="ACCOUNT_SORT_STORAGE_KEY"
           :estimate-row-height="156"
-          :overscan="2"
+          :overscan="1"
           :virtualize-threshold="50"
           :preserve-virtual-row-shells="true"
           :clickable-rows="true"

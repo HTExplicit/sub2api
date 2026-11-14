@@ -43,7 +43,8 @@ export function useAccountVirtualRows(
       rangeExtractor: slotWindow.value ? stableRangeExtractor : defaultRangeExtractor,
       gap,
       indexAttribute: 'data-account-virtual-index',
-      useAnimationFrameWithResizeObserver: true,
+      // ResizeObserver already batches geometry; avoid another frame of size correction.
+      useAnimationFrameWithResizeObserver: false,
     }
   })
   const elementVirtualizer = useVirtualizer(computed(() => ({
