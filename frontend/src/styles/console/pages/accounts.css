@@ -405,6 +405,18 @@ html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:las
 
 /* Selection: a 14px checkbox (REF §8.4) whose 32px hit area overhangs the cell padding: it takes 24px in a row
    (24 + 2 x 10 + the line = the reference's 45px row) and 20px in the header (the 40px header). */
+/* Bound compositor layers to active desktop rows. Drop the hint during hover/focus
+   so inline overlays retain their original stacking within the table body. */
+@media (min-width: 1024px) {
+  html.flat-theme .table-wrapper[data-table="accounts"][data-virtual-row-shells] > table > .table-body > tr[data-row-id] {
+    will-change: transform;
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"][data-virtual-row-shells] > table > .table-body > tr[data-row-id]:is(:hover, :focus-within) {
+    will-change: auto;
+  }
+}
+
 html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="select"] label {
   width: 32px;
   min-width: 32px;
@@ -801,18 +813,18 @@ html.flat-theme [data-test="account-card-grid"] > div.grid > div.animate-pulse {
 
 /* Compact list: rows like the table's (the structural line between rows, the hover fill, 10 x 16 cells); a selected
    row takes the table's selection tint instead of upstream's accent edge. */
-html.flat-theme [data-test="account-compact-list"] [data-account-id] {
+html.flat-theme [data-test="account-compact-list"] .account-compact-row {
   border-bottom-color: rgb(var(--ui-line));
   padding: 10px 16px;
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme [data-test="account-compact-list"] [data-account-id]:hover {
+html.flat-theme [data-test="account-compact-list"] .account-compact-row:hover {
   background-color: rgb(var(--ui-hover));
 }
 
-html.flat-theme [data-test="account-compact-list"] [data-account-id].border-l-primary-500,
-html.flat-theme [data-test="account-compact-list"] [data-account-id].border-l-primary-500:hover {
+html.flat-theme [data-test="account-compact-list"] .account-compact-row.border-l-primary-500,
+html.flat-theme [data-test="account-compact-list"] .account-compact-row.border-l-primary-500:hover {
   border-left-width: 0;
   background-color: rgb(var(--ui-primary-soft));
 }
@@ -831,7 +843,7 @@ html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
 /* The classification column in two lines, each label beside its values (upstream stacks label, status and folder,
    then label, groups and proxy on four or five lines). */
 @media (min-width: 1024px) {
-  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block:has(> div.truncate) {
+  html.flat-theme [data-test="account-compact-list"] .account-compact-row > div.lg\:block:has(> div.truncate) {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
@@ -839,7 +851,7 @@ html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
     row-gap: 4px;
   }
 
-  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block > div.truncate {
+  html.flat-theme [data-test="account-compact-list"] .account-compact-row > div.lg\:block > div.truncate {
     grid-column: 1 / -1;
     display: flex;
     align-items: center;
@@ -848,12 +860,12 @@ html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
     margin-top: 0;
   }
 
-  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block > div.truncate > span:first-child {
+  html.flat-theme [data-test="account-compact-list"] .account-compact-row > div.lg\:block > div.truncate > span:first-child {
     flex-shrink: 0;
     margin-right: 0;
   }
 
-  html.flat-theme [data-test="account-compact-list"] [data-account-id] > div.lg\:block > div.truncate > span:last-child {
+  html.flat-theme [data-test="account-compact-list"] .account-compact-row > div.lg\:block > div.truncate > span:last-child {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

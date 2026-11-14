@@ -279,8 +279,9 @@
           default-sort-order="asc"
           :sort-storage-key="ACCOUNT_SORT_STORAGE_KEY"
           :estimate-row-height="156"
-          :overscan="5"
+          :overscan="2"
           :virtualize-threshold="50"
+          :preserve-virtual-row-shells="true"
           :clickable-rows="true"
           @row-click="openDetails"
         >
@@ -708,7 +709,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, reactive, computed, inject, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, shallowRef, shallowReactive, reactive, computed, inject, onMounted, onUnmounted, toRaw, watch } from 'vue'
 import { CanceledError } from 'axios'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -721,6 +722,7 @@ import type { AccountListFilters } from '@/api/admin/accounts'
 import accountJobsAPI, { type AccountJob } from '@/api/admin/accountJobs'
 import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import { useTableLoader } from '@/composables/useTableLoader'
+import { useAccountUsagePrefetch } from '@/composables/useAccountUsagePrefetch'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
@@ -775,7 +777,7 @@ import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfil
 import { accountKeyDigestTerm, isAccountKeyDigestTerm } from '@/utils/accountKeySearch'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
-import { formatDateTime, formatRelativeTime } from '@/utils/format'
+import { formatDateTime, formatDateTimeToMinute, formatRelativeTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
@@ -1094,9 +1096,9 @@ const isDesktopViewport = ref(
 let desktopViewportMediaQuery: MediaQueryList | null = null
 let desktopViewportListener: ((event: MediaQueryListEvent) => void) | null = null
 
-const usageBatchByAccountId = shallowRef<Record<string, AccountUsageInfo | null>>({})
-const usageBatchErrorByAccountId = shallowRef<Record<string, string | null>>({})
-const usageBatchLoadingByAccountId = shallowRef<Record<string, boolean>>({})
+const usageBatchByAccountId = shallowReactive<Record<string, AccountUsageInfo | null>>({})
+const usageBatchErrorByAccountId = shallowReactive<Record<string, string | null>>({})
+const usageBatchLoadingByAccountId = shallowReactive<Record<string, boolean>>({})
 const usageBatchRequestTokenByAccountId = shallowRef<Record<string, number>>({})
 const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
 const USAGE_BATCH_CACHE_TTL = 5 * 60 * 1000
@@ -1113,7 +1115,7 @@ const buildDefaultTodayStats = (): WindowStats => ({
   user_cost: 0
 })
 
-const accountSupportsBatchUsage = (account: Account) => {
+const accountSupportsBatchUsage = (account: AccountListItem) => {
   if (account.platform === 'anthropic') {
     return account.type === 'oauth' || account.type === 'setup-token'
   }
@@ -1125,27 +1127,13 @@ const accountSupportsBatchUsage = (account: Account) => {
 }
 
 const setUsageBatchLoading = (accountID: number, loadingState: boolean) => {
-  if (usageBatchLoadingByAccountId.value[String(accountID)] === loadingState) return
-  usageBatchLoadingByAccountId.value = {
-    ...usageBatchLoadingByAccountId.value,
-    [String(accountID)]: loadingState
-  }
+  usageBatchLoadingByAccountId[String(accountID)] = loadingState
 }
 
 const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, error: string | null) => {
   const key = String(accountID)
-  if (usageBatchByAccountId.value[key] !== usage) {
-    usageBatchByAccountId.value = {
-      ...usageBatchByAccountId.value,
-      [key]: usage
-    }
-  }
-  if (usageBatchErrorByAccountId.value[key] !== error) {
-    usageBatchErrorByAccountId.value = {
-      ...usageBatchErrorByAccountId.value,
-      [key]: error
-    }
-  }
+  usageBatchByAccountId[key] = usage
+  usageBatchErrorByAccountId[key] = error
 }
 
 const handleAccountUsageLoaded = (accountID: number, usage: AccountUsageInfo) => {
@@ -1172,53 +1160,42 @@ const flushQueuedUsageBatch = async () => {
     const usageMap = result.usage ?? {}
     const errorMap = result.errors ?? {}
     const now = Date.now()
-    const nextUsage = { ...usageBatchByAccountId.value }
-    const nextErrors = { ...usageBatchErrorByAccountId.value }
-    const nextLoading = { ...usageBatchLoadingByAccountId.value }
-
     for (const accountID of accountIDs) {
       const key = String(accountID)
       if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
         continue
       }
       const usage = usageMap[key] ?? null
-      nextUsage[key] = usage
-      nextErrors[key] = errorMap[key] ?? null
-      nextLoading[key] = false
+      usageBatchByAccountId[key] = usage
+      usageBatchErrorByAccountId[key] = errorMap[key] ?? null
+      usageBatchLoadingByAccountId[key] = false
       if (usage) {
         usageBatchCache.set(accountID, { data: usage, ts: now })
       } else {
         usageBatchCache.delete(accountID)
       }
     }
-
-    usageBatchByAccountId.value = nextUsage
-    usageBatchErrorByAccountId.value = nextErrors
-    usageBatchLoadingByAccountId.value = nextLoading
   } catch (error) {
-    const nextErrors = { ...usageBatchErrorByAccountId.value }
-    const nextLoading = { ...usageBatchLoadingByAccountId.value }
     for (const accountID of accountIDs) {
       const key = String(accountID)
       if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
         continue
       }
-      nextErrors[key] = 'Failed'
-      nextLoading[key] = false
+      usageBatchErrorByAccountId[key] = 'Failed'
+      usageBatchLoadingByAccountId[key] = false
     }
-    usageBatchErrorByAccountId.value = nextErrors
-    usageBatchLoadingByAccountId.value = nextLoading
     console.error('Failed to load account usage batch:', error)
   }
 }
 
-const queueBatchedUsage = (account: Account, options?: { force?: boolean }) => {
+const queueBatchedUsage = (account: AccountListItem, options?: { force?: boolean }) => {
   if (!isDesktopViewport.value) return
   if (!accountSupportsBatchUsage(account)) return
 
   const force = options?.force === true
   const cacheKey = account.id
   const key = String(cacheKey)
+  if (!force && usageBatchLoadingByAccountId[key]) return
 
   if (force) {
     usageBatchCache.delete(cacheKey)
@@ -1231,10 +1208,7 @@ const queueBatchedUsage = (account: Account, options?: { force?: boolean }) => {
     }
   }
 
-  usageBatchErrorByAccountId.value = {
-    ...usageBatchErrorByAccountId.value,
-    [key]: null
-  }
+  usageBatchErrorByAccountId[key] = null
   usageBatchRequestTokenByAccountId.value = {
     ...usageBatchRequestTokenByAccountId.value,
     [key]: ++usageBatchRequestToken
@@ -1504,6 +1478,16 @@ const accountsWithGroups = computed<Account[]>(() => accounts.value.map(account 
   ...account,
   groups: accountGroupsForRow(account)
 })))
+
+// Preserve TanStack's memoized item array before deriving adjacent account windows.
+const tableUsageItems = computed(() => dataTableRef.value?.virtualizer?.getVirtualItems() ?? [])
+const tableUsageRange = computed(() => {
+  const items = tableUsageItems.value
+  return items.length ? { start: items[0].index, end: items[items.length - 1].index } : null
+})
+const tableUsagePrefetchEnabled = computed(() => viewMode.value === 'table' &&
+  isDesktopViewport.value && accounts.value.length > 50 && !hiddenColumns.has('usage'))
+useAccountUsagePrefetch(accounts, tableUsageRange, tableUsagePrefetchEnabled, computed(() => queueBatchedUsage))
 
 const saveSensitiveConsoleState = () => {
   sessionStorage.setItem(ACCOUNT_CONSOLE_SESSION_KEY, JSON.stringify({
@@ -2000,15 +1984,11 @@ watch(loading, (isLoading, wasLoading) => {
 
 watch(accounts, (rows) => {
   const visibleIDs = new Set(rows.map((row) => String(row.id)))
-  usageBatchByAccountId.value = Object.fromEntries(
-    Object.entries(usageBatchByAccountId.value).filter(([key]) => visibleIDs.has(key))
-  )
-  usageBatchErrorByAccountId.value = Object.fromEntries(
-    Object.entries(usageBatchErrorByAccountId.value).filter(([key]) => visibleIDs.has(key))
-  )
-  usageBatchLoadingByAccountId.value = Object.fromEntries(
-    Object.entries(usageBatchLoadingByAccountId.value).filter(([key]) => visibleIDs.has(key))
-  )
+  for (const state of [usageBatchByAccountId, usageBatchErrorByAccountId, usageBatchLoadingByAccountId]) {
+    for (const key of Object.keys(state)) {
+      if (!visibleIDs.has(key)) delete state[key]
+    }
+  }
   usageBatchRequestTokenByAccountId.value = Object.fromEntries(
     Object.entries(usageBatchRequestTokenByAccountId.value).filter(([key]) => visibleIDs.has(key))
   )
@@ -3130,18 +3110,7 @@ const handleTempUnschedReset = async (updated: Account) => {
 }
 const formatExpiresAt = (value: number | null) => {
   if (!value) return '-'
-  return formatDateTime(
-    new Date(value * 1000),
-    {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    },
-    'sv-SE'
-  )
+  return formatDateTimeToMinute(new Date(value * 1000), 'sv-SE')
 }
 const isExpired = (value: number | null) => {
   if (!value) return false

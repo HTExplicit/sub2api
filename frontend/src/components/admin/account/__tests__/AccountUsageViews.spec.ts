@@ -131,7 +131,7 @@ const largeAccounts = Array.from({ length: 1000 }, (_, index) => ({ ...account, 
 
 function mockListLayout() {
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
-    return this.hasAttribute('data-index') ? (this.dataset.index === '0' ? 224 : 112) : 400
+    return this.hasAttribute('data-account-virtual-index') ? (this.dataset.accountVirtualIndex === '0' ? 224 : 112) : 400
   })
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1200)
   const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
@@ -246,18 +246,27 @@ describe('account console usage views', () => {
       mounted.push(wrapper)
       await flushPromises()
       const rows = wrapper.findAll('[data-account-id]')
+      const spacer = wrapper.get('[data-account-virtual-spacer]').element as HTMLElement
+      const canvas = spacer.parentElement!
+      expect(canvas.style.height).toBe('')
+      expect(canvas.style.position).toBe('relative')
+      expect(spacer.children).toHaveLength(0)
+      expect(spacer.getAttribute('aria-hidden')).toBe('true')
+      expect(spacer.hasAttribute('role')).toBe(false)
+      expect(Number.parseFloat(spacer.style.height)).toBeGreaterThan(100_000)
       expect(rows.length).toBeGreaterThan(0)
       expect(rows.length).toBeLessThan(25)
       const requestedIds = requestBatchedUsage.mock.calls.map(([row]) => row.id)
       // The first measured row is taller than the estimate, so the initial window contracts by one item.
       expect(requestedIds.length).toBeLessThan(25)
       expect(rows.every(row => requestedIds.includes(Number(row.attributes('data-account-id'))))).toBe(true)
-      expect(wrapper.get('[data-index="1"]').attributes('style')).toContain('translateY(224px)')
+      expect((wrapper.get('[data-account-virtual-index="1"]').element.parentElement as HTMLElement).style.transform).toBe('translateY(224px)')
 
       wrapper.element.scrollTop = 112_000
       await wrapper.trigger('scroll')
       await flushPromises()
       expect(wrapper.find('[data-account-id="1000"]').exists()).toBe(true)
+      expect(wrapper.get('[data-account-virtual-spacer]').element).toBe(spacer)
       expect((wrapper.get('[data-account-id="999"] input').element as HTMLInputElement).checked).toBe(true)
       await wrapper.get('[data-account-id="999"] input').setValue(false)
       expect(wrapper.emitted('toggle')).toEqual([[999]])
@@ -278,11 +287,16 @@ describe('account console usage views', () => {
       })
       mounted.push(wrapper)
       await flushPromises()
-      expect(wrapper.get('[data-index="0"]').findAll('article')).toHaveLength(1)
+      const spacer = wrapper.get('[data-account-virtual-spacer]').element as HTMLElement
+      expect(spacer.parentElement!.style.height).toBe('')
+      expect(spacer.children).toHaveLength(0)
+      expect(spacer.getAttribute('aria-hidden')).toBe('true')
+      expect(wrapper.get('[data-account-virtual-index="0"]').findAll('article')).toHaveLength(1)
       await resize(1200)
-      expect(wrapper.get('[data-index="0"]').findAll('article')).toHaveLength(2)
+      expect(wrapper.get('[data-account-virtual-index="0"]').findAll('article')).toHaveLength(2)
       await resize(1600)
-      expect(wrapper.get('[data-index="0"]').findAll('article')).toHaveLength(3)
+      expect(wrapper.get('[data-account-virtual-spacer]').element).toBe(spacer)
+      expect(wrapper.get('[data-account-virtual-index="0"]').findAll('article')).toHaveLength(3)
       expect(wrapper.findAll('article').length).toBeLessThan(60)
 
       wrapper.element.scrollTop = 1_000_000
@@ -327,8 +341,8 @@ describe('account console usage views', () => {
     let documentTop = 480
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
-      if (this.hasAttribute('data-index')) return 180
-      if (this.hasAttribute('data-test')) return Number.parseFloat((this.firstElementChild as HTMLElement)?.style.height || '0')
+      if (this.hasAttribute('data-account-virtual-index')) return 180
+      if (this.hasAttribute('data-test')) return Number.parseFloat(this.querySelector<HTMLElement>('[data-account-virtual-spacer]')?.style.height || '0')
       return 0
     })
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function () {
@@ -357,13 +371,17 @@ describe('account console usage views', () => {
     expect(wrapper.element.scrollTop).toBe(0)
     expect(wrapper.findAll('[data-account-id]').length).toBeGreaterThan(0)
     expect(wrapper.findAll('[data-account-id]').length).toBeLessThan(25)
-    expect(wrapper.get('[data-index="0"]').attributes('style')).toContain('translateY(0px)')
+    const firstRowPosition = () => {
+      const row = wrapper.get('[data-account-virtual-index="0"]').element as HTMLElement
+      return (component === AccountCompactList ? row.parentElement! : row).style.transform
+    }
+    expect(firstRowPosition()).toBe('translateY(0px)')
 
     // A wrapped filter moves the document list; the observer updates scrollMargin, not the root height.
     documentTop = 600
     observerTargets.get(wrapper.element)!([], {} as ResizeObserver)
     await flushPromises()
-    expect(wrapper.get('[data-index="0"]').attributes('style')).toContain('translateY(0px)')
+    expect(firstRowPosition()).toBe('translateY(0px)')
 
     vi.stubGlobal('scrollY', 90_000)
     window.dispatchEvent(new Event('scroll'))
@@ -389,6 +407,7 @@ describe('account console usage views', () => {
     mounted.push(wrapper)
     await flushPromises()
     expect(wrapper.findAll('[data-account-id]')).toHaveLength(50)
+    expect(wrapper.find('[data-account-virtual-spacer]').exists()).toBe(false)
     expect(wrapper.get('[data-account-id]').attributes('style')).toBeUndefined()
   })
 

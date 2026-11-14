@@ -7,13 +7,21 @@
       <Icon name="inbox" size="xl" />
       <span class="mt-2 text-sm">{{ t('empty.noData') }}</span>
     </div>
-    <div v-else :style="containerStyle">
-    <div v-for="{ accounts: [account], index, key, start } in renderRows" :key="key" :data-account-id="account.id"
+    <div v-else :style="containerStyle" role="list" :aria-owns="orderedSlotIds">
+    <div v-if="spacerStyle" data-account-virtual-spacer aria-hidden="true" :style="spacerStyle" />
+    <div v-for="slot in renderSlots" :key="slot.key" :id="slotId(slot.key)"
+      :style="[slotStyle(slot.row), reusePresentation && slot.row ? { willChange: 'transform' } : undefined]"
+      role="listitem" :aria-posinset="slot.row ? slot.row.index + 1 : undefined"
+      :aria-setsize="slot.row ? accounts.length : undefined"
+      :aria-hidden="slot.row ? undefined : true" :inert="slot.row ? undefined : true">
+    <div v-for="{ accounts: [account], index, key } in slot.row ? [slot.row] : []" :key="reusePresentation ? slot.key : key" :data-account-id="account.id"
       :ref="measureRow"
-      :data-index="index"
-      :style="rowStyle(start)"
-      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
+      :data-account-virtual-index="index"
+      class="account-compact-row grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
       :class="[selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500 bg-raised' : '', { 'border-b-0': index === accounts.length - 1 }]"
+      @vue:before-update="onRowBeforeUpdate"
+      @pointerdown.capture="rememberPointerAccount($event, account.id)"
+      @click.capture="guardPointerClick($event, account.id)"
       @click="emit('rowClick', account)"
     >
       <AccountSelectionCheckbox :checked="selectedSet.has(account.id)"
@@ -61,7 +69,7 @@
           <span class="text-xs text-gray-400">{{ account.management_folder?.name || t('admin.accounts.folderUncategorized') }}</span>
         </div>
         <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
-          <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span><AccountGroupsCell :groups="account.groups" /><span>{{ account.proxy?.name || t('admin.accounts.directConnection') }}</span>
+          <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span><AccountGroupsCell :groups="account.groups" :reset-key="account.id" /><span>{{ account.proxy?.name || t('admin.accounts.directConnection') }}</span>
         </div>
       </div>
 
@@ -75,11 +83,12 @@
       </div>
     </div>
     </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, ref, toRef, useId, type VNode } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
@@ -90,6 +99,7 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Account, AccountUsageInfo, WindowStats } from '@/types'
 import { useAccountVirtualRows } from '@/composables/useAccountVirtualRows'
+import { useAccountUsagePrefetch } from '@/composables/useAccountUsagePrefetch'
 
 const props = defineProps<{
   accounts: Account[]
@@ -118,9 +128,46 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const selectedSet = computed(() => new Set(props.selectedIds))
 const scrollElement = ref<HTMLElement | null>(null)
-const { renderRows, containerStyle, rowStyle, measureRow } = useAccountVirtualRows(
-  toRef(props, 'accounts'), scrollElement, ref(1), 112,
+const { renderRows, renderSlots, slotWindow, windowScrolling, containerStyle, spacerStyle, slotStyle, measureRow } = useAccountVirtualRows(
+  toRef(props, 'accounts'), scrollElement, ref(1), 112, 0, true,
 )
+const listId = useId()
+const slotId = (key: string) => `${listId}-${key}`
+const orderedSlotIds = computed(() => slotWindow.value
+  ? renderSlots.value.flatMap(slot => slot.row ? [{ id: slotId(slot.key), index: slot.row.index }] : [])
+    .sort((a, b) => a.index - b.index).map(slot => slot.id).join(' ')
+  : undefined,
+)
+const reusePresentation = computed(() => slotWindow.value && !windowScrolling.value &&
+  typeof props.requestBatchedUsage === 'function')
+
+const usagePrefetchRange = computed(() => {
+  const rows = renderRows.value
+  return rows.length > 0 ? { start: rows[0].index, end: rows[rows.length - 1].index } : null
+})
+useAccountUsagePrefetch(toRef(props, 'accounts'), usagePrefetchRange, reusePresentation, toRef(props, 'requestBatchedUsage'))
+
+function onRowBeforeUpdate(vnode: VNode, previous: VNode | null) {
+  if (vnode.props?.['data-account-id'] === previous?.props?.['data-account-id']) return
+  const active = document.activeElement
+  if (active instanceof HTMLElement && (vnode.el as HTMLElement).contains(active)) active.blur()
+}
+
+const pointerAccounts = new WeakMap<HTMLElement, number>()
+function rememberPointerAccount(event: PointerEvent, accountId: number) {
+  pointerAccounts.set(event.currentTarget as HTMLElement, accountId)
+}
+
+function guardPointerClick(event: MouseEvent, accountId: number) {
+  const row = event.currentTarget as HTMLElement
+  const pressedAccount = pointerAccounts.get(row)
+  pointerAccounts.delete(row)
+  // A recycled control must not apply a pointer press that began on a different account.
+  if (event.detail > 0 && pressedAccount !== undefined && pressedAccount !== accountId) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+}
 
 const displayEmail = (account: Account) => String(
   account.extra?.email_address || account.extra?.email || account.credentials?.email || account.parent_email || ''

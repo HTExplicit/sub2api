@@ -51,6 +51,7 @@ const colorClass = computed(() => {
 <style scoped>
 .spinner {
   @apply inline-block rounded-full border-solid border-current border-r-transparent;
+  animation: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {

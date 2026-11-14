@@ -26,14 +26,7 @@
 
     <!-- Popover 显示完整列表 -->
     <Teleport to="#overlay-root">
-      <Transition
-        enter-active-class="transition duration-150 ease-out"
-        enter-from-class="opacity-0 scale-95"
-        enter-to-class="opacity-100 scale-100"
-        leave-active-class="transition duration-100 ease-in"
-        leave-from-class="opacity-100 scale-100"
-        leave-to-class="opacity-0 scale-95"
-      >
+      <Transition name="account-groups-popover">
         <div
           v-if="showPopover"
           ref="popoverRef"
@@ -68,20 +61,20 @@
           </div>
         </div>
       </Transition>
-    </Teleport>
 
-    <!-- 点击外部关闭 popover -->
-    <div
-      v-if="showPopover"
-      class="fixed inset-0 z-40"
-      @click="showPopover = false"
-    />
+      <!-- 点击外部关闭 popover -->
+      <div
+        v-if="showPopover"
+        class="fixed inset-0 z-40"
+        @click="showPopover = false"
+      />
+    </Teleport>
   </div>
   <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import type { Group } from '@/types'
@@ -89,6 +82,7 @@ import type { Group } from '@/types'
 interface Props {
   groups: Group[] | null | undefined
   maxDisplay?: number
+  resetKey?: string | number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -100,6 +94,12 @@ const { t } = useI18n()
 const moreButtonRef = ref<HTMLElement | null>(null)
 const popoverRef = ref<HTMLElement | null>(null)
 const showPopover = ref(false)
+
+watch(() => props.resetKey, () => {
+  const active = document.activeElement
+  if (active instanceof HTMLElement && popoverRef.value?.contains(active)) active.blur()
+  showPopover.value = false
+})
 
 // 显示的分组（最多显示 maxDisplay 个）
 const displayGroups = computed(() => {
@@ -120,7 +120,7 @@ const hiddenCount = computed(() => {
 
 // Popover 位置样式
 const popoverStyle = computed(() => {
-  if (!moreButtonRef.value) return {}
+  if (!showPopover.value || !moreButtonRef.value) return {}
   const rect = moreButtonRef.value.getBoundingClientRect()
   const viewportHeight = window.innerHeight
   const viewportWidth = window.innerWidth
@@ -159,3 +159,29 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
 })
 </script>
+
+<style scoped>
+.account-groups-popover-enter-active,
+.account-groups-popover-leave-active {
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.account-groups-popover-enter-from,
+.account-groups-popover-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-groups-popover-enter-active,
+  .account-groups-popover-leave-active {
+    transition: none;
+  }
+
+  .account-groups-popover-enter-from,
+  .account-groups-popover-leave-to {
+    opacity: 1;
+    transform: none;
+  }
+}
+</style>

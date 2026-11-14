@@ -102,7 +102,7 @@
       <div v-for="item in activeModelStatuses" :key="`${item.kind}-${item.model}`" class="mb-1 break-inside-avoid">
         <!-- The badge is a button: hover, click / tap or keyboard opens the details in a teleported popover
              (not clipped by the table; a long upstream message wraps and the popover scrolls). -->
-        <InfoPopover :label="item.model" :trigger-attrs="{ 'data-testid': 'model-status-trigger' }" data-testid="model-status-tooltip">
+        <InfoPopover :reset-key="account.id" :label="item.model" :trigger-attrs="{ 'data-testid': 'model-status-trigger' }" data-testid="model-status-tooltip">
           <template #trigger>
             <!-- 积分已用尽 -->
             <span

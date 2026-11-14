@@ -94,11 +94,12 @@
     v-else
     ref="tableWrapperRef"
     class="table-wrapper"
+    :data-virtual-row-shells="preservingVirtualRowShells ? '' : undefined"
     :class="{
       'is-scrollable': isScrollable
     }"
   >
-    <table data-ui="data-table" class="w-full min-w-max divide-y divide-gray-200 dark:divide-dark-700">
+    <table data-ui="data-table" class="w-full min-w-max">
       <thead class="table-header bg-gray-50 dark:bg-dark-800">
         <tr>
           <th
@@ -223,9 +224,9 @@
           </th>
         </tr>
       </thead>
-      <tbody class="table-body divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
+      <tbody class="table-body bg-white dark:bg-dark-900">
         <!-- Loading skeleton -->
-        <tr v-if="loading" v-for="i in 5" :key="i">
+        <tr v-if="loading" v-for="i in 5" :key="i" :data-table-divider="i > 1 ? '' : undefined">
           <td v-if="selectable" class="w-11 min-w-11 px-3 py-4">
             <div class="mx-auto h-4 w-4 animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
           </td>
@@ -257,18 +258,26 @@
           </td>
         </tr>
 
-        <!-- Data rows: windowed when large, fully rendered when small (shared row/cell template) -->
+        <!-- Account-keyed shells keep the tbody stable; only active rows mount cell content. -->
         <template v-else>
-          <tr v-if="virtualPaddingTop > 0" aria-hidden="true">
+          <tr
+            v-if="preservingVirtualRowShells || virtualPaddingTop > 0"
+            aria-hidden="true"
+            :style="virtualPaddingTop > 0 ? undefined : { display: 'none' }"
+          >
             <td :colspan="tableColumnCount"
                 :style="{ height: virtualPaddingTop + 'px', padding: 0, border: 'none' }">
             </td>
           </tr>
           <tr
             v-for="item in renderRows"
-            :key="resolveRowKey(item.row, item.index)"
-            :data-row-id="resolveRowKey(item.row, item.index)"
+            :key="item.key"
+            v-memo="[item.active ? {} : null, item.index]"
+            :data-row-id="item.active ? item.key : undefined"
             :data-index="item.index"
+            :data-table-divider="item.active && item.index > 0 ? '' : undefined"
+            :aria-hidden="item.active ? undefined : 'true'"
+            :style="item.active ? undefined : { display: 'none' }"
             :ref="item.measure ? measureElement : undefined"
             class="hover:bg-gray-50 dark:hover:bg-dark-800"
             :class="{
@@ -277,73 +286,81 @@
             }"
             @click="clickableRows && emit('rowClick', item.row)"
           >
-            <td v-if="selectable" class="w-11 min-w-11 px-3 py-4 text-center">
-              <input
-                type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
-                :checked="isRowSelected(item.row, item.index)"
-                :aria-label="getRowSelectionLabel(item.row, item.index)"
-                data-test="select-row"
-                @click.stop
-                @change="toggleRowSelection(item.row, item.index, ($event.target as HTMLInputElement).checked)"
-              />
-            </td>
-            <td
-              v-for="(column, colIndex) in displayColumns"
-              :key="column.key"
-              :data-column="column.key"
-              :data-stack="column.stack?.length ? '' : undefined"
-              :class="[
-                'whitespace-nowrap py-4 text-sm text-gray-900 dark:text-gray-100',
-                getAdaptivePaddingClass(),
-                getStickyColumnClass(column, colIndex),
-                column.class
-              ]"
-            >
-              <slot v-if="!column.stack?.length || (!column.hostHidden && !column.cellLabel)"
-                    :name="`cell-${column.key}`"
-                    :row="item.row"
-                    :value="item.row[column.key]">
-                {{ column.formatter
-                   ? column.formatter(item.row[column.key], item.row)
-                   : item.row[column.key] }}
-              </slot>
-              <!-- Stacked parts: each part's own cell slot on a line of its own, in column order. data-host-line: nothing
-                   is drawn above the lines (the host's content is their first, labelled line, or the host is hidden). -->
-              <div
-                v-if="column.stack?.length"
-                data-ui="cell-lines"
-                :data-inline="column.stackLayout === 'inline' ? '' : undefined"
-                :data-host-line="column.cellLabel || column.hostHidden ? '' : undefined"
-              >
-                <div v-if="column.cellLabel && !column.hostHidden" data-ui="cell-line" :data-line="column.key">
-                  <span data-ui="cell-line-label">{{ column.cellLabel }}</span>
-                  <div data-ui="cell-line-value">
-                    <slot :name="`cell-${column.key}`"
-                          :row="item.row"
-                          :value="item.row[column.key]">
-                      {{ column.formatter
-                         ? column.formatter(item.row[column.key], item.row)
-                         : item.row[column.key] }}
-                    </slot>
+            <DataTableRowContent v-if="item.active" :row="item.row" :index="item.index">
+              <template #default="r">
+                <td v-if="selectable" class="w-11 min-w-11 px-3 py-4 text-center">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+                    :checked="isRowSelected(r.row, r.index)"
+                    :aria-label="getRowSelectionLabel(r.row, r.index)"
+                    data-test="select-row"
+                    @click.stop
+                    @change="toggleRowSelection(r.row, r.index, ($event.target as HTMLInputElement).checked)"
+                  />
+                </td>
+                <td
+                  v-for="(column, colIndex) in displayColumns"
+                  :key="column.key"
+                  :data-column="column.key"
+                  :data-stack="column.stack?.length ? '' : undefined"
+                  :class="[
+                    'whitespace-nowrap py-4 text-sm text-gray-900 dark:text-gray-100',
+                    getAdaptivePaddingClass(),
+                    getStickyColumnClass(column, colIndex),
+                    column.class
+                  ]"
+                >
+                  <slot v-if="!column.stack?.length || (!column.hostHidden && !column.cellLabel)"
+                        :name="`cell-${column.key}`"
+                        :row="r.row"
+                        :value="r.row[column.key]">
+                    {{ column.formatter
+                       ? column.formatter(r.row[column.key], r.row)
+                       : r.row[column.key] }}
+                  </slot>
+                  <!-- Stacked parts keep their original column slots and order. -->
+                  <div
+                    v-if="column.stack?.length"
+                    data-ui="cell-lines"
+                    :data-inline="column.stackLayout === 'inline' ? '' : undefined"
+                    :data-host-line="column.cellLabel || column.hostHidden ? '' : undefined"
+                  >
+                    <div v-if="column.cellLabel && !column.hostHidden" data-ui="cell-line" :data-line="column.key">
+                      <span data-ui="cell-line-label">{{ column.cellLabel }}</span>
+                      <div data-ui="cell-line-value">
+                        <slot :name="`cell-${column.key}`"
+                              :row="r.row"
+                              :value="r.row[column.key]">
+                          {{ column.formatter
+                             ? column.formatter(r.row[column.key], r.row)
+                             : r.row[column.key] }}
+                        </slot>
+                      </div>
+                    </div>
+                    <div v-for="part in column.stack" :key="part.key" data-ui="cell-line" :data-line="part.key">
+                      <span v-if="part.cellLabel" data-ui="cell-line-label">{{ part.cellLabel === true ? part.label : part.cellLabel }}</span>
+                      <div data-ui="cell-line-value">
+                        <slot :name="`cell-${part.key}`"
+                              :row="r.row"
+                              :value="r.row[part.key]">
+                          {{ part.formatter
+                             ? part.formatter(r.row[part.key], r.row)
+                             : r.row[part.key] }}
+                        </slot>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div v-for="part in column.stack" :key="part.key" data-ui="cell-line" :data-line="part.key">
-                  <span v-if="part.cellLabel" data-ui="cell-line-label">{{ part.cellLabel === true ? part.label : part.cellLabel }}</span>
-                  <div data-ui="cell-line-value">
-                    <slot :name="`cell-${part.key}`"
-                          :row="item.row"
-                          :value="item.row[part.key]">
-                      {{ part.formatter
-                         ? part.formatter(item.row[part.key], item.row)
-                         : item.row[part.key] }}
-                    </slot>
-                  </div>
-                </div>
-              </div>
-            </td>
+                </td>
+              </template>
+            </DataTableRowContent>
           </tr>
-          <tr v-if="virtualPaddingBottom > 0" aria-hidden="true">
+          <tr
+            v-if="preservingVirtualRowShells || virtualPaddingBottom > 0"
+            aria-hidden="true"
+            data-table-divider
+            :style="virtualPaddingBottom > 0 ? undefined : { display: 'none' }"
+          >
             <td :colspan="tableColumnCount"
                 :style="{ height: virtualPaddingBottom + 'px', padding: 0, border: 'none' }">
             </td>
@@ -360,6 +377,7 @@ import { useVirtualizer, observeElementRect as observeElementRectDefault } from 
 import { useI18n } from 'vue-i18n'
 import type { Column, StackPart } from './types'
 import { flattenStackedColumns, inColumnOrder } from './columnStack'
+import DataTableRowContent from './DataTableRowContent.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { flatThemeActive } from '@/utils/flatTheme'
 
@@ -500,6 +518,8 @@ interface Props {
    * estimated-vs-actual row heights when rows have variable height.
    */
   virtualizeThreshold?: number
+  /** Keep account-keyed empty TR shells outside large virtual windows. */
+  preserveVirtualRowShells?: boolean
   /** Enable controlled row selection. Stable row keys are strongly recommended. */
   selectable?: boolean
   /** Selected row keys. Keys outside the current data page are preserved. */
@@ -514,6 +534,7 @@ const props = withDefaults(defineProps<Props>(), {
   stickyActionsColumn: true,
   defaultSortOrder: 'asc',
   serverSideSort: false,
+  preserveVirtualRowShells: false,
   selectable: false,
   selectedKeys: () => []
 })
@@ -877,16 +898,18 @@ const toggleAllVisible = (checked: boolean) => {
 const shouldVirtualize = computed(() =>
   showTable.value && (sortedData.value?.length ?? 0) > (props.virtualizeThreshold ?? 100)
 )
+const preservingVirtualRowShells = computed(() =>
+  props.preserveVirtualRowShells && shouldVirtualize.value
+)
 
-const rowVirtualizer = useVirtualizer(computed(() => ({
+const rowVirtualizer = useVirtualizer<HTMLElement, Element>(computed(() => ({
   count: shouldVirtualize.value ? (sortedData.value?.length ?? 0) : 0,
   getScrollElement: () => tableWrapperRef.value,
   // 用行主键(与模板 :key 一致)而非默认的 index 作为 itemSizeCache 键,
   // 这样排序/筛选/跨阈值来回都能复用正确的已测行高,而不是残留的按 index 缓存 → 消除高度校正抖动。
-  getItemKey: (index: number) => {
-    const row = sortedData.value?.[index]
-    return row != null ? resolveRowKey(row, index) : index
-  },
+  // Selection already caches these keys; size updates need only the primitive
+  // key, without walking every reactive row again.
+  getItemKey: (index: number) => visibleRowKeys.value[index] ?? index,
   estimateSize: () => props.estimateRowHeight ?? 56,
   overscan: props.overscan ?? 5,
   // 兜底高度:首个有效高度读数到来前,先按一屏渲染,避免空白帧
@@ -897,6 +920,10 @@ const rowVirtualizer = useVirtualizer(computed(() => ({
   useAnimationFrameWithResizeObserver: true,
 })))
 const rowVirtualizerInstance = rowVirtualizer.value
+// TanStack has no public unobserve method for a row that remains connected.
+const rowMeasurementObserver = (rowVirtualizerInstance as unknown as {
+  observer: { unobserve: (node: Element) => void }
+}).observer
 
 const virtualItems = computed(() => rowVirtualizer.value.getVirtualItems())
 
@@ -978,14 +1005,48 @@ watch(
   { flush: 'post' }
 )
 
-// 统一的渲染行列表:虚拟化开启时只取窗口内的行(需 measure 交给虚拟器测量),
-// 关闭时取全部行(无需测量)。模板据此渲染,两种模式共用同一套单元格结构。
-const renderRows = computed<Array<{ index: number; row: any; measure: boolean }>>(() => {
+type RenderRow = {
+  key: string | number
+  index: number
+  row: any
+  measure: boolean
+  active: boolean
+}
+
+// Every table mode uses the same keyed TR and row-content boundary. Opted-in
+// virtual lists keep only the empty shells outside the active window.
+const renderRows = computed<RenderRow[]>(() => {
   const data = sortedData.value ?? []
-  if (shouldVirtualize.value) {
-    return virtualItems.value.map(vr => ({ index: vr.index, row: data[vr.index], measure: true }))
+  const keys = visibleRowKeys.value
+  if (!shouldVirtualize.value) {
+    return data.map((row, index) => ({ key: keys[index], index, row, measure: false, active: true }))
   }
-  return data.map((row, index) => ({ index, row, measure: false }))
+
+  const items = virtualItems.value
+  if (!preservingVirtualRowShells.value) {
+    return items.map(item => ({
+      key: keys[item.index], index: item.index, row: data[item.index], measure: true, active: true
+    }))
+  }
+
+  const activeIndexes = new Set(items.map(item => item.index))
+  const activeKeys = new Set(items.map(item => item.key))
+  // Hidden shells stay connected. Release only leaving rows before the DOM
+  // patch so ResizeObserver cannot replace their real cached height with zero.
+  for (const [key, node] of rowVirtualizerInstance.elementsCache) {
+    if (!activeKeys.has(key)) {
+      rowMeasurementObserver.unobserve(node)
+      rowVirtualizerInstance.elementsCache.delete(key)
+      pendingMeasurements.delete(node as HTMLElement)
+    }
+  }
+  for (const node of pendingMeasurements) {
+    if (!activeIndexes.has(Number(node.dataset.index))) pendingMeasurements.delete(node)
+  }
+  return data.map((row, index) => {
+    const active = activeIndexes.has(index)
+    return { key: keys[index], index, row, measure: active, active }
+  })
 })
 
 const hasActionsColumn = computed(() => {
@@ -1122,6 +1183,22 @@ defineExpose({
 .table-body {
   position: relative;
   z-index: 0;
+  border-top-width: 1px;
+}
+
+.table-body,
+.table-body > tr[data-table-divider] {
+  border-color: rgb(var(--theme-line-gray-200, var(--theme-color-gray-200, 229 231 235)));
+}
+
+.dark .table-body,
+.dark .table-body > tr[data-table-divider] {
+  border-color: rgb(var(--theme-line-dark-700, var(--theme-color-dark-700, 51 65 85)));
+}
+
+/* Logical rows own their divider without a sibling selector as the virtual window changes. */
+.table-body > tr[data-table-divider] {
+  border-top-width: 1px;
 }
 
 /* 所有表头单元格固定在顶部 */

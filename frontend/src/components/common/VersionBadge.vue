@@ -1021,7 +1021,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 
 .dropdown-enter-from,
@@ -1032,13 +1032,29 @@ onBeforeUnmount(() => {
 
 .rollback-enter-active,
 .rollback-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
 }
 
 .rollback-enter-from,
 .rollback-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-enter-active,
+  .dropdown-leave-active,
+  .rollback-enter-active,
+  .rollback-leave-active {
+    transition: opacity 120ms ease-out;
+  }
+
+  .dropdown-enter-from,
+  .dropdown-leave-to,
+  .rollback-enter-from,
+  .rollback-leave-to {
+    transform: none;
+  }
 }
 
 .line-clamp-3 {

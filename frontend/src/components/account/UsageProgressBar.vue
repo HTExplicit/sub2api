@@ -55,7 +55,7 @@
         ]"
       >
         <div
-          :class="['h-full transition-all duration-300', barClass]"
+          :class="['h-full transition-colors duration-[120ms]', barClass]"
           :style="{ width: barWidth }"
         ></div>
       </div>

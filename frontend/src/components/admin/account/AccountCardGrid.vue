@@ -7,15 +7,23 @@
       <Icon name="inbox" size="xl" />
       <span class="mt-2 text-sm">{{ t('empty.noData') }}</span>
     </div>
-    <div v-else class="flex flex-col gap-3" :style="containerStyle">
-      <div v-for="row in renderRows" :key="row.key" :ref="measureRow" :data-index="row.index"
-        class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3" :style="rowStyle(row.start)">
+    <div v-else class="flex flex-col gap-3" :style="containerStyle" role="list" :aria-owns="orderedSlotIds">
+      <div v-if="spacerStyle" data-account-virtual-spacer aria-hidden="true" :style="spacerStyle" />
+      <div v-for="slot in renderSlots" :key="slot.key" :id="slotId(slot.key)"
+        :ref="slot.row ? measureRow : undefined" :data-account-virtual-index="slot.row?.index"
+        class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3" :style="slotStyle(slot.row)"
+        role="listitem" :aria-posinset="slot.row ? slot.row.index + 1 : undefined"
+        :aria-setsize="slot.row ? Math.ceil(accounts.length / columns) : undefined"
+        :aria-hidden="slot.row ? undefined : true" :inert="slot.row ? undefined : true">
       <article
-        v-for="account in row.accounts"
-        :key="account.id"
+        v-for="(account, column) in slot.row?.accounts ?? []"
+        :key="reusePresentation ? column : account.id"
         :data-account-id="account.id"
         class="cursor-pointer rounded-md border bg-white p-4 transition-colors hover:border-gray-300 hover:bg-gray-50/60 dark:bg-dark-900 dark:hover:border-dark-500 dark:hover:bg-dark-800/70"
         :class="selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500' : ''"
+        @vue:before-update="onCardBeforeUpdate"
+        @pointerdown.capture="rememberPointerAccount($event, account.id)"
+        @click.capture="guardPointerClick($event, account.id)"
         @click="emit('rowClick', account)"
       >
         <div class="flex items-start gap-3">
@@ -46,6 +54,7 @@
 
         <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700" data-test="account-card-usage">
           <AccountUsageCell
+            :key="reusePresentation ? 'managed-list' : account.id"
             :account="account"
             :today-stats="todayStats[String(account.id)] ?? null"
             :today-stats-loading="todayStatsLoading"
@@ -78,7 +87,7 @@
           </div>
           <div class="min-w-0">
             <div class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</div>
-            <AccountGroupsCell class="mt-1" :groups="account.groups" />
+            <AccountGroupsCell class="mt-1" :groups="account.groups" :reset-key="account.id" />
             <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
               {{ account.proxy?.name || t('admin.accounts.directConnection') }}
             </div>
@@ -92,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, ref, toRef, useId, type VNode } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
@@ -104,6 +113,7 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Account, AccountUsageInfo, WindowStats } from '@/types'
 import { useAccountVirtualRows } from '@/composables/useAccountVirtualRows'
+import { useAccountUsagePrefetch } from '@/composables/useAccountUsagePrefetch'
 
 const props = defineProps<{
   accounts: Account[]
@@ -135,9 +145,50 @@ const scrollElement = ref<HTMLElement | null>(null)
 const wide = useMediaQuery('(min-width: 1536px)')
 const desktop = useMediaQuery('(min-width: 1024px)')
 const columns = computed(() => wide.value ? 3 : desktop.value ? 2 : 1)
-const { renderRows, containerStyle, rowStyle, measureRow } = useAccountVirtualRows(
-  toRef(props, 'accounts'), scrollElement, columns, 360, 12,
+const { renderRows, renderSlots, slotWindow, windowScrolling, containerStyle, spacerStyle, slotStyle, measureRow } = useAccountVirtualRows(
+  toRef(props, 'accounts'), scrollElement, columns, 360, 12, true,
 )
+const listId = useId()
+const slotId = (key: string) => `${listId}-${key}`
+const orderedSlotIds = computed(() => slotWindow.value
+  ? renderSlots.value.flatMap(slot => slot.row ? [{ id: slotId(slot.key), index: slot.row.index }] : [])
+    .sort((a, b) => a.index - b.index).map(slot => slot.id).join(' ')
+  : undefined,
+)
+const reusePresentation = computed(() => slotWindow.value && !windowScrolling.value &&
+  typeof props.requestBatchedUsage === 'function')
+const usagePrefetchRange = computed(() => {
+  const rows = renderRows.value
+  return rows.length > 0 ? {
+    start: rows[0].index * columns.value,
+    end: Math.min((rows[rows.length - 1].index + 1) * columns.value, props.accounts.length) - 1,
+  } : null
+})
+const usagePrefetchEnabled = computed(() => props.accounts.length > 50 && desktop.value &&
+  typeof props.requestBatchedUsage === 'function')
+useAccountUsagePrefetch(toRef(props, 'accounts'), usagePrefetchRange, usagePrefetchEnabled, toRef(props, 'requestBatchedUsage'))
+
+function onCardBeforeUpdate(vnode: VNode, previous: VNode | null) {
+  if (vnode.props?.['data-account-id'] === previous?.props?.['data-account-id']) return
+  const active = document.activeElement
+  if (active instanceof HTMLElement && (vnode.el as HTMLElement).contains(active)) active.blur()
+}
+
+const pointerAccounts = new WeakMap<HTMLElement, number>()
+function rememberPointerAccount(event: PointerEvent, accountId: number) {
+  pointerAccounts.set(event.currentTarget as HTMLElement, accountId)
+}
+
+function guardPointerClick(event: MouseEvent, accountId: number) {
+  const card = event.currentTarget as HTMLElement
+  const pressedAccount = pointerAccounts.get(card)
+  pointerAccounts.delete(card)
+  // A recycled control must not apply a pointer press that began on a different account.
+  if (event.detail > 0 && pressedAccount !== undefined && pressedAccount !== accountId) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+}
 
 const displayEmail = (account: Account) => String(
   account.extra?.email_address || account.extra?.email || account.credentials?.email || account.parent_email || ''

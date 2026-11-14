@@ -1,10 +1,14 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
 import type { Ref } from 'vue'
 
 import DataTable from '../DataTable.vue'
 import type { Column } from '../types'
 import { flatThemeActive } from '@/utils/flatTheme'
+import DataTableDynamicSlotFixture from './fixtures/DataTableDynamicSlotFixture.vue'
+import DataTableEditorProbe from './fixtures/DataTableEditorProbe.vue'
+import DataTableShellFixture from './fixtures/DataTableShellFixture.vue'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -59,6 +63,80 @@ describe('DataTable', () => {
     stubDesktopMatchMedia()
     setConsoleTheme(false)
     localStorage.clear()
+  })
+
+  it('keeps dividers on logical rows through sorting, loading and empty states', async () => {
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name', sortable: true }],
+        data: [{ id: 1, name: 'Alpha' }, { id: 2, name: 'Beta' }, { id: 3, name: 'Gamma' }],
+        defaultSortKey: 'name',
+        defaultSortOrder: 'asc',
+      },
+    })
+    try {
+      await flushPromises()
+      const firstAccount = wrapper.get('tr[data-row-id="1"]').element
+      expect(wrapper.get('table').classes()).not.toContain('divide-y')
+      expect(wrapper.get('tbody').classes()).not.toContain('divide-y')
+      expect(wrapper.findAll('tbody tr').map(row => row.attributes('data-table-divider'))).toEqual([undefined, '', ''])
+
+      await wrapper.get('th[data-column="name"]').trigger('click')
+      expect(wrapper.get('tr[data-row-id="1"]').element).toBe(firstAccount)
+      expect(wrapper.get('tr[data-row-id="1"]').attributes('data-table-divider')).toBe('')
+      expect(wrapper.get('tr[data-row-id="3"]').attributes('data-table-divider')).toBeUndefined()
+
+      await wrapper.setProps({ loading: true })
+      expect(wrapper.findAll('tbody tr').map(row => row.attributes('data-table-divider'))).toEqual([undefined, '', '', '', ''])
+      await wrapper.setProps({ loading: false, data: [] })
+      expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+      expect(wrapper.get('tbody tr').attributes('data-table-divider')).toBeUndefined()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('preserves spacer borders while the virtual window reaches the final logical row', async () => {
+    const heightRead = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      return this.hasAttribute('data-index') ? 56 : 400
+    })
+    const wrapper = mount(DataTable, {
+      attachTo: document.body,
+      props: {
+        columns: [{ key: 'name', label: 'Name' }],
+        data: Array.from({ length: 100 }, (_, index) => ({ id: index + 1, name: `Row ${index + 1}` })),
+        virtualizeThreshold: 10,
+        overscan: 2,
+      },
+    })
+    try {
+      await flushPromises()
+      expect(wrapper.get('tbody tr[data-index="0"]').attributes('data-table-divider')).toBeUndefined()
+      expect(wrapper.get('tbody tr[aria-hidden="true"]').attributes('data-table-divider')).toBe('')
+
+      wrapper.element.scrollTop = 56 * 20
+      await wrapper.trigger('scroll')
+      await flushPromises()
+      const middleSpacers = wrapper.findAll('tbody tr[aria-hidden="true"]')
+      expect(middleSpacers).toHaveLength(2)
+      expect(middleSpacers[0].attributes('data-table-divider')).toBeUndefined()
+      expect(middleSpacers[1].attributes('data-table-divider')).toBe('')
+      expect(wrapper.findAll('tbody tr[data-index]').every(row => row.attributes('data-table-divider') === '')).toBe(true)
+
+      const exposed = (wrapper.vm as any).virtualizer
+      const instance = exposed?.value ?? exposed
+      wrapper.element.scrollTop = instance.getTotalSize() - Math.max(window.innerHeight - 320, 400)
+      await wrapper.trigger('scroll')
+      await flushPromises()
+      expect(wrapper.get('tbody tr[data-index="99"]').attributes('data-table-divider')).toBe('')
+      const finalSpacers = wrapper.findAll('tbody tr[aria-hidden="true"]')
+      expect(finalSpacers).toHaveLength(1)
+      expect(finalSpacers[0].attributes('data-table-divider')).toBeUndefined()
+      expect(wrapper.get('tbody tr:last-child').attributes('data-row-id')).toBe('100')
+    } finally {
+      wrapper.unmount()
+      heightRead.mockRestore()
+    }
   })
 
   it('updates overflow on resize without measuring or changing action buttons', async () => {
@@ -240,6 +318,228 @@ describe('DataTable', () => {
       wrapper.unmount()
       heightRead.mockRestore()
     }
+  })
+
+  describe('preserved virtual row shells', () => {
+    const rowsForShells = (count: number) => Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      name: `Row ${index + 1}`,
+      detail: { label: `Detail ${index + 1}` },
+    }))
+    const stubShellHeights = () => vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      if (!this.hasAttribute('data-index')) return 400
+      return this.style.display === 'none' ? 0 : 56
+    })
+
+    it('keeps 1000 ID shells while retaining active editors, focus, selection and measured sizes', async () => {
+      const heightRead = stubShellHeights()
+      const rows = rowsForShells(1000)
+      const updatedRowIds: number[] = []
+      const wrapper = mount(DataTableShellFixture, {
+        attachTo: document.body,
+        props: { rows, estimateRowHeight: 28 },
+        global: {
+          mixins: [{
+            updated() {
+              if (this.$options.__name === 'DataTableRowContent') {
+                updatedRowIds.push((this.$props as { row: { id: number } }).row.id)
+              }
+            },
+          }],
+        },
+      })
+      const table = wrapper.getComponent(DataTable)
+      try {
+        await flushPromises()
+        table.element.scrollTop = 56 * 10
+        await table.trigger('scroll')
+        await flushPromises()
+
+        const beforeRows = table.findAll('tbody tr[data-row-id]')
+        const leaving = beforeRows[0]
+        const leavingId = Number(leaving.attributes('data-row-id'))
+        const retainedId = Number(beforeRows[1].attributes('data-row-id'))
+        const retained = table.get(`tr[data-row-id="${retainedId}"]`)
+        const retainedElement = retained.element
+        const checkbox = retained.get<HTMLInputElement>('[data-test="select-row"]')
+        const checkboxElement = checkbox.element
+        const editor = wrapper.findAllComponents(DataTableEditorProbe).find(probe => probe.props('rowId') === retainedId)!
+        const editorInstance = editor.vm.$
+        const input = editor.get<HTMLInputElement>('[data-test="row-editor"]')
+        const inputElement = input.element
+        await input.setValue('Unsubmitted edit')
+        await editor.get('[data-test="editor-counter"]').trigger('click')
+        await checkbox.setValue(true)
+        inputElement.focus()
+
+        const instance = (table.vm.$.exposed!.virtualizer as Ref<any>).value
+        expect(instance.itemSizeCache.get(leavingId)).toBe(56)
+        const unobserve = vi.spyOn(instance.observer, 'unobserve')
+
+        updatedRowIds.length = 0
+        table.element.scrollTop = 56 * 11
+        await table.trigger('scroll')
+        await flushPromises()
+
+        const allShells = table.findAll('tbody tr[data-index]')
+        const activeRows = table.findAll('tbody tr[data-row-id]')
+        expect(allShells).toHaveLength(1000)
+        expect(activeRows.length).toBeGreaterThan(0)
+        expect(activeRows.length).toBeLessThan(1000)
+        expect(table.findAllComponents({ name: 'DataTableRowContent' })).toHaveLength(activeRows.length)
+        expect(allShells.every(row => (row.findAll('td').length > 0) === (row.attributes('data-row-id') !== undefined))).toBe(true)
+        expect(table.get(`tr[data-index="${leavingId - 1}"]`).element).toBe(leaving.element)
+        expect(leaving.element.isConnected).toBe(true)
+        expect(leaving.attributes('data-row-id')).toBeUndefined()
+        expect(leaving.attributes('aria-hidden')).toBe('true')
+        expect((leaving.element as HTMLElement).style.display).toBe('none')
+        expect(leaving.findAll('td')).toHaveLength(0)
+        expect(unobserve).toHaveBeenCalledWith(leaving.element)
+        expect(instance.elementsCache.has(leavingId)).toBe(false)
+        expect(instance.itemSizeCache.get(leavingId)).toBe(56)
+
+        const retainedAfter = table.get(`tr[data-row-id="${retainedId}"]`)
+        const editorAfter = wrapper.findAllComponents(DataTableEditorProbe).find(probe => probe.props('rowId') === retainedId)!
+        expect(updatedRowIds).not.toContain(retainedId)
+        expect(retainedAfter.element).toBe(retainedElement)
+        expect(retainedAfter.get('[data-test="select-row"]').element).toBe(checkboxElement)
+        expect(checkboxElement.checked).toBe(true)
+        expect(editorAfter.vm.$).toBe(editorInstance)
+        expect(editorAfter.get('[data-test="row-editor"]').element).toBe(inputElement)
+        expect(inputElement.value).toBe('Unsubmitted edit')
+        expect(editorAfter.get('[data-test="editor-counter"]').text()).toBe('1')
+        expect(document.activeElement).toBe(inputElement)
+
+        await table.get('[data-test="select-all"]').setValue(true)
+        await flushPromises()
+        const selectedAll = table.emitted('update:selectedKeys')?.at(-1)?.[0] as number[]
+        expect(new Set(selectedAll)).toEqual(new Set(rows.map(row => row.id)))
+        expect(table.findAll<HTMLInputElement>('[data-test="select-row"]').every(row => row.element.checked)).toBe(true)
+      } finally {
+        wrapper.unmount()
+        heightRead.mockRestore()
+      }
+    })
+
+    it('updates retained compiled stable slots from deep row, usage and locale state without a table patch', async () => {
+      const heightRead = stubShellHeights()
+      const state = reactive({
+        rows: rowsForShells(60),
+        usageById: { 1: { value: 'Initial usage' } } as Record<number, { value: string }>,
+        localeState: { locale: 'en', label: 'Name' },
+      })
+      const tableUpdated = vi.fn()
+      const wrapper = mount(DataTableShellFixture, {
+        attachTo: document.body,
+        props: state,
+        global: {
+          mixins: [{ updated() { if (this.$options.__name === 'DataTable') tableUpdated() } }],
+        },
+      })
+      const table = wrapper.getComponent(DataTable)
+      try {
+        await flushPromises()
+        const rowElement = table.get('tr[data-row-id="1"]').element
+        const editor = wrapper.findAllComponents(DataTableEditorProbe).find(probe => probe.props('rowId') === 1)!
+        const editorInstance = editor.vm.$
+        const input = editor.get<HTMLInputElement>('[data-test="row-editor"]')
+        await input.setValue('Keep draft')
+        input.element.focus()
+        tableUpdated.mockClear()
+
+        state.rows[0].detail.label = 'Changed deep row'
+        await flushPromises()
+        expect(table.get('tr[data-row-id="1"] [data-test="row-detail"]').text()).toBe('Changed deep row')
+
+        state.usageById[1] = { value: 'Changed keyed usage' }
+        await flushPromises()
+        expect(table.get('tr[data-row-id="1"] [data-test="row-usage"]').text()).toBe('Changed keyed usage')
+
+        state.localeState.locale = 'zh'
+        await flushPromises()
+        expect(table.get('tr[data-row-id="1"] [data-test="row-locale"]').text()).toBe('zh | Name')
+
+        state.localeState.label = '名称'
+        await flushPromises()
+
+        const retained = table.get('tr[data-row-id="1"]')
+        expect(retained.element).toBe(rowElement)
+        expect(retained.get('[data-test="row-locale"]').text()).toBe('zh | 名称')
+        expect(wrapper.findAllComponents(DataTableEditorProbe).find(probe => probe.props('rowId') === 1)!.vm.$).toBe(editorInstance)
+        expect(retained.get<HTMLInputElement>('[data-test="row-editor"]').element.value).toBe('Keep draft')
+        expect(document.activeElement).toBe(input.element)
+        expect(tableUpdated).not.toHaveBeenCalled()
+      } finally {
+        wrapper.unmount()
+        heightRead.mockRestore()
+      }
+    })
+
+    it('updates a real compiled dynamic named slot on the retained logical row', async () => {
+      const heightRead = stubShellHeights()
+      const wrapper = mount(DataTableDynamicSlotFixture, {
+        attachTo: document.body,
+        props: { rows: rowsForShells(60), slotName: 'cell-name', label: 'First' },
+      })
+      const table = wrapper.getComponent(DataTable)
+      try {
+        await flushPromises()
+        const row = table.get('tr[data-row-id="1"]')
+        const rowElement = row.element
+        expect(row.get('td[data-column="name"] [data-test="dynamic-cell"]').text()).toBe('First 1')
+
+        await wrapper.setProps({ slotName: 'cell-usage', label: 'Second' })
+        await flushPromises()
+
+        const retained = table.get('tr[data-row-id="1"]')
+        expect(retained.element).toBe(rowElement)
+        expect(retained.get('td[data-column="name"]').text()).toBe('Row 1')
+        expect(retained.find('td[data-column="name"] [data-test="dynamic-cell"]').exists()).toBe(false)
+        expect(retained.get('td[data-column="usage"] [data-test="dynamic-cell"]').text()).toBe('Second 1')
+      } finally {
+        wrapper.unmount()
+        heightRead.mockRestore()
+      }
+    })
+
+    it('preserves the first editor and its focus across 50 to 51 rows and back', async () => {
+      const heightRead = stubShellHeights()
+      const rows = rowsForShells(51)
+      const wrapper = mount(DataTableShellFixture, {
+        attachTo: document.body,
+        props: { rows: rows.slice(0, 50) },
+      })
+      const table = wrapper.getComponent(DataTable)
+      try {
+        await flushPromises()
+        expect((table.vm as any).shouldVirtualize).toBe(false)
+        const firstRow = table.get('tr[data-row-id="1"]').element
+        const editor = wrapper.findAllComponents(DataTableEditorProbe).find(probe => probe.props('rowId') === 1)!
+        const editorInstance = editor.vm.$
+        const input = editor.get<HTMLInputElement>('[data-test="row-editor"]')
+        const inputElement = input.element
+        await input.setValue('Draft across threshold')
+        await editor.get('[data-test="editor-counter"]').trigger('click')
+        inputElement.focus()
+
+        for (const nextRows of [rows, rows.slice(0, 50)]) {
+          await wrapper.setProps({ rows: nextRows })
+          await flushPromises()
+          expect((table.vm as any).shouldVirtualize).toBe(nextRows.length === 51)
+          const retained = table.get('tr[data-row-id="1"]')
+          const retainedEditor = wrapper.findAllComponents(DataTableEditorProbe).find(probe => probe.props('rowId') === 1)!
+          expect(retained.element).toBe(firstRow)
+          expect(retainedEditor.vm.$).toBe(editorInstance)
+          expect(retainedEditor.get('[data-test="row-editor"]').element).toBe(inputElement)
+          expect(inputElement.value).toBe('Draft across threshold')
+          expect(retainedEditor.get('[data-test="editor-counter"]').text()).toBe('1')
+          expect(document.activeElement).toBe(inputElement)
+        }
+      } finally {
+        wrapper.unmount()
+        heightRead.mockRestore()
+      }
+    })
   })
 
   it('keys the virtualizer size cache by row identity, not index (avoids stale heights on sort/filter)', async () => {

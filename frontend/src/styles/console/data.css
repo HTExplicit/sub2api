@@ -269,8 +269,8 @@ html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort="desc
   --ui-sort-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14'/%3E%3Cpath d='m19 12-7 7-7-7'/%3E%3C/svg%3E");
 }
 
-/* Body cells: single line, inset 10 / 12 (16 at the edges), vertically centred; rows are divided by one 1px
-   structural line (tbody's divide-y plus the cells' own bottom line, both --ui-line). */
+/* Body cells: single line, inset 10 / 12 (16 at the edges), vertically centred; logical rows own their 1px
+   structural top line, independent of their position in the mounted window. */
 html.flat-theme .table-wrapper > table > tbody.table-body > tr > td {
   /* rows are at least the reference's 42px (its request rows; the catalog's 45 come from 24px logo squares) */
   height: 42px;
@@ -287,7 +287,7 @@ html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:last-child {
   padding-right: var(--ui-table-edge-x);
 }
 
-html.flat-theme .table-wrapper > table > tbody.table-body > tr + tr {
+html.flat-theme .table-wrapper > table > tbody.table-body > tr[data-table-divider] {
   border-top-color: rgb(var(--ui-line));
 }
 
