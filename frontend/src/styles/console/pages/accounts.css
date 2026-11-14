@@ -415,6 +415,11 @@ html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:las
   html.flat-theme .table-wrapper[data-table="accounts"][data-virtual-row-shells] > table > .table-body > tr[data-row-id]:is(:hover, :focus-within) {
     will-change: auto;
   }
+
+  /* Layered sticky cells paint their existing collapsed bottom divider inside the layer. */
+  html.flat-theme .table-wrapper[data-table="accounts"][data-virtual-row-shells] > table > .table-body > tr[data-row-id]:not(:is(:hover, :focus-within)) > td.sticky-col {
+    box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
+  }
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="select"] label {
