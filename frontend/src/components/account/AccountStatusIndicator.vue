@@ -1,13 +1,5 @@
 <template>
   <div class="flex items-center gap-2">
-    <div v-if="isUpstreamQuotaExhausted" class="flex flex-col items-center gap-1" data-testid="quota-exhausted-status">
-      <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.upstreamQuotaExhausted') }}</span>
-      <span v-if="quotaUntil" class="text-[11px] text-muted" :title="formatDateTime(quotaUntil)">
-        {{ quotaResumeText }}
-      </span>
-      <span v-else class="text-[11px] text-muted">{{ t('admin.accounts.status.quotaResetUnknown') }}</span>
-    </div>
-
     <!-- Rate Limit Display (429) - Two-line layout -->
     <div v-if="isRateLimited" class="flex flex-col items-center gap-1">
       <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.rateLimited') }}</span>
@@ -179,8 +171,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import InfoPopover from '@/components/common/InfoPopover.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -192,23 +183,6 @@ const { t } = useI18n()
 const props = defineProps<{
   account: Account
 }>()
-
-const clock = ref(Date.now())
-useIntervalFn(() => { clock.value = Date.now() }, 60_000)
-const isUpstreamQuotaExhausted = computed(() => {
-  const state = props.account.quota_state
-  return !!state?.blocked && (!state.until || new Date(state.until).getTime() > clock.value)
-})
-const quotaUntil = computed(() => {
-  const until = props.account.quota_state?.until
-  if (!until) return null
-  const rateLimit = props.account.rate_limit_reset_at
-  return rateLimit && new Date(rateLimit) > new Date(until) ? rateLimit : until
-})
-const quotaResumeText = computed(() => {
-  void clock.value
-  return t('admin.accounts.status.rateLimitedAutoResume', { time: formatCountdown(quotaUntil.value) })
-})
 
 const emit = defineEmits<{
   (e: 'show-temp-unsched', account: Account): void

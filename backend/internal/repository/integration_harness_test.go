@@ -38,6 +38,7 @@ const (
 
 var (
 	integrationDB        *sql.DB
+	integrationDSN       string
 	integrationEntClient *dbent.Client
 	integrationRedis     *redisclient.Client
 
@@ -100,6 +101,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	integrationDSN = dsn
 	integrationDB, err = openSQLWithRetry(ctx, dsn, 30*time.Second)
 	if err != nil {
 		log.Printf("failed to open sql db: %v", err)
@@ -162,6 +164,7 @@ func runLocalPostgresTests(m *testing.M, dsn string) int {
 	if err = timezone.Init("UTC"); err != nil {
 		return 1
 	}
+	integrationDSN = dsn
 	integrationDB, err = openSQLWithRetry(ctx, dsn, 15*time.Second)
 	if err != nil {
 		log.Print("local PostgreSQL test connection failed")

@@ -39,7 +39,7 @@ count_tokens／countTokens 不注入，`prompt_cache_key` 不改写。JSON/SSE/W
 
 单号、批量与定时测试显示上游原文错误及测试结果，不额外脱敏或截断；Codex 另列实际发出的请求头，不含 Authorization。测试计划和实际 effort 按型号及实际线路能力标注，不为不支持的路径提供选项。测试专用验收不改变业务请求的官方终态与计量行为。
 
-`POST /api/v1/admin/accounts/batch-test` 接受 account_ids 和可空 model_id，以 SSE 返回 batch_start／account_started／account_result／batch_complete，包含首字延迟、实际模型和原始错误。关闭窗口或页面即停；并发 10、同一上游主机 3、单号 90 秒、保活 15 秒。空 model_id 使用平台默认，账号不支持时取首个文本对话型号；单号弹窗共用解析规则。
+`POST /api/v1/admin/accounts/batch-test` 接受 account_ids 和可空 model_id，以 SSE 返回 batch_start／account_started／account_result／batch_complete，包含首字延迟、实际模型和原始错误。关闭窗口或页面即停；并发 10、同一上游主机 3、单号 90 秒、保活 15 秒。空 model_id 使用平台默认，账号不支持时取首个文本对话型号；单号弹窗共用解析规则。Claude 管理测试保留本站偏好，优先 `claude-sonnet-5-5`、再 `claude-opus-5-5`；显式保存选择保持，Pelican 独立的 Opus 5.5 默认保持。这是管理选择偏好，不改官方业务目录或协议模型映射。
 
 结果保留在页面及本地快照，重试只重新提交失败账号。成功后用官方 RecoverAccountState 清除可恢复错误／限流，不改变手动停用或调度开关。关闭测试不刷新列表，保留位置，既有自动刷新延后 15 秒继续。
 

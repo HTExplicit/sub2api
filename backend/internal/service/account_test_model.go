@@ -72,8 +72,8 @@ func connectionTestDefaultModels(account *Account) []string {
 	}
 }
 
-// claudeConnectionTestModels prefers Anthropic's replacement for the deprecated
-// Sonnet 4.5 test model, then the current Opus.
+// claudeConnectionTestModels keeps the site's explicit management-test preference.
+// It does not change the official business model defaults.
 var claudeConnectionTestModels = []string{"claude-sonnet-5-5", "claude-opus-5-5"}
 
 // AccountTestSupportsTextConversation reports whether a model of the account

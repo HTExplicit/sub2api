@@ -280,20 +280,17 @@ describe('AccountStatusIndicator', () => {
     expect(wrapper.get('[data-testid="model-status-upstream-message"]').text()).toBe(upstreamMessage)
   })
 
-  it('上游额度耗尽时仍显示正常状态徽标和临时不可调度详情按钮', async () => {
-    const quota_state = { blocked: true, until: '2099-03-15T00:00:00Z', windows: [] }
+  it('OpenAI 账号显示正常状态徽标和临时不可调度详情按钮', async () => {
     const active = mount(AccountStatusIndicator, {
-      props: { account: makeAccount({ platform: 'openai', quota_state }) },
+      props: { account: makeAccount({ platform: 'openai' }) },
       global: { stubs: { Icon: true } }
     })
-    expect(active.find('[data-testid="quota-exhausted-status"]').exists()).toBe(true)
     expect(active.find('.badge-success').text()).toBe('admin.accounts.status.active')
 
     const tempUnsched = mount(AccountStatusIndicator, {
-      props: { account: makeAccount({ platform: 'openai', quota_state, temp_unschedulable_until: '2099-03-15T00:00:00Z' }) },
+      props: { account: makeAccount({ platform: 'openai', temp_unschedulable_until: '2099-03-15T00:00:00Z' }) },
       global: { stubs: { Icon: true } }
     })
-    expect(tempUnsched.find('[data-testid="quota-exhausted-status"]').exists()).toBe(true)
     const detail = tempUnsched.get('button.badge')
     expect(detail.text()).toBe('admin.accounts.status.tempUnschedulable')
     await detail.trigger('click')

@@ -319,8 +319,6 @@ export default {accounts: {
         unschedulable: 'Unschedulable',
         rateLimitedUntil: 'Rate limited and removed from scheduling. Auto resumes at {time}',
         rateLimitedAutoResume: 'Auto resumes in {time}',
-        upstreamQuotaExhausted: 'Upstream quota exhausted',
-        quotaResetUnknown: 'Reset time unknown; awaiting upstream quota update',
         modelRateLimitedUntil: '{model} rate limited until {time}',
         modelCooldownReason: 'Reason code: {reason}',
         modelCooldownUpstreamMessage: 'Upstream message:',
@@ -796,7 +794,10 @@ export default {accounts: {
         apiKeyHint: 'Your OpenAI API Key',
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
-          'When enabled, this OpenAI account forwards requests/responses as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering. The global Reasoning Recovery switch under Extensions still applies to passthrough accounts as an explicit exception.',
+          'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
+        passthroughModelFilter: 'Filter passthrough accounts by model',
+        passthroughModelFilterDesc:
+          'Use the account model whitelist and mapping source names to select this account. Mapping targets do not rename passthrough requests. An empty list allows all models. Disabled by default.',
         flattenNamespaces: 'Flatten Codex namespace tools (compatibility)',
         flattenNamespacesDesc:
           'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',
@@ -907,7 +908,7 @@ export default {accounts: {
         testModeDefault: 'Default request',
         testModeCompact: 'Compact probe',
         testModeQuality: 'Quality check (candy question)',
-        modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
+        modelRestrictionDisabledByPassthrough: 'Automatic passthrough ignores model restrictions by default. Enable "Filter passthrough accounts by model" to use them for account selection only.',
       },
       grok: {
         baseUrlHint: 'Grok OAuth accounts forward to the official xAI API base URL.',
@@ -1043,6 +1044,7 @@ export default {accounts: {
       enterCustomModelName: 'Enter custom model name',
       addModel: 'Add',
       modelExists: 'Model already exists',
+      modelWildcardNotSupported: 'Wildcards are not supported in the model whitelist. Enter an exact model name.',
       modelMappingConflict: 'A mapping already exists for {from} → {to}. Modify or remove it under Model Mapping before adding this whitelist model',
       modelCount: '{count} models',
       poolMode: 'Pool Mode',
@@ -1958,11 +1960,12 @@ export default {accounts: {
         grokLastHeadersSeen: 'Headers {time}',
         passiveSampled: 'Passive',
         activeQuery: 'Query',
-        estimatedTotalCost: 'Est. window value ${cost}',
-        estimatedRemainingCost: 'Est. remaining value ${cost}',
-        estimatePending: 'Awaiting paired observations in this window',
-        unknownPeriod: 'Unknown period',
-        estimatedTotalCostTooltip: 'Estimated from account-cost and upstream utilization changes in the same window. Pre-import costs are unknown; model mix and external usage affect the estimate. Overlapping window values cannot be added.'
+        quotaRefreshFailedCached: 'Refresh failed. Showing a previous observation; remaining quota is unconfirmed.',
+        quotaRefreshFailedUnknown: 'Refresh failed. Current quota is unknown.',
+        quotaObservedAt: 'Quota observed: ',
+        quotaObservationUnknown: 'Unknown (cached)',
+        estimatedTotalCost: 'Est. total ${cost}',
+        estimatedTotalCostTooltip: 'Estimated total cost at 100% utilization, based on current window cost and utilization'
       },
       openaiReferral: {
         available: 'Invites left',

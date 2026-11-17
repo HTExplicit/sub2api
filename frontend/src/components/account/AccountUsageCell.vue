@@ -22,12 +22,22 @@
           <UsageProgressBar
             :label="segment.label"
             :utilization="segment.utilization"
+            :utilization-unknown="segment.utilizationUnknown"
             :resets-at="segment.resetsAt"
             :remaining-capacity="segment.remainingCapacity"
             :color="segment.color"
             density="compact"
           />
         </template>
+        <span
+          v-if="account.platform === 'openai' && account.type === 'oauth' && usageResponseFailed"
+          role="alert"
+          class="text-amber-700 dark:text-amber-300"
+        >
+          {{ t(hasOpenAIQuotaObservation
+            ? 'admin.accounts.usageWindow.quotaRefreshFailedCached'
+            : 'admin.accounts.usageWindow.quotaRefreshFailedUnknown') }}
+        </span>
         <span
           v-if="compactPartialFailure"
           class="font-medium text-red-600 dark:text-red-400"
@@ -195,21 +205,47 @@
 
     <!-- OpenAI OAuth accounts: single source from /usage API -->
     <template v-else-if="account.platform === 'openai' && account.type === 'oauth'">
+      <div
+        v-if="error || usageInfo?.error || usageInfo?.error_code"
+        role="alert"
+        class="mb-1 text-[10px] text-amber-700 dark:text-amber-300"
+      >
+        {{ t(hasOpenAIQuotaObservation
+          ? 'admin.accounts.usageWindow.quotaRefreshFailedCached'
+          : 'admin.accounts.usageWindow.quotaRefreshFailedUnknown') }}
+      </div>
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
         <UsageProgressBar
-          v-for="window in openAIQuotaWindows"
-          :key="window.id"
+          v-if="usageInfo?.five_hour"
           :density="usageBarDensity"
-          :label="quotaWindowLabel(window.window_minutes)"
-          :utilization="window.utilization"
-          :resets-at="window.resets_at"
-          :window-stats="window.window_stats"
-          :estimated-total-cost="window.estimate?.total"
-          :estimated-remaining-cost="window.estimate?.remaining"
-          :estimate-status="window.estimate?.status"
+          label="5h"
+          :utilization="usageInfo.five_hour.utilization"
+          :utilization-unknown="usageInfo.five_hour.utilization_unknown"
+          :resets-at="usageInfo.five_hour.resets_at"
+          :window-stats="usageInfo.five_hour.window_stats"
           :show-now-when-idle="true"
           color="indigo"
         />
+        <UsageProgressBar
+          v-if="usageInfo?.seven_day"
+          :density="usageBarDensity"
+          label="7d"
+          :utilization="usageInfo.seven_day.utilization"
+          :utilization-unknown="usageInfo.seven_day.utilization_unknown"
+          :resets-at="usageInfo.seven_day.resets_at"
+          :window-stats="usageInfo.seven_day.window_stats"
+          :estimated-total-cost="openAISevenDayEstimatedTotalCost"
+          :show-now-when-idle="true"
+          color="emerald"
+        />
+        <div v-if="hasOpenAIQuotaObservation" class="text-[10px] text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.usageWindow.quotaObservedAt') }}
+          <time v-if="usageInfo?.updated_at" :datetime="usageInfo.updated_at">
+            {{ formatDateTime(usageInfo.updated_at) }}
+          </time>
+          <span v-else>{{ t('admin.accounts.usageWindow.quotaObservationUnknown') }}</span>
+        </div>
+
         <!--
           Upstream codex /wham/usage quota query + reset. The local active-sampling
           refresh button is rendered via the pre-actions slot so the user sees a
@@ -706,7 +742,7 @@
             color="purple"
           />
         </template>
-        <div v-if="loading" class="space-y-1">
+        <div v-if="loading && !usageInfo" class="space-y-1">
           <div class="flex items-center gap-1">
             <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
@@ -868,7 +904,8 @@ import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
-import { formatCompactNumber, formatRelativeTime } from '@/utils/format'
+import { formatCompactNumber, formatDateTime, formatRelativeTime } from '@/utils/format'
+
 import { isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
 import { supportsAccountQuota } from '@/utils/accountQuota'
 import UsageProgressBar from './UsageProgressBar.vue'
@@ -1055,18 +1092,35 @@ const geminiUsageAvailable = computed(() => {
   )
 })
 
-const openAIQuotaWindows = computed(() => usageInfo.value?.quota_windows ?? [])
 const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
-  return openAIQuotaWindows.value.length > 0
+  return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
 })
 
-function quotaWindowLabel(minutes: number): string {
-  if (minutes <= 0) return t('admin.accounts.usageWindow.unknownPeriod')
-  if (minutes % 1440 === 0) return `${minutes / 1440}d`
-  if (minutes % 60 === 0) return `${minutes / 60}h`
-  return `${minutes}m`
-}
+const hasOpenAIQuotaObservation = computed(() => {
+  const windows = [usageInfo.value?.five_hour, usageInfo.value?.seven_day]
+  return windows.some(window => window && !window.utilization_unknown)
+})
+
+const openAISevenDayEstimatedTotalCost = computed(() => {
+  const sevenDay = usageInfo.value?.seven_day
+  const utilization = sevenDay?.utilization
+  const currentCost = sevenDay?.window_stats?.cost
+  if (
+    sevenDay?.utilization_unknown ||
+    typeof utilization !== 'number' ||
+    typeof currentCost !== 'number' ||
+    !Number.isFinite(utilization) ||
+    !Number.isFinite(currentCost) ||
+    utilization <= 0 ||
+    currentCost <= 0
+  ) {
+    return null
+  }
+
+  const estimate = (currentCost * 100) / utilization
+  return Number.isFinite(estimate) && estimate > 0 ? estimate : null
+})
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
 
@@ -1720,7 +1774,7 @@ const applyUsageResult = (result: AccountUsageInfo) => {
   const fetchedAt = Date.now()
   const cached = _usageCache.get(props.account.id)
 
-  if (result.error) {
+  if (result.error || result.error_code) {
     error.value = t('admin.accounts.usageFetchFailed')
     if (cached) {
       _usageCache.set(props.account.id, { ...cached, failedAt: fetchedAt })
@@ -1770,6 +1824,8 @@ const loadUsage = async (options?: {
     return
   }
 
+  const accountID = props.account.id
+
   // An expired value is still useful while a refresh is running or failing.
   const cached = _usageCache.get(props.account.id)
   if (cached) {
@@ -1787,11 +1843,11 @@ const loadUsage = async (options?: {
 
   try {
     const result = await requestUsage(props.account, options?.source, options?.force)
-    if (!unmounted.value) {
+    if (!unmounted.value && props.account.id === accountID) {
       applyUsageResult(result)
     }
   } catch (e: any) {
-    if (!unmounted.value) {
+    if (!unmounted.value && props.account.id === accountID) {
       markUsageRequestFailed()
       console.error('Failed to load usage:', e)
     }
@@ -1851,15 +1907,21 @@ const attachVisibilityObserver = () => {
 }
 
 const loadActiveUsage = async () => {
+  const accountID = props.account.id
   activeQueryLoading.value = true
+  error.value = null
   try {
     const result = await requestUsage(props.account, 'active', true)
-    applyUsageResult(result)
+    if (!unmounted.value && props.account.id === accountID) {
+      applyUsageResult(result)
+    }
   } catch (e: any) {
-    markUsageRequestFailed()
-    console.error('Failed to load active usage:', e)
+    if (!unmounted.value && props.account.id === accountID) {
+      markUsageRequestFailed()
+      console.error('Failed to load active usage:', e)
+    }
   } finally {
-    activeQueryLoading.value = false
+    if (!unmounted.value) activeQueryLoading.value = false
   }
 }
 
@@ -1989,6 +2051,7 @@ interface CompactUsageSegment {
   key: string
   label: string
   utilization: number
+  utilizationUnknown?: boolean
   resetsAt?: string | null
   remainingCapacity?: boolean
   color: 'indigo' | 'emerald' | 'purple' | 'amber'
@@ -2056,7 +2119,7 @@ const usageObservedAt = computed(() => {
   return usageLastSuccessAt.value
 })
 
-const usageResponseFailed = computed(() => Boolean(error.value || usageInfo.value?.error))
+const usageResponseFailed = computed(() => Boolean(error.value || usageInfo.value?.error || usageInfo.value?.error_code))
 
 const usageIsStale = computed(() => {
   if (!hasRemoteUsageData.value && !hasOllamaUsageData.value) return false
@@ -2079,11 +2142,11 @@ const compactUsageSegments = computed<CompactUsageSegment[]>(() => {
   const pushWindow = (
     key: string,
     label: string,
-    window: { utilization: number; resets_at?: string | null } | null | undefined,
+    window: { utilization: number; utilization_unknown?: boolean; resets_at?: string | null } | null | undefined,
     color: CompactUsageSegment['color']
   ) => {
     if (!window) return
-    segments.push({ key, label, utilization: window.utilization, resetsAt: window.resets_at, color })
+    segments.push({ key, label, utilization: window.utilization, utilizationUnknown: window.utilization_unknown, resetsAt: window.resets_at, color })
   }
 
   if (props.account.platform === 'anthropic' || props.account.platform === 'openai') {

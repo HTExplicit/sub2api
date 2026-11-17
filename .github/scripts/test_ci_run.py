@@ -96,6 +96,17 @@ class SelectedExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "matches_no_functions"):
                 ci_run.resolve_go_checks({"groups": ["pelican_race"]})
 
+    def test_linux_socket_contract_resolves_for_the_linux_test_owner(self):
+        plan = ci_run.ci_plan.classify_paths([
+            "backend/internal/repository/http_upstream_keepalive_linux_test.go",
+        ])
+        ci_run.resolve_go_checks(plan)
+        checks = plan["go_checks"]["backend_focused"]
+        self.assertEqual(1, len(checks))
+        self.assertIn("TestUpstreamDialerSetsKeepAliveAndUserTimeoutOnTheSocket", checks[0]["pattern"])
+        self.assertIn("TestUpstreamDialerIgnoresUserTimeoutFailure", checks[0]["pattern"])
+        self.assertEqual([], checks[0]["tags"])
+
     def test_exact_files_in_one_build_configuration_share_one_go_invocation(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

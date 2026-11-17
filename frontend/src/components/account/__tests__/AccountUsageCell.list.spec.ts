@@ -56,10 +56,6 @@ const makeOAuthUsage = (
 ): AccountUsageInfo => ({
   source: 'active',
   updated_at: updatedAt,
-  quota_windows: [
-    { id: '5h', window_minutes: 300, utilization: fiveHour, resets_at: '2026-07-29T17:00:00Z', expired: false, remaining_seconds: 18_000 },
-    { id: '7d', window_minutes: 10080, utilization: sevenDay, resets_at: '2026-08-05T12:00:00Z', expired: false, remaining_seconds: 604_800 }
-  ],
   five_hour: {
     utilization: fiveHour,
     resets_at: '2026-07-29T17:00:00Z',
@@ -108,6 +104,28 @@ describe('AccountUsageCell list variants', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it.each(['list', 'compact'] as const)('shows official unknown quota and refresh errors in %s without starting another request', async (variant) => {
+    const usage = makeOAuthUsage()
+    usage.updated_at = null
+    usage.five_hour = null
+    usage.seven_day = { utilization: 0, utilization_unknown: true, resets_at: null, remaining_seconds: 0 }
+    usage.error_code = 'quota_refresh_failed'
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: variant === 'list' ? 5198 : 5199 }),
+        variant, readOnly: true, batchedUsage: usage, requestBatchedUsage: vi.fn()
+      },
+      global: { stubs: { ...stubs, UsageProgressBar: false } }
+    })
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('quotaRefreshFailedUnknown')
+    expect(wrapper.text()).toContain('—')
+    expect(wrapper.text()).not.toContain('0%')
+    expect(wrapper.find('time').exists()).toBe(false)
+    expect(getUsage).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('keeps a pending provider response owned by its original account when the list cell is reused', async () => {
