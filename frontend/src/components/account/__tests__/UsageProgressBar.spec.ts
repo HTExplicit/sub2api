@@ -22,6 +22,24 @@ describe('UsageProgressBar', () => {
     vi.useRealTimers()
   })
 
+  it.each(['detail', 'list', 'compact'] as const)('shows unknown quota without a percentage or reset time in %s density', (density) => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '7d', utilization: 0, utilizationUnknown: true,
+        resetsAt: '2026-03-17T01:00:00Z', showNowWhenIdle: true,
+        color: 'emerald', density
+      }
+    })
+    expect(wrapper.text()).toContain('—')
+    expect(wrapper.text()).not.toContain('0%')
+    expect(wrapper.text()).not.toContain('1h')
+    expect(wrapper.text()).not.toContain('usage.resetNow')
+    if (density !== 'compact') {
+      expect(wrapper.get('.h-full').attributes('style')).toContain('width: 0%')
+    }
+    wrapper.unmount()
+  })
+
   it('showNowWhenIdle=true 且利用率为 0 但有未来 resetsAt 时显示倒计时', () => {
     const wrapper = mount(UsageProgressBar, {
       props: {
