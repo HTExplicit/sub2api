@@ -12,7 +12,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -609,7 +609,7 @@ func TestDashboardAggregationRepositoryCleanupUsageLogsSkipsPartitionWhenDropLoc
 	mock.ExpectQuery(`SELECT MIN\(created_at\) FROM "usage_logs_202604"`).
 		WillReturnRows(sqlmock.NewRows([]string{"min"}).AddRow(nil))
 	mock.ExpectExec(`DROP TABLE IF EXISTS "usage_logs_202604"`).
-		WillReturnError(&pq.Error{Code: "55P03", Message: "canceling statement due to lock timeout"})
+		WillReturnError(&pgconn.PgError{Code: "55P03", Message: "canceling statement due to lock timeout"})
 	mock.ExpectRollback()
 	// 分区保留，其中的过期记录由按行删除清理。
 	mock.ExpectExec(`(?s)SELECT tableoid, ctid.*DELETE FROM usage_logs`).
