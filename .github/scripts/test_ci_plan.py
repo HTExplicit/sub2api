@@ -132,15 +132,24 @@ class ChangeSelectionTests(unittest.TestCase):
                 self.assertTrue(plan["backend_tests"])
                 self.assertNotIn("Benchmark", plan["backend_tests"][0]["pattern"])
 
-    def test_single_embed_and_mcp_sdk_tags_are_explicitly_supported(self):
+    def test_single_embed_mcp_sdk_and_linux_tags_are_explicitly_supported(self):
         for path, expected in (
             ("backend/internal/web/embed_test.go", ["embed"]),
             ("backend/internal/server/routes/mcp_oauth_sdk_test.go", ["mcp_go_client_oauth"]),
+            ("backend/internal/repository/http_upstream_keepalive_linux_test.go", []),
         ):
             with self.subTest(path=path):
                 plan = ci_plan.classify_paths([path])
                 self.assertTrue(plan["passed"], plan["failures"])
                 self.assertEqual(expected, plan["backend_tests"][0]["tags"])
+
+    def test_v0222_build_recipe_and_partner_assets_have_finite_ownership(self):
+        plan = ci_plan.classify_paths(["Makefile", "assets/partners/logos/DataEyesAI.png",
+                                       "assets/partners/logos/lanox.jpg"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["ci_contracts"], plan["groups"])
+        self.assertFalse(plan["backend_tests"])
+        self.assertFalse(ci_plan.classify_paths(["assets/partners/logos/new-unreviewed.png"])["passed"])
 
     def test_reviewed_wiring_is_compile_only(self):
         with patch.object(ci_plan, "direct_importers", return_value=[]):

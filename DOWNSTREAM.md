@@ -12,8 +12,8 @@ does not prove deployment.
 
 - [.downstream/upstream-base](.downstream/upstream-base) records the integrated
   official stable tag.
-- The [v0.2.21 review](.downstream/upstream-review-v0.2.21.md) records the official
-  changes, business-core retirements and retained extension boundaries.
+- The [v0.2.22 review](.downstream/upstream-review-v0.2.22.md) records the current
+  integration and retained extension boundaries; earlier reviews keep their paths.
 - [.downstream/upstream-risk.json](.downstream/upstream-risk.json) owns the exact
   Git comparison inputs and complete file lists; historical reviews keep their
   original paths.
@@ -45,7 +45,8 @@ request-Zstd override are retired. Effort defaults, caps and degradation use
 official rules, including DeepSeek; old extra `none`/`max` rewrites, default
 summary injection and destination-specific history/signature rules are retired.
 Stored retired settings, account extras, seeds and diagnostic records remain
-without controlling requests.
+without controlling requests. Official Codex fork handling preserves the parent
+prompt cache key while keeping the fork's own body session identity.
 
 ## Account operations and console
 
@@ -84,7 +85,11 @@ Platform/status filters use official single selection and
 `immediate: false`. Settings use the official floating save control; API-key
 lists and usage statistics load independently. Antigravity force-query is
 available in the ordinary table and detail views; compact/card read-only
-presentations remain read-only.
+presentations remain read-only. OpenAI quota displays use official `five_hour`
+and `seven_day` windows; unknown utilization is distinct from zero. Orphaned
+`quota_windows` estimates and `quota_state` status projections are retired.
+Administrator endpoint distributions expose account cost separately; user
+usage views omit that administrator-only column.
 
 Administrators retain full upstream error/output evidence, password-gated
 no-store account-key reveal and IP login protection. These visibility features
@@ -119,15 +124,28 @@ intervals and overrides remain; historical bills are not recalculated.
 
 Pricing resolution is official. Empty token cards do not get a downstream
 allowlist-only interpretation; the extra hy/Qwen/Muse fallback families and
-GPT-5.6 named-family priority are retired. Usage uses the official worker,
-context copy, inflight reservation and mandatory submission behavior.
+GPT-5.6 named-family priority are retired. The official 6x Ultra Fast multiplier
+applies to `gpt-6-astra` and `gpt-6.1-sol`, including supported normalized Sol
+variants. `gpt-6-sol`, `gpt-5.6-sol` and Terra are outside the forced support set
+and retain the official generic 2x Ultra Fast multiplier. Actual Vertex us/eu
+multi-region routes use the official default-price uplift; explicit pricing follows official
+precedence. DeepSeek explicit override fields, including zero, retain their
+official precedence without rewriting stored prices or historical bills.
+
+Usage uses the official worker, context copy, inflight reservation and mandatory
+submission behavior. The official per-user billing lane combines queued work
+without a new configuration switch, preserves per-command idempotency/results,
+and retains official batch failure fallback and shutdown behavior. Pelican
+observation is excluded at the existing usage entry points, not by a second
+policy inside the lane.
 
 Migrations retain complete filenames and historical checksums, including
-same-number official/downstream files. New
-`249_add_usage_logs_api_key_cost_index_notx.sql` uses the official nontransactional
-concurrent-index runner and invalid-index handling;
-`250_openai_cache_write_ttl.sql` adds the TTL fields. Retiring business policy
-adds no data purge or Redis reset. Historical schema/rollback constraints remain
+same-number official/downstream files. The current integration adds
+`251_group_force_openai_ultrafast.sql` and
+`251_group_usage_rollup_nonblocking_build.sql` beside the existing downstream
+251/252 files. Group usage rollup rebuild/retention follows official nonblocking
+registration, calculation and publication. Retiring business policy adds no
+data purge or Redis reset. Historical schema/rollback constraints remain
 in [native domains](.downstream/native-domains.md#release-and-rollback-boundary).
 
 ## Management MCP and request boundaries
@@ -135,7 +153,11 @@ in [native domains](.downstream/native-domains.md#release-and-rollback-boundary)
 Official management MCP, OAuth grants and administrator permissions remain.
 An empty `MCP_PUBLIC_URL` disables MCP. Integration does not enable MCP,
 full-access compatibility mode or other new switches, or batch-change account
-mappings, permissions or payment configuration.
+mappings, permissions or payment configuration. Group
+`force_openai_ultrafast` defaults off; account
+`extra.openai_passthrough_model_filter` applies only when explicitly true.
+New custom whitelist entries cannot contain `*`; saved entries and model
+mapping wildcard semantics are not rewritten.
 
 Request reading uses official strict read-error handling, control-byte/BOM
 normalization and Responses UTF-8 validation. Complete JSON after unexpected
@@ -143,8 +165,10 @@ EOF and missing compression-footer recovery are retired. Buffering, automatic
 request-body memory budgets and per-operation I/O deadlines follow
 [edge security](deploy/EDGE_SECURITY.md); upstream thinking has no added
 whole-response deadline. Deployment settings remain authoritative. The current
-release's approved limit/configuration changes are recorded in its review and
-operator delivery evidence.
+release's approved limit/configuration choices are recorded in its review and
+operator delivery evidence. Official TCP keepalive/user-timeout detection does
+not impose a total inference deadline. `concurrency.ping_interval=0` is supported
+but integration preserves the existing value; the official default remains 10s.
 
 ## Independent management extensions
 

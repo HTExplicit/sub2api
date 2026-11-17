@@ -204,7 +204,7 @@ def resolve_go_checks(plan: dict) -> None:
                             continue
                         if expression.startswith("!") and expression[1:] in tags:
                             continue
-                        if expression not in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth", "!unit"):
+                        if expression not in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth", "!unit", "linux"):
                             if any(regex.search(name) for name in file_names):
                                 raise ValueError("mapped_test_build_tags_require_review:" + group)
                             continue

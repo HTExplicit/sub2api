@@ -59,6 +59,7 @@ DOCUMENT_ASSETS = {
     "assets/partners/logos/aigocode-dark.png", "assets/partners/logos/aigocode.png",
     "assets/partners/logos/apimart.jpg", "assets/partners/logos/marucode.jpg",
     "assets/partners/logos/massivetokens.jpg",
+    "assets/partners/logos/DataEyesAI.png", "assets/partners/logos/lanox.jpg",
 }
 
 DEPLOY_RULES = {
@@ -143,8 +144,9 @@ def _go_test(path: Path, relative: str) -> dict | None:
     expression = build.group(1) if build else ""
     tags = [name for name in ("unit", "integration", "e2e", "embed", "mcp_go_client_oauth")
             if re.search(rf"(?<![\w!]){name}\b", expression)]
+    # The focused test owner runs on Linux; Go supplies that platform tag.
     # E2E and nontrivial tag expressions need an explicit reviewed command.
-    if "e2e" in tags or (expression and expression not in ("unit", "integration", "embed", "mcp_go_client_oauth")):
+    if "e2e" in tags or (expression and expression not in ("unit", "integration", "embed", "mcp_go_client_oauth", "linux")):
         return None
     return {"packages": ["./" + str(PurePosixPath(relative).parent.relative_to("backend"))],
             "pattern": "^(?:" + "|".join(sorted(set(names))) + ")$", "tags": tags,
@@ -283,7 +285,7 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
                 select("deploy_docker_contracts" if test in DEPLOY_DOCKER_TESTS else "deploy_contracts", relative)
             deploy_tests.update(selected)
             known = True
-        elif relative in (".gitignore", ".gitattributes", ".editorconfig"):
+        elif relative in (".gitignore", ".gitattributes", ".editorconfig", "Makefile"):
             select("ci_contracts", relative)
             known = True
         elif relative in ("backend/go.mod", "backend/go.sum"):

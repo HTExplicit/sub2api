@@ -364,3 +364,101 @@ SOURCE_TEST_FILES.update({
     "backend/internal/service/ops_concurrency.go": [SERVICE + "account_load_factor_test.go", SERVICE + "ops_metrics_collector_projection_test.go"],
     "backend/internal/service/ops_metrics_collector.go": [SERVICE + "ops_metrics_collector_projection_test.go"],
 })
+
+# Official v0.2.22 inputs: exact protocol, pricing, scheduler and storage seams.
+group(SERVICE, "account_test_model account_test_service", "account_test_claude_model")
+group(SERVICE, """
+openai_gateway_forward openai_gateway_passthrough
+openai_gateway_chat_completions openai_gateway_messages
+""", "openai_shadow_autoreset_observation")
+group(SERVICE, "admin_group group", "admin_service_group")
+group(SERVICE, "admin_group_duplicate", "admin_group_duplicate")
+group(SERVICE, "antigravity_compat_committed_no_content", "antigravity_compat_committed_no_content")
+group(SERVICE, "antigravity_gemini_thinking_variant", "antigravity_gemini_thinking_variant")
+group(SERVICE, "batch_image_provider_vertex", "batch_image_provider_vertex")
+group(SERVICE, "bedrock_request gateway_bedrock", "bedrock_request gateway_service_bedrock_beta")
+group(SERVICE, "channel_monitor_quota_fetcher", "channel_monitor_quota_fetcher")
+group(SERVICE, "chat_completions_metadata", "chat_completions_metadata")
+group(SERVICE, "cn_provider_quota_service", "cn_providers")
+group(SERVICE, "composite_platform", "composite_platform")
+group(SERVICE, "custom_group_usage_rollup", "custom_group_usage_rollup")
+group(SERVICE, "dashboard_aggregation_service", "custom_group_usage_rollup")
+group(SERVICE, "error_passthrough_runtime grok_media", "grok_media_errors grok_upstream_errors")
+group(SERVICE, "gateway_billing_header", "gateway_billing_header gateway_request_json_equivalence")
+group(SERVICE, "gateway_count_tokens", "gateway_count_tokens_raw_headers")
+group(SERVICE, "gateway_tool_rewrite", "gateway_tool_rewrite gateway_request_json_equivalence")
+group(SERVICE, "gateway_websearch_emulation", "gateway_websearch_emulation gateway_request_json_equivalence")
+group(SERVICE, "gemini_cached_content", "gemini_cached_content")
+group(SERVICE, "gemini_compat_response_format", "gemini_compat_response_format")
+group(SERVICE, "gemini_compat_thinking", "gemini_compat_thinking")
+group(SERVICE, "gemini_models_endpoints", "gemini_models_endpoints")
+group(SERVICE, "gemini_quota", "gemini_quota")
+group(SERVICE, "gemini_session", "gemini_session")
+group(SERVICE, "gemini_tool_call_boundary", "gemini_parallel_tools")
+group(SERVICE, "grok_search_count", "grok_search_count")
+group(SERVICE, "grok_upstream_errors", "grok_upstream_errors grok_upstream_error_fields")
+group(SERVICE, "json_escape_probe", "json_escape_probe")
+group(SERVICE, "openai_call_output_probe", "hot_path_zero_copy")
+group(SERVICE, "openai_first_output_timeout", "openai_first_output_timeout")
+group(SERVICE, "openai_models_list", "openai_models_list")
+group(SERVICE, "openai_responses_tool_schema", "openai_responses_tool_schema")
+group(SERVICE, "opencode_go", "opencode_go")
+group(SERVICE, "ratelimit_bedrock", "ratelimit_bedrock")
+group(SERVICE, "scheduler_snapshot_service",
+      "scheduler_snapshot_batch_query scheduler_snapshot_fallback_coalesce scheduler_snapshot_transient_expiry")
+group(SERVICE, "usage_billing_lane", "usage_billing_lane")
+group(SERVICE, "vertex_locations", "vertex_locations")
+group(SERVICE, "vertex_service_account", "vertex_service_account")
+
+group(INTERNAL, "handler/admin/group_handler", "handler/admin/group_handler_openai_fast")
+group(INTERNAL, "handler/gateway_helper", "handler/gateway_helper_ping handler/gateway_helper_hotpath")
+group(INTERNAL, "handler/user_msg_queue_helper", "handler/user_msg_queue_helper_ping")
+group(INTERNAL, "handler/usage_handler", "handler/usage_handler_daily handler/usage_handler_sort")
+group(INTERNAL, "payment/provider/alipay", "payment/provider/alipay")
+group(INTERNAL, "pkg/antigravity/claude_types", "service/antigravity_gemini_thinking_variant")
+group(INTERNAL, "pkg/antigravity/schema_cleaner", "pkg/antigravity/schema_cleaner")
+group(INTERNAL, "pkg/gemini/models pkg/geminicli/models", "service/gemini_models_endpoints")
+group(INTERNAL, "pkg/usagestats/usage_log_types", "repository/usage_log_repo_request_type")
+group(INTERNAL, "web/html_cache_headers", "web/html_cache_headers")
+
+group(INTERNAL, "repository/custom_group_usage_rollup_repo",
+      "repository/dashboard_aggregation_group_usage repository/group_usage_rollup_nonblocking_integration")
+group(INTERNAL, "repository/dashboard_aggregation_repo", "repository/dashboard_aggregation_group_usage")
+group(INTERNAL, "repository/group_repo", "repository/api_key_repo_openai_fast_projection_integration")
+group(INTERNAL, "repository/http_upstream_keepalive repository/http_upstream_keepalive_linux",
+      "repository/http_upstream_keepalive_linux")
+group(INTERNAL, "repository/usage_billing_batch_repo", "repository/usage_billing_batch_repo_integration")
+group(INTERNAL, "repository/usage_billing_repo",
+      "repository/usage_billing_repo_unit repository/usage_billing_batch_repo_integration")
+group(INTERNAL, "repository/usage_cleanup_repo", "repository/usage_cleanup_repo")
+group(INTERNAL, "repository/usage_log_repo_stats repository/usage_log_repo_trend", "repository/usage_log_repo_request_type")
+group(INTERNAL, "repository/user_group_rate_repo", "repository/user_group_rate_repo_sync")
+
+# Benchmark fixtures exercise the equivalence contracts, not the benchmarks.
+SOURCE_TEST_FILES.update({
+    SERVICE + "gateway_request_json_bench_test.go": [SERVICE + "gateway_request_json_equivalence_test.go"],
+    SERVICE + "gateway_request_json_legacy_test.go": [SERVICE + "gateway_request_json_equivalence_test.go"],
+    INTERNAL + "repository/integration_harness_test.go": [INTERNAL + "repository/group_usage_rollup_nonblocking_integration_test.go"],
+    "backend/migrations/251_group_force_openai_ultrafast.sql": ["backend/migrations/group_force_openai_ultrafast_migration_test.go"],
+    "backend/migrations/251_group_usage_rollup_nonblocking_build.sql": [
+        "backend/migrations/group_usage_rollup_migration_test.go",
+        INTERNAL + "repository/group_usage_rollup_nonblocking_integration_test.go",
+    ],
+})
+
+# These additions are generated fields or interfaces, with runtime behavior
+# covered by the explicit group administration and scheduler contracts above.
+COMPILE_ONLY_FILES.update({
+    "backend/ent/group.go",
+    "backend/ent/group/group.go",
+    "backend/ent/group/where.go",
+    "backend/ent/group_create.go",
+    "backend/ent/group_update.go",
+    "backend/ent/schema/group.go",
+    SERVICE + "account_service.go",
+    SERVICE + "scheduler_cache.go",
+    SERVICE + "usage_billing.go",
+    # !linux only declares the empty Control hook; the Linux socket test does
+    # not execute this platform branch. Retain compilation ownership explicitly.
+    INTERNAL + "repository/http_upstream_keepalive_other.go",
+})
