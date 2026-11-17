@@ -645,6 +645,7 @@ export interface AdminGroup extends Group {
   // 管理端的 name / description 始终是原字段，各语言译文另放在 i18n 里
   i18n?: GroupI18n
   force_openai_fast: boolean
+  force_openai_ultrafast: boolean
   free_openai_fast: boolean
   model_pricing: import('@/api/admin/channels').ChannelModelPricing[]
   // 分组利润控制（openai/anthropic/gemini/grok/antigravity 分组可启用；margin/buffer 为小数存储）。
@@ -820,6 +821,7 @@ export interface CreateGroupRequest {
   monthly_limit_usd?: number | null
   long_context_pricing_enabled?: boolean
   force_openai_fast?: boolean
+  force_openai_ultrafast?: boolean
   free_openai_fast?: boolean
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
@@ -888,6 +890,7 @@ export interface UpdateGroupRequest {
   monthly_limit_usd?: number | null
   long_context_pricing_enabled?: boolean
   force_openai_fast?: boolean
+  force_openai_ultrafast?: boolean
   free_openai_fast?: boolean
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
@@ -1294,7 +1297,6 @@ export interface GrokModelDiagnostics {
 }
 
 export interface Account {
-	quota_state?: { blocked: boolean; until: string | null; windows: AccountQuotaWindow[] }
   id: number
   name: string
   notes?: string | null
@@ -1544,23 +1546,12 @@ export interface WindowStats {
 
 export interface UsageProgress {
   utilization: number // Percentage (0-100+, 100 = 100%)
+  utilization_unknown?: boolean
   resets_at: string | null
   remaining_seconds: number
   window_stats?: WindowStats | null // 窗口期统计（从窗口开始到当前的使用量）
   used_requests?: number
   limit_requests?: number
-}
-
-export interface AccountQuotaWindow {
-  id: string
-  window_minutes: number
-  utilization: number
-  observed_at?: string
-  resets_at: string | null
-  expired: boolean
-  remaining_seconds: number
-  window_stats?: WindowStats
-  estimate?: { status: string; total?: number; remaining?: number }
 }
 
 // Antigravity 单个模型的配额信息
@@ -1626,7 +1617,6 @@ export interface GrokBillingSummary {
 }
 
 export interface AccountUsageInfo {
-  quota_windows?: AccountQuotaWindow[]
   source?: 'passive' | 'active'
   updated_at: string | null
   five_hour: UsageProgress | null
@@ -2225,8 +2215,9 @@ export interface EndpointStat {
   endpoint: string
   requests: number
   total_tokens: number
-  cost: number
-  actual_cost: number
+  cost: number // 标准计费
+  actual_cost: number // 实际扣除
+  account_cost?: number // 账号成本（仅管理员接口返回）
 }
 
 export interface GroupStat {

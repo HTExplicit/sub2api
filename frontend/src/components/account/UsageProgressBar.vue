@@ -33,12 +33,6 @@
       </div>
     </div>
 
-    <div v-if="density !== 'compact' && estimateStatus" class="mb-0.5 flex flex-wrap gap-1.5 text-[10px] text-gray-500"
-      :title="t('admin.accounts.usageWindow.estimatedTotalCostTooltip')">
-      <span v-if="estimatedRemainingCost != null">{{ t('admin.accounts.usageWindow.estimatedRemainingCost', { cost: estimatedRemainingCost.toFixed(2) }) }}</span>
-      <span v-else>{{ t('admin.accounts.usageWindow.estimatePending') }}</span>
-    </div>
-
     <!-- Progress bar row -->
 	<div :class="['flex min-w-0 items-center', density === 'compact' ? 'gap-0.5' : 'gap-1']">
 	  <!-- Label badge: density controls compact layout; label-width controls long labels. -->
@@ -89,12 +83,11 @@ import { formatCompactNumber } from '@/utils/format'
 const props = withDefaults(defineProps<{
   label: string
   utilization: number // Percentage (0-100+)
+  utilizationUnknown?: boolean
   resetsAt?: string | null
   color: 'indigo' | 'emerald' | 'purple' | 'amber'
   windowStats?: WindowStats | null
   estimatedTotalCost?: number | null
-  estimatedRemainingCost?: number | null
-  estimateStatus?: string
   showNowWhenIdle?: boolean
   remainingCapacity?: boolean
   density?: 'detail' | 'list' | 'compact'
@@ -196,11 +189,13 @@ const textClass = computed(() => {
 
 // Bar width (capped at 100%)
 const barWidth = computed(() => {
+  if (props.utilizationUnknown) return '0%'
   return `${Math.min(Math.max(props.utilization, 0), 100)}%`
 })
 
 // Display percentage (cap at 999% for readability)
 const displayPercent = computed(() => {
+  if (props.utilizationUnknown) return '—'
   const percent = Math.round(
     props.remainingCapacity
       ? Math.min(Math.max(props.utilization, 0), 100)
@@ -210,6 +205,7 @@ const displayPercent = computed(() => {
 })
 
 const shouldShowResetTime = computed(() => {
+  if (props.utilizationUnknown) return false
   if (props.resetsAt) return true
   return Boolean(props.showNowWhenIdle && props.utilization <= 0)
 })

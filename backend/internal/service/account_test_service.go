@@ -408,7 +408,7 @@ func createTestPayload(modelID string, prompts ...string) (map[string]any, error
 
 // TestAccountConnection tests an account's connection by sending a test request
 // All account types use full Claude Code client characteristics, only auth header differs
-// modelID is optional - if empty, defaults to claude.DefaultTestModel
+// modelID is optional; an empty Claude choice uses the management picker preferences.
 // mode is optional - "compact" routes OpenAI accounts to the /responses/compact probe path
 // opts is optional media (image/audio data URLs for real generation / STT).
 func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, mode string, opts ...AccountTestOptions) (testErr error) {
@@ -446,7 +446,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.IsSyntheticUITest() {
 		testModelID := modelID
 		if testModelID == "" {
-			testModelID = claude.DefaultTestModel
+			testModelID = PickConnectionTestModel(account)
 		}
 		s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 		s.sendEvent(c, TestEvent{Type: "content", Text: "Synthetic Anthropic OAuth account is healthy and interactive."})
@@ -595,7 +595,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	// Determine the model to use
 	testModelID := modelID
 	if testModelID == "" {
-		testModelID = claude.DefaultTestModel
+		testModelID = PickConnectionTestModel(account)
 	}
 	upstreamModelID, supported := accountTestClaudeUpstreamModel(account, testModelID)
 
@@ -2705,7 +2705,7 @@ func (s *AccountTestService) buildGeminiOAuthRequest(ctx context.Context, accoun
 }
 
 func (s *AccountTestService) buildGeminiServiceAccountRequest(ctx context.Context, account *Account, modelID string, payload []byte) (*http.Request, error) {
-	fullURL, err := buildVertexGeminiAccountURL(account, modelID, "streamGenerateContent", true)
+	fullURL, err := buildVertexGeminiAccountURL(account, modelID, "streamGenerateContent", true, "")
 	if err != nil {
 		return nil, err
 	}

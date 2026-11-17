@@ -89,6 +89,7 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		emailQueueSvc,
 		billingCacheSvc,
 		&service.UsageRecordWorkerPool{},
+		nil, // usageBillingLanes
 		service.ProvideBalanceNotifyService(nil, nil, nil, nil),
 		service.NewDigestSessionStore(),
 		&service.SubscriptionService{},

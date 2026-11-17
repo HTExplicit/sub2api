@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AccountUsageCell from '../AccountUsageCell.vue'
-import type { Account } from '@/types'
+import type { Account, AccountUsageInfo } from '@/types'
 
 const { getUsage } = vi.hoisted(() => ({
   getUsage: vi.fn()
@@ -634,14 +634,110 @@ describe('AccountUsageCell', () => {
   })
 
 
+  describe('OpenAI quota freshness', () => {
+    const observedAt = '2026-11-11T03:33:55Z'
+    const snapshot = (): AccountUsageInfo => ({
+      source: 'passive',
+      updated_at: observedAt,
+      five_hour: null,
+      seven_day: { utilization: 100, resets_at: null, remaining_seconds: 0 },
+      seven_day_sonnet: null
+    })
+    const stubs = {
+      UsageProgressBar: {
+        props: ['label', 'utilization'],
+        template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+      },
+      OpenAIQuotaResetCell: { template: '<div><slot name="pre-actions" /></div>' }
+    }
+
+    it('marks a degraded HTTP 200 response as failed without hiding the last observation', async () => {
+      getUsage.mockResolvedValue({
+        ...snapshot(),
+        error_code: 'quota_refresh_failed',
+        error: 'Could not refresh quota'
+      })
+      const wrapper = mount(AccountUsageCell, {
+        props: { account: makeAccount({ id: 8101, platform: 'openai', type: 'oauth' }) },
+        global: { stubs }
+      })
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain('quotaRefreshFailedCached')
+      expect(wrapper.text()).toContain('7d|100')
+      expect(wrapper.get('time').attributes('datetime')).toBe(observedAt)
+      wrapper.unmount()
+    })
+
+    it('shows a failed manual refresh and clears the warning only after a successful retry', async () => {
+      getUsage.mockResolvedValueOnce(snapshot()).mockRejectedValueOnce(new Error('401'))
+      const wrapper = mount(AccountUsageCell, {
+        props: { account: makeAccount({ id: 8102, platform: 'openai', type: 'oauth' }) },
+        global: { stubs }
+      })
+      await flushPromises()
+      await wrapper.get('button').trigger('click')
+      await flushPromises()
+      expect(getUsage).toHaveBeenLastCalledWith(8102, 'active', true)
+      expect(wrapper.get('[role="alert"]').text()).toContain('quotaRefreshFailedCached')
+      expect(wrapper.text()).toContain('7d|100')
+      expect(wrapper.get('time').attributes('datetime')).toBe(observedAt)
+
+      const refreshedAt = '2026-11-12T15:08:56Z'
+      getUsage.mockResolvedValueOnce({
+        ...snapshot(), source: 'active', updated_at: refreshedAt,
+        seven_day: { utilization: 0, resets_at: null, remaining_seconds: 0 }
+      })
+      await wrapper.get('button').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('7d|0')
+      expect(wrapper.get('time').attributes('datetime')).toBe(refreshedAt)
+      wrapper.unmount()
+    })
+
+    it('shows batch refresh failure alongside the retained snapshot', async () => {
+      const wrapper = mount(AccountUsageCell, {
+        props: {
+          account: makeAccount({ id: 8103, platform: 'openai', type: 'oauth' }),
+          batchedUsage: snapshot(), batchedUsageError: 'Failed', requestBatchedUsage: vi.fn()
+        },
+        global: { stubs }
+      })
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain('quotaRefreshFailedCached')
+      expect(wrapper.get('time').attributes('datetime')).toBe(observedAt)
+      wrapper.unmount()
+    })
+
+    it('shows local usage with an unknown percentage when no quota has been fetched', async () => {
+      getUsage.mockResolvedValue({
+        ...snapshot(), updated_at: null,
+        seven_day: {
+          utilization: 0,
+          utilization_unknown: true,
+          resets_at: null,
+          remaining_seconds: 0,
+          window_stats: { requests: 2, tokens: 100, cost: 0, standard_cost: 0, user_cost: 0 }
+        },
+        error_code: 'quota_refresh_failed', error: 'Could not refresh quota'
+      })
+      const wrapper = mount(AccountUsageCell, {
+        props: { account: makeAccount({ id: 8104, platform: 'openai', type: 'oauth' }) },
+        global: { stubs: { OpenAIQuotaResetCell: stubs.OpenAIQuotaResetCell } }
+      })
+      await flushPromises()
+      expect(wrapper.get('[role="alert"]').text()).toContain('quotaRefreshFailedUnknown')
+      expect(wrapper.find('time').exists()).toBe(false)
+      expect(wrapper.text()).toContain('2 req')
+      expect(wrapper.text()).toContain('—')
+      expect(wrapper.text()).not.toContain('0%')
+      expect(wrapper.text()).not.toContain('usage.resetNow')
+      wrapper.unmount()
+    })
+  })
+
   it('OpenAI OAuth 快照已过期时首屏会重新请求 usage', async () => {
     getUsage.mockResolvedValue({
-      quota_windows: [
-        { id: '5h', window_minutes: 300, utilization: 15, resets_at: '2026-03-08T12:00:00Z', expired: false, remaining_seconds: 3600,
-          window_stats: { requests: 3, tokens: 300, cost: 0.03, standard_cost: 0.03, user_cost: 0.03 } },
-        { id: '7d', window_minutes: 10080, utilization: 77, resets_at: '2026-03-13T12:00:00Z', expired: false, remaining_seconds: 3600,
-          window_stats: { requests: 3, tokens: 300, cost: 0.03, standard_cost: 0.03, user_cost: 0.03 } }
-      ],
       five_hour: {
         utilization: 15,
         resets_at: '2026-03-08T12:00:00Z',
@@ -703,12 +799,6 @@ describe('AccountUsageCell', () => {
 
   it('OpenAI OAuth 有 codex 快照时仍然使用 /usage API 数据渲染', async () => {
     getUsage.mockResolvedValue({
-      quota_windows: [
-        { id: '5h', window_minutes: 300, utilization: 18, resets_at: '2099-03-07T12:00:00Z', expired: false, remaining_seconds: 3600,
-          window_stats: { requests: 9, tokens: 900, cost: 0.09, standard_cost: 0.09, user_cost: 0.09 } },
-        { id: '7d', window_minutes: 10080, utilization: 36, resets_at: '2099-03-13T12:00:00Z', expired: false, remaining_seconds: 3600,
-          window_stats: { requests: 9, tokens: 900, cost: 0.09, standard_cost: 0.09, user_cost: 0.09 } }
-      ],
       five_hour: {
         utilization: 18,
         resets_at: '2099-03-07T12:00:00Z',
@@ -769,14 +859,8 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('7d|36|900')
   })
 
-  it('使用服务端的同窗口配对估值，不用导入后的费用除以累计使用率', async () => {
+  it('OpenAI OAuth 7d 按官方窗口费用与使用率显示预计总费用', async () => {
     getUsage.mockResolvedValue({
-      quota_windows: [
-        { id: 'primary', window_minutes: 300, utilization: 25, resets_at: null, remaining_seconds: 0,
-          window_stats: { requests: 1, tokens: 100, cost: 2 }, estimate: { status: 'insufficient_data' } },
-        { id: 'secondary', window_minutes: 10080, utilization: 40, resets_at: null, remaining_seconds: 0,
-          window_stats: { requests: 2, tokens: 200, cost: 12 }, estimate: { status: 'ready', total: 120, remaining: 72 } }
-      ],
       five_hour: {
         utilization: 25,
         resets_at: null,
@@ -809,8 +893,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('5h|none')
-    expect(wrapper.text()).toContain('7d|120')
-    expect(wrapper.text()).not.toContain('7d|30')
+    expect(wrapper.text()).toContain('7d|30')
   })
 
   it.each([
@@ -821,10 +904,6 @@ describe('AccountUsageCell', () => {
     { id: 6805, utilization: 40, cost: Number.POSITIVE_INFINITY }
   ])('OpenAI OAuth 7d 输入无效时不显示预计总费用 (%o)', async ({ id, utilization, cost }) => {
     getUsage.mockResolvedValue({
-      quota_windows: [
-        { id: '7d', window_minutes: 10080, utilization, resets_at: null, expired: false, remaining_seconds: 0,
-          window_stats: { requests: 1, tokens: 100, cost }, estimate: { status: 'insufficient_data' } }
-      ],
       seven_day: {
         utilization,
         resets_at: null,
@@ -860,12 +939,6 @@ describe('AccountUsageCell', () => {
 
   it('OpenAI OAuth 有现成快照时，手动刷新信号会触发 usage 重拉', async () => {
     getUsage.mockResolvedValue({
-      quota_windows: [
-        { id: '5h', window_minutes: 300, utilization: 18, resets_at: '2099-03-07T12:00:00Z', expired: false, remaining_seconds: 3600,
-          window_stats: { requests: 9, tokens: 900, cost: 0.09, standard_cost: 0.09, user_cost: 0.09 } },
-        { id: '7d', window_minutes: 10080, utilization: 36, resets_at: '2099-03-13T12:00:00Z', expired: false, remaining_seconds: 3600,
-          window_stats: { requests: 9, tokens: 900, cost: 0.09, standard_cost: 0.09, user_cost: 0.09 } }
-      ],
       five_hour: {
         utilization: 18,
         resets_at: '2099-03-07T12:00:00Z',
@@ -936,12 +1009,6 @@ describe('AccountUsageCell', () => {
 
   it('OpenAI OAuth 在无 codex 快照时会回退显示 usage 接口窗口', async () => {
 	getUsage.mockResolvedValue({
-	  quota_windows: [
-	    { id: '5h', window_minutes: 300, utilization: 0, resets_at: null, expired: false, remaining_seconds: 0,
-	      window_stats: { requests: 2, tokens: 27700, cost: 0.06, standard_cost: 0.06, user_cost: 0.06 } },
-	    { id: '7d', window_minutes: 10080, utilization: 0, resets_at: null, expired: false, remaining_seconds: 0,
-	      window_stats: { requests: 2, tokens: 27700, cost: 0.06, standard_cost: 0.06, user_cost: 0.06 } }
-	  ],
 	  five_hour: {
 	    utilization: 0,
 	    resets_at: null,
@@ -998,10 +1065,6 @@ describe('AccountUsageCell', () => {
   it('OpenAI OAuth 在行数据刷新时复用 5 分钟 usage 缓存', async () => {
 	getUsage
 	  .mockResolvedValueOnce({
-	    quota_windows: [
-	      { id: '5h', window_minutes: 300, utilization: 0, resets_at: null, expired: false, remaining_seconds: 0,
-	        window_stats: { requests: 1, tokens: 100, cost: 0.01, standard_cost: 0.01, user_cost: 0.01 } }
-	    ],
 	    five_hour: {
 	      utilization: 0,
 	      resets_at: null,
@@ -1017,10 +1080,6 @@ describe('AccountUsageCell', () => {
 	    seven_day: null
 	  })
 	  .mockResolvedValueOnce({
-	    quota_windows: [
-	      { id: '5h', window_minutes: 300, utilization: 0, resets_at: null, expired: false, remaining_seconds: 0,
-	        window_stats: { requests: 2, tokens: 200, cost: 0.02, standard_cost: 0.02, user_cost: 0.02 } }
-	    ],
 	    five_hour: {
 	      utilization: 0,
 	      resets_at: null,
@@ -1122,12 +1181,6 @@ describe('AccountUsageCell', () => {
 
   it('OpenAI OAuth 已限额时显示 /usage API 返回的限额数据', async () => {
 	getUsage.mockResolvedValue({
-	  quota_windows: [
-	    { id: '5h', window_minutes: 300, utilization: 100, resets_at: '2026-03-07T12:00:00Z', expired: false, remaining_seconds: 3600,
-	      window_stats: { requests: 211, tokens: 106540000, cost: 38.13, standard_cost: 38.13, user_cost: 38.13 } },
-	    { id: '7d', window_minutes: 10080, utilization: 100, resets_at: '2026-03-13T12:00:00Z', expired: false, remaining_seconds: 3600,
-	      window_stats: { requests: 211, tokens: 106540000, cost: 38.13, standard_cost: 38.13, user_cost: 38.13 } }
-	  ],
 	  five_hour: {
 	    utilization: 100,
 	    resets_at: '2026-03-07T12:00:00Z',
