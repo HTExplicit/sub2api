@@ -2034,7 +2034,18 @@ describe('AccountUsageCell', () => {
     expect(getUsage).not.toHaveBeenCalled()
   })
 
-  it('Gemini 刷新时显示加载或错误状态，不以旧用量覆盖官方状态展示', async () => {
+  it('Gemini 首次加载显示骨架，刷新保留已有用量，失败显示官方错误状态', async () => {
+    const quotaSnapshot = {
+      updated_at: null,
+      five_hour: null,
+      seven_day: null,
+      seven_day_sonnet: null,
+      gemini_pro_daily: {
+        utilization: 20,
+        resets_at: '2026-10-11T07:00:00Z',
+        remaining_seconds: 3600
+      }
+    }
     const wrapper = mount(AccountUsageCell, {
       props: {
         account: makeAccount({
@@ -2048,17 +2059,7 @@ describe('AccountUsageCell', () => {
           }
         }),
         requestBatchedUsage: vi.fn(),
-        batchedUsage: {
-          updated_at: null,
-          five_hour: null,
-          seven_day: null,
-          seven_day_sonnet: null,
-          gemini_pro_daily: {
-            utilization: 20,
-            resets_at: '2026-10-11T07:00:00Z',
-            remaining_seconds: 3600
-          }
-        }
+        batchedUsageLoading: true
       },
       global: {
         stubs: {
@@ -2068,18 +2069,29 @@ describe('AccountUsageCell', () => {
       }
     })
     await flushPromises()
-    expect(wrapper.findAll('usage-progress-bar-stub')).toHaveLength(1)
-
-    await wrapper.setProps({ batchedUsageLoading: true })
     expect(wrapper.findAll('usage-progress-bar-stub')).toHaveLength(0)
     expect(wrapper.find('.animate-pulse').exists()).toBe(true)
+
+    await wrapper.setProps({ batchedUsage: quotaSnapshot, batchedUsageLoading: false })
+    expect(wrapper.findAll('usage-progress-bar-stub')).toHaveLength(1)
+    expect(wrapper.get('usage-progress-bar-stub').attributes('utilization')).toBe('20')
+
+    await wrapper.setProps({ batchedUsageLoading: true })
+    expect(wrapper.findAll('usage-progress-bar-stub')).toHaveLength(1)
+    expect(wrapper.get('usage-progress-bar-stub').attributes('utilization')).toBe('20')
+    expect(wrapper.find('.animate-pulse').exists()).toBe(false)
 
     await wrapper.setProps({ batchedUsageLoading: false, batchedUsageError: 'quota refresh failed' })
     expect(wrapper.findAll('usage-progress-bar-stub')).toHaveLength(0)
     expect(wrapper.text()).toContain('quota refresh failed')
 
-    await wrapper.setProps({ batchedUsageError: null })
+    await wrapper.setProps({
+      batchedUsageError: null,
+      batchedUsage: { ...quotaSnapshot, gemini_pro_daily: { ...quotaSnapshot.gemini_pro_daily, utilization: 40 } }
+    })
     expect(wrapper.findAll('usage-progress-bar-stub')).toHaveLength(1)
+    expect(wrapper.get('usage-progress-bar-stub').attributes('utilization')).toBe('40')
+    expect(wrapper.text()).not.toContain('quota refresh failed')
     wrapper.unmount()
   })
 
