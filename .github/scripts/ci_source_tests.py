@@ -200,6 +200,23 @@ COMPILE_ONLY_FILES = {
     "backend/internal/service/wire.go",
 }
 
+APICOMPAT = INTERNAL + "pkg/apicompat/"
+group(APICOMPAT, "anthropic_to_responses anthropic_to_responses_response responses_to_anthropic",
+      "responses_anthropic_cache_creation")
+group(APICOMPAT, "chatcompletions_anthropic_bridge", "anthropic_cache_creation_usage")
+group(APICOMPAT, "chatcompletions_responses_bridge",
+      "anthropic_cache_creation_usage chatcompletions_responses_bridge_agent_message")
+group(APICOMPAT, "types", "anthropic_cache_creation_usage anthropic_cache_read_usage")
+group(SERVICE, "openai_gateway_ollama_cloud_cc_reasoning openai_json_object_field_edit",
+      "openai_json_object_field_edit")
+SOURCE_TEST_FILES.update({
+    INTERNAL + "pkg/openai/codex_gpt62_astra.json": [SERVICE + "openai_gpt62_test.go"],
+    INTERNAL + "pkg/openai/codex_gpt62_sol.json": [SERVICE + "openai_gpt62_test.go"],
+    "backend/migrations/252_channel_pricing_ultrafast_multiplier.sql": [
+        INTERNAL + "repository/channel_ultrafast_pricing_integration_test.go",
+    ],
+})
+
 # Official v0.2.21 and reviewed retirement callers; exact files only.
 SOURCE_TEST_FILES.update({
     'backend/internal/domain/constants.go': ['backend/internal/domain/constants_test.go'],

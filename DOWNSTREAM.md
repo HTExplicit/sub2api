@@ -12,7 +12,7 @@ does not prove deployment.
 
 - [.downstream/upstream-base](.downstream/upstream-base) records the integrated
   official stable tag.
-- The [v0.2.22 review](.downstream/upstream-review-v0.2.22.md) records the current
+- The [v0.2.23 review](.downstream/upstream-review-v0.2.23.md) records the current
   integration and retained extension boundaries; earlier reviews keep their paths.
 - [.downstream/upstream-risk.json](.downstream/upstream-risk.json) owns the exact
   Git comparison inputs and complete file lists; historical reviews keep their
@@ -121,6 +121,9 @@ statistics price cards carry nullable `cache_write_12h_price`: an existing
 unified write price remains the official compatibility price when this field
 is NULL, while explicit zero remains free. Existing prices, multipliers,
 intervals and overrides remain; historical bills are not recalculated.
+Anthropic bridge usage preserves the official 5m/1h breakdown and prices any
+unattributed cache writes at the 5m rate. The existing OpenAI 30m/12h fields
+retain their separate pricing and storage semantics.
 
 Pricing resolution is official. Empty token cards do not get a downstream
 allowlist-only interpretation; the extra hy/Qwen/Muse fallback families and
@@ -129,8 +132,11 @@ applies to `gpt-6-astra` and `gpt-6.1-sol`, including supported normalized Sol
 variants. `gpt-6-sol`, `gpt-5.6-sol` and Terra are outside the forced support set
 and retain the official generic 2x Ultra Fast multiplier. Actual Vertex us/eu
 multi-region routes use the official default-price uplift; explicit pricing follows official
-precedence. DeepSeek explicit override fields, including zero, retain their
-official precedence without rewriting stored prices or historical bills.
+precedence. GPT-6.2 Sol and Astra use official context pricing and subscription
+eligibility. Their default Ultra Fast multiplier changes from 3x to 6x at
+midnight Pacific time on 2027-03-01. A channel's nullable `ultrafast_multiplier`
+overrides the model default for Ultra Fast requests. DeepSeek explicit override
+fields, including zero, retain their official precedence.
 
 Usage uses the official worker, context copy, inflight reservation and mandatory
 submission behavior. The official per-user billing lane combines queued work
@@ -140,10 +146,9 @@ observation is excluded at the existing usage entry points, not by a second
 policy inside the lane.
 
 Migrations retain complete filenames and historical checksums, including
-same-number official/downstream files. The current integration adds
-`251_group_force_openai_ultrafast.sql` and
-`251_group_usage_rollup_nonblocking_build.sql` beside the existing downstream
-251/252 files. Group usage rollup rebuild/retention follows official nonblocking
+same-number official/downstream files. `252_channel_pricing_ultrafast_multiplier.sql`
+adds the nullable override while preserving existing price cards and the other
+252 migration. Group usage rollup rebuild/retention follows official nonblocking
 registration, calculation and publication. Retiring business policy adds no
 data purge or Redis reset. Historical schema/rollback constraints remain
 in [native domains](.downstream/native-domains.md#release-and-rollback-boundary).

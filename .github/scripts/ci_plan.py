@@ -343,6 +343,9 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             for pattern, risk_groups in RISK_RULES:
                 if re.fullmatch(pattern, relative):
                     matched.extend(risk_groups)
+            if source_tests and str(path.parent) == "backend/internal/pkg/apicompat":
+                # Reviewed bridge coverage is narrower than the agent protocol suite.
+                matched.remove("agent_protocol")
             if relative.endswith("_test.go"):
                 if source_tests:
                     continue
