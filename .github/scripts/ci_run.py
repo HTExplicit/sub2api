@@ -332,11 +332,13 @@ def run_group(group: str, plan: dict) -> None:
         if plan.get("frontend_typecheck"):
             command(["pnpm", "run", "typecheck"], "frontend")
     elif group == "frontend_focused":
-        # Vitest includes a directly named spec as well as importers of source.
-        files = sorted(set(plan.get("frontend_related", []) + plan.get("frontend_tests", [])))
-        if not files:
+        related, tests = plan["frontend_related"], plan["frontend_tests"]
+        if not (related or tests):
             raise ValueError("frontend_test_selection_empty")
-        command(["pnpm", "exec", "vitest", "related", "--run", *files], "frontend")
+        if related:
+            command(["pnpm", "exec", "vitest", "related", "--run", *sorted(set(related + tests))], "frontend")
+        else:
+            command(["pnpm", "exec", "vitest", "run", *tests], "frontend")
     elif group == "backend_security":
         command(["go", "install", "golang.org/x/vuln/cmd/govulncheck@latest"], "backend")
         packages = ["./..."] if plan.get("event_name") == "schedule" else plan.get("backend_packages", [])

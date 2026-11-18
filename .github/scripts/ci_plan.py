@@ -76,6 +76,24 @@ DEPLOY_RULES = {
 }
 DEPLOY_DOCKER_TESTS = {"deploy/tests/docker-compose-simple-mode-env-test.sh"}
 
+PRICING_CARD_TESTS = (
+    "src/components/admin/channel/__tests__/PricingEntryCard.modelDefaultPrice.spec.ts",
+    "src/components/admin/channel/__tests__/PricingEntryCard.timePricing.spec.ts",
+)
+CHANNEL_VIEW_TEST = "src/views/admin/__tests__/ChannelsView.ultrafastPricing.spec.ts"
+FRONTEND_SOURCE_TESTS = {
+    "src/api/admin/channels.ts": (CHANNEL_VIEW_TEST,),
+    "src/components/admin/channel/PricingEntryCard.vue": PRICING_CARD_TESTS,
+    "src/components/admin/channel/types.ts": (*PRICING_CARD_TESTS, CHANNEL_VIEW_TEST),
+    "src/components/keys/UseKeyModal.vue": ("src/components/keys/__tests__/UseKeyModal.spec.ts",),
+    "src/composables/useModelWhitelist.ts": ("src/composables/__tests__/useModelWhitelist.spec.ts",),
+    "src/i18n/locales/en/admin/channels.ts": (*PRICING_CARD_TESTS, CHANNEL_VIEW_TEST),
+    "src/i18n/locales/zh/admin/channels.ts": (*PRICING_CARD_TESTS, CHANNEL_VIEW_TEST),
+    "src/i18n/locales/en/admin/overview.ts": ("src/views/admin/__tests__/groupsOpenAIFast.spec.ts",),
+    "src/i18n/locales/zh/admin/overview.ts": ("src/views/admin/__tests__/groupsOpenAIFast.spec.ts",),
+    "src/views/admin/ChannelsView.vue": (CHANNEL_VIEW_TEST,),
+}
+
 # Only reviewed leaf helpers may derive their unit selector from a sibling.
 # Shared service/handler/repository entries require the explicit risk rules.
 SAFE_LEAF_PACKAGES = {"backend/internal/pkg/requestmodel"}
@@ -327,7 +345,10 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
             if re.search(r"\.(?:spec|test)\.[tj]sx?$", relative):
                 frontend_tests.add(frontend_relative)
             else:
-                frontend_related.add(frontend_relative)
+                if frontend_relative in FRONTEND_SOURCE_TESTS:
+                    frontend_tests.update(FRONTEND_SOURCE_TESTS[frontend_relative])
+                else:
+                    frontend_related.add(frontend_relative)
                 select("candidate_image", relative)
             known = True
 
@@ -390,6 +411,9 @@ def classify_paths(paths: Iterable[str], repo: Path = ROOT) -> dict:
     for test_path in deploy_tests:
         if not (repo / test_path).is_file():
             failures.append("missing_deploy_test:" + test_path)
+    for test_path in sorted(frontend_tests):
+        if not (repo / "frontend" / test_path).is_file():
+            failures.append("missing_frontend_test:" + test_path)
     unique_tests = {json.dumps(test, sort_keys=True): test for test in tests}
     compile_packages = direct_importers(source_packages, repo) if source_packages else []
     compile_packages = sorted(set(compile_packages) | retired_compile_packages | {
