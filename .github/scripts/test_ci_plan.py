@@ -322,6 +322,12 @@ class ChangeSelectionTests(unittest.TestCase):
         self.assertNotIn("candidate_image", test_only["groups"])
         self.assertFalse(test_only["frontend_typecheck"])
 
+    def test_shared_admin_locale_selects_the_reviewed_spec(self):
+        plan = ci_plan.classify_paths(["frontend/src/i18n/locales/en/admin/overview.ts"])
+        self.assertTrue(plan["passed"], plan["failures"])
+        self.assertEqual(["src/views/admin/__tests__/groupsOpenAIFast.spec.ts"], plan["frontend_tests"])
+        self.assertFalse(plan["frontend_related"])
+
     def test_ci_definition_changes_select_only_offline_contracts(self):
         plan = ci_plan.classify_paths([".github/scripts/ci_plan.py",
                                        ".github/workflows/downstream-verify.yml",
