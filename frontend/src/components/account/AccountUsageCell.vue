@@ -114,16 +114,19 @@
           :utilization="usageInfo.five_hour.utilization"
           :resets-at="usageInfo.five_hour.resets_at"
           :window-stats="usageInfo.five_hour.window_stats"
+          :estimated-total-cost="estimateWindowTotalCost(usageInfo.five_hour)"
           color="indigo"
         />
 
-        <!-- 7d Window (OAuth only) -->
+        <!-- 7d Window (OAuth or Setup Token with passive samples) -->
         <UsageProgressBar
           v-if="usageInfo.seven_day"
           :density="usageBarDensity"
           label="7d"
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
+          :window-stats="usageInfo.seven_day.window_stats"
+          :estimated-total-cost="estimateWindowTotalCost(usageInfo.seven_day)"
           color="emerald"
         />
 
@@ -888,10 +891,12 @@
 const _usageCache = new Map<number, {
   data: import('@/types').AccountUsageInfo
   ts: number
+  refreshKey: string
   failedAt?: number
 }>()
 const _usageRequests = new Map<number, {
   force: boolean
+  refreshKey: string
   promise: Promise<import('@/types').AccountUsageInfo>
 }>()
 </script>
@@ -902,7 +907,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
-import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
+import { buildAccountUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber, formatDateTime, formatRelativeTime } from '@/utils/format'
 
@@ -930,11 +935,12 @@ type UsageVariant = 'detail' | 'list' | 'compact'
 
 const requestUsage = async (
   account: Account,
+  refreshKey: string,
   source?: 'passive' | 'active',
   force = false
 ): Promise<AccountUsageInfo> => {
   const existing = _usageRequests.get(account.id)
-  if (existing) {
+  if (existing?.refreshKey === refreshKey) {
     if (!force || existing.force) return existing.promise
     // A manual force refresh must not be swallowed by an older passive request.
     try {
@@ -946,10 +952,10 @@ const requestUsage = async (
 
   const promise = enqueueUsageRequest(account, () => {
     if (force) return adminAPI.accounts.getUsage(account.id, source, true)
-    if (source) return adminAPI.accounts.getUsage(account.id, source)
+    if (source) return adminAPI.accounts.getUsage(account.id, source, false)
     return adminAPI.accounts.getUsage(account.id)
   })
-  _usageRequests.set(account.id, { force, promise })
+  _usageRequests.set(account.id, { force, refreshKey, promise })
   try {
     return await promise
   } finally {
@@ -1102,12 +1108,11 @@ const hasOpenAIQuotaObservation = computed(() => {
   return windows.some(window => window && !window.utilization_unknown)
 })
 
-const openAISevenDayEstimatedTotalCost = computed(() => {
-  const sevenDay = usageInfo.value?.seven_day
-  const utilization = sevenDay?.utilization
-  const currentCost = sevenDay?.window_stats?.cost
+function estimateWindowTotalCost(window?: AccountUsageInfo['seven_day']) {
+  const utilization = window?.utilization
+  const currentCost = window?.window_stats?.cost
   if (
-    sevenDay?.utilization_unknown ||
+    window?.utilization_unknown ||
     typeof utilization !== 'number' ||
     typeof currentCost !== 'number' ||
     !Number.isFinite(utilization) ||
@@ -1120,9 +1125,15 @@ const openAISevenDayEstimatedTotalCost = computed(() => {
 
   const estimate = (currentCost * 100) / utilization
   return Number.isFinite(estimate) && estimate > 0 ? estimate : null
-})
+}
 
-const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
+const openAISevenDayEstimatedTotalCost = computed(() =>
+  estimateWindowTotalCost(usageInfo.value?.seven_day)
+)
+
+const usageRefreshKey = computed(() => buildAccountUsageRefreshKey(props.account))
+// Standalone OpenAI cells share the five-minute cache across list refreshes.
+const cacheRefreshKey = computed(() => props.account.platform === 'openai' ? '' : usageRefreshKey.value)
 
 const shouldAutoLoadUsageOnMount = computed(() => {
   return shouldFetchUsage.value
@@ -1770,7 +1781,7 @@ const isAnthropicOAuthOrSetupToken = computed(() => {
   return props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token')
 })
 
-const applyUsageResult = (result: AccountUsageInfo) => {
+const applyUsageResult = (result: AccountUsageInfo, refreshKey: string) => {
   const fetchedAt = Date.now()
   const cached = _usageCache.get(props.account.id)
 
@@ -1790,7 +1801,7 @@ const applyUsageResult = (result: AccountUsageInfo) => {
   usageInfo.value = result
   usageLastSuccessAt.value = fetchedAt
   error.value = null
-  _usageCache.set(props.account.id, { data: result, ts: fetchedAt })
+  _usageCache.set(props.account.id, { data: result, ts: fetchedAt, refreshKey })
 }
 
 const markUsageRequestFailed = () => {
@@ -1825,14 +1836,15 @@ const loadUsage = async (options?: {
   }
 
   const accountID = props.account.id
+  const refreshKey = cacheRefreshKey.value
 
   // An expired value is still useful while a refresh is running or failing.
-  const cached = _usageCache.get(props.account.id)
+  const cached = _usageCache.get(accountID)
   if (cached) {
     usageInfo.value = cached.data
     usageLastSuccessAt.value = cached.ts
     error.value = cached.failedAt ? t('admin.accounts.usageFetchFailed') : null
-    if (!options?.bypassCache && Date.now() - cached.ts < USAGE_CACHE_TTL) {
+    if (!options?.bypassCache && cached.refreshKey === refreshKey && Date.now() - cached.ts < USAGE_CACHE_TTL) {
       loading.value = false
       return
     }
@@ -1840,19 +1852,21 @@ const loadUsage = async (options?: {
 
   loading.value = true
   error.value = null
+  const requestIsCurrent = () =>
+    !unmounted.value && props.account.id === accountID && cacheRefreshKey.value === refreshKey
 
   try {
-    const result = await requestUsage(props.account, options?.source, options?.force)
-    if (!unmounted.value && props.account.id === accountID) {
-      applyUsageResult(result)
+    const result = await requestUsage(props.account, refreshKey, options?.source, options?.force)
+    if (requestIsCurrent()) {
+      applyUsageResult(result, refreshKey)
     }
   } catch (e: any) {
-    if (!unmounted.value && props.account.id === accountID) {
+    if (requestIsCurrent()) {
       markUsageRequestFailed()
       console.error('Failed to load usage:', e)
     }
   } finally {
-    if (!unmounted.value) loading.value = false
+    if (requestIsCurrent()) loading.value = false
   }
 }
 
@@ -1908,12 +1922,13 @@ const attachVisibilityObserver = () => {
 
 const loadActiveUsage = async () => {
   const accountID = props.account.id
+  const refreshKey = cacheRefreshKey.value
   activeQueryLoading.value = true
   error.value = null
   try {
-    const result = await requestUsage(props.account, 'active', true)
-    if (!unmounted.value && props.account.id === accountID) {
-      applyUsageResult(result)
+    const result = await requestUsage(props.account, refreshKey, 'active', true)
+    if (!unmounted.value && props.account.id === accountID && cacheRefreshKey.value === refreshKey) {
+      applyUsageResult(result, refreshKey)
     }
   } catch (e: any) {
     if (!unmounted.value && props.account.id === accountID) {
@@ -2390,17 +2405,17 @@ watch(
   { flush: 'pre' }
 )
 
-watch([() => props.account.id, openAIUsageRefreshKey], ([accountID, nextKey], [previousAccountID, prevKey]) => {
-  if (!prevKey || nextKey === prevKey) return
-  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
+watch([() => props.account.id, usageRefreshKey], ([accountID, nextKey], [previousAccountID, prevKey]) => {
+  if (!prevKey || nextKey === prevKey || !shouldFetchUsage.value) return
 
   if (isBatchManaged.value) {
-    if (accountID === previousAccountID) requestParentBatchUsage({ force: true })
+    if (accountID === previousAccountID) {
+      requestParentBatchUsage(props.account.platform === 'openai' ? { force: true } : undefined)
+    }
     return
   }
 
-  // Incremental list refreshes may update last_used_at every few seconds; keep the 5-minute cache.
-  requestAutoLoad()
+  requestAutoLoad(isAnthropicOAuthOrSetupToken.value ? 'passive' : undefined)
 })
 
 watch(
