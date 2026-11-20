@@ -12,7 +12,7 @@ does not prove deployment.
 
 - [.downstream/upstream-base](.downstream/upstream-base) records the integrated
   official stable tag.
-- The [v0.2.23 review](.downstream/upstream-review-v0.2.23.md) records the current
+- The [v0.2.24 review](.downstream/upstream-review-v0.2.24.md) records the current
   integration and retained extension boundaries; earlier reviews keep their paths.
 - [.downstream/upstream-risk.json](.downstream/upstream-risk.json) owns the exact
   Git comparison inputs and complete file lists; historical reviews keep their
@@ -72,6 +72,9 @@ Desktop batch presentations clear obsolete focus, pointer ownership and
 popovers when a slot changes account; independent usage probes retain their
 account-keyed lifecycle. Other presentations keep account-keyed content.
 Adjacent usage windows use the existing batch cache without forced refreshes.
+Claude and Gemini snapshot changes refresh stale entries through the existing
+batch or standalone loader. Standalone OpenAI usage retains its five-minute
+cache across ordinary row refreshes.
 The large accounts table retains account-keyed native row shells and mounts
 cells only inside the measured window. Each active row owns its cell render
 effect; batch usage updates affect their account keys. Desktop layer hints

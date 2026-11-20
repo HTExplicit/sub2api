@@ -776,7 +776,7 @@ import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRules
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
 import { accountKeyDigestTerm, isAccountKeyDigestTerm } from '@/utils/accountKeySearch'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
-import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
+import { buildAccountUsageRefreshKey, buildGrokUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatDateTimeToMinute, formatRelativeTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -1099,13 +1099,12 @@ let desktopViewportListener: ((event: MediaQueryListEvent) => void) | null = nul
 const usageBatchByAccountId = shallowReactive<Record<string, AccountUsageInfo | null>>({})
 const usageBatchErrorByAccountId = shallowReactive<Record<string, string | null>>({})
 const usageBatchLoadingByAccountId = shallowReactive<Record<string, boolean>>({})
-const usageBatchRequestTokenByAccountId = shallowRef<Record<string, number>>({})
-const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
+const usageBatchRequestByAccountId = shallowRef<Record<string, { refreshKey: string }>>({})
+const usageBatchCache = new Map<number, { data: AccountUsageInfo; ts: number; refreshKey: string }>()
 const USAGE_BATCH_CACHE_TTL = 5 * 60 * 1000
 const pendingUsageBatchIds = new Set<number>()
 let usageBatchFlushTimer: ReturnType<typeof setTimeout> | null = null
 let queuedUsageBatchForce = false
-let usageBatchRequestToken = 0
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -1144,15 +1143,11 @@ const flushQueuedUsageBatch = async () => {
   usageBatchFlushTimer = null
   const accountIDs = Array.from(pendingUsageBatchIds)
   const force = queuedUsageBatchForce
+  const requests = usageBatchRequestByAccountId.value
   pendingUsageBatchIds.clear()
   queuedUsageBatchForce = false
 
   if (accountIDs.length === 0) return
-
-  const requestTokensByAccount = accountIDs.reduce<Record<string, number>>((acc, accountID) => {
-    acc[String(accountID)] = usageBatchRequestTokenByAccountId.value[String(accountID)] ?? 0
-    return acc
-  }, {})
 
   try {
     const result = await adminAPI.accounts.getBatchUsage(accountIDs, force)
@@ -1162,7 +1157,8 @@ const flushQueuedUsageBatch = async () => {
     const now = Date.now()
     for (const accountID of accountIDs) {
       const key = String(accountID)
-      if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
+      const request = requests[key]
+      if (!request || usageBatchRequestByAccountId.value[key] !== request) {
         continue
       }
       const usage = usageMap[key] ?? null
@@ -1170,7 +1166,7 @@ const flushQueuedUsageBatch = async () => {
       usageBatchErrorByAccountId[key] = errorMap[key] ?? null
       usageBatchLoadingByAccountId[key] = false
       if (usage) {
-        usageBatchCache.set(accountID, { data: usage, ts: now })
+        usageBatchCache.set(accountID, { data: usage, ts: now, refreshKey: request.refreshKey })
       } else {
         usageBatchCache.delete(accountID)
       }
@@ -1178,7 +1174,8 @@ const flushQueuedUsageBatch = async () => {
   } catch (error) {
     for (const accountID of accountIDs) {
       const key = String(accountID)
-      if ((usageBatchRequestTokenByAccountId.value[key] ?? 0) !== requestTokensByAccount[key]) {
+      const request = requests[key]
+      if (!request || usageBatchRequestByAccountId.value[key] !== request) {
         continue
       }
       usageBatchErrorByAccountId[key] = 'Failed'
@@ -1195,13 +1192,14 @@ const queueBatchedUsage = (account: AccountListItem, options?: { force?: boolean
   const force = options?.force === true
   const cacheKey = account.id
   const key = String(cacheKey)
-  if (!force && usageBatchLoadingByAccountId[key]) return
+  const refreshKey = buildAccountUsageRefreshKey(account)
+  if (!force && usageBatchLoadingByAccountId[key] && usageBatchRequestByAccountId.value[key]?.refreshKey === refreshKey) return
 
   if (force) {
     usageBatchCache.delete(cacheKey)
   } else {
     const cached = usageBatchCache.get(cacheKey)
-    if (cached && Date.now() - cached.ts < USAGE_BATCH_CACHE_TTL) {
+    if (cached && cached.refreshKey === refreshKey && Date.now() - cached.ts < USAGE_BATCH_CACHE_TTL) {
       setUsageBatchState(cacheKey, cached.data, null)
       setUsageBatchLoading(cacheKey, false)
       return
@@ -1209,9 +1207,9 @@ const queueBatchedUsage = (account: AccountListItem, options?: { force?: boolean
   }
 
   usageBatchErrorByAccountId[key] = null
-  usageBatchRequestTokenByAccountId.value = {
-    ...usageBatchRequestTokenByAccountId.value,
-    [key]: ++usageBatchRequestToken
+  usageBatchRequestByAccountId.value = {
+    ...usageBatchRequestByAccountId.value,
+    [key]: { refreshKey }
   }
   setUsageBatchLoading(cacheKey, true)
   pendingUsageBatchIds.add(cacheKey)
@@ -1989,8 +1987,8 @@ watch(accounts, (rows) => {
       if (!visibleIDs.has(key)) delete state[key]
     }
   }
-  usageBatchRequestTokenByAccountId.value = Object.fromEntries(
-    Object.entries(usageBatchRequestTokenByAccountId.value).filter(([key]) => visibleIDs.has(key))
+  usageBatchRequestByAccountId.value = Object.fromEntries(
+    Object.entries(usageBatchRequestByAccountId.value).filter(([key]) => visibleIDs.has(key))
   )
 })
 
@@ -2047,7 +2045,7 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
     current.rate_limit_reset_at !== next.rate_limit_reset_at ||
     current.overload_until !== next.overload_until ||
     current.temp_unschedulable_until !== next.temp_unschedulable_until ||
-    buildOpenAIUsageRefreshKey(current) !== buildOpenAIUsageRefreshKey(next) ||
+    buildAccountUsageRefreshKey(current) !== buildAccountUsageRefreshKey(next) ||
     buildGrokUsageRefreshKey(current) !== buildGrokUsageRefreshKey(next)
   )
 }
@@ -2957,10 +2955,19 @@ const handleDuplicateAccount = async (a: Account) => {
     duplicatingAccountIDs.delete(a.id)
   }
 }
+const lastManualRefreshAt = new Map<number, number>()
+const MANUAL_REFRESH_WARN_INTERVAL_MS = 60_000
+
 const handleRefresh = async (a: Account) => {
   if (immediateAccountActions.has(a.id)) return
   immediateAccountActions.add(a.id)
   try {
+    const now = Date.now()
+    const lastAt = lastManualRefreshAt.get(a.id)
+    if (lastAt !== undefined && now - lastAt < MANUAL_REFRESH_WARN_INTERVAL_MS) {
+      appStore.showWarning(t('admin.accounts.refreshTokenFrequentWarning'))
+    }
+    lastManualRefreshAt.set(a.id, now)
     const result = await adminAPI.accounts.refreshCredentials(a.id)
     patchAccountInList(result.account)
     enterAutoRefreshSilentWindow()

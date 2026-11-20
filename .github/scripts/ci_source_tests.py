@@ -479,3 +479,38 @@ COMPILE_ONLY_FILES.update({
     # not execute this platform branch. Retain compilation ownership explicitly.
     INTERNAL + "repository/http_upstream_keepalive_other.go",
 })
+
+# Official v0.2.24 inputs use their directly affected regression cases.
+group(INTERNAL, "pkg/claude/sampling", "pkg/claude/sampling")
+group(INTERNAL, "pkg/websearch/exa", "pkg/websearch/exa")
+group(INTERNAL, "pkg/websearch/manager pkg/websearch/provider pkg/websearch/types",
+      "pkg/websearch/manager")
+group(INTERNAL, "repository/ops_repo_openai_token_stats",
+      "repository/ops_repo_openai_token_stats_integration")
+group(INTERNAL, "securityaudit/coordinator securityaudit/prompt_scanner securityaudit/prompt_snapshot",
+      "securityaudit/prompt_memory_optimization")
+group(INTERNAL, "server/middleware/ingress_reject server/middleware/request_field_conflict",
+      "server/middleware/request_field_conflict")
+group(INTERNAL, "service/anthropic_models_list", "handler/gateway_models")
+group(SERVICE, "account_test_service_typesafe", "account_test_service_typesafe")
+group(SERVICE, "admin_user user_platform_quota_defaults", "admin_service_create_user")
+group(SERVICE, "antigravity_bare429_scope", "antigravity_bare429_request_scope")
+group(SERVICE, "antigravity_gateway_claude", "antigravity_bare429_after_loop")
+group(SERVICE, "gateway_systemone", "gateway_systemone")
+group(SERVICE, "image_generation_intent", "image_generation_intent_prefilter")
+group(SERVICE, "oauth_refresh_api", "oauth_refresh_api")
+group(SERVICE, "openai_codex_tool_names", "openai_codex_tool_names")
+group(SERVICE, "openai_gateway_buffered_hosted_items", "openai_gateway_buffered_hosted_items")
+group(SERVICE, "openai_gateway_deepseek_anthropic_thinking", "openai_gateway_deepseek_anthropic_thinking")
+group(SERVICE, "websearch_config", "websearch_config_exa")
+
+SOURCE_TEST_FILES.update({
+    SERVICE + "gateway_request_scan_benchmark_test.go": [SERVICE + "gateway_request_scan_equivalence_test.go"],
+    SERVICE + "image_generation_intent_prefilter_benchmark_test.go": [SERVICE + "image_generation_intent_prefilter_test.go"],
+    SERVICE + "openai_responses_namespace_benchmark_test.go": [SERVICE + "openai_responses_namespace_equivalence_test.go"],
+    SERVICE + "openai_responses_tool_schema_benchmark_test.go": [SERVICE + "openai_responses_tool_schema_scan_test.go"],
+})
+for seed in ("19981bffc2abbaf1", "430233b3de39cf96", "6c31f0fa5746a2cd", "e90985907f88433e"):
+    SOURCE_TEST_FILES[SERVICE + "testdata/fuzz/FuzzOpenAIResponsesToolSchemaGatesAreNecessary/" + seed] = [
+        SERVICE + "openai_responses_tool_schema_scan_test.go",
+    ]
