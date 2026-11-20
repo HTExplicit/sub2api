@@ -62,7 +62,7 @@ func TestTypeSafeAccountTestSendsNativeSystemOneRequest(t *testing.T) {
 }
 
 func TestTypeSafeAccountTestAppliesAccountModelMapping(t *testing.T) {
-	svc, repo, requests, c, rec := newTypeSafeAccountTestFixture(t, http.StatusOK, `{"answers":{"connection_test":{"type":"noul"}}}`)
+	svc, repo, requests, c, rec := newTypeSafeAccountTestFixture(t, http.StatusOK, `{"answers":{"connection_test":{"type":"noul","noul":0.5}}}`)
 	repo.account.Credentials["model_mapping"] = map[string]any{"jev-latest": "decision-model-preview"}
 
 	require.NoError(t, svc.TestAccountConnection(c, 31, "ignored-client-model", "custom state", AccountTestModeDefault))
