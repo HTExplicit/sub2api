@@ -1994,7 +1994,7 @@ const handleGrokProbed = (result: GrokQuotaProbeResult) => {
   const fetchedAt = Date.now()
   usageLastSuccessAt.value = fetchedAt
   error.value = null
-  _usageCache.set(props.account.id, { data: merged, ts: fetchedAt })
+  _usageCache.set(props.account.id, { data: merged, ts: fetchedAt, refreshKey: cacheRefreshKey.value })
 }
 
 // ===== API Key quota progress bars =====
